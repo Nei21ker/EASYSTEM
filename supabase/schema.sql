@@ -193,7 +193,9 @@ begin
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data ->> 'nombre', split_part(new.email, '@', 1)),
-    coalesce((new.raw_user_meta_data ->> 'rol')::public.rol_usuario, 'vendedor')
+    -- Siempre 'vendedor': el metadata lo controla el cliente, así que no se
+    -- puede confiar en él para el rol (ver migración 0003).
+    'vendedor'
   );
   return new;
 end;

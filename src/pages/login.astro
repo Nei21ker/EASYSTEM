@@ -72,6 +72,7 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
         </form>
 
         <p id="auth-error" class="mt-4 hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+        <p id="auth-exito" class="mt-4 hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
 
         {!supabaseConfigurado && (
           <div class="mt-5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
@@ -91,8 +92,10 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
       const formLogin = document.getElementById('form-login') as HTMLFormElement;
       const formSignup = document.getElementById('form-signup') as HTMLFormElement;
       const error = document.getElementById('auth-error') as HTMLParagraphElement;
+      const exito = document.getElementById('auth-exito') as HTMLParagraphElement;
 
       function mostrarTab(tab: 'login' | 'signup') {
+        exito.classList.add('hidden');
         const esLogin = tab === 'login';
         formLogin.classList.toggle('hidden', !esLogin);
         formSignup.classList.toggle('hidden', esLogin);
@@ -145,7 +148,17 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
         const password = (document.getElementById('signup-password') as HTMLInputElement).value;
 
         try {
-          await registrarUsuario({ nombre, email, password, rol: 'vendedor' });
+          const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol: 'vendedor' });
+
+          if (requiereConfirmacion) {
+            // Supabase exige confirmar el correo antes de permitir el login.
+            (document.getElementById('login-email') as HTMLInputElement).value = email;
+            mostrarTab('login');
+            exito.textContent = `Cuenta creada. Te enviamos un correo a ${email}: confirma tu cuenta con el enlace y luego inicia sesión aquí.`;
+            exito.classList.remove('hidden');
+            return;
+          }
+
           await iniciarSesion(email, password);
           window.location.href = siguienteRuta();
         } catch (err) {

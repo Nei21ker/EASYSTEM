@@ -42,7 +42,7 @@ begin
     new.id,
     new.email,
     coalesce(new.raw_user_meta_data ->> 'nombre', split_part(new.email, '@', 1)),
-    coalesce((new.raw_user_meta_data ->> 'rol')::public.rol_usuario, 'vendedor')
+    'vendedor' -- no confiar en metadata del cliente para el rol (ver 0003)
   );
   return new;
 end;

@@ -62,10 +62,25 @@ function invalidarCacheSesion() {
   sesionEnCache = null;
 }
 
+/** Traduce los mensajes de error de Supabase Auth a algo accionable para el usuario. */
+function traducirErrorAuth(mensaje: string): string {
+  const m = mensaje.toLowerCase();
+  if (m.includes('email not confirmed')) {
+    return 'Tu correo aún no está confirmado. Abre el enlace que te enviamos por correo (revisa también spam) y vuelve a iniciar sesión.';
+  }
+  if (m.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.';
+  if (m.includes('user already registered')) return 'Ya existe una cuenta con ese correo.';
+  if (m.includes('password should be at least')) return 'La contraseña debe tener al menos 6 caracteres.';
+  if (m.includes('signups not allowed')) return 'El registro de cuentas nuevas está deshabilitado en Supabase.';
+  if (m.includes('rate limit')) return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
+  return mensaje;
+}
+
 export async function iniciarSesion(email: string, password: string): Promise<SesionUsuario> {
   if (supabaseConfigurado) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.user) throw new Error('Correo o contraseña incorrectos.');
+    if (error) throw new Error(traducirErrorAuth(error.message));
+    if (!data.user) throw new Error('Correo o contraseña incorrectos.');
 
     const { data: perfil, error: errorPerfil } = await supabase
       .from('perfiles')
@@ -126,7 +141,12 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
  * cliente aislado (persistSession: false) para que el signUp no reemplace la
  * sesión del administrador que está creando la cuenta.
  */
-export async function registrarUsuario(input: { email: string; password: string; nombre: string; rol?: Rol }): Promise<void> {
+export async function registrarUsuario(input: {
+  email: string;
+  password: string;
+  nombre: string;
+  rol?: Rol;
+}): Promise<{ requiereConfirmacion: boolean }> {
   const rol = input.rol ?? 'vendedor';
 
   if (supabaseConfigurado) {
@@ -134,19 +154,30 @@ export async function registrarUsuario(input: { email: string; password: string;
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
+    // El rol NO se envía en el metadata: el trigger de la BD siempre crea el
+    // perfil como 'vendedor' (si confiara en el metadata, cualquiera podría
+    // registrarse como administrador llamando a la API directamente).
     const { data, error } = await clienteAislado.auth.signUp({
       email: input.email,
       password: input.password,
-      options: { data: { nombre: input.nombre, rol } },
+      options: { data: { nombre: input.nombre } },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error(traducirErrorAuth(error.message));
 
-    // El trigger de la BD ya crea el perfil leyendo raw_user_meta_data.rol,
-    // pero por si acaso lo reforzamos aquí (p. ej. si el usuario ya existía).
-    if (data.user) {
-      await supabase.from('perfiles').update({ nombre: input.nombre, rol }).eq('id', data.user.id);
+    // Con "Confirm email" activo, un correo ya registrado devuelve un usuario
+    // "ofuscado" sin identidades en vez de un error.
+    if (data.user && data.user.identities?.length === 0) {
+      throw new Error('Ya existe una cuenta con ese correo.');
     }
-    return;
+
+    // Solo un administrador con sesión activa puede ascender el perfil (RLS);
+    // en un auto-registro desde /login esta llamada no tiene efecto, y está bien.
+    if (data.user && rol !== 'vendedor') {
+      const { error: errorRol } = await supabase.from('perfiles').update({ rol }).eq('id', data.user.id);
+      if (errorRol) throw new Error('La cuenta se creó, pero no se pudo asignar el rol: ' + errorRol.message);
+    }
+
+    return { requiereConfirmacion: !data.session };
   }
 
   const usuarios = leerUsuariosLocales();
@@ -155,6 +186,7 @@ export async function registrarUsuario(input: { email: string; password: string;
   }
   usuarios.push({ id: generarId(), email: input.email, password: input.password, nombre: input.nombre, rol });
   guardarUsuariosLocales(usuarios);
+  return { requiereConfirmacion: false };
 }
 
 export async function listarUsuarios(): Promise<SesionUsuario[]> {

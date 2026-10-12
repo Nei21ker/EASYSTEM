@@ -116,8 +116,10 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     const rol = (document.getElementById('us-rol') as HTMLSelectElement).value as Rol;
 
     try {
-      await registrarUsuario({ nombre, email, password, rol });
-      exito.textContent = `Cuenta creada para ${nombre}.`;
+      const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol });
+      exito.textContent = requiereConfirmacion
+        ? `Cuenta creada para ${nombre}. Debe confirmar su correo (enlace enviado a ${email}) antes de poder iniciar sesión.`
+        : `Cuenta creada para ${nombre}.`;
       exito.classList.remove('hidden');
       form.reset();
       await cargarUsuarios();
