@@ -1,0 +1,63 @@
+---
+// Solo relevante cuando Supabase está configurado: muestra si hay conexión y
+// cuántas ventas quedaron encoladas mientras no la había. En modo LocalStorage
+// puro (sin Supabase) no hay nada que sincronizar, así que el badge no se muestra.
+---
+
+<div id="conexion-estado" class="hidden items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium">
+  <span id="conexion-punto" class="h-2 w-2 shrink-0 rounded-full"></span>
+  <span id="conexion-texto">Conectado</span>
+  <button
+    id="conexion-sincronizar"
+    type="button"
+    class="hidden ml-1 rounded border border-current px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide hover:bg-black/5 dark:hover:bg-white/10"
+  >
+    Sincronizar
+  </button>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+
+  const contenedor = document.getElementById('conexion-estado') as HTMLDivElement;
+  const punto = document.getElementById('conexion-punto') as HTMLSpanElement;
+  const texto = document.getElementById('conexion-texto') as HTMLSpanElement;
+  const botonSincronizar = document.getElementById('conexion-sincronizar') as HTMLButtonElement;
+
+  const BASE = 'items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium';
+  const ESTILOS = {
+    offline: `${BASE} border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400`,
+    pendiente: `${BASE} border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400`,
+  };
+
+  function pintar(estado: inventoryService.EstadoConexion) {
+    if (!estado.usaSupabase) {
+      contenedor.className = 'hidden';
+      return;
+    }
+
+    if (!estado.online) {
+      contenedor.className = `flex ${ESTILOS.offline}`;
+      punto.className = 'h-2 w-2 shrink-0 rounded-full bg-red-500';
+      texto.textContent = estado.pendientes > 0 ? `Sin conexión · ${estado.pendientes} por sincronizar` : 'Sin conexión';
+      botonSincronizar.classList.add('hidden');
+    } else if (estado.pendientes > 0) {
+      contenedor.className = `flex ${ESTILOS.pendiente}`;
+      punto.className = 'h-2 w-2 shrink-0 rounded-full bg-amber-500';
+      texto.textContent = `${estado.pendientes} venta${estado.pendientes === 1 ? '' : 's'} por sincronizar`;
+      botonSincronizar.classList.remove('hidden');
+    } else {
+      contenedor.className = 'hidden';
+    }
+  }
+
+  botonSincronizar.addEventListener('click', async () => {
+    botonSincronizar.disabled = true;
+    botonSincronizar.textContent = 'Sincronizando...';
+    await inventoryService.sincronizarPendientes();
+    botonSincronizar.disabled = false;
+    botonSincronizar.textContent = 'Sincronizar';
+  });
+
+  inventoryService.suscribirseAEstadoConexion(pintar);
+</script>

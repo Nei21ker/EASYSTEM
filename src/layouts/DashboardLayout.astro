@@ -1,0 +1,60 @@
+---
+import Sidebar from '../components/layout/Sidebar.astro';
+import Header from '../components/layout/Header.astro';
+import '../styles/global.css';
+import type { Rol } from '../lib/auth';
+
+interface Props {
+  titulo: string;
+  subtitulo?: string;
+  /** Si se define, solo ese rol puede ver la página (los demás son enviados a "/"). */
+  rolMinimo?: Rol;
+}
+
+const { titulo, subtitulo, rolMinimo } = Astro.props;
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>{titulo} · EASYSTEM</title>
+    <meta name="description" content="EASYSTEM — Gestión de inventario para Edward Accesorios" />
+    <script is:inline>
+      // Evita el "flash" de tema incorrecto: aplica la clase antes de pintar la página.
+      try {
+        const tema = localStorage.getItem('easystem:tema');
+        if (tema === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    </script>
+  </head>
+  <body class="min-h-screen bg-slate-50 dark:bg-slate-950">
+    <!-- oculto hasta que el guard de auth confirme sesión (evita destello de contenido protegido) -->
+    <div id="app-shell" data-rol-minimo={rolMinimo ?? ''} class="flex min-h-screen" style="visibility:hidden">
+      <Sidebar />
+      <div class="flex flex-1 flex-col">
+        <Header titulo={titulo} subtitulo={subtitulo} />
+        <main class="flex-1 space-y-6 p-4 sm:p-6 print:p-0">
+          <slot />
+        </main>
+      </div>
+    </div>
+
+    <script>
+      import { protegerPagina, type Rol } from '../lib/auth';
+
+      const shell = document.getElementById('app-shell') as HTMLDivElement;
+      const rolMinimo = (shell.dataset.rolMinimo || undefined) as Rol | undefined;
+
+      protegerPagina({ rolMinimo })
+        .then(() => {
+          shell.style.visibility = 'visible';
+        })
+        .catch(() => {
+          // protegerPagina ya redirigió a /login o "/"; no hay nada más que hacer aquí.
+        });
+    </script>
+  </body>
+</html>

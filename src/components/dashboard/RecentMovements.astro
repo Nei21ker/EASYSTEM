@@ -1,0 +1,68 @@
+---
+interface Props {
+  limite?: number;
+}
+
+const { limite = 8 } = Astro.props;
+---
+
+<div id="rm-root" data-limite={limite} class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Movimientos recientes</h2>
+    <a href="/movimientos" class="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Ver historial</a>
+  </div>
+
+  <p id="rm-cargando" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando...</p>
+  <p id="rm-vacio" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Todavía no hay movimientos registrados.</p>
+  <ul id="rm-lista" class="hidden divide-y divide-slate-100 dark:divide-slate-800"></ul>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { formatearFecha } from '../../utils/format';
+
+  const raiz = document.getElementById('rm-root') as HTMLDivElement;
+  const limite = Number(raiz.dataset.limite) || 8;
+  const cargando = document.getElementById('rm-cargando') as HTMLParagraphElement;
+  const vacio = document.getElementById('rm-vacio') as HTMLParagraphElement;
+  const lista = document.getElementById('rm-lista') as HTMLUListElement;
+
+  const variantePorTipo: Record<string, string> = {
+    ENTRADA: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    SALIDA: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+  const etiquetaPorTipo: Record<string, string> = { ENTRADA: 'Entrada', SALIDA: 'Salida' };
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  inventoryService.listarMovimientos(limite).then((movimientos) => {
+    cargando.classList.add('hidden');
+
+    if (movimientos.length === 0) {
+      vacio.classList.remove('hidden');
+      return;
+    }
+
+    lista.classList.remove('hidden');
+    lista.innerHTML = movimientos
+      .map(
+        (mov) => `
+          <li class="flex items-center justify-between gap-4 px-5 py-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(mov.producto?.nombre ?? 'Producto eliminado')}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(mov.fecha))}</p>
+            </div>
+            <div class="flex shrink-0 items-center gap-3">
+              <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">${mov.tipo === 'SALIDA' ? '-' : '+'}${Math.abs(mov.cantidad)}</span>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantePorTipo[mov.tipo]}">${etiquetaPorTipo[mov.tipo]}</span>
+            </div>
+          </li>
+        `
+      )
+      .join('');
+  });
+</script>

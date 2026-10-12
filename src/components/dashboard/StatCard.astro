@@ -1,0 +1,38 @@
+---
+interface Props {
+  etiqueta: string;
+  valor: string;
+  tendencia?: string;
+  tendenciaPositiva?: boolean;
+  icono?: 'productos' | 'stock-bajo' | 'valor' | 'movimientos';
+  id?: string;
+}
+
+const { etiqueta, valor, tendencia, tendenciaPositiva = true, icono = 'productos', id } = Astro.props;
+
+const iconos: Record<string, string> = {
+  productos: 'M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
+  'stock-bajo': 'M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z',
+  valor: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+  movimientos: 'M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3',
+};
+---
+
+<div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div class="flex items-start justify-between">
+    <div>
+      <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{etiqueta}</p>
+      <p id={id} class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{valor}</p>
+    </div>
+    <div class="rounded-lg bg-brand-50 p-2 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+        <path d={iconos[icono]} stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+  </div>
+  {tendencia && (
+    <p id={id ? `${id}-tendencia` : undefined} class:list={['mt-3 text-xs font-medium', tendenciaPositiva ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400']}>
+      {tendencia}
+    </p>
+  )}
+</div>

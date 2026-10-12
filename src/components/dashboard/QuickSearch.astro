@@ -1,0 +1,165 @@
+---
+// Se autoalimenta desde inventoryService (Supabase o LocalStorage, según
+// haya credenciales configuradas) en el cliente; no recibe datos por props.
+---
+
+<div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Buscador rápido</h2>
+    <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+      Filtra la mercancía por nombre, categoría o modelo de teléfono compatible.
+    </p>
+
+    <div class="mt-3 flex flex-col gap-3 sm:flex-row">
+      <div class="relative flex-1">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+        </svg>
+        <input
+          id="qs-buscador"
+          type="search"
+          placeholder="Buscar por nombre o código de barras..."
+          class="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+        />
+      </div>
+      <select
+        id="qs-categoria"
+        class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      >
+        <option value="">Todas las categorías</option>
+      </select>
+      <select
+        id="qs-modelo"
+        class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      >
+        <option value="">Todos los modelos</option>
+      </select>
+    </div>
+  </div>
+
+  <p id="qs-contador" class="px-5 pt-3 text-xs text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-left text-sm">
+      <thead>
+        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <th class="px-5 py-3 font-medium">Producto</th>
+          <th class="px-5 py-3 font-medium">Categoría</th>
+          <th class="px-5 py-3 font-medium">Compatible con</th>
+          <th class="px-5 py-3 font-medium">Precio venta</th>
+          <th class="px-5 py-3 font-medium">Stock</th>
+        </tr>
+      </thead>
+      <tbody id="qs-resultados" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+    </table>
+  </div>
+
+  <p id="qs-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+    No se encontraron productos con esos filtros.
+  </p>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import type { ProductoConRelaciones } from '../../types/database.types';
+
+  let productos: ProductoConRelaciones[] = [];
+
+  const buscador = document.getElementById('qs-buscador') as HTMLInputElement;
+  const selectCategoria = document.getElementById('qs-categoria') as HTMLSelectElement;
+  const selectModelo = document.getElementById('qs-modelo') as HTMLSelectElement;
+  const tbody = document.getElementById('qs-resultados') as HTMLTableSectionElement;
+  const sinResultados = document.getElementById('qs-sin-resultados') as HTMLParagraphElement;
+  const contador = document.getElementById('qs-contador') as HTMLParagraphElement;
+
+  const estilosBadge: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+    neutro: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  };
+  const etiquetaEstado: Record<string, string> = { ok: 'OK', bajo: 'Stock bajo', critico: 'Sin stock' };
+
+  function badge(texto: string, variante: string): string {
+    return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[variante]}">${texto}</span>`;
+  }
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function renderFila(producto: ProductoConRelaciones): string {
+    const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
+    const compatibles = producto.modelos_compatibles.length
+      ? producto.modelos_compatibles.map((m) => badge(escaparHtml(`${m.marca} ${m.modelo}`), 'neutro')).join(' ')
+      : '<span class="text-xs text-slate-400">Universal / sin definir</span>';
+
+    return `
+      <tr class="text-slate-700 dark:text-slate-300">
+        <td class="px-5 py-3">
+          <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+          <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+        </td>
+        <td class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
+        <td class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
+        <td class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
+        <td class="px-5 py-3">${badge(`${producto.stock_actual} u.`, estado)} <span class="ml-1 text-xs text-slate-400">${etiquetaEstado[estado]}</span></td>
+      </tr>
+    `;
+  }
+
+  function poblarFiltros() {
+    const categorias = Array.from(new Set(productos.map((p) => p.categoria))).sort();
+    selectCategoria.innerHTML =
+      '<option value="">Todas las categorías</option>' +
+      categorias.map((c) => `<option value="${escaparHtml(c)}">${escaparHtml(c)}</option>`).join('');
+
+    const modelosUnicos = Array.from(
+      new Map(productos.flatMap((p) => p.modelos_compatibles).map((m) => [`${m.marca} ${m.modelo}`, m])).values()
+    ).sort((a, b) => `${a.marca} ${a.modelo}`.localeCompare(`${b.marca} ${b.modelo}`));
+
+    selectModelo.innerHTML =
+      '<option value="">Todos los modelos</option>' +
+      modelosUnicos
+        .map((m) => `<option value="${escaparHtml(`${m.marca} ${m.modelo}`)}">${escaparHtml(`${m.marca} ${m.modelo}`)}</option>`)
+        .join('');
+  }
+
+  function filtrarProductos(): ProductoConRelaciones[] {
+    const texto = buscador.value.trim().toLowerCase();
+    const categoria = selectCategoria.value;
+    const modelo = selectModelo.value;
+
+    return productos.filter((producto) => {
+      const coincideTexto =
+        !texto ||
+        producto.nombre.toLowerCase().includes(texto) ||
+        producto.codigo_barras.toLowerCase().includes(texto);
+      const coincideCategoria = !categoria || producto.categoria === categoria;
+      const coincideModelo =
+        !modelo || producto.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}` === modelo);
+
+      return coincideTexto && coincideCategoria && coincideModelo;
+    });
+  }
+
+  function actualizar() {
+    const resultado = filtrarProductos();
+    tbody.innerHTML = resultado.map(renderFila).join('');
+    sinResultados.classList.toggle('hidden', resultado.length > 0);
+    contador.textContent = `${resultado.length} de ${productos.length} productos`;
+  }
+
+  buscador.addEventListener('input', actualizar);
+  selectCategoria.addEventListener('change', actualizar);
+  selectModelo.addEventListener('change', actualizar);
+
+  inventoryService.listarProductos().then((lista) => {
+    productos = lista;
+    poblarFiltros();
+    actualizar();
+  });
+</script>

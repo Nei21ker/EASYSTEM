@@ -1,0 +1,106 @@
+---
+// Se autoalimenta desde inventoryService: cuenta y lista productos en/bajo su stock mínimo.
+---
+
+<div class="relative">
+  <button
+    id="notif-boton"
+    type="button"
+    aria-label="Notificaciones de stock"
+    aria-haspopup="true"
+    aria-expanded="false"
+    class="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+      <path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" stroke-linecap="round" stroke-linejoin="round" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    <span
+      id="notif-globo"
+      class="hidden absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white"
+    >0</span>
+  </button>
+
+  <div
+    id="notif-panel"
+    class="hidden absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900"
+  >
+    <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+      <p class="text-sm font-semibold text-slate-900 dark:text-white">Alertas de stock</p>
+      <p id="notif-resumen" class="text-xs text-slate-500 dark:text-slate-400">Cargando...</p>
+    </div>
+    <ul id="notif-lista" class="max-h-80 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+    <p id="notif-vacio" class="hidden px-4 py-6 text-center text-sm text-slate-500 dark:text-slate-400">
+      Todo el inventario está en niveles saludables.
+    </p>
+    <div class="border-t border-slate-200 px-4 py-2 text-center dark:border-slate-800">
+      <a href="/productos" class="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Ver todos los productos</a>
+    </div>
+  </div>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { estadoStock } from '../../utils/format';
+
+  const boton = document.getElementById('notif-boton') as HTMLButtonElement;
+  const panel = document.getElementById('notif-panel') as HTMLDivElement;
+  const globo = document.getElementById('notif-globo') as HTMLSpanElement;
+  const resumen = document.getElementById('notif-resumen') as HTMLParagraphElement;
+  const lista = document.getElementById('notif-lista') as HTMLUListElement;
+  const vacio = document.getElementById('notif-vacio') as HTMLParagraphElement;
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function alternarPanel(mostrar: boolean) {
+    panel.classList.toggle('hidden', !mostrar);
+    boton.setAttribute('aria-expanded', String(mostrar));
+  }
+
+  boton.addEventListener('click', (e) => {
+    e.stopPropagation();
+    alternarPanel(panel.classList.contains('hidden'));
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(e.target as Node) && e.target !== boton) {
+      alternarPanel(false);
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') alternarPanel(false);
+  });
+
+  inventoryService.listarProductosStockBajo().then((productos) => {
+    if (productos.length === 0) {
+      resumen.textContent = 'Sin alertas pendientes';
+      vacio.classList.remove('hidden');
+      return;
+    }
+
+    globo.textContent = productos.length > 99 ? '99+' : String(productos.length);
+    globo.classList.remove('hidden');
+    resumen.textContent = `${productos.length} producto${productos.length === 1 ? '' : 's'} necesita${productos.length === 1 ? '' : 'n'} reabastecimiento`;
+
+    lista.innerHTML = productos
+      .map((producto) => {
+        const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
+        const color = estado === 'critico' ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400';
+        return `
+          <li class="px-4 py-3">
+            <p class="text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+            <p class="text-xs ${color}">
+              ${producto.stock_actual === 0 ? 'Sin stock' : `${producto.stock_actual} unidad${producto.stock_actual === 1 ? '' : 'es'} restante${producto.stock_actual === 1 ? '' : 's'}`}
+              · mínimo ${producto.stock_minimo}
+            </p>
+          </li>
+        `;
+      })
+      .join('');
+  });
+</script>

@@ -1,0 +1,162 @@
+---
+import '../styles/global.css';
+
+// Chequeo en build/servidor de si Supabase está configurado, solo para
+// decidir si mostrar la pista de credenciales demo (no requiere localStorage).
+const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Iniciar sesión · EASYSTEM</title>
+    <script is:inline>
+      try {
+        const tema = localStorage.getItem('easystem:tema');
+        if (tema === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    </script>
+  </head>
+  <body class="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
+    <div class="w-full max-w-sm">
+      <div class="mb-6 flex flex-col items-center gap-2 text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">EA</div>
+        <div>
+          <p class="text-lg font-semibold text-slate-900 dark:text-white">EASYSTEM</p>
+          <p class="text-sm text-slate-500 dark:text-slate-400">Edward Accesorios</p>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="mb-4 flex rounded-lg bg-slate-100 p-1 text-sm font-medium dark:bg-slate-800">
+          <button id="tab-login" type="button" class="flex-1 rounded-md py-1.5 transition">Iniciar sesión</button>
+          <button id="tab-signup" type="button" class="flex-1 rounded-md py-1.5 transition">Crear cuenta</button>
+        </div>
+
+        <form id="form-login" class="space-y-4">
+          <div>
+            <label for="login-email" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Correo electrónico</label>
+            <input id="login-email" type="email" required autocomplete="email" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <div>
+            <label for="login-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña</label>
+            <input id="login-password" type="password" required autocomplete="current-password" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <button type="submit" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700">
+            Iniciar sesión
+          </button>
+        </form>
+
+        <form id="form-signup" class="hidden space-y-4">
+          <div>
+            <label for="signup-nombre" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nombre completo</label>
+            <input id="signup-nombre" type="text" required class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <div>
+            <label for="signup-email" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Correo electrónico</label>
+            <input id="signup-email" type="email" required autocomplete="email" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <div>
+            <label for="signup-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña</label>
+            <input id="signup-password" type="password" required minlength="6" autocomplete="new-password" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <button type="submit" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700">
+            Crear cuenta (vendedor)
+          </button>
+          <p class="text-xs text-slate-400">
+            Las cuentas nuevas empiezan como Vendedor. Un administrador puede ascenderlas desde <span class="font-medium">Usuarios</span>.
+          </p>
+        </form>
+
+        <p id="auth-error" class="mt-4 hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+
+        {!supabaseConfigurado && (
+          <div class="mt-5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            <p class="font-medium text-slate-600 dark:text-slate-300">Modo demo (sin Supabase configurado):</p>
+            <p class="mt-1">Administrador: admin@edwardaccesorios.com / admin123</p>
+            <p>Vendedor: vendedor@edwardaccesorios.com / vendedor123</p>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <script>
+      import { iniciarSesion, registrarUsuario, obtenerSesionActual } from '../lib/auth';
+
+      const tabLogin = document.getElementById('tab-login') as HTMLButtonElement;
+      const tabSignup = document.getElementById('tab-signup') as HTMLButtonElement;
+      const formLogin = document.getElementById('form-login') as HTMLFormElement;
+      const formSignup = document.getElementById('form-signup') as HTMLFormElement;
+      const error = document.getElementById('auth-error') as HTMLParagraphElement;
+
+      function mostrarTab(tab: 'login' | 'signup') {
+        const esLogin = tab === 'login';
+        formLogin.classList.toggle('hidden', !esLogin);
+        formSignup.classList.toggle('hidden', esLogin);
+        tabLogin.classList.toggle('bg-white', esLogin);
+        tabLogin.classList.toggle('dark:bg-slate-900', esLogin);
+        tabLogin.classList.toggle('shadow-sm', esLogin);
+        tabLogin.classList.toggle('text-slate-900', esLogin);
+        tabLogin.classList.toggle('dark:text-white', esLogin);
+        tabSignup.classList.toggle('bg-white', !esLogin);
+        tabSignup.classList.toggle('dark:bg-slate-900', !esLogin);
+        tabSignup.classList.toggle('shadow-sm', !esLogin);
+        tabSignup.classList.toggle('text-slate-900', !esLogin);
+        tabSignup.classList.toggle('dark:text-white', !esLogin);
+        error.classList.add('hidden');
+      }
+
+      tabLogin.addEventListener('click', () => mostrarTab('login'));
+      tabSignup.addEventListener('click', () => mostrarTab('signup'));
+      mostrarTab('login');
+
+      function siguienteRuta(): string {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('next') || '/';
+      }
+
+      function mostrarError(mensaje: string) {
+        error.textContent = mensaje;
+        error.classList.remove('hidden');
+      }
+
+      formLogin.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        error.classList.add('hidden');
+        const email = (document.getElementById('login-email') as HTMLInputElement).value.trim();
+        const password = (document.getElementById('login-password') as HTMLInputElement).value;
+
+        try {
+          await iniciarSesion(email, password);
+          window.location.href = siguienteRuta();
+        } catch (err) {
+          mostrarError(err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
+        }
+      });
+
+      formSignup.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        error.classList.add('hidden');
+        const nombre = (document.getElementById('signup-nombre') as HTMLInputElement).value.trim();
+        const email = (document.getElementById('signup-email') as HTMLInputElement).value.trim();
+        const password = (document.getElementById('signup-password') as HTMLInputElement).value;
+
+        try {
+          await registrarUsuario({ nombre, email, password, rol: 'vendedor' });
+          await iniciarSesion(email, password);
+          window.location.href = siguienteRuta();
+        } catch (err) {
+          mostrarError(err instanceof Error ? err.message : 'No se pudo crear la cuenta.');
+        }
+      });
+
+      // Si ya hay sesión activa, no tiene sentido quedarse en /login.
+      obtenerSesionActual().then((sesion) => {
+        if (sesion) window.location.href = siguienteRuta();
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,285 @@
+---
+// Modal de escaneo de códigos de barras por cámara, reutilizable en cualquier
+// página. No recibe props: cualquier botón en la página con el atributo
+// `data-abrir-escaner` lo abre (delegación de eventos), y al detectar un
+// código emite un evento global `easystem:codigo-escaneado` con
+// `{ detail: { codigo } }` para que la página lo consuma como quiera
+// (autocompletar un buscador, agregar al carrito del POS, etc.).
+//
+// La librería html5-qrcode se carga de forma perezosa (import dinámico) solo
+// cuando el usuario abre el modal, para no afectar el peso inicial de las
+// páginas que la incluyen.
+---
+
+<div
+  id="ce-modal"
+  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4"
+  role="dialog"
+  aria-modal="true"
+  aria-labelledby="ce-titulo"
+>
+  <div class="w-full max-w-sm rounded-xl bg-white shadow-xl dark:bg-slate-900">
+    <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
+      <h2 id="ce-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Escanear código de barras</h2>
+      <div class="flex items-center gap-1">
+        <button
+          id="ce-sonido"
+          type="button"
+          aria-label="Activar o silenciar el sonido de confirmación"
+          class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+        >
+          <svg id="ce-icono-sonido-on" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+            <path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M15.5 8.5a5 5 0 0 1 0 7" stroke-linecap="round" />
+            <path d="M18.5 6a9 9 0 0 1 0 12" stroke-linecap="round" />
+          </svg>
+          <svg id="ce-icono-sonido-off" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hidden h-5 w-5">
+            <path d="M11 5 6 9H3v6h3l5 4V5Z" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="m17 9 4 6M21 9l-4 6" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button
+          id="ce-cerrar"
+          type="button"
+          aria-label="Cerrar"
+          class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+            <path d="M18 6 6 18M6 6l12 12" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="space-y-3 p-4">
+      <select
+        id="ce-camaras"
+        class="hidden w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      ></select>
+
+      <div class="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-950">
+        <div id="ce-lector" class="h-full w-full"></div>
+        <div id="ce-marco" class="pointer-events-none absolute inset-8 hidden rounded-lg border-2 border-emerald-400/80"></div>
+      </div>
+
+      <p id="ce-estado" class="min-h-[2.5rem] text-center text-sm text-slate-600 dark:text-slate-400">
+        Solicitando acceso a la cámara...
+      </p>
+    </div>
+  </div>
+</div>
+
+<script>
+  import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
+
+  const EVENTO_CODIGO = 'easystem:codigo-escaneado';
+  const LS_SONIDO = 'easystem:escaner:sonido';
+  const ID_LECTOR = 'ce-lector';
+
+  const modal = document.getElementById('ce-modal') as HTMLDivElement;
+  const selectorCamaras = document.getElementById('ce-camaras') as HTMLSelectElement;
+  const estado = document.getElementById('ce-estado') as HTMLParagraphElement;
+  const marco = document.getElementById('ce-marco') as HTMLDivElement;
+  const botonCerrar = document.getElementById('ce-cerrar') as HTMLButtonElement;
+  const botonSonido = document.getElementById('ce-sonido') as HTMLButtonElement;
+  const iconoSonidoOn = document.getElementById('ce-icono-sonido-on') as HTMLElement;
+  const iconoSonidoOff = document.getElementById('ce-icono-sonido-off') as HTMLElement;
+
+  let lector: Html5QrcodeType | null = null;
+  let escaneando = false;
+  let detenerAlAbrir = 0; // token para ignorar detecciones tardías de una sesión de escaneo ya cerrada
+  let sonidoActivo = leerPreferenciaSonido();
+
+  function leerPreferenciaSonido(): boolean {
+    try {
+      return localStorage.getItem(LS_SONIDO) !== 'off';
+    } catch {
+      return true;
+    }
+  }
+
+  function guardarPreferenciaSonido(activo: boolean) {
+    try {
+      localStorage.setItem(LS_SONIDO, activo ? 'on' : 'off');
+    } catch {
+      // Sin acceso a localStorage (modo privado, etc.): la preferencia sólo dura la sesión.
+    }
+  }
+
+  function actualizarIconoSonido() {
+    iconoSonidoOn.classList.toggle('hidden', !sonidoActivo);
+    iconoSonidoOff.classList.toggle('hidden', sonidoActivo);
+  }
+  actualizarIconoSonido();
+
+  botonSonido.addEventListener('click', () => {
+    sonidoActivo = !sonidoActivo;
+    guardarPreferenciaSonido(sonidoActivo);
+    actualizarIconoSonido();
+  });
+
+  /** Pitido corto generado con Web Audio (sin archivos de audio externos). */
+  function reproducirPitido() {
+    if (!sonidoActivo) return;
+    try {
+      const AudioContextCtor = window.AudioContext ?? (window as any).webkitAudioContext;
+      const contexto = new AudioContextCtor();
+      const oscilador = contexto.createOscillator();
+      const ganancia = contexto.createGain();
+      oscilador.type = 'sine';
+      oscilador.frequency.value = 1046.5; // Do6: pitido de "beep" clásico de lector de código de barras
+      ganancia.gain.setValueAtTime(0.2, contexto.currentTime);
+      ganancia.gain.exponentialRampToValueAtTime(0.001, contexto.currentTime + 0.15);
+      oscilador.connect(ganancia);
+      ganancia.connect(contexto.destination);
+      oscilador.start();
+      oscilador.stop(contexto.currentTime + 0.15);
+      oscilador.onended = () => contexto.close();
+    } catch {
+      // Web Audio no disponible: el escaneo sigue funcionando sin sonido.
+    }
+  }
+
+  function mostrarEstado(mensaje: string, variante: 'info' | 'error' | 'ok' = 'info') {
+    estado.textContent = mensaje;
+    estado.classList.toggle('text-red-600', variante === 'error');
+    estado.classList.toggle('dark:text-red-400', variante === 'error');
+    estado.classList.toggle('text-emerald-600', variante === 'ok');
+    estado.classList.toggle('dark:text-emerald-400', variante === 'ok');
+  }
+
+  function mensajeDeError(err: unknown): string {
+    const nombre = err instanceof DOMException ? err.name : '';
+    const texto = err instanceof Error ? err.message : String(err);
+    if (nombre === 'NotAllowedError' || /permission/i.test(texto)) {
+      return 'Permiso de cámara denegado. Habilítalo en los ajustes del navegador para poder escanear.';
+    }
+    if (nombre === 'NotFoundError' || /no camera|no se encontr/i.test(texto)) {
+      return 'No se encontró ninguna cámara en este dispositivo.';
+    }
+    if (nombre === 'NotReadableError') {
+      return 'La cámara ya está siendo usada por otra aplicación.';
+    }
+    return 'No se pudo iniciar la cámara. Intenta de nuevo.';
+  }
+
+  async function detenerEscaneo() {
+    detenerAlAbrir += 1;
+    marco.classList.add('hidden');
+    if (lector && escaneando) {
+      try {
+        await lector.stop();
+      } catch {
+        // Puede fallar si la cámara ya se detuvo (p. ej. el usuario cambió de pestaña); se ignora.
+      }
+    }
+    if (lector) {
+      try {
+        lector.clear();
+      } catch {
+        // El contenedor puede ya estar limpio.
+      }
+    }
+    escaneando = false;
+    lector = null;
+  }
+
+  function cerrarModal() {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+    void detenerEscaneo();
+  }
+
+  async function iniciarCamara(camaraId: string) {
+    const tokenSesion = detenerAlAbrir;
+    const { Html5Qrcode } = await import('html5-qrcode');
+
+    await detenerEscaneo();
+    if (tokenSesion !== detenerAlAbrir) return; // el modal se cerró mientras cargábamos
+
+    lector = new Html5Qrcode(ID_LECTOR, { verbose: false });
+    mostrarEstado('Apunta la cámara al código de barras...');
+
+    try {
+      await lector.start(
+        camaraId,
+        {
+          fps: 10,
+          qrbox: { width: 260, height: 140 },
+          aspectRatio: 1,
+        },
+        (textoDecodificado) => {
+          if (tokenSesion !== detenerAlAbrir) return; // sesión de escaneo ya cerrada; ignorar detección tardía
+          detenerAlAbrir += 1; // evita procesar el mismo código varias veces mientras se cierra
+          reproducirPitido();
+          marco.classList.remove('hidden');
+          mostrarEstado(`Código detectado: ${textoDecodificado}`, 'ok');
+          window.dispatchEvent(new CustomEvent(EVENTO_CODIGO, { detail: { codigo: textoDecodificado } }));
+          setTimeout(cerrarModal, 500);
+        },
+        () => {
+          // Callback de "no se detectó nada en este frame": es normal, se ignora.
+        }
+      );
+      escaneando = true;
+      marco.classList.remove('hidden');
+    } catch (err) {
+      mostrarEstado(mensajeDeError(err), 'error');
+    }
+  }
+
+  async function abrirModal() {
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    marco.classList.add('hidden');
+    mostrarEstado('Solicitando acceso a la cámara...');
+    selectorCamaras.classList.add('hidden');
+    selectorCamaras.innerHTML = '';
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      mostrarEstado('Este navegador no soporta acceso a la cámara (o el sitio no está en HTTPS).', 'error');
+      return;
+    }
+
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      const camaras = await Html5Qrcode.getCameras();
+
+      if (camaras.length === 0) {
+        mostrarEstado('No se encontró ninguna cámara en este dispositivo.', 'error');
+        return;
+      }
+
+      if (camaras.length > 1) {
+        selectorCamaras.innerHTML = camaras.map((c, i) => `<option value="${c.id}">${c.label || `Cámara ${i + 1}`}</option>`).join('');
+        selectorCamaras.classList.remove('hidden');
+      }
+
+      // Preferir la cámara trasera ("environment") en móviles, que suele traer "back" en el label.
+      const trasera = camaras.find((c) => /back|rear|trasera|environment/i.test(c.label));
+      const camaraElegida = trasera ?? camaras[0];
+      if (selectorCamaras.classList.contains('hidden') === false) selectorCamaras.value = camaraElegida.id;
+
+      await iniciarCamara(camaraElegida.id);
+    } catch (err) {
+      mostrarEstado(mensajeDeError(err), 'error');
+    }
+  }
+
+  document.addEventListener('click', (e) => {
+    const disparador = (e.target as HTMLElement).closest('[data-abrir-escaner]');
+    if (disparador) abrirModal();
+  });
+
+  selectorCamaras.addEventListener('change', () => {
+    if (selectorCamaras.value) void iniciarCamara(selectorCamaras.value);
+  });
+
+  botonCerrar.addEventListener('click', cerrarModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) cerrarModal();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) cerrarModal();
+  });
+</script>

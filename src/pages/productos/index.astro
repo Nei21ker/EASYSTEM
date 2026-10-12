@@ -1,0 +1,187 @@
+---
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+import CamaraEscaner from '../../components/CamaraEscaner.astro';
+---
+
+<DashboardLayout titulo="Productos" subtitulo="Catálogo de forros, cargadores, vidrios y más">
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+      <h2 id="pr-contador" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando...</h2>
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <div class="relative">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+          </svg>
+          <input
+            id="pr-buscador"
+            type="search"
+            autocomplete="off"
+            placeholder="Buscar por nombre o código de barras..."
+            class="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-64 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          />
+          <button
+            type="button"
+            data-abrir-escaner
+            aria-label="Escanear código de barras con la cámara"
+            title="Escanear con la cámara"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
+              <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+              <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
+        <button
+          id="pr-exportar"
+          type="button"
+          class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+        >
+          Exportar inventario a CSV
+        </button>
+        <button
+          type="button"
+          class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+        >
+          + Nuevo producto
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <th class="px-5 py-3 font-medium">Producto</th>
+            <th class="px-5 py-3 font-medium">Categoría</th>
+            <th class="px-5 py-3 font-medium">Compatible con</th>
+            <th id="pr-th-costo" class="hidden px-5 py-3 font-medium">Precio compra</th>
+            <th class="px-5 py-3 font-medium">Precio venta</th>
+            <th class="px-5 py-3 font-medium">Stock</th>
+          </tr>
+        </thead>
+        <tbody id="pr-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+    <p id="pr-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+      No se encontraron productos con esa búsqueda.
+    </p>
+  </div>
+
+  <CamaraEscaner />
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { obtenerSesionActual } from '../../lib/auth';
+  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import { descargarCSV } from '../../utils/csv';
+  import type { ProductoConRelaciones } from '../../types/database.types';
+
+  const contador = document.getElementById('pr-contador') as HTMLHeadingElement;
+  const filas = document.getElementById('pr-filas') as HTMLTableSectionElement;
+  const botonExportar = document.getElementById('pr-exportar') as HTMLButtonElement;
+  const thCosto = document.getElementById('pr-th-costo') as HTMLTableCellElement;
+  const buscador = document.getElementById('pr-buscador') as HTMLInputElement;
+  const sinResultados = document.getElementById('pr-sin-resultados') as HTMLParagraphElement;
+
+  let productosCargados: ProductoConRelaciones[] = [];
+  let esAdministrador = false;
+
+  botonExportar.addEventListener('click', () => {
+    descargarCSV(
+      `easystem-inventario-${new Date().toISOString().slice(0, 10)}.csv`,
+      productosCargados.map((p) => ({
+        codigo_barras: p.codigo_barras,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        ...(esAdministrador ? { precio_compra: p.precio_compra.toFixed(2) } : {}),
+        precio_venta: p.precio_venta.toFixed(2),
+        stock_actual: p.stock_actual,
+        stock_minimo: p.stock_minimo,
+        compatible_con: p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join('; ') || 'Universal',
+      }))
+    );
+  });
+
+  const estilosBadge: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+  const estilosNeutro = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function renderizarFilas(productos: ProductoConRelaciones[]) {
+    filas.innerHTML = productos
+      .map((producto) => {
+        const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
+        const compatibles = producto.modelos_compatibles.length
+          ? producto.modelos_compatibles
+              .map(
+                (m) =>
+                  `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosNeutro}">${escaparHtml(`${m.marca} ${m.modelo}`)}</span>`
+              )
+              .join(' ')
+          : '<span class="text-xs text-slate-400">Universal / sin definir</span>';
+
+        return `
+          <tr class="text-slate-700 dark:text-slate-300">
+            <td class="px-5 py-3">
+              <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+              <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+            </td>
+            <td class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
+            <td class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
+            ${esAdministrador ? `<td class="px-5 py-3">${formatearMoneda(producto.precio_compra)}</td>` : ''}
+            <td class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
+            <td class="px-5 py-3">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${producto.stock_actual} u.</span>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+  }
+
+  function filtrarProductos(texto: string): ProductoConRelaciones[] {
+    const q = texto.trim().toLowerCase();
+    if (!q) return productosCargados;
+    return productosCargados.filter(
+      (p) =>
+        p.nombre.toLowerCase().includes(q) ||
+        p.codigo_barras.toLowerCase().includes(q) ||
+        p.categoria.toLowerCase().includes(q) ||
+        p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
+    );
+  }
+
+  function actualizarLista() {
+    const resultado = filtrarProductos(buscador.value);
+    renderizarFilas(resultado);
+    sinResultados.classList.toggle('hidden', resultado.length > 0);
+    contador.textContent = buscador.value.trim()
+      ? `${resultado.length} de ${productosCargados.length} productos`
+      : `${productosCargados.length} productos`;
+  }
+
+  buscador.addEventListener('input', actualizarLista);
+
+  // Escaneo con cámara (ver src/components/CamaraEscaner.astro): autocompleta el buscador.
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    buscador.value = e.detail.codigo;
+    actualizarLista();
+  }) as EventListener);
+
+  Promise.all([inventoryService.listarProductos(), obtenerSesionActual()]).then(([productos, sesion]) => {
+    productosCargados = productos;
+    esAdministrador = sesion?.rol === 'administrador';
+    thCosto.classList.toggle('hidden', !esAdministrador);
+    actualizarLista();
+  });
+</script>

@@ -1,0 +1,126 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+---
+
+<DashboardLayout titulo="Movimientos" subtitulo="Historial completo de entradas (reabastecimiento) y salidas (ventas)">
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Historial de movimientos</h2>
+        <p id="mv-contador" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <div class="flex gap-2">
+        <button data-filtro="" class="mv-filtro rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300" aria-pressed="true">
+          Todos
+        </button>
+        <button data-filtro="ENTRADA" class="mv-filtro rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300" aria-pressed="false">
+          Entradas
+        </button>
+        <button data-filtro="SALIDA" class="mv-filtro rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300" aria-pressed="false">
+          Salidas
+        </button>
+      </div>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <th class="px-5 py-3 font-medium">Fecha</th>
+            <th class="px-5 py-3 font-medium">Hora</th>
+            <th class="px-5 py-3 font-medium">Producto</th>
+            <th class="px-5 py-3 font-medium">Tipo</th>
+            <th class="px-5 py-3 font-medium">Cantidad</th>
+            <th class="px-5 py-3 font-medium">Motivo</th>
+          </tr>
+        </thead>
+        <tbody id="mv-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+
+    <p id="mv-cargando" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando movimientos...</p>
+    <p id="mv-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+      No hay movimientos registrados para este filtro.
+    </p>
+  </div>
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import type { MovimientoConProducto } from '../lib/db/movimientos';
+
+  let movimientos: MovimientoConProducto[] = [];
+  let filtroActual = '';
+
+  const filas = document.getElementById('mv-filas') as HTMLTableSectionElement;
+  const cargando = document.getElementById('mv-cargando') as HTMLParagraphElement;
+  const sinResultados = document.getElementById('mv-sin-resultados') as HTMLParagraphElement;
+  const contador = document.getElementById('mv-contador') as HTMLParagraphElement;
+  const botonesFiltro = Array.from(document.querySelectorAll<HTMLButtonElement>('.mv-filtro'));
+
+  const variantePorTipo: Record<string, string> = {
+    ENTRADA: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    SALIDA: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+  const etiquetaPorTipo: Record<string, string> = { ENTRADA: 'Entrada', SALIDA: 'Salida' };
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function actualizarBotonesFiltro() {
+    for (const boton of botonesFiltro) {
+      const activo = boton.dataset.filtro === filtroActual;
+      boton.setAttribute('aria-pressed', String(activo));
+      boton.classList.toggle('bg-brand-600', activo);
+      boton.classList.toggle('text-white', activo);
+      boton.classList.toggle('border-brand-600', activo);
+      boton.classList.toggle('hover:bg-slate-100', !activo);
+      boton.classList.toggle('dark:hover:bg-slate-800', !activo);
+    }
+  }
+
+  function render() {
+    const lista = filtroActual ? movimientos.filter((m) => m.tipo === filtroActual) : movimientos;
+    sinResultados.classList.toggle('hidden', lista.length > 0);
+    contador.textContent = `${lista.length} movimiento${lista.length === 1 ? '' : 's'}`;
+
+    filas.innerHTML = lista
+      .map((mov) => {
+        const fecha = new Date(mov.fecha);
+        return `
+          <tr class="text-slate-700 dark:text-slate-300">
+            <td class="px-5 py-3">${fecha.toLocaleDateString('es-GT', { dateStyle: 'medium' })}</td>
+            <td class="px-5 py-3">${fecha.toLocaleTimeString('es-GT', { timeStyle: 'short' })}</td>
+            <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(mov.producto?.nombre ?? 'Producto eliminado')}</td>
+            <td class="px-5 py-3">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantePorTipo[mov.tipo]}">
+                ${etiquetaPorTipo[mov.tipo]}
+              </span>
+            </td>
+            <td class="px-5 py-3">${mov.tipo === 'SALIDA' ? '-' : '+'}${mov.cantidad}</td>
+            <td class="px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(mov.motivo ?? '—')}</td>
+          </tr>
+        `;
+      })
+      .join('');
+  }
+
+  for (const boton of botonesFiltro) {
+    boton.addEventListener('click', () => {
+      filtroActual = boton.dataset.filtro ?? '';
+      actualizarBotonesFiltro();
+      render();
+    });
+  }
+
+  actualizarBotonesFiltro();
+
+  inventoryService.listarMovimientos(500).then((lista) => {
+    movimientos = lista;
+    cargando.classList.add('hidden');
+    render();
+  });
+</script>

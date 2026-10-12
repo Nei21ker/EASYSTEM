@@ -1,0 +1,322 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import StatCard from '../components/dashboard/StatCard.astro';
+---
+
+<DashboardLayout
+  titulo="Reportes & Métricas"
+  subtitulo="Ventas, categorías y modelos de teléfono más solicitados"
+  rolMinimo="administrador"
+>
+  <div id="rp-pantalla" class="space-y-6 print:hidden">
+    <!-- Filtro de rango de fechas -->
+    <div class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-wrap items-center gap-2">
+        <button data-rango="hoy" class="rp-rango rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300">Hoy</button>
+        <button data-rango="semana" class="rp-rango rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300">Esta semana</button>
+        <button data-rango="mes" class="rp-rango rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300">Este mes</button>
+        <button data-rango="personalizado" class="rp-rango rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300">Personalizado</button>
+        <div id="rp-personalizado" class="hidden items-center gap-2">
+          <input id="rp-desde" type="date" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <span class="text-xs text-slate-400">a</span>
+          <input id="rp-hasta" type="date" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+      </div>
+      <button id="rp-imprimir" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700">
+        Generar reporte (PDF / Imprimir)
+      </button>
+    </div>
+
+    <p id="rp-rango-etiqueta" class="text-xs text-slate-500 dark:text-slate-400"></p>
+
+    <!-- Resumen financiero -->
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <StatCard id="stat-ingresos" etiqueta="Ingresos" valor="—" icono="valor" />
+      <StatCard id="stat-costos" etiqueta="Costos" valor="—" icono="valor" />
+      <StatCard id="stat-ganancia" etiqueta="Ganancia neta" valor="—" icono="valor" />
+    </section>
+
+    <!-- Ventas por día -->
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Ventas por día — ingresos vs. costos y ganancia neta</h2>
+      <p id="rp-sin-ventas" class="hidden mt-4 text-sm text-slate-500 dark:text-slate-400">No hay ventas registradas en este periodo.</p>
+      <div class="mt-4 h-72">
+        <canvas id="chart-ventas"></canvas>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Top 5 categorías más vendidas</h2>
+        <div class="mt-4 h-64">
+          <canvas id="chart-categorias"></canvas>
+        </div>
+      </div>
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Top 5 modelos de teléfono más solicitados</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          Unidades vendidas de productos compatibles con cada modelo (excluye accesorios universales).
+        </p>
+        <div class="mt-4 h-64">
+          <canvas id="chart-modelos"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reporte imprimible: oculto en pantalla, es lo único visible al imprimir -->
+  <div id="rp-imprimible" class="hidden print:block"></div>
+</DashboardLayout>
+
+<script>
+  import Chart from 'chart.js/auto';
+  import * as inventoryService from '../lib/inventoryService';
+  import { formatearMoneda } from '../utils/format';
+  import { $tema } from '../stores/theme';
+  import {
+    calcularRango,
+    formatearClaveDia,
+    formatearEtiquetaDia,
+    listarDiasEnRango,
+    type RangoPreestablecido,
+  } from '../utils/dateRange';
+  import type { ProductoConRelaciones } from '../types/database.types';
+  import type { MovimientoConProducto } from '../lib/db/movimientos';
+
+  let productos: ProductoConRelaciones[] = [];
+  let movimientos: MovimientoConProducto[] = [];
+  let rangoActual: RangoPreestablecido = 'semana';
+
+  const botonesRango = Array.from(document.querySelectorAll<HTMLButtonElement>('.rp-rango'));
+  const contenedorPersonalizado = document.getElementById('rp-personalizado') as HTMLDivElement;
+  const inputDesde = document.getElementById('rp-desde') as HTMLInputElement;
+  const inputHasta = document.getElementById('rp-hasta') as HTMLInputElement;
+  const elIngresos = document.getElementById('stat-ingresos') as HTMLParagraphElement;
+  const elCostos = document.getElementById('stat-costos') as HTMLParagraphElement;
+  const elGanancia = document.getElementById('stat-ganancia') as HTMLParagraphElement;
+  const elRangoEtiqueta = document.getElementById('rp-rango-etiqueta') as HTMLParagraphElement;
+  const elSinVentas = document.getElementById('rp-sin-ventas') as HTMLParagraphElement;
+  const elImprimible = document.getElementById('rp-imprimible') as HTMLDivElement;
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function coloresChart() {
+    const oscuro = document.documentElement.classList.contains('dark');
+    return {
+      texto: oscuro ? '#cbd5e1' : '#475569',
+      grid: oscuro ? 'rgba(148,163,184,0.15)' : 'rgba(100,116,139,0.15)',
+    };
+  }
+
+  function opcionesBase() {
+    const { texto, grid } = coloresChart();
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: texto } } },
+      scales: {
+        x: { ticks: { color: texto }, grid: { color: grid } },
+        y: { ticks: { color: texto }, grid: { color: grid }, beginAtZero: true },
+      },
+    };
+  }
+
+  const sinDatosTexto: string[] = [];
+  const sinDatosNum: number[] = [];
+
+  const chartVentas = new Chart(document.getElementById('chart-ventas') as HTMLCanvasElement, {
+    type: 'bar',
+    data: {
+      labels: sinDatosTexto,
+      datasets: [
+        { label: 'Ingresos', data: sinDatosNum, backgroundColor: '#4f46e5' },
+        { label: 'Costos', data: sinDatosNum.slice(), backgroundColor: '#f59e0b' },
+        { label: 'Ganancia neta', data: sinDatosNum.slice(), backgroundColor: '#10b981' },
+      ],
+    },
+    options: opcionesBase(),
+  });
+
+  const chartCategorias = new Chart(document.getElementById('chart-categorias') as HTMLCanvasElement, {
+    type: 'bar',
+    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#4f46e5' }] },
+    options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
+  });
+
+  const chartModelos = new Chart(document.getElementById('chart-modelos') as HTMLCanvasElement, {
+    type: 'bar',
+    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#6366f1' }] },
+    options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
+  });
+
+  function repintarCharts() {
+    const { texto, grid } = coloresChart();
+    for (const chart of [chartVentas, chartCategorias, chartModelos]) {
+      if (chart.options.plugins?.legend?.labels) chart.options.plugins.legend.labels.color = texto;
+      if (chart.options.scales?.x) {
+        (chart.options.scales.x as any).ticks.color = texto;
+        (chart.options.scales.x as any).grid.color = grid;
+      }
+      if (chart.options.scales?.y) {
+        (chart.options.scales.y as any).ticks.color = texto;
+        (chart.options.scales.y as any).grid.color = grid;
+      }
+      chart.update();
+    }
+  }
+
+  function marcarBotonActivo() {
+    for (const boton of botonesRango) {
+      const activo = boton.dataset.rango === rangoActual;
+      boton.classList.toggle('bg-brand-600', activo);
+      boton.classList.toggle('text-white', activo);
+      boton.classList.toggle('border-brand-600', activo);
+      boton.classList.toggle('hover:bg-slate-50', !activo);
+      boton.classList.toggle('dark:hover:bg-slate-800', !activo);
+    }
+  }
+
+  function actualizarReportePrintable(
+    rango: { desde: Date; hasta: Date },
+    ingresos: number,
+    costos: number,
+    ganancia: number,
+    topCategorias: [string, number][],
+    topModelos: [string, number][],
+    lineasVenta: number
+  ) {
+    const periodo = `${rango.desde.toLocaleDateString('es-GT', { dateStyle: 'medium' })} – ${rango.hasta.toLocaleDateString('es-GT', { dateStyle: 'medium' })}`;
+
+    elImprimible.innerHTML = `
+      <div class="mx-auto max-w-2xl p-8 text-black">
+        <h1 class="text-xl font-bold">Edward Accesorios — Reporte de ventas</h1>
+        <p class="text-sm text-slate-600">Periodo: ${escaparHtml(periodo)}</p>
+        <p class="text-xs text-slate-400">Generado el ${new Date().toLocaleString('es-GT')}</p>
+
+        <div class="mt-6 grid grid-cols-3 gap-4 border-y border-slate-300 py-4 text-center">
+          <div><p class="text-xs uppercase text-slate-500">Ingresos</p><p class="text-lg font-semibold">${formatearMoneda(ingresos)}</p></div>
+          <div><p class="text-xs uppercase text-slate-500">Costos</p><p class="text-lg font-semibold">${formatearMoneda(costos)}</p></div>
+          <div><p class="text-xs uppercase text-slate-500">Ganancia neta</p><p class="text-lg font-semibold">${formatearMoneda(ganancia)}</p></div>
+        </div>
+
+        <h2 class="mt-6 text-sm font-semibold">Top categorías más vendidas</h2>
+        <ol class="mt-2 list-decimal pl-5 text-sm">
+          ${topCategorias.length ? topCategorias.map(([nombre, cant]) => `<li>${escaparHtml(nombre)} — ${cant} u.</li>`).join('') : '<li class="list-none text-slate-400">Sin datos en este periodo.</li>'}
+        </ol>
+
+        <h2 class="mt-4 text-sm font-semibold">Top modelos de teléfono más solicitados</h2>
+        <ol class="mt-2 list-decimal pl-5 text-sm">
+          ${topModelos.length ? topModelos.map(([nombre, cant]) => `<li>${escaparHtml(nombre)} — ${cant} u.</li>`).join('') : '<li class="list-none text-slate-400">Sin datos en este periodo.</li>'}
+        </ol>
+
+        <p class="mt-6 text-xs text-slate-400">Total de líneas de venta en el periodo: ${lineasVenta}</p>
+      </div>
+    `;
+  }
+
+  function actualizarReporte() {
+    marcarBotonActivo();
+    const rango =
+      rangoActual === 'personalizado'
+        ? calcularRango('personalizado', { desde: inputDesde.value, hasta: inputHasta.value })
+        : calcularRango(rangoActual);
+
+    elRangoEtiqueta.textContent = `Mostrando del ${rango.desde.toLocaleDateString('es-GT', { dateStyle: 'medium' })} al ${rango.hasta.toLocaleDateString('es-GT', { dateStyle: 'medium' })}`;
+
+    const productosPorId = Object.fromEntries(productos.map((p) => [p.id, p]));
+    const ventas = movimientos.filter((m) => {
+      if (m.tipo !== 'SALIDA') return false;
+      const fecha = new Date(m.fecha);
+      return fecha >= rango.desde && fecha <= rango.hasta;
+    });
+
+    elSinVentas.classList.toggle('hidden', ventas.length > 0);
+
+    const dias = listarDiasEnRango(rango.desde, rango.hasta);
+    const porDia: Record<string, { ingresos: number; costos: number }> = Object.fromEntries(
+      dias.map((d) => [d, { ingresos: 0, costos: 0 }])
+    );
+    const porCategoria: Record<string, number> = {};
+    const porModelo: Record<string, number> = {};
+
+    let ingresosTotal = 0;
+    let costosTotal = 0;
+
+    for (const mov of ventas) {
+      const producto = productosPorId[mov.producto_id];
+      if (!producto) continue;
+
+      const ingreso = producto.precio_venta * mov.cantidad;
+      const costo = producto.precio_compra * mov.cantidad;
+      ingresosTotal += ingreso;
+      costosTotal += costo;
+
+      const clave = formatearClaveDia(new Date(mov.fecha));
+      if (porDia[clave]) {
+        porDia[clave].ingresos += ingreso;
+        porDia[clave].costos += costo;
+      }
+
+      porCategoria[producto.categoria] = (porCategoria[producto.categoria] ?? 0) + mov.cantidad;
+
+      for (const modelo of producto.modelos_compatibles) {
+        const claveModelo = `${modelo.marca} ${modelo.modelo}`;
+        porModelo[claveModelo] = (porModelo[claveModelo] ?? 0) + mov.cantidad;
+      }
+    }
+
+    const gananciaTotal = ingresosTotal - costosTotal;
+    elIngresos.textContent = formatearMoneda(ingresosTotal);
+    elCostos.textContent = formatearMoneda(costosTotal);
+    elGanancia.textContent = formatearMoneda(gananciaTotal);
+
+    chartVentas.data.labels = dias.map(formatearEtiquetaDia);
+    chartVentas.data.datasets[0].data = dias.map((d) => Number(porDia[d].ingresos.toFixed(2)));
+    chartVentas.data.datasets[1].data = dias.map((d) => Number(porDia[d].costos.toFixed(2)));
+    chartVentas.data.datasets[2].data = dias.map((d) => Number((porDia[d].ingresos - porDia[d].costos).toFixed(2)));
+    chartVentas.update();
+
+    const topCategorias = Object.entries(porCategoria)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    chartCategorias.data.labels = topCategorias.map(([nombre]) => nombre);
+    chartCategorias.data.datasets[0].data = topCategorias.map(([, cantidad]) => cantidad);
+    chartCategorias.update();
+
+    const topModelos = Object.entries(porModelo)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5);
+    chartModelos.data.labels = topModelos.map(([nombre]) => nombre);
+    chartModelos.data.datasets[0].data = topModelos.map(([, cantidad]) => cantidad);
+    chartModelos.update();
+
+    actualizarReportePrintable(rango, ingresosTotal, costosTotal, gananciaTotal, topCategorias, topModelos, ventas.length);
+  }
+
+  for (const boton of botonesRango) {
+    boton.addEventListener('click', () => {
+      rangoActual = boton.dataset.rango as RangoPreestablecido;
+      contenedorPersonalizado.classList.toggle('flex', rangoActual === 'personalizado');
+      contenedorPersonalizado.classList.toggle('hidden', rangoActual !== 'personalizado');
+      actualizarReporte();
+    });
+  }
+
+  inputDesde.addEventListener('change', () => rangoActual === 'personalizado' && actualizarReporte());
+  inputHasta.addEventListener('change', () => rangoActual === 'personalizado' && actualizarReporte());
+  document.getElementById('rp-imprimir')?.addEventListener('click', () => window.print());
+
+  $tema.subscribe(() => repintarCharts());
+
+  Promise.all([inventoryService.listarProductos(), inventoryService.listarMovimientos(2000)]).then(
+    ([listaProductos, listaMovimientos]) => {
+      productos = listaProductos;
+      movimientos = listaMovimientos;
+      actualizarReporte();
+    }
+  );
+</script>

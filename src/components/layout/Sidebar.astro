@@ -1,0 +1,124 @@
+---
+import { enlacesNav } from '../../lib/navLinks';
+
+const rutaActual = Astro.url.pathname;
+
+function esActivo(href: string) {
+  return href === '/' ? rutaActual === '/' : rutaActual.startsWith(href);
+}
+---
+
+<div id="nav-backdrop" class="fixed inset-0 z-30 hidden bg-black/50 lg:hidden" aria-hidden="true"></div>
+
+<aside
+  id="nav-sidebar"
+  class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 print:hidden dark:border-slate-800 dark:bg-slate-900"
+>
+  <div class="flex items-center gap-2 px-6 py-5">
+    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">EA</div>
+    <div>
+      <p class="text-sm font-semibold text-slate-900 dark:text-white">EASYSTEM</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400">Edward Accesorios</p>
+    </div>
+  </div>
+
+  <nav class="flex-1 space-y-1 px-3">
+    {enlacesNav.map((enlace) => (
+      <a
+        href={enlace.href}
+        data-rol-minimo={enlace.rolMinimo ?? ''}
+        class:list={[
+          'nav-enlace flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
+          enlace.rolMinimo ? 'hidden' : '',
+          esActivo(enlace.href)
+            ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
+            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+        ]}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 shrink-0">
+          <path d={enlace.icono} stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        {enlace.etiqueta}
+      </a>
+    ))}
+  </nav>
+
+  <div class="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
+    <div id="nav-usuario" class="hidden items-center gap-2 rounded-lg px-2 py-2">
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-semibold text-brand-700 dark:bg-brand-500/20 dark:text-brand-400">
+        <span id="nav-usuario-iniciales">EA</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p id="nav-usuario-nombre" class="truncate text-sm font-medium text-slate-900 dark:text-white">—</p>
+        <p id="nav-usuario-rol" class="text-xs text-slate-500 dark:text-slate-400">—</p>
+      </div>
+      <button id="nav-cerrar-sesion" type="button" aria-label="Cerrar sesión" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+    <p class="mt-2 px-2 text-xs text-slate-400">v0.1.0 · Sincronizado con Supabase</p>
+  </div>
+</aside>
+
+<script>
+  import { obtenerSesionActual, cerrarSesion } from '../../lib/auth';
+
+  const backdrop = document.getElementById('nav-backdrop') as HTMLDivElement;
+  const sidebar = document.getElementById('nav-sidebar') as HTMLDivElement;
+  const hamburguesa = document.getElementById('nav-hamburguesa') as HTMLButtonElement | null;
+
+  function abrirMenu() {
+    sidebar.classList.remove('-translate-x-full');
+    sidebar.classList.add('translate-x-0');
+    backdrop.classList.remove('hidden');
+  }
+
+  function cerrarMenu() {
+    sidebar.classList.add('-translate-x-full');
+    sidebar.classList.remove('translate-x-0');
+    backdrop.classList.add('hidden');
+  }
+
+  hamburguesa?.addEventListener('click', () => {
+    const abierto = sidebar.classList.contains('translate-x-0');
+    if (abierto) cerrarMenu();
+    else abrirMenu();
+  });
+
+  backdrop.addEventListener('click', cerrarMenu);
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && cerrarMenu());
+
+  for (const enlace of document.querySelectorAll<HTMLAnchorElement>('.nav-enlace')) {
+    enlace.addEventListener('click', cerrarMenu);
+  }
+
+  obtenerSesionActual().then((sesion) => {
+    if (!sesion) return;
+
+    for (const enlace of document.querySelectorAll<HTMLAnchorElement>('.nav-enlace')) {
+      const rolMinimo = enlace.dataset.rolMinimo;
+      if (rolMinimo && rolMinimo !== sesion.rol) continue;
+      enlace.classList.remove('hidden');
+    }
+
+    const bloqueUsuario = document.getElementById('nav-usuario') as HTMLDivElement;
+    bloqueUsuario.classList.remove('hidden');
+    bloqueUsuario.classList.add('flex');
+    (document.getElementById('nav-usuario-nombre') as HTMLParagraphElement).textContent = sesion.nombre;
+    (document.getElementById('nav-usuario-rol') as HTMLParagraphElement).textContent =
+      sesion.rol === 'administrador' ? 'Administrador' : 'Vendedor';
+    (document.getElementById('nav-usuario-iniciales') as HTMLSpanElement).textContent = sesion.nombre
+      .split(' ')
+      .map((palabra) => palabra[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase();
+  });
+
+  document.getElementById('nav-cerrar-sesion')?.addEventListener('click', async () => {
+    await cerrarSesion();
+    window.location.href = '/login';
+  });
+</script>

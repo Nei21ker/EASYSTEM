@@ -1,0 +1,449 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import CamaraEscaner from '../components/CamaraEscaner.astro';
+---
+
+<DashboardLayout titulo="Nueva Venta" subtitulo="Punto de venta (POS) — Edward Accesorios">
+  <div id="pos-app" class="grid grid-cols-1 gap-6 pb-20 lg:grid-cols-5 lg:pb-0 print:hidden">
+    <!-- Buscador + resultados -->
+    <div class="lg:col-span-3">
+      <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Buscar producto</h2>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Escanea el código de barras o escribe nombre / modelo de teléfono compatible. Enter agrega una coincidencia exacta de código.
+          </p>
+          <div class="relative mt-3">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+            </svg>
+            <input
+              id="pos-buscador"
+              type="text"
+              autocomplete="off"
+              placeholder="Código de barras, nombre o modelo..."
+              class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+            <button
+              type="button"
+              data-abrir-escaner
+              aria-label="Escanear código de barras con la cámara"
+              title="Escanear con la cámara"
+              class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+                <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <ul id="pos-resultados" class="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+        <p id="pos-cargando" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
+        <p id="pos-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+          No se encontraron productos con esa búsqueda.
+        </p>
+      </div>
+    </div>
+
+    <!-- Carrito -->
+    <div class="lg:col-span-2">
+      <div class="sticky top-6 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Carrito de venta</h2>
+          <span id="pos-carrito-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</span>
+        </div>
+
+        <ul id="pos-carrito" class="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+        <p id="pos-carrito-vacio" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+          Agrega productos desde el buscador para iniciar una venta.
+        </p>
+
+        <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div class="flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
+            <span>Total</span>
+            <span id="pos-total">Q 0.00</span>
+          </div>
+          <p id="pos-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+          <button
+            id="pos-procesar"
+            type="button"
+            disabled
+            class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Procesar venta
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Barra inferior fija (solo móvil): total siempre visible + cobrar sin scrollear -->
+  <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
+    <div class="min-w-0 flex-1">
+      <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
+      <p id="pos-barra-total" class="text-lg font-semibold text-slate-900 dark:text-white">Q 0.00</p>
+    </div>
+    <button
+      id="pos-barra-cobrar"
+      type="button"
+      disabled
+      class="shrink-0 rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      Cobrar
+    </button>
+  </div>
+
+  <!-- Ticket: oculto hasta procesar una venta; es lo único visible al imprimir -->
+  <div id="pos-ticket" class="hidden">
+    <div class="mx-auto max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:max-w-full print:rounded-none print:border-none print:shadow-none dark:border-slate-800 dark:bg-slate-900 print:dark:bg-white">
+      <div class="text-center">
+        <p class="text-sm font-semibold text-slate-900 dark:text-white print:text-black">Edward Accesorios</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400 print:text-black">Ticket de venta</p>
+        <p id="ticket-folio" class="mt-2 text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
+        <p id="ticket-fecha" class="text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
+      </div>
+      <div class="my-4 border-t border-dashed border-slate-300 dark:border-slate-700 print:border-black"></div>
+      <ul id="ticket-lineas" class="space-y-2 text-sm text-slate-700 dark:text-slate-300 print:text-black"></ul>
+      <div class="my-4 border-t border-dashed border-slate-300 dark:border-slate-700 print:border-black"></div>
+      <div class="flex justify-between text-base font-semibold text-slate-900 dark:text-white print:text-black">
+        <span>Total</span>
+        <span id="ticket-total"></span>
+      </div>
+      <p class="mt-4 text-center text-xs text-slate-400 print:text-black">¡Gracias por su compra!</p>
+    </div>
+
+    <div class="mx-auto mt-4 flex max-w-sm gap-3 print:hidden">
+      <button
+        id="pos-imprimir"
+        type="button"
+        class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      >
+        Imprimir ticket
+      </button>
+      <button
+        id="pos-nueva-venta"
+        type="button"
+        class="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700"
+      >
+        Nueva venta
+      </button>
+    </div>
+  </div>
+
+  <CamaraEscaner />
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { estadoStock, formatearMoneda } from '../utils/format';
+  import type { ProductoConRelaciones } from '../types/database.types';
+
+  interface LineaCarrito {
+    producto: ProductoConRelaciones;
+    cantidad: number;
+  }
+
+  let productos: ProductoConRelaciones[] = [];
+  let carrito: LineaCarrito[] = [];
+  let folioActual = 0;
+
+  const buscador = document.getElementById('pos-buscador') as HTMLInputElement;
+  const resultados = document.getElementById('pos-resultados') as HTMLUListElement;
+  const cargando = document.getElementById('pos-cargando') as HTMLParagraphElement;
+  const sinResultados = document.getElementById('pos-sin-resultados') as HTMLParagraphElement;
+  const listaCarrito = document.getElementById('pos-carrito') as HTMLUListElement;
+  const carritoVacio = document.getElementById('pos-carrito-vacio') as HTMLParagraphElement;
+  const carritoContador = document.getElementById('pos-carrito-contador') as HTMLSpanElement;
+  const totalEl = document.getElementById('pos-total') as HTMLSpanElement;
+  const errorEl = document.getElementById('pos-error') as HTMLParagraphElement;
+  const botonProcesar = document.getElementById('pos-procesar') as HTMLButtonElement;
+  const posApp = document.getElementById('pos-app') as HTMLDivElement;
+  const ticket = document.getElementById('pos-ticket') as HTMLDivElement;
+  const barraMovil = document.getElementById('pos-barra-movil') as HTMLDivElement;
+  const barraContador = document.getElementById('pos-barra-contador') as HTMLParagraphElement;
+  const barraTotal = document.getElementById('pos-barra-total') as HTMLParagraphElement;
+  const barraCobrar = document.getElementById('pos-barra-cobrar') as HTMLButtonElement;
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function mostrarError(mensaje: string) {
+    errorEl.textContent = mensaje;
+    errorEl.classList.remove('hidden');
+  }
+
+  function limpiarError() {
+    errorEl.classList.add('hidden');
+    errorEl.textContent = '';
+  }
+
+  function cantidadEnCarrito(productoId: string): number {
+    return carrito.find((l) => l.producto.id === productoId)?.cantidad ?? 0;
+  }
+
+  function filtrarProductos(texto: string): ProductoConRelaciones[] {
+    const q = texto.trim().toLowerCase();
+    if (!q) return productos;
+    return productos.filter(
+      (p) =>
+        p.nombre.toLowerCase().includes(q) ||
+        p.codigo_barras.toLowerCase().includes(q) ||
+        p.categoria.toLowerCase().includes(q) ||
+        p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
+    );
+  }
+
+  const estilosBadge: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+
+  function renderResultados(texto: string) {
+    const lista = filtrarProductos(texto);
+    sinResultados.classList.toggle('hidden', lista.length > 0);
+
+    resultados.innerHTML = lista
+      .map((producto) => {
+        const disponible = producto.stock_actual - cantidadEnCarrito(producto.id);
+        const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
+        const compatibles = producto.modelos_compatibles.length
+          ? producto.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(', ')
+          : 'Universal';
+
+        return `
+          <li class="flex items-center justify-between gap-3 px-5 py-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+              <p class="truncate text-xs text-slate-500 dark:text-slate-400">
+                ${escaparHtml(producto.codigo_barras)} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
+              </p>
+              <p class="mt-1 text-xs">
+                <span class="rounded-full px-2 py-0.5 font-medium ${estilosBadge[estado]}">${disponible} disponible${disponible === 1 ? '' : 's'}</span>
+                <span class="ml-1 text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)}</span>
+              </p>
+            </div>
+            <button
+              type="button"
+              data-agregar="${producto.id}"
+              ${disponible <= 0 ? 'disabled' : ''}
+              class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:dark:bg-slate-700"
+            >
+              + Agregar
+            </button>
+          </li>
+        `;
+      })
+      .join('');
+  }
+
+  function renderCarrito() {
+    carritoVacio.classList.toggle('hidden', carrito.length > 0);
+    carritoContador.textContent = `${carrito.length} línea${carrito.length === 1 ? '' : 's'}`;
+    botonProcesar.disabled = carrito.length === 0;
+
+    listaCarrito.innerHTML = carrito
+      .map(({ producto, cantidad }) => {
+        const subtotal = producto.precio_venta * cantidad;
+        const alMaximo = cantidad >= producto.stock_actual;
+        return `
+          <li class="flex items-center justify-between gap-3 px-5 py-3">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)} c/u</p>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+              <button type="button" data-restar="${producto.id}" class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
+              <span class="w-6 text-center text-sm text-slate-900 dark:text-white">${cantidad}</span>
+              <button type="button" data-sumar="${producto.id}" ${alMaximo ? 'disabled' : ''} class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
+              <span class="w-16 text-right text-sm font-semibold text-slate-900 dark:text-white">${formatearMoneda(subtotal)}</span>
+              <button type="button" data-eliminar="${producto.id}" aria-label="Quitar" class="text-slate-400 hover:text-red-600">✕</button>
+            </div>
+          </li>
+        `;
+      })
+      .join('');
+
+    const total = carrito.reduce((acc, l) => acc + l.producto.precio_venta * l.cantidad, 0);
+    totalEl.textContent = formatearMoneda(total);
+
+    barraContador.textContent = `${carrito.length} línea${carrito.length === 1 ? '' : 's'}`;
+    barraTotal.textContent = formatearMoneda(total);
+    barraCobrar.disabled = carrito.length === 0;
+  }
+
+  function agregarAlCarrito(productoId: string) {
+    limpiarError();
+    const producto = productos.find((p) => p.id === productoId);
+    if (!producto) return;
+
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    const cantidadActual = linea?.cantidad ?? 0;
+
+    if (cantidadActual + 1 > producto.stock_actual) {
+      mostrarError(`No hay más stock disponible de "${producto.nombre}".`);
+      return;
+    }
+
+    if (linea) linea.cantidad += 1;
+    else carrito.push({ producto, cantidad: 1 });
+
+    renderCarrito();
+    renderResultados(buscador.value);
+  }
+
+  function cambiarCantidad(productoId: string, delta: number) {
+    limpiarError();
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    if (!linea) return;
+
+    const nuevaCantidad = linea.cantidad + delta;
+    if (nuevaCantidad <= 0) {
+      carrito = carrito.filter((l) => l.producto.id !== productoId);
+    } else if (nuevaCantidad > linea.producto.stock_actual) {
+      mostrarError(`No hay más stock disponible de "${linea.producto.nombre}".`);
+      return;
+    } else {
+      linea.cantidad = nuevaCantidad;
+    }
+
+    renderCarrito();
+    renderResultados(buscador.value);
+  }
+
+  function eliminarDelCarrito(productoId: string) {
+    limpiarError();
+    carrito = carrito.filter((l) => l.producto.id !== productoId);
+    renderCarrito();
+    renderResultados(buscador.value);
+  }
+
+  function mostrarTicket() {
+    folioActual += 1;
+    const fecha = new Date();
+
+    document.getElementById('ticket-folio')!.textContent = `Folio #${folioActual.toString().padStart(4, '0')}`;
+    document.getElementById('ticket-fecha')!.textContent = fecha.toLocaleString('es-GT', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    const lineasHtml = carrito
+      .map(
+        ({ producto, cantidad }) => `
+          <li class="flex justify-between gap-2">
+            <span>${escaparHtml(producto.nombre)} <span class="text-slate-400">x${cantidad}</span></span>
+            <span>${formatearMoneda(producto.precio_venta * cantidad)}</span>
+          </li>
+        `
+      )
+      .join('');
+    document.getElementById('ticket-lineas')!.innerHTML = lineasHtml;
+
+    const total = carrito.reduce((acc, l) => acc + l.producto.precio_venta * l.cantidad, 0);
+    document.getElementById('ticket-total')!.textContent = formatearMoneda(total);
+
+    posApp.classList.add('hidden');
+    barraMovil.classList.add('hidden');
+    barraMovil.classList.remove('flex');
+    ticket.classList.remove('hidden');
+    ticket.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  async function procesarVenta() {
+    if (carrito.length === 0) return;
+    limpiarError();
+    botonProcesar.disabled = true;
+    botonProcesar.textContent = 'Procesando...';
+    barraCobrar.disabled = true;
+
+    try {
+      const items = carrito.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad }));
+      await inventoryService.registrarVenta(items, `Venta POS #${folioActual + 1}`);
+      mostrarTicket();
+      carrito = [];
+      await cargarProductos();
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo procesar la venta.');
+    } finally {
+      botonProcesar.textContent = 'Procesar venta';
+      botonProcesar.disabled = carrito.length === 0;
+      barraCobrar.disabled = carrito.length === 0;
+    }
+  }
+
+  function iniciarNuevaVenta() {
+    ticket.classList.add('hidden');
+    posApp.classList.remove('hidden');
+    barraMovil.classList.remove('hidden');
+    barraMovil.classList.add('flex');
+    renderCarrito();
+    renderResultados(buscador.value);
+    buscador.focus();
+  }
+
+  async function cargarProductos() {
+    productos = await inventoryService.listarProductos();
+    cargando.classList.add('hidden');
+    renderResultados(buscador.value);
+  }
+
+  // Delegación de eventos: los botones de resultados/carrito se regeneran en cada render
+  resultados.addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-agregar]');
+    if (boton?.dataset.agregar) agregarAlCarrito(boton.dataset.agregar);
+  });
+
+  listaCarrito.addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+    const sumar = objetivo.closest<HTMLButtonElement>('[data-sumar]');
+    const restar = objetivo.closest<HTMLButtonElement>('[data-restar]');
+    const eliminar = objetivo.closest<HTMLButtonElement>('[data-eliminar]');
+    if (sumar?.dataset.sumar) cambiarCantidad(sumar.dataset.sumar, 1);
+    else if (restar?.dataset.restar) cambiarCantidad(restar.dataset.restar, -1);
+    else if (eliminar?.dataset.eliminar) eliminarDelCarrito(eliminar.dataset.eliminar);
+  });
+
+  buscador.addEventListener('input', () => renderResultados(buscador.value));
+
+  /** Busca un código de barras exacto (tecleado + Enter, lector físico USB, o cámara) y lo agrega al carrito. */
+  async function buscarYAgregarPorCodigo(codigo: string) {
+    const coincidenciaLocal = productos.find((p) => p.codigo_barras === codigo);
+    if (!coincidenciaLocal) {
+      mostrarError(`No se encontró ningún producto con el código "${codigo}".`);
+      return;
+    }
+
+    // Relee el producto por si su stock cambió desde otra sesión/pestaña
+    const fresco = await inventoryService.obtenerProductoPorCodigoBarras(codigo);
+    if (fresco) {
+      productos = productos.map((p) => (p.id === fresco.id ? fresco : p));
+      agregarAlCarrito(fresco.id);
+      buscador.value = '';
+      renderResultados('');
+    }
+  }
+
+  buscador.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const codigo = buscador.value.trim();
+    if (codigo) void buscarYAgregarPorCodigo(codigo);
+  });
+
+  // Escaneo con cámara (ver src/components/CamaraEscaner.astro): agrega directo al carrito.
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    void buscarYAgregarPorCodigo(e.detail.codigo);
+  }) as EventListener);
+
+  botonProcesar.addEventListener('click', procesarVenta);
+  barraCobrar.addEventListener('click', procesarVenta);
+  document.getElementById('pos-imprimir')?.addEventListener('click', () => window.print());
+  document.getElementById('pos-nueva-venta')?.addEventListener('click', iniciarNuevaVenta);
+
+  cargarProductos();
+</script>

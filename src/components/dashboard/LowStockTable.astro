@@ -1,0 +1,110 @@
+---
+// Se autoalimenta desde inventoryService (Supabase o LocalStorage) en el cliente.
+---
+
+<div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Productos con stock bajo</h2>
+    <div class="flex items-center gap-3">
+      <button
+        id="lst-exportar"
+        type="button"
+        class="hidden text-xs font-medium text-brand-600 hover:underline dark:text-brand-400"
+      >
+        Descargar lista para proveedor
+      </button>
+      <a href="/productos" class="text-xs font-medium text-brand-600 hover:underline dark:text-brand-400">Ver todos</a>
+    </div>
+  </div>
+
+  <p id="lst-cargando" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando...</p>
+  <p id="lst-vacio" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+    No hay productos por debajo de su stock mínimo. ¡Todo en orden!
+  </p>
+
+  <div id="lst-tabla-wrap" class="hidden overflow-x-auto">
+    <table class="w-full text-left text-sm">
+      <thead>
+        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+          <th class="px-5 py-3 font-medium">Producto</th>
+          <th class="px-5 py-3 font-medium">Código de barras</th>
+          <th class="px-5 py-3 font-medium">Stock actual</th>
+          <th class="px-5 py-3 font-medium">Mínimo</th>
+          <th class="px-5 py-3 font-medium">Estado</th>
+        </tr>
+      </thead>
+      <tbody id="lst-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { estadoStock } from '../../utils/format';
+  import { descargarCSV } from '../../utils/csv';
+  import type { ProductoStockBajo } from '../../types/database.types';
+
+  const cargando = document.getElementById('lst-cargando') as HTMLParagraphElement;
+  const vacio = document.getElementById('lst-vacio') as HTMLParagraphElement;
+  const tablaWrap = document.getElementById('lst-tabla-wrap') as HTMLDivElement;
+  const filas = document.getElementById('lst-filas') as HTMLTableSectionElement;
+  const botonExportar = document.getElementById('lst-exportar') as HTMLButtonElement;
+
+  let productosBajoStock: ProductoStockBajo[] = [];
+
+  botonExportar.addEventListener('click', () => {
+    descargarCSV(
+      `easystem-pedido-proveedor-${new Date().toISOString().slice(0, 10)}.csv`,
+      productosBajoStock.map((p) => ({
+        codigo_barras: p.codigo_barras,
+        nombre: p.nombre,
+        categoria: p.categoria,
+        stock_actual: p.stock_actual,
+        stock_minimo: p.stock_minimo,
+        cantidad_sugerida_pedir: Math.max(p.stock_minimo - p.stock_actual, 0),
+      }))
+    );
+  });
+
+  const estilosBadge: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+  const etiquetaEstado: Record<string, string> = { critico: 'Sin stock', bajo: 'Stock bajo', ok: 'OK' };
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  inventoryService.listarProductosStockBajo().then((productos) => {
+    cargando.classList.add('hidden');
+    productosBajoStock = productos;
+
+    if (productos.length === 0) {
+      vacio.classList.remove('hidden');
+      return;
+    }
+
+    botonExportar.classList.remove('hidden');
+    tablaWrap.classList.remove('hidden');
+    filas.innerHTML = productos
+      .map((producto) => {
+        const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
+        return `
+          <tr class="text-slate-700 dark:text-slate-300">
+            <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</td>
+            <td class="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</td>
+            <td class="px-5 py-3">${producto.stock_actual}</td>
+            <td class="px-5 py-3">${producto.stock_minimo}</td>
+            <td class="px-5 py-3">
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${etiquetaEstado[estado]}</span>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+  });
+</script>

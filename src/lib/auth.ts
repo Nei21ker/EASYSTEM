@@ -1,0 +1,203 @@
+// Servicio de autenticación y roles, con el mismo patrón dual que
+// inventoryService.ts: Supabase Auth cuando hay credenciales (.env), o un
+// simulador de usuarios en LocalStorage cuando no las hay.
+//
+// AVISO DE SEGURIDAD: el modo LocalStorage guarda las "contraseñas" en texto
+// plano en el navegador. Es intencional y está bien para probar la UI de
+// login/roles sin backend, pero NUNCA debe tratarse como autenticación real.
+// La autenticación real (hashing, tokens, RLS) la provee Supabase Auth
+// cuando está configurado.
+import { createClient } from '@supabase/supabase-js';
+import { supabase, supabaseConfigurado, supabaseUrl, supabaseAnonKey } from './supabase';
+
+export type Rol = 'administrador' | 'vendedor';
+
+export interface SesionUsuario {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: Rol;
+}
+
+const LS_SESION = 'easystem:sesion';
+const LS_USUARIOS = 'easystem:usuarios';
+
+interface UsuarioLocal extends SesionUsuario {
+  password: string;
+}
+
+function generarId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;
+}
+
+function seedUsuariosLocales(): UsuarioLocal[] {
+  return [
+    { id: generarId(), email: 'admin@edwardaccesorios.com', password: 'admin123', nombre: 'Administrador', rol: 'administrador' },
+    { id: generarId(), email: 'vendedor@edwardaccesorios.com', password: 'vendedor123', nombre: 'Vendedor Mostrador', rol: 'vendedor' },
+  ];
+}
+
+function leerUsuariosLocales(): UsuarioLocal[] {
+  try {
+    const raw = localStorage.getItem(LS_USUARIOS);
+    if (raw) return JSON.parse(raw) as UsuarioLocal[];
+  } catch (err) {
+    console.error('[EASYSTEM] No se pudo leer usuarios de LocalStorage.', err);
+  }
+  const inicial = seedUsuariosLocales();
+  localStorage.setItem(LS_USUARIOS, JSON.stringify(inicial));
+  return inicial;
+}
+
+function guardarUsuariosLocales(usuarios: UsuarioLocal[]) {
+  localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios));
+}
+
+// Varios componentes por página (Sidebar, DashboardLayout, la propia página)
+// llaman a obtenerSesionActual() de forma independiente; se memoiza dentro de
+// la misma carga de página para no repetir la consulta a Supabase/localStorage.
+let sesionEnCache: Promise<SesionUsuario | null> | null = null;
+
+function invalidarCacheSesion() {
+  sesionEnCache = null;
+}
+
+export async function iniciarSesion(email: string, password: string): Promise<SesionUsuario> {
+  if (supabaseConfigurado) {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) throw new Error('Correo o contraseña incorrectos.');
+
+    const { data: perfil, error: errorPerfil } = await supabase
+      .from('perfiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .maybeSingle();
+    if (errorPerfil || !perfil) {
+      throw new Error('Tu cuenta no tiene un perfil asociado todavía. Contacta a un administrador.');
+    }
+
+    return { id: data.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol };
+  }
+
+  const usuario = leerUsuariosLocales().find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+  if (!usuario) throw new Error('Correo o contraseña incorrectos.');
+
+  const { password: _sinUsar, ...sesion } = usuario;
+  localStorage.setItem(LS_SESION, JSON.stringify(sesion));
+  invalidarCacheSesion();
+  return sesion;
+}
+
+export async function cerrarSesion(): Promise<void> {
+  invalidarCacheSesion();
+  if (supabaseConfigurado) {
+    await supabase.auth.signOut();
+    return;
+  }
+  localStorage.removeItem(LS_SESION);
+}
+
+export async function obtenerSesionActual(): Promise<SesionUsuario | null> {
+  if (!sesionEnCache) sesionEnCache = cargarSesionActual();
+  return sesionEnCache;
+}
+
+async function cargarSesionActual(): Promise<SesionUsuario | null> {
+  if (supabaseConfigurado) {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.user) return null;
+
+    const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', data.session.user.id).maybeSingle();
+    if (!perfil) return null;
+
+    return { id: data.session.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol };
+  }
+
+  try {
+    const raw = localStorage.getItem(LS_SESION);
+    return raw ? (JSON.parse(raw) as SesionUsuario) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Crea un nuevo usuario (vendedor por defecto). En modo Supabase usa un
+ * cliente aislado (persistSession: false) para que el signUp no reemplace la
+ * sesión del administrador que está creando la cuenta.
+ */
+export async function registrarUsuario(input: { email: string; password: string; nombre: string; rol?: Rol }): Promise<void> {
+  const rol = input.rol ?? 'vendedor';
+
+  if (supabaseConfigurado) {
+    const clienteAislado = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const { data, error } = await clienteAislado.auth.signUp({
+      email: input.email,
+      password: input.password,
+      options: { data: { nombre: input.nombre, rol } },
+    });
+    if (error) throw new Error(error.message);
+
+    // El trigger de la BD ya crea el perfil leyendo raw_user_meta_data.rol,
+    // pero por si acaso lo reforzamos aquí (p. ej. si el usuario ya existía).
+    if (data.user) {
+      await supabase.from('perfiles').update({ nombre: input.nombre, rol }).eq('id', data.user.id);
+    }
+    return;
+  }
+
+  const usuarios = leerUsuariosLocales();
+  if (usuarios.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+    throw new Error('Ya existe un usuario con ese correo.');
+  }
+  usuarios.push({ id: generarId(), email: input.email, password: input.password, nombre: input.nombre, rol });
+  guardarUsuariosLocales(usuarios);
+}
+
+export async function listarUsuarios(): Promise<SesionUsuario[]> {
+  if (supabaseConfigurado) {
+    const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data ?? []).map((p: any) => ({ id: p.id, email: p.email, nombre: p.nombre, rol: p.rol }));
+  }
+
+  return leerUsuariosLocales().map(({ password: _sinUsar, ...resto }) => resto);
+}
+
+export async function actualizarRolUsuario(id: string, rol: Rol): Promise<void> {
+  if (supabaseConfigurado) {
+    const { error } = await supabase.from('perfiles').update({ rol }).eq('id', id);
+    if (error) throw error;
+    return;
+  }
+
+  const usuarios = leerUsuariosLocales();
+  const usuario = usuarios.find((u) => u.id === id);
+  if (!usuario) throw new Error('Usuario no encontrado.');
+  usuario.rol = rol;
+  guardarUsuariosLocales(usuarios);
+}
+
+/**
+ * Guard de ruta para páginas protegidas: llamarlo al inicio del <script> de
+ * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, o a
+ * "/" si la página exige un rol que el usuario no tiene.
+ */
+export async function protegerPagina(opciones?: { rolMinimo?: Rol }): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+
+  if (!sesion) {
+    window.location.href = `/login?next=${encodeURIComponent(window.location.pathname)}`;
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
+  if (opciones?.rolMinimo === 'administrador' && sesion.rol !== 'administrador') {
+    window.location.href = '/';
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
+  return sesion;
+}

@@ -1,0 +1,29 @@
+---
+// Botón para alternar entre modo claro y oscuro. Sincroniza <html class="dark">
+// con el store persistente de tema (src/stores/theme.ts).
+---
+
+<button
+  id="theme-toggle"
+  type="button"
+  aria-label="Cambiar tema"
+  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
+>
+  <svg data-icon="sun" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hidden h-5 w-5 dark:block">
+    <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+  </svg>
+  <svg data-icon="moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 dark:hidden">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+  </svg>
+</button>
+
+<script>
+  import { $tema, alternarTema, aplicarTemaAlDocumento } from '../../stores/theme';
+
+  aplicarTemaAlDocumento($tema.get());
+  $tema.subscribe(aplicarTemaAlDocumento);
+
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    alternarTema();
+  });
+</script>

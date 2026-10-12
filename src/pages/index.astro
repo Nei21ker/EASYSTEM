@@ -1,0 +1,56 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import StatCard from '../components/dashboard/StatCard.astro';
+import QuickSearch from '../components/dashboard/QuickSearch.astro';
+import LowStockTable from '../components/dashboard/LowStockTable.astro';
+import RecentMovements from '../components/dashboard/RecentMovements.astro';
+---
+
+<DashboardLayout titulo="Dashboard" subtitulo="Resumen general del inventario de Edward Accesorios">
+  <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <StatCard id="stat-total-productos" etiqueta="Total de productos" valor="—" icono="productos" />
+    <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" icono="valor" />
+    <StatCard
+      id="stat-stock-bajo"
+      etiqueta="Alertas de stock bajo"
+      valor="—"
+      tendencia="Calculando..."
+      icono="stock-bajo"
+    />
+  </section>
+
+  <QuickSearch />
+
+  <section class="grid grid-cols-1 gap-6 xl:grid-cols-5">
+    <div class="xl:col-span-3">
+      <LowStockTable />
+    </div>
+    <div class="xl:col-span-2">
+      <RecentMovements />
+    </div>
+  </section>
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { formatearMoneda } from '../utils/format';
+
+  inventoryService.listarProductos().then((productos) => {
+    const valorInventario = productos.reduce((total, p) => total + p.precio_venta * p.stock_actual, 0);
+    const stockBajo = productos.filter((p) => p.stock_actual <= p.stock_minimo);
+
+    document.getElementById('stat-total-productos')!.textContent = productos.length.toString();
+    document.getElementById('stat-valor-inventario')!.textContent = formatearMoneda(valorInventario);
+    document.getElementById('stat-stock-bajo')!.textContent = stockBajo.length.toString();
+
+    const tendencia = document.getElementById('stat-stock-bajo-tendencia');
+    if (tendencia) {
+      const requiereAtencion = stockBajo.length > 0;
+      tendencia.textContent = requiereAtencion ? 'Requiere reabastecimiento' : 'Todo en orden';
+      tendencia.classList.toggle('text-emerald-600', !requiereAtencion);
+      tendencia.classList.toggle('dark:text-emerald-400', !requiereAtencion);
+      tendencia.classList.toggle('text-red-600', requiereAtencion);
+      tendencia.classList.toggle('dark:text-red-400', requiereAtencion);
+    }
+  });
+</script>
