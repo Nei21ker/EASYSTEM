@@ -20,6 +20,7 @@ const { limite = 8 } = Astro.props;
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { formatearFecha } from '../../utils/format';
+  import { animarLista } from '../../utils/animaciones';
 
   const raiz = document.getElementById('rm-root') as HTMLDivElement;
   const limite = Number(raiz.dataset.limite) || 8;
@@ -48,6 +49,7 @@ const { limite = 8 } = Astro.props;
     }
 
     lista.classList.remove('hidden');
+    animarLista(lista);
     lista.innerHTML = movimientos
       .map(
         (mov) => `

@@ -63,7 +63,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
           <div class="flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
             <span>Total</span>
-            <span id="pos-total">Q 0.00</span>
+            <span id="pos-total" class="inline-block origin-right">Q 0.00</span>
           </div>
           <p id="pos-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <button
@@ -83,7 +83,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
     <div class="min-w-0 flex-1">
       <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
-      <p id="pos-barra-total" class="text-lg font-semibold text-slate-900 dark:text-white">Q 0.00</p>
+      <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">Q 0.00</p>
     </div>
     <button
       id="pos-barra-cobrar"
@@ -99,6 +99,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   <div id="pos-ticket" class="hidden">
     <div class="mx-auto max-w-sm rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:max-w-full print:rounded-none print:border-none print:shadow-none dark:border-slate-800 dark:bg-slate-900 print:dark:bg-white">
       <div class="text-center">
+        <img src="/logo.png" alt="Edward Accesorios" width="480" height="234" class="mx-auto mb-2 h-12 w-auto" />
         <p class="text-sm font-semibold text-slate-900 dark:text-white print:text-black">Edward Accesorios</p>
         <p class="text-xs text-slate-500 dark:text-slate-400 print:text-black">Ticket de venta</p>
         <p id="ticket-folio" class="mt-2 text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
@@ -138,6 +139,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { estadoStock, formatearMoneda } from '../utils/format';
+  import { animarLista, reanimar } from '../utils/animaciones';
   import type { ProductoConRelaciones } from '../types/database.types';
 
   interface LineaCarrito {
@@ -252,7 +254,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         const subtotal = producto.precio_venta * cantidad;
         const alMaximo = cantidad >= producto.stock_actual;
         return `
-          <li class="flex items-center justify-between gap-3 px-5 py-3">
+          <li data-linea="${producto.id}" class="flex items-center justify-between gap-3 px-5 py-3">
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="text-xs text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)} c/u</p>
@@ -295,6 +297,14 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
     renderCarrito();
     renderResultados(buscador.value);
+    destacarLinea(productoId);
+  }
+
+  // Feedback visual: la línea tocada destella y el total "late".
+  function destacarLinea(productoId: string) {
+    reanimar(listaCarrito.querySelector<HTMLElement>(`[data-linea="${productoId}"]`), 'anim-destello');
+    reanimar(totalEl, 'anim-pulso-valor');
+    reanimar(barraTotal, 'anim-pulso-valor');
   }
 
   function cambiarCantidad(productoId: string, delta: number) {
@@ -314,6 +324,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
     renderCarrito();
     renderResultados(buscador.value);
+    destacarLinea(productoId);
   }
 
   function eliminarDelCarrito(productoId: string) {
@@ -352,6 +363,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     barraMovil.classList.add('hidden');
     barraMovil.classList.remove('flex');
     ticket.classList.remove('hidden');
+    reanimar(ticket, 'anim-subir');
     ticket.scrollIntoView({ behavior: 'smooth' });
   }
 
@@ -387,9 +399,15 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     buscador.focus();
   }
 
+  let primeraCarga = true;
+
   async function cargarProductos() {
     productos = await inventoryService.listarProductos();
     cargando.classList.add('hidden');
+    if (primeraCarga) {
+      primeraCarga = false;
+      animarLista(resultados);
+    }
     renderResultados(buscador.value);
   }
 

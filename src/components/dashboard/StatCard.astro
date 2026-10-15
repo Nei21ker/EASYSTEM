@@ -18,13 +18,13 @@ const iconos: Record<string, string> = {
 };
 ---
 
-<div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+<div class="tarjeta-elevable group rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
   <div class="flex items-start justify-between">
     <div>
       <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{etiqueta}</p>
       <p id={id} class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{valor}</p>
     </div>
-    <div class="rounded-lg bg-brand-50 p-2 text-brand-600 dark:bg-brand-500/10 dark:text-brand-400">
+    <div class="bg-marca rounded-lg p-2 text-white shadow-sm transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
         <path d={iconos[icono]} stroke-linecap="round" stroke-linejoin="round" />
       </svg>

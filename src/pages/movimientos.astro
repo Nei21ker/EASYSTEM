@@ -48,6 +48,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import type { MovimientoConProducto } from '../lib/db/movimientos';
+  import { animarLista } from '../utils/animaciones';
 
   let movimientos: MovimientoConProducto[] = [];
   let filtroActual = '';
@@ -87,6 +88,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     sinResultados.classList.toggle('hidden', lista.length > 0);
     contador.textContent = `${lista.length} movimiento${lista.length === 1 ? '' : 's'}`;
 
+    animarLista(filas);
     filas.innerHTML = lista
       .map((mov) => {
         const fecha = new Date(mov.fecha);

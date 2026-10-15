@@ -56,6 +56,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
 <script>
   import { listarUsuarios, registrarUsuario, actualizarRolUsuario, obtenerSesionActual, type Rol } from '../lib/auth';
+  import { animarLista, reanimar } from '../utils/animaciones';
 
   const contador = document.getElementById('us-contador') as HTMLHeadingElement;
   const filas = document.getElementById('us-filas') as HTMLTableSectionElement;
@@ -74,6 +75,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   async function cargarUsuarios() {
     const usuarios = await listarUsuarios();
     contador.textContent = `${usuarios.length} usuario${usuarios.length === 1 ? '' : 's'}`;
+    animarLista(filas);
 
     filas.innerHTML = usuarios
       .map(
@@ -121,11 +123,13 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         ? `Cuenta creada para ${nombre}. Debe confirmar su correo (enlace enviado a ${email}) antes de poder iniciar sesión.`
         : `Cuenta creada para ${nombre}.`;
       exito.classList.remove('hidden');
+      reanimar(exito, 'anim-subir');
       form.reset();
       await cargarUsuarios();
     } catch (err) {
       error.textContent = err instanceof Error ? err.message : 'No se pudo crear el usuario.';
       error.classList.remove('hidden');
+      reanimar(error, 'anim-sacudir');
     }
   });
 

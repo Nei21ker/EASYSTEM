@@ -73,6 +73,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
   import * as inventoryService from '../lib/inventoryService';
   import { formatearMoneda } from '../utils/format';
   import { $tema } from '../stores/theme';
+  import { contarHasta } from '../utils/animaciones';
   import {
     calcularRango,
     formatearClaveDia,
@@ -117,6 +118,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
     return {
       responsive: true,
       maintainAspectRatio: false,
+      animation: { duration: 900, easing: 'easeOutQuart' as const },
       plugins: { legend: { labels: { color: texto } } },
       scales: {
         x: { ticks: { color: texto }, grid: { color: grid } },
@@ -133,9 +135,9 @@ import StatCard from '../components/dashboard/StatCard.astro';
     data: {
       labels: sinDatosTexto,
       datasets: [
-        { label: 'Ingresos', data: sinDatosNum, backgroundColor: '#4f46e5' },
-        { label: 'Costos', data: sinDatosNum.slice(), backgroundColor: '#f59e0b' },
-        { label: 'Ganancia neta', data: sinDatosNum.slice(), backgroundColor: '#10b981' },
+        { label: 'Ingresos', data: sinDatosNum, backgroundColor: '#1871d3', borderRadius: 6 },
+        { label: 'Costos', data: sinDatosNum.slice(), backgroundColor: '#f59e0b', borderRadius: 6 },
+        { label: 'Ganancia neta', data: sinDatosNum.slice(), backgroundColor: '#18c8d8', borderRadius: 6 },
       ],
     },
     options: opcionesBase(),
@@ -143,13 +145,13 @@ import StatCard from '../components/dashboard/StatCard.astro';
 
   const chartCategorias = new Chart(document.getElementById('chart-categorias') as HTMLCanvasElement, {
     type: 'bar',
-    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#4f46e5' }] },
+    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#1871d3', borderRadius: 6 }] },
     options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
   });
 
   const chartModelos = new Chart(document.getElementById('chart-modelos') as HTMLCanvasElement, {
     type: 'bar',
-    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#6366f1' }] },
+    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Unidades vendidas', data: sinDatosNum.slice(), backgroundColor: '#18a8d8', borderRadius: 6 }] },
     options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
   });
 
@@ -193,6 +195,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
 
     elImprimible.innerHTML = `
       <div class="mx-auto max-w-2xl p-8 text-black">
+        <img src="/logo.png" alt="Edward Accesorios" class="mb-3 h-14 w-auto" />
         <h1 class="text-xl font-bold">Edward Accesorios — Reporte de ventas</h1>
         <p class="text-sm text-slate-600">Periodo: ${escaparHtml(periodo)}</p>
         <p class="text-xs text-slate-400">Generado el ${new Date().toLocaleString('es-GT')}</p>
@@ -270,9 +273,9 @@ import StatCard from '../components/dashboard/StatCard.astro';
     }
 
     const gananciaTotal = ingresosTotal - costosTotal;
-    elIngresos.textContent = formatearMoneda(ingresosTotal);
-    elCostos.textContent = formatearMoneda(costosTotal);
-    elGanancia.textContent = formatearMoneda(gananciaTotal);
+    contarHasta(elIngresos, ingresosTotal, formatearMoneda, 800);
+    contarHasta(elCostos, costosTotal, formatearMoneda, 800);
+    contarHasta(elGanancia, gananciaTotal, formatearMoneda, 800);
 
     chartVentas.data.labels = dias.map(formatearEtiquetaDia);
     chartVentas.data.datasets[0].data = dias.map((d) => Number(porDia[d].ingresos.toFixed(2)));

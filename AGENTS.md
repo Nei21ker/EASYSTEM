@@ -55,6 +55,9 @@ First Supabase admin must be bootstrapped manually: insert the email into `usuar
 
 ### UI conventions worth knowing before touching layout
 
+- **Brand**: the palette comes from the company logo (`public/logo.png`; favicon set: `favicon.ico`, `favicon-32.png`, `apple-touch-icon.png`). Colors are Tailwind tokens in `src/styles/global.css` — `brand-*` (blues) and `accent-*` (the logo's cyan); never hardcode hex colors in pages (the Chart.js colors in `reportes.astro` are the only exception, since canvas can't read CSS tokens). `.bg-marca` / `.texto-marca` are the logo gradient.
+- **Animations** live in `global.css` (keyframes + `.anim-*` classes) and are triggered from `src/utils/animaciones.ts` (`animarLista`, `reanimar`, `contarHasta`). They use the individual `translate`/`scale`/`rotate` properties so they don't clobber Tailwind transforms, and everything respects `prefers-reduced-motion`. Use `animarLista` only on the *first* render of a list — never on search-as-you-type re-renders, or rows flicker on every keystroke.
+
 - Sidebar is a mobile drawer (`-translate-x-full`/`translate-x-0`, `lg:translate-x-0` pinned on desktop), toggled by the Header's hamburger button. POS (`ventas.astro`) adds a fixed bottom bar with total + "Cobrar" so checkout doesn't require scrolling on small screens.
 - Ticket/report printing uses `window.print()` with Tailwind `print:` utilities to hide sidebar/header/forms, not a separate print view.
 

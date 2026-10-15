@@ -34,14 +34,15 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { formatearMoneda } from '../utils/format';
+  import { contarHasta } from '../utils/animaciones';
 
   inventoryService.listarProductos().then((productos) => {
     const valorInventario = productos.reduce((total, p) => total + p.precio_venta * p.stock_actual, 0);
     const stockBajo = productos.filter((p) => p.stock_actual <= p.stock_minimo);
 
-    document.getElementById('stat-total-productos')!.textContent = productos.length.toString();
-    document.getElementById('stat-valor-inventario')!.textContent = formatearMoneda(valorInventario);
-    document.getElementById('stat-stock-bajo')!.textContent = stockBajo.length.toString();
+    contarHasta(document.getElementById('stat-total-productos'), productos.length);
+    contarHasta(document.getElementById('stat-valor-inventario'), valorInventario, formatearMoneda, 1100);
+    contarHasta(document.getElementById('stat-stock-bajo'), stockBajo.length);
 
     const tendencia = document.getElementById('stat-stock-bajo-tendencia');
     if (tendencia) {

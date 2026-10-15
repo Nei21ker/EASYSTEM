@@ -19,11 +19,14 @@
 
 <script>
   import { $tema, alternarTema, aplicarTemaAlDocumento } from '../../stores/theme';
+  import { reanimar } from '../../utils/animaciones';
 
   aplicarTemaAlDocumento($tema.get());
   $tema.subscribe(aplicarTemaAlDocumento);
 
-  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+  const boton = document.getElementById('theme-toggle');
+  boton?.addEventListener('click', () => {
     alternarTema();
+    boton.querySelectorAll<HTMLElement>('svg').forEach((icono) => reanimar(icono, 'anim-giro'));
   });
 </script>

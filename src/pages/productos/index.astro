@@ -76,6 +76,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
   import { obtenerSesionActual } from '../../lib/auth';
   import { estadoStock, formatearMoneda } from '../../utils/format';
   import { descargarCSV } from '../../utils/csv';
+  import { animarLista } from '../../utils/animaciones';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
   const contador = document.getElementById('pr-contador') as HTMLHeadingElement;
@@ -182,6 +183,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
     productosCargados = productos;
     esAdministrador = sesion?.rol === 'administrador';
     thCosto.classList.toggle('hidden', !esAdministrador);
+    animarLista(filas);
     actualizarLista();
   });
 </script>

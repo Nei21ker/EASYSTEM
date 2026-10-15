@@ -8,19 +8,25 @@ function esActivo(href: string) {
 }
 ---
 
-<div id="nav-backdrop" class="fixed inset-0 z-30 hidden bg-black/50 lg:hidden" aria-hidden="true"></div>
+<div id="nav-backdrop" class="anim-aparecer fixed inset-0 z-30 hidden bg-slate-950/50 backdrop-blur-[2px] lg:hidden" aria-hidden="true"></div>
 
 <aside
   id="nav-sidebar"
   class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 print:hidden dark:border-slate-800 dark:bg-slate-900"
 >
-  <div class="flex items-center gap-2 px-6 py-5">
-    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">EA</div>
-    <div>
-      <p class="text-sm font-semibold text-slate-900 dark:text-white">EASYSTEM</p>
-      <p class="text-xs text-slate-500 dark:text-slate-400">Edward Accesorios</p>
+  <a href="/" class="group flex items-center gap-3 px-5 py-5" aria-label="EASYSTEM — Inicio">
+    <img
+      src="/logo.png"
+      alt="Logo Edward Accesorios"
+      width="480"
+      height="234"
+      class="h-9 w-auto shrink-0 transition-transform duration-300 group-hover:scale-105"
+    />
+    <div class="min-w-0">
+      <p class="texto-marca text-sm font-bold tracking-wide">EASYSTEM</p>
+      <p class="truncate text-xs text-slate-500 dark:text-slate-400">Edward Accesorios</p>
     </div>
-  </div>
+  </a>
 
   <nav class="flex-1 space-y-1 px-3">
     {enlacesNav.map((enlace) => (
@@ -28,14 +34,14 @@ function esActivo(href: string) {
         href={enlace.href}
         data-rol-minimo={enlace.rolMinimo ?? ''}
         class:list={[
-          'nav-enlace flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition',
+          'nav-enlace group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
           enlace.rolMinimo ? 'hidden' : '',
           esActivo(enlace.href)
-            ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-400'
-            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800',
+            ? 'bg-brand-50 text-brand-700 shadow-[inset_3px_0_0_0_var(--color-brand-600)] dark:bg-brand-500/10 dark:text-brand-300 dark:shadow-[inset_3px_0_0_0_var(--color-accent-400)]'
+            : 'text-slate-600 hover:translate-x-0.5 hover:bg-slate-100 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-brand-300',
         ]}
       >
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 shrink-0">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110">
           <path d={enlace.icono} stroke-linecap="round" stroke-linejoin="round" />
         </svg>
         {enlace.etiqueta}

@@ -23,7 +23,7 @@
 
   <div
     id="notif-panel"
-    class="hidden absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900"
+    class="anim-escalar hidden absolute right-0 top-full z-20 mt-2 w-[min(20rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-900"
   >
     <div class="border-b border-slate-200 px-4 py-3 dark:border-slate-800">
       <p class="text-sm font-semibold text-slate-900 dark:text-white">Alertas de stock</p>
@@ -85,6 +85,9 @@
 
     globo.textContent = productos.length > 99 ? '99+' : String(productos.length);
     globo.classList.remove('hidden');
+    // Llama la atención: el globo late y la campana se agita un par de veces.
+    globo.classList.add('anim-anillo');
+    boton.querySelector('svg')?.classList.add('anim-agitar');
     resumen.textContent = `${productos.length} producto${productos.length === 1 ? '' : 's'} necesita${productos.length === 1 ? '' : 'n'} reabastecimiento`;
 
     lista.innerHTML = productos

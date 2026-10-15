@@ -12,7 +12,10 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1871d3" />
     <title>Iniciar sesión · EASYSTEM</title>
     <script is:inline>
       try {
@@ -21,17 +24,29 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
       } catch (_) {}
     </script>
   </head>
-  <body class="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
-    <div class="w-full max-w-sm">
-      <div class="mb-6 flex flex-col items-center gap-2 text-center">
-        <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">EA</div>
+  <body class="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-50 px-4 dark:bg-slate-950">
+    <!-- Resplandores de fondo con los colores del logo -->
+    <div class="pointer-events-none absolute -left-24 -top-24 h-72 w-72 rounded-full bg-brand-500/20 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-accent-400/20 blur-3xl"></div>
+
+    <div class="relative w-full max-w-sm">
+      <div class="anim-subir mb-6 flex flex-col items-center gap-3 text-center">
+        <img
+          src="/logo.png"
+          alt="Logo Edward Accesorios"
+          width="480"
+          height="234"
+          class="anim-flotar h-20 w-auto drop-shadow-[0_8px_16px_rgba(24,113,211,0.25)]"
+        />
         <div>
-          <p class="text-lg font-semibold text-slate-900 dark:text-white">EASYSTEM</p>
+          <p class="texto-marca text-xl font-bold tracking-wide">EASYSTEM</p>
           <p class="text-sm text-slate-500 dark:text-slate-400">Edward Accesorios</p>
         </div>
       </div>
 
-      <div class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="anim-subir overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900" style="animation-delay: 120ms">
+        <div class="bg-marca h-1"></div>
+        <div class="p-6">
         <h1 class="text-base font-semibold text-slate-900 dark:text-white">Acceso del personal</h1>
         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
           Uso interno de Edward Accesorios. Si no tienes cuenta, pídesela al administrador.
@@ -46,7 +61,7 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
             <label for="login-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña</label>
             <input id="login-password" type="password" required autocomplete="current-password" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           </div>
-          <button id="login-enviar" type="submit" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60">
+          <button id="login-enviar" type="submit" class="bg-marca w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60">
             Iniciar sesión
           </button>
         </form>
@@ -60,11 +75,13 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
             <p>Vendedor: vendedor@edwardaccesorios.com / vendedor123</p>
           </div>
         )}
+        </div>
       </div>
     </div>
 
     <script>
       import { iniciarSesion, obtenerSesionActual } from '../lib/auth';
+      import { reanimar } from '../utils/animaciones';
 
       const form = document.getElementById('form-login') as HTMLFormElement;
       const enviar = document.getElementById('login-enviar') as HTMLButtonElement;
@@ -91,6 +108,7 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
         } catch (err) {
           error.textContent = err instanceof Error ? err.message : 'No se pudo iniciar sesión.';
           error.classList.remove('hidden');
+          reanimar(error, 'anim-sacudir');
           enviar.disabled = false;
           enviar.textContent = 'Iniciar sesión';
         }
