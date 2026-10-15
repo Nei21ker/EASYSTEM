@@ -4,14 +4,21 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
 import FormularioProducto from '../../components/productos/FormularioProducto.astro';
 import EntradaStock from '../../components/productos/EntradaStock.astro';
 import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
+
+const claseBotonSecundario =
+  'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800';
+const claseBotonAdmin =
+  'hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800';
+const claseSelect =
+  'rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
 ---
 
 <DashboardLayout titulo="Productos" subtitulo="Catálogo de forros, cargadores, vidrios y más">
-  <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
-      <h2 id="pr-contador" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando...</h2>
-      <div class="flex flex-wrap gap-2">
-        <div class="relative w-full sm:w-auto">
+  <div class="space-y-4">
+    <!-- Barra de herramientas -->
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <div class="relative flex-1">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
           </svg>
@@ -19,15 +26,15 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
             id="pr-buscador"
             type="search"
             autocomplete="off"
-            placeholder="Nombre, código o modelo..."
-            class="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-64 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            placeholder="Buscar por nombre, código, categoría o modelo de teléfono..."
+            class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
           <button
             type="button"
             data-abrir-escaner
             aria-label="Escanear código de barras con la cámara"
             title="Escanear con la cámara"
-            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4">
               <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
@@ -35,58 +42,102 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
             </svg>
           </button>
         </div>
-        <button
-          id="pr-exportar"
-          type="button"
-          class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
-        >
-          Exportar a CSV
-        </button>
-        <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
-        <button
-          id="pr-importar"
-          type="button"
-          class="hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800"
-        >
-          Importar CSV
-        </button>
-        <button
-          id="pr-entrada"
-          type="button"
-          class="hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800"
-        >
-          Registrar entrada
-        </button>
-        <button
-          id="pr-nuevo"
-          type="button"
-          class="bg-marca hidden rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-110"
-        >
-          + Nuevo producto
-        </button>
+
+        <div class="flex flex-wrap gap-2">
+          <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
+          <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
+          <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
+          <button id="pr-entrada" type="button" class={claseBotonAdmin}>Registrar entrada</button>
+          <button
+            id="pr-nuevo"
+            type="button"
+            class="bg-marca hidden rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110"
+          >
+            + Nuevo producto
+          </button>
+        </div>
+      </div>
+
+      <!-- Categorías -->
+      <div id="pr-categorias" class="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Filtrar por categoría"></div>
+
+      <!-- Opciones -->
+      <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <input id="pr-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+          Solo con stock
+        </label>
+        <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+          Ordenar por
+          <select id="pr-orden" class={claseSelect}>
+            <option value="nombre">Nombre (A–Z)</option>
+            <option value="categoria">Categoría</option>
+            <option value="precio_asc">Precio: menor a mayor</option>
+            <option value="precio_desc">Precio: mayor a menor</option>
+            <option value="stock_desc">Más stock primero</option>
+            <option value="stock_asc">Menos stock primero</option>
+          </select>
+        </label>
+        <p id="pr-resumen" class="ml-auto text-xs text-slate-500 dark:text-slate-400">Cargando...</p>
       </div>
     </div>
 
-    <div class="overflow-x-auto">
-      <table class="tabla-tarjetas w-full text-left text-sm">
-        <thead>
-          <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
-            <th class="px-5 py-3 font-medium">Producto</th>
-            <th class="px-5 py-3 font-medium">Categoría</th>
-            <th class="px-5 py-3 font-medium">Compatible con</th>
-            <th id="pr-th-costo" class="hidden px-5 py-3 font-medium">Precio compra</th>
-            <th class="px-5 py-3 font-medium">Precio venta</th>
-            <th class="px-5 py-3 font-medium">Stock</th>
-            <th id="pr-th-acciones" class="hidden px-5 py-3 font-medium">Acciones</th>
-          </tr>
-        </thead>
-        <tbody id="pr-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
-      </table>
+    <!-- Tabla -->
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="overflow-x-auto">
+        <table class="tabla-tarjetas w-full md:min-w-[56rem] md:table-fixed text-left text-sm">
+          <colgroup>
+            <col />
+            <col class="w-28" />
+            <col class="w-[22%]" />
+            <col id="pr-col-costo" class="hidden w-24" />
+            <col class="w-24" />
+            <col class="w-32" />
+            <col id="pr-col-acciones" class="hidden w-40" />
+          </colgroup>
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+              <th class="px-4 py-3 font-semibold">Producto</th>
+              <th class="px-4 py-3 font-semibold">Categoría</th>
+              <th class="px-4 py-3 font-semibold">Compatible con</th>
+              <th id="pr-th-costo" class="hidden px-4 py-3 text-right font-semibold">Compra</th>
+              <th class="px-4 py-3 text-right font-semibold">Venta</th>
+              <th class="px-4 py-3 font-semibold">Stock</th>
+              <th id="pr-th-acciones" class="hidden px-4 py-3 text-right font-semibold">Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="pr-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+
+      <div id="pr-sin-resultados" class="hidden px-5 py-12 text-center">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">No hay productos con esos filtros</p>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Prueba con otra búsqueda o quita algún filtro.</p>
+        <button id="pr-limpiar" type="button" class="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+          Limpiar filtros
+        </button>
+      </div>
+
+      <!-- Paginación -->
+      <div id="pr-paginacion" class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:text-slate-400">
+        <p id="pr-rango"></p>
+        <div class="flex items-center gap-3">
+          <label class="flex items-center gap-2">
+            Por página
+            <select id="pr-por-pagina" class={claseSelect}>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </label>
+          <div class="flex items-center gap-1">
+            <button id="pr-anterior" type="button" class={`${claseBotonSecundario} disabled:cursor-not-allowed disabled:opacity-40`}>← Anterior</button>
+            <span id="pr-pagina" class="min-w-20 text-center font-medium text-slate-700 dark:text-slate-200"></span>
+            <button id="pr-siguiente" type="button" class={`${claseBotonSecundario} disabled:cursor-not-allowed disabled:opacity-40`}>Siguiente →</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <p id="pr-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
-      No se encontraron productos con esa búsqueda.
-    </p>
-    <p id="pr-limite" class="hidden border-t border-slate-100 px-5 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400"></p>
   </div>
 
   <CamaraEscaner />
@@ -98,34 +149,299 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { obtenerSesionActual } from '../../lib/auth';
-  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import { esStockBajo, formatearMoneda } from '../../utils/format';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
   import { htmlMiniatura } from '../../utils/imagenes';
-  import type { ProductoConRelaciones } from '../../types/database.types';
+  import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
 
-  const contador = document.getElementById('pr-contador') as HTMLHeadingElement;
-  const filas = document.getElementById('pr-filas') as HTMLTableSectionElement;
-  const botonExportar = document.getElementById('pr-exportar') as HTMLButtonElement;
-  const thCosto = document.getElementById('pr-th-costo') as HTMLTableCellElement;
-  const buscador = document.getElementById('pr-buscador') as HTMLInputElement;
-  const sinResultados = document.getElementById('pr-sin-resultados') as HTMLParagraphElement;
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const filas = $<HTMLTableSectionElement>('pr-filas');
+  const buscador = $<HTMLInputElement>('pr-buscador');
+  const soloStock = $<HTMLInputElement>('pr-solo-stock');
+  const selectOrden = $<HTMLSelectElement>('pr-orden');
+  const selectPorPagina = $<HTMLSelectElement>('pr-por-pagina');
+  const contenedorCategorias = $('pr-categorias');
+  const sinResultados = $('pr-sin-resultados');
+  const paginacion = $('pr-paginacion');
 
-  const thAcciones = document.getElementById('pr-th-acciones') as HTMLTableCellElement;
-  const avisoLimite = document.getElementById('pr-limite') as HTMLParagraphElement;
-  const botonesAdmin = ['pr-importar', 'pr-entrada', 'pr-nuevo'].map((id) => document.getElementById(id) as HTMLButtonElement);
+  const COLUMNAS_ADMIN = ['pr-th-costo', 'pr-th-acciones', 'pr-col-costo', 'pr-col-acciones'];
+  const BOTONES_ADMIN = ['pr-importar', 'pr-entrada', 'pr-nuevo'];
+  const CHIPS_VISIBLES = 2;
+  const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
-  // Con cientos de productos, pintar todo en cada tecla es lento en un teléfono:
-  // se muestran los primeros resultados y el buscador afina el resto.
-  const LIMITE_FILAS = 150;
-
-  let productosCargados: ProductoConRelaciones[] = [];
+  let productos: ProductoConRelaciones[] = [];
   let esAdministrador = false;
+  let categoriaActiva = '';
+  let pagina = 1;
+  /** id -> texto normalizado (nombre + código + categoría + modelos) para buscar rápido */
+  const indice = new Map<string, string>();
 
-  botonExportar.addEventListener('click', () => {
+  // --- Utilidades -----------------------------------------------------------
+  const normalizar = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+  const natural = (a: string, b: string) => a.localeCompare(b, 'es', { numeric: true });
+
+  /** "iPhone 12" en vez de "Apple iPhone 12": la marca solo se repite donde el modelo no la trae. */
+  function nombreCorto(m: ModeloTelefono): string {
+    if (['Apple', 'Samsung', 'Xiaomi'].includes(m.marca)) return m.modelo;
+    return normalizar(m.modelo).startsWith(normalizar(m.marca)) ? m.modelo : `${m.marca} ${m.modelo}`;
+  }
+
+  // --- Estado de stock -------------------------------------------------------
+  // Un producto sin stock y SIN mínimo definido es "no controlado" (recién cargado):
+  // se muestra neutro. Solo es rojo si tiene mínimo y se quedó en cero.
+  function pildoraStock(p: ProductoConRelaciones): string {
+    const base = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold';
+    if (p.stock_actual <= 0) {
+      return p.stock_minimo > 0
+        ? `<span class="${base} bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"><span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>Sin stock</span>`
+        : `<span class="${base} bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>Sin stock</span>`;
+    }
+    if (esStockBajo(p)) {
+      return `<span class="${base} bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>${p.stock_actual} u.</span>`;
+    }
+    return `<span class="${base} bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>${p.stock_actual} u.</span>`;
+  }
+
+  // --- Compatibilidades resumidas -----------------------------------------------
+  function htmlCompatibles(p: ProductoConRelaciones): string {
+    if (p.modelos_compatibles.length === 0) {
+      return '<span class="text-xs text-slate-400">Universal</span>';
+    }
+    const nombres = [...p.modelos_compatibles].map(nombreCorto).sort(natural);
+    const chip = (n: string, oculto: boolean) =>
+      `<span ${oculto ? 'style="display:none"' : ''} class="extra-chip inline-flex items-center whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">${escapar(n)}</span>`;
+
+    const resto = nombres.length - CHIPS_VISIBLES;
+    return `<div data-compat class="flex flex-wrap items-center gap-1">
+      ${nombres.map((n, i) => chip(n, i >= CHIPS_VISIBLES)).join('')}
+      ${
+        resto > 0
+          ? `<button type="button" data-expandir data-resto="${resto}" class="rounded-md px-1.5 py-0.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-slate-800">+${resto} más</button>`
+          : ''
+      }
+    </div>`;
+  }
+
+  // --- Filtrado, orden y paginación -----------------------------------------------
+  function filtrar(): ProductoConRelaciones[] {
+    const q = normalizar(buscador.value.trim());
+    const tokens = q ? q.split(/\s+/) : [];
+    let lista = productos.filter((p) => {
+      if (categoriaActiva && p.categoria !== categoriaActiva) return false;
+      if (soloStock.checked && p.stock_actual <= 0) return false;
+      if (tokens.length === 0) return true;
+      const texto = indice.get(p.id) ?? '';
+      return tokens.every((t) => texto.includes(t)); // todas las palabras deben aparecer
+    });
+
+    const orden = selectOrden.value;
+    lista = [...lista].sort((a, b) => {
+      switch (orden) {
+        case 'categoria':
+          return natural(a.categoria, b.categoria) || natural(a.nombre, b.nombre);
+        case 'precio_asc':
+          return a.precio_venta - b.precio_venta || natural(a.nombre, b.nombre);
+        case 'precio_desc':
+          return b.precio_venta - a.precio_venta || natural(a.nombre, b.nombre);
+        case 'stock_desc':
+          return b.stock_actual - a.stock_actual || natural(a.nombre, b.nombre);
+        case 'stock_asc':
+          return a.stock_actual - b.stock_actual || natural(a.nombre, b.nombre);
+        default:
+          return natural(a.nombre, b.nombre);
+      }
+    });
+    return lista;
+  }
+
+  function pintarCategorias() {
+    const conteo = new Map<string, number>();
+    for (const p of productos) conteo.set(p.categoria, (conteo.get(p.categoria) ?? 0) + 1);
+    const ordenadas = [...conteo.keys()].sort((a, b) => {
+      const ia = ORDEN_CATEGORIAS.indexOf(a.toLowerCase());
+      const ib = ORDEN_CATEGORIAS.indexOf(b.toLowerCase());
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || natural(a, b);
+    });
+
+    const base = 'shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold transition';
+    const activo = 'border-brand-600 bg-brand-600 text-white shadow-sm';
+    const inactivo =
+      'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-brand-500 dark:hover:text-brand-300';
+    const chip = (valor: string, texto: string, n: number) =>
+      `<button type="button" data-categoria="${escapar(valor)}" aria-pressed="${categoriaActiva === valor}" class="${base} ${categoriaActiva === valor ? activo : inactivo}">${escapar(texto)} <span class="ml-0.5 opacity-70">${n}</span></button>`;
+
+    contenedorCategorias.innerHTML =
+      chip('', 'Todas', productos.length) + ordenadas.map((c) => chip(c, c, conteo.get(c)!)).join('');
+  }
+
+  function filaHtml(p: ProductoConRelaciones): string {
+    return `
+      <tr class="align-middle text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
+        <td class="px-4 py-3">
+          <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+            ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
+            <div class="min-w-0">
+              <p class="line-clamp-2 break-words font-medium leading-snug text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
+              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+            </div>
+          </div>
+        </td>
+        <td data-label="Categoría" class="px-4 py-3">
+          <span class="inline-flex whitespace-nowrap rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">${escapar(p.categoria)}</span>
+        </td>
+        <td data-label="Compatible con" class="px-4 py-3">${htmlCompatibles(p)}</td>
+        ${
+          esAdministrador
+            ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
+            : ''
+        }
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(p.precio_venta)}</td>
+        <td data-label="Stock" class="px-4 py-3">${pildoraStock(p)}</td>
+        ${
+          esAdministrador
+            ? `<td class="px-4 py-3">
+                <div class="acciones flex justify-end gap-1.5">
+                  <button type="button" data-entrada="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
+                  <button type="button" data-editar="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
+                </div>
+              </td>`
+            : ''
+        }
+      </tr>`;
+  }
+
+  function pintar() {
+    const lista = filtrar();
+    const porPagina = Number(selectPorPagina.value);
+    const totalPaginas = Math.max(1, Math.ceil(lista.length / porPagina));
+    pagina = Math.min(Math.max(1, pagina), totalPaginas);
+
+    const inicio = (pagina - 1) * porPagina;
+    filas.innerHTML = lista.slice(inicio, inicio + porPagina).map(filaHtml).join('');
+
+    const hayFiltro = buscador.value.trim() !== '' || categoriaActiva !== '' || soloStock.checked;
+    $('pr-resumen').textContent = hayFiltro
+      ? `${lista.length} de ${productos.length} productos`
+      : `${productos.length} productos · ${productos.filter((p) => p.stock_actual > 0).length} con stock`;
+
+    sinResultados.classList.toggle('hidden', lista.length > 0);
+    paginacion.classList.toggle('hidden', lista.length === 0);
+    $('pr-rango').textContent = lista.length
+      ? `Mostrando ${inicio + 1}–${Math.min(inicio + porPagina, lista.length)} de ${lista.length}`
+      : '';
+    $('pr-pagina').textContent = `Página ${pagina} de ${totalPaginas}`;
+    ($('pr-anterior') as HTMLButtonElement).disabled = pagina <= 1;
+    ($('pr-siguiente') as HTMLButtonElement).disabled = pagina >= totalPaginas;
+  }
+
+  /** Cambio deliberado (categoría, orden, página): vuelve a animar la lista. */
+  function pintarAnimado() {
+    animarLista(filas);
+    pintar();
+  }
+
+  function reconstruirIndice() {
+    indice.clear();
+    for (const p of productos) {
+      indice.set(
+        p.id,
+        normalizar(
+          [p.nombre, p.codigo_barras, p.categoria, ...p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`)].join(' ')
+        )
+      );
+    }
+  }
+
+  // --- Eventos ---------------------------------------------------------------------
+  buscador.addEventListener('input', () => {
+    pagina = 1;
+    pintar(); // sin animación: se reescribe en cada tecla
+  });
+  soloStock.addEventListener('change', () => {
+    pagina = 1;
+    pintarAnimado();
+  });
+  selectOrden.addEventListener('change', () => {
+    pagina = 1;
+    pintarAnimado();
+  });
+  selectPorPagina.addEventListener('change', () => {
+    pagina = 1;
+    pintarAnimado();
+  });
+  $('pr-anterior').addEventListener('click', () => {
+    pagina--;
+    pintarAnimado();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  $('pr-siguiente').addEventListener('click', () => {
+    pagina++;
+    pintarAnimado();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+  contenedorCategorias.addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-categoria]');
+    if (!boton) return;
+    categoriaActiva = boton.dataset.categoria ?? '';
+    pagina = 1;
+    pintarCategorias();
+    pintarAnimado();
+  });
+  $('pr-limpiar').addEventListener('click', () => {
+    buscador.value = '';
+    soloStock.checked = false;
+    categoriaActiva = '';
+    pagina = 1;
+    pintarCategorias();
+    pintarAnimado();
+  });
+
+  // Escaneo con cámara (ver src/components/CamaraEscaner.astro): autocompleta el buscador.
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    buscador.value = e.detail.codigo;
+    pagina = 1;
+    pintar();
+  }) as EventListener);
+
+  // Herramientas de administrador (formularios en src/components/productos/, que
+  // escuchan estos eventos; esta página no depende de sus detalles internos).
+  const abrir = (evento: string, detalle?: object) => window.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
+  $('pr-importar').addEventListener('click', () => abrir('easystem:abrir-importador'));
+  $('pr-entrada').addEventListener('click', () => abrir('easystem:abrir-entrada'));
+  $('pr-nuevo').addEventListener('click', () => abrir('easystem:abrir-producto'));
+
+  filas.addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+
+    const expandir = objetivo.closest<HTMLButtonElement>('[data-expandir]');
+    if (expandir) {
+      const contenedor = expandir.closest<HTMLElement>('[data-compat]')!;
+      const abierto = contenedor.dataset.abierto === '1';
+      contenedor.dataset.abierto = abierto ? '0' : '1';
+      contenedor.querySelectorAll('.extra-chip').forEach((chip, i) => {
+        if (i >= CHIPS_VISIBLES) (chip as HTMLElement).style.display = abierto ? 'none' : '';
+      });
+      expandir.textContent = abierto ? `+${expandir.dataset.resto} más` : 'Ver menos';
+      return;
+    }
+
+    const entrada = objetivo.closest<HTMLElement>('[data-entrada]')?.dataset.entrada;
+    const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
+    if (entrada) abrir('easystem:abrir-entrada', { productoId: entrada });
+    else if (editar) abrir('easystem:abrir-producto', { productoId: editar });
+  });
+
+  $('pr-exportar').addEventListener('click', () => {
+    // Exporta TODO el inventario (no solo la página visible).
     descargarCSV(
       `easystem-inventario-${new Date().toISOString().slice(0, 10)}.csv`,
-      productosCargados.map((p) => ({
+      productos.map((p) => ({
         codigo_barras: p.codigo_barras,
         nombre: p.nombre,
         categoria: p.categoria,
@@ -138,126 +454,22 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
     );
   });
 
-  const estilosBadge: Record<string, string> = {
-    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
-    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
-    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-  };
-  const estilosNeutro = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
-
-  function escaparHtml(texto: string): string {
-    const div = document.createElement('div');
-    div.textContent = texto;
-    return div.innerHTML;
-  }
-
-  function renderizarFilas(productos: ProductoConRelaciones[]) {
-    filas.innerHTML = productos
-      .slice(0, LIMITE_FILAS)
-      .map((producto) => {
-        const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
-        const compatibles = producto.modelos_compatibles.length
-          ? producto.modelos_compatibles
-              .map(
-                (m) =>
-                  `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosNeutro}">${escaparHtml(`${m.marca} ${m.modelo}`)}</span>`
-              )
-              .join(' ')
-          : '<span class="text-xs text-slate-400">Universal / sin definir</span>';
-
-        return `
-          <tr class="text-slate-700 dark:text-slate-300">
-            <td class="px-5 py-3">
-              <div class="grid grid-cols-[auto_1fr] items-center gap-3">
-                ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
-                <div class="min-w-0">
-                  <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-                  <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
-                </div>
-              </div>
-            </td>
-            <td data-label="Categoría" class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
-            <td data-label="Compatible con" class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
-            ${esAdministrador ? `<td data-label="Precio compra" class="px-5 py-3">${formatearMoneda(producto.precio_compra)}</td>` : ''}
-            <td data-label="Precio venta" class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
-            <td data-label="Stock" class="px-5 py-3">
-              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${producto.stock_actual} u.</span>
-            </td>
-            ${
-              esAdministrador
-                ? `<td class="px-5 py-3">
-                    <div class="flex gap-2">
-                      <button type="button" data-entrada="${producto.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
-                      <button type="button" data-editar="${producto.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
-                    </div>
-                  </td>`
-                : ''
-            }
-          </tr>
-        `;
-      })
-      .join('');
-  }
-
-  function filtrarProductos(texto: string): ProductoConRelaciones[] {
-    const q = texto.trim().toLowerCase();
-    if (!q) return productosCargados;
-    return productosCargados.filter(
-      (p) =>
-        p.nombre.toLowerCase().includes(q) ||
-        p.codigo_barras.toLowerCase().includes(q) ||
-        p.categoria.toLowerCase().includes(q) ||
-        p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
-    );
-  }
-
-  function actualizarLista() {
-    const resultado = filtrarProductos(buscador.value);
-    renderizarFilas(resultado);
-    sinResultados.classList.toggle('hidden', resultado.length > 0);
-    avisoLimite.classList.toggle('hidden', resultado.length <= LIMITE_FILAS);
-    avisoLimite.textContent = `Mostrando los primeros ${LIMITE_FILAS} de ${resultado.length}. Escribe en el buscador (nombre, modelo o código) para afinar.`;
-    contador.textContent = buscador.value.trim()
-      ? `${resultado.length} de ${productosCargados.length} productos`
-      : `${productosCargados.length} productos`;
-  }
-
-  buscador.addEventListener('input', actualizarLista);
-
-  // Escaneo con cámara (ver src/components/CamaraEscaner.astro): autocompleta el buscador.
-  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
-    buscador.value = e.detail.codigo;
-    actualizarLista();
-  }) as EventListener);
-
-  // Herramientas de administrador (formularios en src/components/productos/, que
-  // escuchan estos eventos; esta página no depende de sus detalles internos).
-  const abrir = (evento: string, detalle?: object) => window.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
-  document.getElementById('pr-importar')!.addEventListener('click', () => abrir('easystem:abrir-importador'));
-  document.getElementById('pr-entrada')!.addEventListener('click', () => abrir('easystem:abrir-entrada'));
-  document.getElementById('pr-nuevo')!.addEventListener('click', () => abrir('easystem:abrir-producto'));
-
-  filas.addEventListener('click', (e) => {
-    const objetivo = e.target as HTMLElement;
-    const entrada = objetivo.closest<HTMLElement>('[data-entrada]')?.dataset.entrada;
-    const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
-    if (entrada) abrir('easystem:abrir-entrada', { productoId: entrada });
-    else if (editar) abrir('easystem:abrir-producto', { productoId: editar });
-  });
-
   // Tras guardar/importar/registrar entrada, las ventanas avisan con este evento.
   window.addEventListener('easystem:productos-cambiaron', async () => {
-    productosCargados = await inventoryService.listarProductos();
-    actualizarLista();
+    productos = await inventoryService.listarProductos();
+    reconstruirIndice();
+    pintarCategorias();
+    pintar();
   });
 
-  Promise.all([inventoryService.listarProductos(), obtenerSesionActual()]).then(([productos, sesion]) => {
-    productosCargados = productos;
+  Promise.all([inventoryService.listarProductos(), obtenerSesionActual()]).then(([lista, sesion]) => {
+    productos = lista;
     esAdministrador = sesion?.rol === 'administrador';
-    thCosto.classList.toggle('hidden', !esAdministrador);
-    thAcciones.classList.toggle('hidden', !esAdministrador);
-    for (const boton of botonesAdmin) boton.classList.toggle('hidden', !esAdministrador);
+    for (const id of COLUMNAS_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
+    for (const id of BOTONES_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
+    reconstruirIndice();
+    pintarCategorias();
     animarLista(filas);
-    actualizarLista();
+    pintar();
   });
 </script>
