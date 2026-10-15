@@ -101,6 +101,7 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
   import { estadoStock, formatearMoneda } from '../../utils/format';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
+  import { htmlMiniatura } from '../../utils/imagenes';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
   const contador = document.getElementById('pr-contador') as HTMLHeadingElement;
@@ -167,8 +168,13 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
         return `
           <tr class="text-slate-700 dark:text-slate-300">
             <td class="px-5 py-3">
-              <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+              <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+                ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
+                <div class="min-w-0">
+                  <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+                  <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+                </div>
+              </div>
             </td>
             <td data-label="Categoría" class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
             <td data-label="Compatible con" class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>

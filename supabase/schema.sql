@@ -27,6 +27,7 @@ create table if not exists public.productos (
   precio_venta   numeric(10, 2) not null default 0 check (precio_venta >= 0),
   stock_actual   integer not null default 0 check (stock_actual >= 0),
   stock_minimo   integer not null default 5 check (stock_minimo >= 0),
+  imagen_url     text,  -- foto del producto (Storage, bucket "productos"; migración 0009)
   created_at     timestamptz not null default now()
 );
 
@@ -330,3 +331,26 @@ as $$
   )) % 10))::text
   from (select '20' || lpad(secuencia::text, 10, '0') as base) b;
 $$;
+
+-- ----------------------------------------------------------------------------
+-- 8. Fotos de productos (migración 0009)
+--    Bucket público "productos": todos ven las fotos; solo un administrador
+--    sube, reemplaza o borra, y solo imágenes jpg/jpeg/png/webp.
+-- ----------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('productos', 'productos', true)
+on conflict (id) do update set public = true;
+
+create policy "Fotos de productos: lectura" on storage.objects
+  for select using (bucket_id = 'productos');
+create policy "Fotos de productos: subir (solo administrador)" on storage.objects
+  for insert with check (
+    bucket_id = 'productos'
+    and public.rol_actual() = 'administrador'
+    and lower(storage.extension(name)) in ('jpg', 'jpeg', 'png', 'webp')
+  );
+create policy "Fotos de productos: reemplazar (solo administrador)" on storage.objects
+  for update using (bucket_id = 'productos' and public.rol_actual() = 'administrador')
+  with check (bucket_id = 'productos' and public.rol_actual() = 'administrador');
+create policy "Fotos de productos: borrar (solo administrador)" on storage.objects
+  for delete using (bucket_id = 'productos' and public.rol_actual() = 'administrador');

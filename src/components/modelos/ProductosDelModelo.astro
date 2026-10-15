@@ -1,0 +1,163 @@
+---
+// Ventana "¿Qué le sirve a este teléfono?": lista los productos compatibles con
+// un modelo, agrupados por categoría, más los accesorios universales
+// (cargadores, cables, popsockets...). La abre la página de Modelos con el
+// evento window "easystem:abrir-modelo" ({ detail: { modeloId, nombre } }).
+// Es de consulta: la ven administradores y vendedores por igual.
+---
+
+<dialog
+  id="pm-dialogo"
+  class="anim-escalar m-auto w-[min(40rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="flex max-h-[90vh] flex-col">
+    <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <div class="min-w-0">
+        <p class="text-xs font-medium uppercase tracking-wide text-slate-400">Productos para</p>
+        <h2 id="pm-titulo" class="truncate text-lg font-semibold">—</h2>
+        <p id="pm-resumen" class="text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <button type="button" id="pm-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <input id="pm-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+        Solo los que tienen stock
+      </label>
+    </div>
+
+    <div id="pm-cuerpo" class="space-y-5 overflow-y-auto px-5 py-4"></div>
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import { htmlMiniatura } from '../../utils/imagenes';
+  import type { ProductoConRelaciones } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('pm-dialogo');
+  const cuerpo = $('pm-cuerpo');
+  const soloStock = $<HTMLInputElement>('pm-solo-stock');
+
+  // Estas categorías son siempre específicas de un modelo: si un forro o vidrio
+  // no está vinculado a ninguno NO se ofrece como "universal".
+  const ESPECIFICAS_POR_MODELO = new Set(['forros', 'vidrios templados']);
+  const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
+
+  let vinculados: ProductoConRelaciones[] = [];
+  let universales: ProductoConRelaciones[] = [];
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+
+  const estilosBadge: Record<string, string> = {
+    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+  };
+
+  function ordenCategoria(c: string): number {
+    const i = ORDEN_CATEGORIAS.indexOf(c.toLowerCase());
+    return i === -1 ? ORDEN_CATEGORIAS.length : i;
+  }
+
+  function filaProducto(p: ProductoConRelaciones): string {
+    const estado = estadoStock(p.stock_actual, p.stock_minimo);
+    const texto = p.stock_actual > 0 ? `${p.stock_actual} u.` : 'Sin stock';
+    return `
+      <li class="flex items-center gap-3 py-2.5">
+        ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
+          <p class="truncate font-mono text-xs text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+        </div>
+        <div class="shrink-0 text-right">
+          <p class="text-sm font-semibold text-slate-900 dark:text-white">${formatearMoneda(p.precio_venta)}</p>
+          <span class="mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${estilosBadge[estado]}">${texto}</span>
+        </div>
+      </li>`;
+  }
+
+  /** Con stock primero, luego por nombre. */
+  function ordenar(lista: ProductoConRelaciones[]): ProductoConRelaciones[] {
+    return [...lista].sort(
+      (a, b) => Number(b.stock_actual > 0) - Number(a.stock_actual > 0) || a.nombre.localeCompare(b.nombre, 'es', { numeric: true })
+    );
+  }
+
+  function pintar() {
+    const filtrar = (l: ProductoConRelaciones[]) => (soloStock.checked ? l.filter((p) => p.stock_actual > 0) : l);
+
+    const porCategoria = new Map<string, ProductoConRelaciones[]>();
+    for (const p of filtrar(vinculados)) (porCategoria.get(p.categoria) ?? porCategoria.set(p.categoria, []).get(p.categoria)!).push(p);
+    const categorias = [...porCategoria.keys()].sort((a, b) => ordenCategoria(a) - ordenCategoria(b) || a.localeCompare(b, 'es'));
+
+    const bloques: string[] = categorias.map((cat) => {
+      const lista = ordenar(porCategoria.get(cat)!);
+      return `
+        <section>
+          <h3 class="flex items-baseline justify-between text-sm font-semibold text-slate-900 dark:text-white">
+            ${escapar(cat)} <span class="text-xs font-normal text-slate-400">${lista.length}</span>
+          </h3>
+          <ul class="mt-1 divide-y divide-slate-100 dark:divide-slate-800">${lista.map(filaProducto).join('')}</ul>
+        </section>`;
+    });
+
+    if (categorias.length === 0) {
+      bloques.push(
+        `<p class="rounded-lg bg-slate-50 px-3 py-4 text-sm text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+          ${soloStock.checked ? 'No hay productos con stock vinculados a este modelo.' : 'Todavía no hay productos vinculados a este modelo.'}
+        </p>`
+      );
+    }
+
+    const uni = ordenar(filtrar(universales));
+    if (uni.length > 0) {
+      bloques.push(`
+        <section>
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-white">
+            Universales <span class="text-xs font-normal text-slate-400">· sirven para cualquier teléfono (${uni.length})</span>
+          </h3>
+          <ul class="mt-1 divide-y divide-slate-100 dark:divide-slate-800">${uni.map(filaProducto).join('')}</ul>
+        </section>`);
+    }
+
+    cuerpo.innerHTML = bloques.join('');
+  }
+
+  async function abrir(modeloId: string, nombre: string) {
+    $('pm-titulo').textContent = nombre;
+    $('pm-resumen').textContent = 'Cargando...';
+    cuerpo.innerHTML = '';
+    soloStock.checked = false;
+    if (!dialogo.open) dialogo.showModal();
+
+    const productos = await inventoryService.listarProductos();
+    vinculados = productos.filter((p) => p.modelos_compatibles.some((m) => m.id === modeloId));
+    universales = productos.filter(
+      (p) => p.modelos_compatibles.length === 0 && !ESPECIFICAS_POR_MODELO.has(p.categoria.toLowerCase())
+    );
+
+    const conStock = vinculados.filter((p) => p.stock_actual > 0).length;
+    $('pm-resumen').textContent = `${vinculados.length} producto${vinculados.length === 1 ? '' : 's'} específico${
+      vinculados.length === 1 ? '' : 's'
+    } · ${conStock} con stock · ${universales.length} universales`;
+    pintar();
+  }
+
+  soloStock.addEventListener('change', pintar);
+  $('pm-cerrar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  window.addEventListener('easystem:abrir-modelo', ((e: CustomEvent<{ modeloId: string; nombre: string }>) => {
+    if (e.detail?.modeloId) abrir(e.detail.modeloId, e.detail.nombre);
+  }) as EventListener);
+</script>

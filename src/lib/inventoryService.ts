@@ -21,6 +21,7 @@ import * as movimientosDb from './db/movimientos';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
 import { esStockBajo } from '../utils/format';
+import { blobADataUrl } from '../utils/imagenes';
 import type { FilaImportacion } from './importador';
 import type {
   Compatibilidad,
@@ -369,6 +370,60 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   Object.assign(producto, cambios);
   guardarDB(db);
   return producto;
+}
+
+/** Como guardarDB, pero avisa si no cabe (las fotos en base64 pueden llenar el cupo del navegador). */
+function guardarDBEstricto(db: LocalDB) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(db));
+  } catch {
+    throw new Error(
+      'No hay espacio en el navegador para más fotos. Conecta Supabase (almacenamiento sin ese límite) o quita fotos que no uses.'
+    );
+  }
+}
+
+/**
+ * Guarda la foto de un producto. Con Supabase va al Storage (bucket "productos",
+ * migración 0009) y se guarda la URL; en modo LocalStorage se guarda como data
+ * URL dentro del propio producto. Devuelve la URL/data URL resultante.
+ */
+export async function guardarImagenProducto(productoId: string, imagen: Blob): Promise<string> {
+  if (supabaseConfigurado) {
+    const anterior = (await productosDb.obtenerProducto(productoId))?.imagen_url;
+    const url = await productosDb.subirImagenProducto(productoId, imagen);
+    await productosDb.actualizarProducto(productoId, { imagen_url: url });
+    productosDb.eliminarImagenProducto(anterior).catch(() => {}); // limpieza best-effort
+    return url;
+  }
+
+  const db = leerDB();
+  const producto = db.productos.find((p) => p.id === productoId);
+  if (!producto) throw new Error('Producto no encontrado.');
+  const anterior = producto.imagen_url;
+  producto.imagen_url = await blobADataUrl(imagen);
+  try {
+    guardarDBEstricto(db);
+  } catch (err) {
+    producto.imagen_url = anterior;
+    throw err;
+  }
+  return producto.imagen_url;
+}
+
+export async function quitarImagenProducto(productoId: string): Promise<void> {
+  if (supabaseConfigurado) {
+    const anterior = (await productosDb.obtenerProducto(productoId))?.imagen_url;
+    await productosDb.actualizarProducto(productoId, { imagen_url: null });
+    productosDb.eliminarImagenProducto(anterior).catch(() => {});
+    return;
+  }
+
+  const db = leerDB();
+  const producto = db.productos.find((p) => p.id === productoId);
+  if (!producto) throw new Error('Producto no encontrado.');
+  producto.imagen_url = null;
+  guardarDB(db);
 }
 
 export async function eliminarProducto(id: string): Promise<void> {

@@ -20,6 +20,8 @@ export interface Producto {
   precio_venta: number;
   stock_actual: number;
   stock_minimo: number;
+  /** URL pública (Supabase Storage) o data URL (modo LocalStorage); opcional */
+  imagen_url?: string | null;
   created_at: string;
 }
 

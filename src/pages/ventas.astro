@@ -140,6 +140,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   import * as inventoryService from '../lib/inventoryService';
   import { estadoStock, formatearMoneda } from '../utils/format';
   import { animarLista, reanimar } from '../utils/animaciones';
+  import { htmlMiniatura } from '../utils/imagenes';
   import type { ProductoConRelaciones } from '../types/database.types';
 
   interface LineaCarrito {
@@ -228,7 +229,8 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
         return `
           <li class="flex items-center justify-between gap-3 px-5 py-3">
-            <div class="min-w-0">
+            ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
+            <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="truncate text-xs text-slate-500 dark:text-slate-400">
                 ${escaparHtml(producto.codigo_barras)} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
@@ -266,7 +268,8 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         const alMaximo = cantidad >= producto.stock_actual;
         return `
           <li data-linea="${producto.id}" class="flex items-center justify-between gap-3 px-5 py-3">
-            <div class="min-w-0">
+            ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-10 w-10')}
+            <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="text-xs text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)} c/u</p>
             </div>

@@ -24,6 +24,23 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <input id="fp-nombre" type="text" autocomplete="off" placeholder="Ej: Forro antigolpes iPhone 15" class={claseCampo} />
       </div>
 
+      <div>
+        <span class={claseEtiqueta}>Foto del producto</span>
+        <div class="mt-1 flex items-center gap-3">
+          <div id="fp-foto-previa"></div>
+          <div class="flex flex-wrap gap-2">
+            <label class="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+              <input id="fp-foto" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+              <span id="fp-foto-etiqueta">Tomar o elegir foto</span>
+            </label>
+            <button type="button" id="fp-foto-quitar" class="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-500/10">
+              Quitar foto
+            </button>
+          </div>
+        </div>
+        <p class="mt-1 text-xs text-slate-400">La foto se reduce sola (máx. 720 px) para que cargue rápido.</p>
+      </div>
+
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label for="fp-categoria" class={claseEtiqueta}>Categoría *</label>
@@ -91,6 +108,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { obtenerSesionActual } from '../../lib/auth';
   import { generarCodigosInternos } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
+  import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -128,6 +146,43 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     error.classList.remove('hidden');
     reanimar(error, 'anim-sacudir');
   }
+
+  // --- Foto del producto ---------------------------------------------------
+  let fotoNueva: Blob | null = null; // elegida en esta sesión, aún sin subir
+  let quitarFoto = false; // el administrador pidió eliminar la existente
+  const inputFoto = $<HTMLInputElement>('fp-foto');
+  const botonQuitarFoto = $<HTMLButtonElement>('fp-foto-quitar');
+
+  async function pintarFoto() {
+    let url: string | null = null;
+    if (fotoNueva) url = await blobADataUrl(fotoNueva);
+    else if (!quitarFoto) url = editando?.imagen_url ?? null;
+    $('fp-foto-previa').innerHTML = htmlMiniatura(url, 'Foto del producto', 'h-16 w-16');
+    botonQuitarFoto.classList.toggle('hidden', !url);
+    $('fp-foto-etiqueta').textContent = url ? 'Cambiar foto' : 'Tomar o elegir foto';
+  }
+
+  inputFoto.addEventListener('change', async () => {
+    const archivo = inputFoto.files?.[0];
+    if (!archivo) return;
+    error.classList.add('hidden');
+    try {
+      fotoNueva = await reducirImagen(archivo);
+      quitarFoto = false;
+      await pintarFoto();
+    } catch (err) {
+      fotoNueva = null;
+      mostrarError(err instanceof Error ? err.message : 'No se pudo usar esa imagen.');
+    } finally {
+      inputFoto.value = ''; // permite volver a elegir el mismo archivo
+    }
+  });
+
+  botonQuitarFoto.addEventListener('click', () => {
+    fotoNueva = null;
+    quitarFoto = true;
+    pintarFoto();
+  });
 
   function pintarModelos() {
     const porMarca = new Map<string, ModeloTelefono[]>();
@@ -216,6 +271,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.minimo.value = '0';
     }
 
+    fotoNueva = null;
+    quitarFoto = false;
+    await pintarFoto();
     pintarModelos();
     buscarModelo.dispatchEvent(new Event('input'));
     dialogo.showModal();
@@ -262,6 +320,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           stock_minimo: minimo,
         });
         await inventoryService.establecerCompatibilidades(editando.id, [...seleccion]);
+        if (quitarFoto && editando.imagen_url) await inventoryService.quitarImagenProducto(editando.id);
+        else if (fotoNueva) await inventoryService.guardarImagenProducto(editando.id, fotoNueva);
       } else {
         const creado = await inventoryService.crearProducto({
           codigo_barras: codigo,
@@ -280,6 +340,23 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             cantidad: stock,
             motivo: 'Carga inicial',
           });
+        }
+        if (fotoNueva) {
+          try {
+            await inventoryService.guardarImagenProducto(creado.id, fotoNueva);
+          } catch (errFoto) {
+            // El producto ya existe: se pasa a modo edición para que reintentar la
+            // foto no cree un duplicado.
+            window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+            productos = await inventoryService.listarProductos();
+            editando = productos.find((p) => p.id === creado.id) ?? null;
+            titulo.textContent = 'Editar producto';
+            $('fp-grupo-stock').classList.add('hidden');
+            fotoNueva = null;
+            const motivo = errFoto instanceof Error ? errFoto.message : 'error desconocido';
+            mostrarError(`El producto se guardó, pero la foto no: ${motivo}`);
+            return;
+          }
         }
       }
       dialogo.close();

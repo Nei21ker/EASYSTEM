@@ -87,6 +87,36 @@ export async function eliminarProducto(id: string) {
   if (error) throw error;
 }
 
+const BUCKET_IMAGENES = 'productos';
+
+/** Sube la foto a Supabase Storage (bucket público "productos") y devuelve su URL pública. */
+export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
+  // Nombre único por subida: así la URL cambia y no queda la foto vieja en caché.
+  const ruta = `${productoId}/${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from(BUCKET_IMAGENES).upload(ruta, imagen, {
+    contentType: 'image/jpeg',
+    cacheControl: '31536000',
+  });
+  if (error) {
+    throw new Error(
+      /bucket not found/i.test(error.message)
+        ? 'Falta el almacenamiento de fotos en Supabase: aplica la migración 0009.'
+        : `No se pudo subir la foto: ${error.message}`
+    );
+  }
+  return supabase.storage.from(BUCKET_IMAGENES).getPublicUrl(ruta).data.publicUrl;
+}
+
+/** Borra del Storage el archivo al que apunta una URL pública (si es de nuestro bucket). */
+export async function eliminarImagenProducto(url: string | null | undefined): Promise<void> {
+  if (!url) return;
+  const marca = `/${BUCKET_IMAGENES}/`;
+  const indice = url.indexOf(marca);
+  if (indice === -1) return;
+  const ruta = decodeURIComponent(url.slice(indice + marca.length).split('?')[0]);
+  await supabase.storage.from(BUCKET_IMAGENES).remove([ruta]);
+}
+
 /** Inserta productos en lotes; devuelve id y código de cada uno (para enlazar compatibilidades y stock). */
 export async function crearProductosLote(
   filas: (Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>)[]
