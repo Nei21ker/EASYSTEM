@@ -23,7 +23,7 @@
   </p>
 
   <div id="lst-tabla-wrap" class="hidden overflow-x-auto">
-    <table class="w-full text-left text-sm">
+    <table class="tabla-tarjetas w-full text-left text-sm">
       <thead>
         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
           <th class="px-5 py-3 font-medium">Producto</th>
@@ -96,10 +96,10 @@
         return `
           <tr class="text-slate-700 dark:text-slate-300">
             <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</td>
-            <td class="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</td>
-            <td class="px-5 py-3">${producto.stock_actual}</td>
-            <td class="px-5 py-3">${producto.stock_minimo}</td>
-            <td class="px-5 py-3">
+            <td data-label="Código" class="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</td>
+            <td data-label="Stock actual" class="px-5 py-3">${producto.stock_actual}</td>
+            <td data-label="Mínimo" class="px-5 py-3">${producto.stock_minimo}</td>
+            <td data-label="Estado" class="px-5 py-3">
               <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${etiquetaEstado[estado]}</span>
             </td>
           </tr>

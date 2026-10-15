@@ -84,13 +84,19 @@ EASYSTEM funciona **sin ninguna configuración**: si no hay `.env`, guarda todo 
    npm run dev
    ```
 
-5. **Primer administrador** (Supabase no permite crear usuarios de Auth por SQL): entra a `/login`, pestaña "Crear cuenta" — queda como Vendedor por el trigger `manejar_nuevo_usuario`. Luego, en el SQL Editor de Supabase:
+5. **Primer administrador.** EASYSTEM es de uso interno: **no hay registro público** (la pantalla de login solo inicia sesión, y la base de datos rechaza cualquier alta no autorizada por un administrador — migración `0004`). Para el primer admin de un proyecto nuevo, en el SQL Editor de Supabase:
+
+   ```sql
+   insert into public.usuarios_autorizados (email) values ('tu-correo@dominio.com');
+   ```
+
+   y **dentro de los siguientes 10 minutos**: *Authentication → Users → Add user → Create new user* (con "Auto Confirm User" activado). Después:
 
    ```sql
    update public.perfiles set rol = 'administrador' where email = 'tu-correo@dominio.com';
    ```
 
-   Desde ahí, ese administrador ya puede crear más empleados en `/usuarios`.
+   Desde ahí, ese administrador crea a los empleados en `/usuarios`. Aplica las migraciones `0001`–`0004` de `supabase/migrations/` en orden.
 
 ## Despliegue en producción
 

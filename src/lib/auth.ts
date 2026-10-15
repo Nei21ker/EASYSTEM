@@ -71,6 +71,12 @@ function traducirErrorAuth(mensaje: string): string {
   if (m.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.';
   if (m.includes('user already registered')) return 'Ya existe una cuenta con ese correo.';
   if (m.includes('password should be at least')) return 'La contraseña debe tener al menos 6 caracteres.';
+  if (m.includes('email logins are disabled') || m.includes('email_provider_disabled')) {
+    return 'El inicio de sesión con correo está desactivado en Supabase. Actívalo en Authentication → Sign In / Providers → Email → "Enable Email provider".';
+  }
+  if (m.includes('registro_no_autorizado') || m.includes('database error saving new user')) {
+    return 'No se pudo crear la cuenta: el correo no está autorizado o falta aplicar las migraciones 0002–0004 de Supabase.';
+  }
   if (m.includes('signups not allowed')) return 'El registro de cuentas nuevas está deshabilitado en Supabase.';
   if (m.includes('rate limit')) return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
   return mensaje;
@@ -137,9 +143,15 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
 }
 
 /**
- * Crea un nuevo usuario (vendedor por defecto). En modo Supabase usa un
- * cliente aislado (persistSession: false) para que el signUp no reemplace la
- * sesión del administrador que está creando la cuenta.
+ * Crea una cuenta de empleado. SOLO un administrador con sesión puede hacerlo:
+ * EASYSTEM es de uso interno y no existe registro público.
+ *
+ * En modo Supabase el alta es de dos pasos, porque la base de datos rechaza
+ * cualquier registro cuyo correo no haya sido autorizado antes por un admin
+ * (trigger `verificar_registro_autorizado`, migración 0004):
+ *   1. el administrador autoriza el correo (tabla usuarios_autorizados, RLS);
+ *   2. se crea la cuenta con un cliente aislado (persistSession: false) para que
+ *      el signUp no reemplace la sesión del administrador.
  */
 export async function registrarUsuario(input: {
   email: string;
@@ -147,32 +159,49 @@ export async function registrarUsuario(input: {
   nombre: string;
   rol?: Rol;
 }): Promise<{ requiereConfirmacion: boolean }> {
+  const sesion = await obtenerSesionActual();
+  if (sesion?.rol !== 'administrador') {
+    throw new Error('Solo un administrador puede crear usuarios.');
+  }
+
   const rol = input.rol ?? 'vendedor';
+  const email = input.email.trim().toLowerCase();
+  const nombre = input.nombre.trim();
+  if (!nombre) throw new Error('El nombre es obligatorio.');
+  if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
 
   if (supabaseConfigurado) {
+    // Paso 1: autorizar el correo. Se borran autorizaciones viejas del mismo
+    // correo para no acumular filas.
+    await supabase.from('usuarios_autorizados').delete().eq('email', email);
+    const { error: errorAutorizar } = await supabase.from('usuarios_autorizados').insert({ email });
+    if (errorAutorizar) {
+      throw new Error(
+        'No se pudo autorizar el correo (¿aplicaste la migración 0004 en Supabase?): ' + errorAutorizar.message
+      );
+    }
+
+    // Paso 2: crear la cuenta. El rol NO viaja en el metadata: el trigger de
+    // perfiles siempre crea 'vendedor' y el ascenso lo hace el admin abajo.
     const clienteAislado = createClient(supabaseUrl, supabaseAnonKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // El rol NO se envía en el metadata: el trigger de la BD siempre crea el
-    // perfil como 'vendedor' (si confiara en el metadata, cualquiera podría
-    // registrarse como administrador llamando a la API directamente).
     const { data, error } = await clienteAislado.auth.signUp({
-      email: input.email,
+      email,
       password: input.password,
-      options: { data: { nombre: input.nombre } },
+      options: { data: { nombre } },
     });
-    if (error) throw new Error(traducirErrorAuth(error.message));
 
-    // Con "Confirm email" activo, un correo ya registrado devuelve un usuario
-    // "ofuscado" sin identidades en vez de un error.
-    if (data.user && data.user.identities?.length === 0) {
+    if (error || !data.user || data.user.identities?.length === 0) {
+      // No dejar la autorización abierta si el alta falló (si ya se consumió,
+      // este delete simplemente no encuentra filas).
+      await supabase.from('usuarios_autorizados').delete().eq('email', email);
+      if (error) throw new Error(traducirErrorAuth(error.message));
       throw new Error('Ya existe una cuenta con ese correo.');
     }
 
-    // Solo un administrador con sesión activa puede ascender el perfil (RLS);
-    // en un auto-registro desde /login esta llamada no tiene efecto, y está bien.
-    if (data.user && rol !== 'vendedor') {
+    if (rol !== 'vendedor') {
       const { error: errorRol } = await supabase.from('perfiles').update({ rol }).eq('id', data.user.id);
       if (errorRol) throw new Error('La cuenta se creó, pero no se pudo asignar el rol: ' + errorRol.message);
     }
@@ -181,10 +210,10 @@ export async function registrarUsuario(input: {
   }
 
   const usuarios = leerUsuariosLocales();
-  if (usuarios.some((u) => u.email.toLowerCase() === input.email.toLowerCase())) {
+  if (usuarios.some((u) => u.email.toLowerCase() === email)) {
     throw new Error('Ya existe un usuario con ese correo.');
   }
-  usuarios.push({ id: generarId(), email: input.email, password: input.password, nombre: input.nombre, rol });
+  usuarios.push({ id: generarId(), email, password: input.password, nombre, rol });
   guardarUsuariosLocales(usuarios);
   return { requiereConfirmacion: false };
 }

@@ -40,7 +40,7 @@
   <p id="qs-contador" class="px-5 pt-3 text-xs text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
 
   <div class="overflow-x-auto">
-    <table class="w-full text-left text-sm">
+    <table class="tabla-tarjetas w-full text-left text-sm">
       <thead>
         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
           <th class="px-5 py-3 font-medium">Producto</th>
@@ -103,10 +103,10 @@
           <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
           <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
         </td>
-        <td class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
-        <td class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
-        <td class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
-        <td class="px-5 py-3">${badge(`${producto.stock_actual} u.`, estado)} <span class="ml-1 text-xs text-slate-400">${etiquetaEstado[estado]}</span></td>
+        <td data-label="Categoría" class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
+        <td data-label="Compatible con" class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
+        <td data-label="Precio venta" class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
+        <td data-label="Stock" class="px-5 py-3">${badge(`${producto.stock_actual} u.`, estado)} <span class="ml-1 text-xs text-slate-400">${etiquetaEstado[estado]}</span></td>
       </tr>
     `;
   }

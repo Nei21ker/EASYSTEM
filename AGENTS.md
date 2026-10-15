@@ -40,7 +40,9 @@ Consequences of this that are easy to miss:
 
 Two roles: `administrador` and `vendedor`. Role storage mirrors the same dual-mode pattern — `perfiles` table in Supabase, or a simulator in LocalStorage — both behind `src/lib/auth.ts`. Every page requires a session (`/login`); admin-only routes redirect vendedores to `/`. This guard (`protegerPagina`) runs client-side, called from `DashboardLayout.astro`, and is what every page layout relies on — it is **not** a substitute for server-side RLS if stronger protection is ever needed. Role also gates UI visibility client-side: purchase price column in Productos, Reportes, and Usuarios are hidden/blocked for vendedores.
 
-First Supabase admin has to be bootstrapped manually (Supabase Auth users can't be created via SQL): sign up through `/login`, then in the Supabase SQL editor run `update public.perfiles set rol = 'administrador' where email = '...'`. After that, admins create more users from `/usuarios`.
+**There is no public sign-up** — the system is internal (owner + a few employees). `/login` only logs in. Account creation is admin-only and is enforced in the database, not just the UI: migration `0004` adds a `BEFORE INSERT` trigger on `auth.users` that rejects any signup whose email wasn't pre-authorized (row in `usuarios_autorizados`, valid 10 min, consumed on use). `registrarUsuario` in `auth.ts` does it in two steps — admin inserts the authorization (RLS: admins only), then creates the account with an isolated client. Don't reintroduce a self-registration path, and never trust `raw_user_meta_data` for roles (the perfiles trigger always creates `vendedor`; admins promote via `update perfiles`).
+
+First Supabase admin must be bootstrapped manually: insert the email into `usuarios_autorizados` via the SQL editor, create the user in Authentication → Users → Add user within 10 minutes, then `update public.perfiles set rol = 'administrador' where email = '...'`. After that, admins create more users from `/usuarios`.
 
 ### Directory map
 

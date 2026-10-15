@@ -16,7 +16,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
             id="pr-buscador"
             type="search"
             autocomplete="off"
-            placeholder="Buscar por nombre o código de barras..."
+            placeholder="Nombre, código o modelo..."
             class="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-9 pr-9 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:w-64 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
           <button
@@ -49,7 +49,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
     </div>
 
     <div class="overflow-x-auto">
-      <table class="w-full text-left text-sm">
+      <table class="tabla-tarjetas w-full text-left text-sm">
         <thead>
           <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
             <th class="px-5 py-3 font-medium">Producto</th>
@@ -136,11 +136,11 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
               <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
             </td>
-            <td class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
-            <td class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
-            ${esAdministrador ? `<td class="px-5 py-3">${formatearMoneda(producto.precio_compra)}</td>` : ''}
-            <td class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
-            <td class="px-5 py-3">
+            <td data-label="Categoría" class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
+            <td data-label="Compatible con" class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
+            ${esAdministrador ? `<td data-label="Precio compra" class="px-5 py-3">${formatearMoneda(producto.precio_compra)}</td>` : ''}
+            <td data-label="Precio venta" class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
+            <td data-label="Stock" class="px-5 py-3">
               <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${producto.stock_actual} u.</span>
             </td>
           </tr>

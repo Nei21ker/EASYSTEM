@@ -228,11 +228,59 @@ create policy "Los administradores actualizan cualquier perfil" on public.perfil
   for update using (public.rol_actual() = 'administrador');
 
 -- ----------------------------------------------------------------------------
+-- 6. usuarios_autorizados + trigger de registro cerrado (migración 0004)
+--    El sistema es de uso interno: nadie puede registrarse por su cuenta.
+--    Un administrador autoriza un correo (la app lo hace desde /usuarios), y el
+--    trigger BEFORE INSERT en auth.users solo deja pasar el alta si el correo
+--    está autorizado (vigencia 10 min) y consume la autorización.
+-- ----------------------------------------------------------------------------
+create table if not exists public.usuarios_autorizados (
+  id         uuid primary key default gen_random_uuid(),
+  email      text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.usuarios_autorizados enable row level security;
+
+create policy "Administradores ven autorizaciones" on public.usuarios_autorizados
+  for select using (public.rol_actual() = 'administrador');
+create policy "Administradores crean autorizaciones" on public.usuarios_autorizados
+  for insert with check (public.rol_actual() = 'administrador');
+create policy "Administradores borran autorizaciones" on public.usuarios_autorizados
+  for delete using (public.rol_actual() = 'administrador');
+
+create or replace function public.verificar_registro_autorizado()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  delete from public.usuarios_autorizados
+  where lower(email) = lower(new.email)
+    and created_at > now() - interval '10 minutes';
+
+  if not found then
+    raise exception 'REGISTRO_NO_AUTORIZADO: solo un administrador puede crear cuentas en EASYSTEM.';
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_verificar_registro on auth.users;
+create trigger trg_verificar_registro
+  before insert on auth.users
+  for each row
+  execute function public.verificar_registro_autorizado();
+
+-- ----------------------------------------------------------------------------
 -- Primer usuario administrador (bootstrap)
 -- No es posible crear usuarios de Auth por SQL (las contraseñas las maneja
--- GoTrue). Pasos para el primer administrador:
---   1. Regístrate desde /login (el trigger de arriba lo crea como 'vendedor').
---   2. En el SQL Editor de Supabase:
---      update public.perfiles set rol = 'administrador' where email = 'tu-correo@dominio.com';
--- Desde ahí, ese administrador ya puede crear más usuarios en /usuarios.
+-- GoTrue) y el registro público está cerrado. Pasos:
+--   1. insert into public.usuarios_autorizados (email) values ('jefe@dominio.com');
+--   2. En los siguientes 10 min: Authentication → Users → Add user → Create new
+--      user (con "Auto Confirm User").
+--   3. update public.perfiles set rol = 'administrador' where email = 'jefe@dominio.com';
+-- Desde ahí, ese administrador crea a los empleados en /usuarios.
 -- ----------------------------------------------------------------------------

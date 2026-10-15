@@ -34,9 +34,9 @@ const { titulo, subtitulo, rolMinimo } = Astro.props;
     <!-- oculto hasta que el guard de auth confirme sesión (evita destello de contenido protegido) -->
     <div id="app-shell" data-rol-minimo={rolMinimo ?? ''} class="flex min-h-screen" style="visibility:hidden">
       <Sidebar />
-      <div class="flex flex-1 flex-col">
+      <div class="flex min-w-0 flex-1 flex-col">
         <Header titulo={titulo} subtitulo={subtitulo} />
-        <main class="flex-1 space-y-6 p-4 sm:p-6 print:p-0">
+        <main class="min-w-0 flex-1 space-y-6 p-4 sm:p-6 print:p-0">
           <slot />
         </main>
       </div>

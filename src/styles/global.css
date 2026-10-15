@@ -24,3 +24,78 @@ body {
 ::selection {
   @apply bg-brand-500/30;
 }
+
+/* iOS Safari hace zoom al enfocar campos con fuente menor a 16px */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/*
+ * Tablas responsivas: por debajo de 768px cada fila se vuelve una tarjeta.
+ * Uso: <table class="tabla-tarjetas">, y en cada <td> un data-label="Etiqueta"
+ * (un <td> sin data-label ocupa todo el ancho, p. ej. la celda del nombre).
+ * Es CSS sin capa, así que tiene prioridad sobre las utilidades de Tailwind.
+ */
+@media (max-width: 767px) {
+  .tabla-tarjetas,
+  .tabla-tarjetas tbody,
+  .tabla-tarjetas tr,
+  .tabla-tarjetas td {
+    display: block;
+    width: 100%;
+  }
+
+  .tabla-tarjetas thead {
+    display: none;
+  }
+
+  .tabla-tarjetas tr {
+    display: flex;
+    flex-direction: column;
+    padding: 0.75rem 1rem;
+  }
+
+  /* td[data-primero]: se muestra arriba de la tarjeta sin importar su columna */
+  .tabla-tarjetas td[data-primero] {
+    order: -1;
+  }
+
+  .tabla-tarjetas td {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.2rem 0;
+    text-align: right;
+  }
+
+  .tabla-tarjetas td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    padding-top: 0.15rem;
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-align: left;
+    color: #64748b;
+  }
+
+  .dark .tabla-tarjetas td[data-label]::before {
+    color: #94a3b8;
+  }
+
+  .tabla-tarjetas td:not([data-label]) {
+    display: block;
+    text-align: left;
+    padding-bottom: 0.4rem;
+  }
+
+  .tabla-tarjetas td > div.flex {
+    justify-content: flex-end;
+  }
+}
