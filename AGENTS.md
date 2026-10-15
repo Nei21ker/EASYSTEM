@@ -48,6 +48,7 @@ First Supabase admin must be bootstrapped manually: insert the email into `usuar
 
 - `src/lib/db/` — per-table Supabase access (productos, modelos, movimientos). Only called from `inventoryService.ts`.
 - `src/lib/navLinks.ts` — sidebar links, each with a minimum required role.
+- `src/lib/catalogo-modelos.ts` — master list of phone models (brand → models), the single source for both LocalStorage (`mock-data.ts` appends them, and `leerDB` back-fills missing ones into existing browsers) and Supabase (`migrations/0005_catalogo_modelos.sql` is **generated** from it — regenerate when the list changes). Products link to models **by model name**, so never rename an existing entry; add new ones instead.
 - `src/types/database.types.ts` — types mirroring the SQL schema.
 - `src/stores/theme.ts` — dark/light theme via nanostores + localStorage, applied class (`.dark` on `<html>`) before first paint to avoid flash.
 - `src/utils/{format,csv,dateRange}.ts` — shared formatting/export/date-range helpers.

@@ -7,6 +7,7 @@
 // Apple, Samsung, Xiaomi, Infinix y Tecno, con forros, vidrios templados,
 // cargadores y cables, y compatibilidades cruzadas entre marcas.
 import type { ModeloTelefono, MovimientoInventario, ProductoConRelaciones } from '../types/database.types';
+import { catalogoModelos } from './catalogo-modelos';
 
 const modelo = (id: string, marca: string, modelo: string): ModeloTelefono => ({
   id,
@@ -36,6 +37,18 @@ export const modelosMock: ModeloTelefono[] = [
   modelo('m18', 'Tecno', 'Spark 10'),
   modelo('m19', 'Tecno', 'Camon 20'),
 ];
+
+// Resto del catálogo comercial (src/lib/catalogo-modelos.ts). Los 19 modelos de
+// arriba conservan sus ids (m1..m19) porque los productos de ejemplo apuntan a
+// ellos; el resto recibe un id estable derivado de marca+modelo.
+const slug = (texto: string) => texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const yaExiste = new Set(modelosMock.map((m) => `${m.marca}|${m.modelo}`));
+for (const [marca, lista] of Object.entries(catalogoModelos)) {
+  for (const nombre of lista) {
+    if (yaExiste.has(`${marca}|${nombre}`)) continue;
+    modelosMock.push(modelo(`cat-${slug(marca)}-${slug(nombre)}`, marca, nombre));
+  }
+}
 
 const porId = Object.fromEntries(modelosMock.map((m) => [m.id, m]));
 const compatibles = (...ids: string[]) => ids.map((id) => porId[id]);

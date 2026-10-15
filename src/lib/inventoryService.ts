@@ -68,7 +68,18 @@ function leerDB(): LocalDB {
 
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw) as LocalDB;
+    if (raw) {
+      const db = JSON.parse(raw) as LocalDB;
+      // El catálogo de modelos crece con las versiones: se completan los que
+      // falten sin tocar productos ni movimientos existentes.
+      const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
+      const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
+      if (faltantes.length > 0) {
+        db.modelos.push(...faltantes);
+        guardarDB(db);
+      }
+      return db;
+    }
   } catch (err) {
     console.error('[EASYSTEM] No se pudo leer LocalStorage; se reinicia con datos de ejemplo.', err);
   }
@@ -378,20 +389,24 @@ export async function establecerCompatibilidades(productoId: string, modeloIds: 
 // ----------------------------------------------------------------------------
 // Modelos de teléfono
 // ----------------------------------------------------------------------------
+/** Orden por marca y luego por modelo con números "naturales": iPhone 9 < iPhone 11 < iPhone 15. */
+function compararModelos(a: ModeloTelefono, b: ModeloTelefono): number {
+  return a.marca.localeCompare(b.marca, 'es') || a.modelo.localeCompare(b.modelo, 'es', { numeric: true });
+}
+
 export async function listarModelos(): Promise<ModeloTelefono[]> {
   if (!supabaseConfigurado) {
-    const db = leerDB();
-    return db.modelos.slice().sort((a, b) => a.marca.localeCompare(b.marca) || a.modelo.localeCompare(b.modelo));
+    return leerDB().modelos.slice().sort(compararModelos);
   }
 
   try {
     const modelos = await modelosDb.listarModelos();
     guardarCache(LS_CACHE_MODELOS, modelos);
-    return modelos;
+    return modelos.slice().sort(compararModelos);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
     console.warn('[EASYSTEM] Sin conexión con Supabase; usando modelos guardados localmente.', err);
-    return leerCache<ModeloTelefono[]>(LS_CACHE_MODELOS) ?? [];
+    return (leerCache<ModeloTelefono[]>(LS_CACHE_MODELOS) ?? []).sort(compararModelos);
   }
 }
 

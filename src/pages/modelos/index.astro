@@ -3,8 +3,31 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
 ---
 
 <DashboardLayout titulo="Modelos de teléfono" subtitulo="Catálogo de compatibilidad para forros, vidrios y más">
-  <p id="md-cargando" class="text-sm text-slate-500 dark:text-slate-400">Cargando...</p>
-  <div id="md-grupos" class="space-y-6"></div>
+  <div class="space-y-4">
+    <div class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900">
+      <p id="md-resumen" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando...</p>
+      <div class="relative sm:w-72">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+          <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+        </svg>
+        <input
+          id="md-buscador"
+          type="search"
+          autocomplete="off"
+          placeholder="Buscar marca o modelo..."
+          class="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+        />
+      </div>
+    </div>
+
+    <div id="md-marcas" class="flex flex-wrap gap-2"></div>
+
+    <p id="md-cargando" class="text-sm text-slate-500 dark:text-slate-400">Cargando...</p>
+    <p id="md-sin-resultados" class="hidden text-sm text-slate-500 dark:text-slate-400">
+      No se encontraron modelos con esa búsqueda.
+    </p>
+    <div id="md-grupos" class="space-y-6"></div>
+  </div>
 </DashboardLayout>
 
 <script>
@@ -12,8 +35,15 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
   import type { ModeloTelefono } from '../../types/database.types';
   import { animarLista } from '../../utils/animaciones';
 
+  const resumen = document.getElementById('md-resumen') as HTMLParagraphElement;
+  const buscador = document.getElementById('md-buscador') as HTMLInputElement;
+  const chipsMarcas = document.getElementById('md-marcas') as HTMLDivElement;
   const cargando = document.getElementById('md-cargando') as HTMLParagraphElement;
+  const sinResultados = document.getElementById('md-sin-resultados') as HTMLParagraphElement;
   const grupos = document.getElementById('md-grupos') as HTMLDivElement;
+
+  let modelos: ModeloTelefono[] = [];
+  let marcaActiva = '';
 
   function escaparHtml(texto: string): string {
     const div = document.createElement('div');
@@ -21,20 +51,53 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
     return div.innerHTML;
   }
 
-  inventoryService.listarModelos().then((modelos) => {
-    cargando.classList.add('hidden');
+  function normalizar(texto: string): string {
+    return texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
 
-    const porMarca = modelos.reduce<Record<string, ModeloTelefono[]>>((acc, modelo) => {
+  function pintarChipsMarcas() {
+    const conteo = new Map<string, number>();
+    for (const m of modelos) conteo.set(m.marca, (conteo.get(m.marca) ?? 0) + 1);
+
+    const base = 'rounded-full border px-3 py-1 text-xs font-medium transition';
+    const activo = 'border-brand-600 bg-brand-600 text-white';
+    const inactivo =
+      'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-brand-500 dark:hover:text-brand-300';
+
+    const chip = (valor: string, etiqueta: string) =>
+      `<button type="button" data-marca="${escaparHtml(valor)}" aria-pressed="${marcaActiva === valor}" class="${base} ${marcaActiva === valor ? activo : inactivo}">${escaparHtml(etiqueta)}</button>`;
+
+    chipsMarcas.innerHTML =
+      chip('', `Todas (${modelos.length})`) +
+      [...conteo.entries()].map(([marca, n]) => chip(marca, `${marca} (${n})`)).join('');
+  }
+
+  function pintarGrupos() {
+    const q = normalizar(buscador.value.trim());
+    const filtrados = modelos.filter(
+      (m) =>
+        (!marcaActiva || m.marca === marcaActiva) &&
+        (!q || normalizar(m.modelo).includes(q) || normalizar(m.marca).includes(q))
+    );
+
+    resumen.textContent = q || marcaActiva
+      ? `${filtrados.length} de ${modelos.length} modelos`
+      : `${modelos.length} modelos · ${new Set(modelos.map((m) => m.marca)).size} marcas`;
+    sinResultados.classList.toggle('hidden', filtrados.length > 0);
+
+    const porMarca = filtrados.reduce<Record<string, ModeloTelefono[]>>((acc, modelo) => {
       (acc[modelo.marca] ??= []).push(modelo);
       return acc;
     }, {});
 
-    animarLista(grupos);
     grupos.innerHTML = Object.entries(porMarca)
       .map(
         ([marca, items]) => `
           <div class="tarjeta-elevable rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <h3 class="text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(marca)}</h3>
+            <div class="flex items-baseline justify-between gap-3">
+              <h3 class="text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(marca)}</h3>
+              <span class="text-xs text-slate-400">${items.length} modelo${items.length === 1 ? '' : 's'}</span>
+            </div>
             <div class="mt-3 flex flex-wrap gap-2">
               ${items
                 .map(
@@ -47,5 +110,23 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
         `
       )
       .join('');
+  }
+
+  chipsMarcas.addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-marca]');
+    if (!boton) return;
+    marcaActiva = boton.dataset.marca ?? '';
+    pintarChipsMarcas();
+    pintarGrupos();
+  });
+
+  buscador.addEventListener('input', pintarGrupos);
+
+  inventoryService.listarModelos().then((lista) => {
+    modelos = lista;
+    cargando.classList.add('hidden');
+    pintarChipsMarcas();
+    animarLista(grupos);
+    pintarGrupos();
   });
 </script>
