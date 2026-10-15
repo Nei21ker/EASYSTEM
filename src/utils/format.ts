@@ -1,7 +1,12 @@
-const formateadorMoneda = new Intl.NumberFormat('es-GT', {
-  style: 'currency',
-  currency: 'GTQ',
+// Solo cambia el SÍMBOLO que se muestra ($); los montos no se convierten. Se usa
+// un formato numérico propio (en vez de style: 'currency') porque Intl con USD
+// escribiría "US$" en este idioma.
+const formateadorNumero = new Intl.NumberFormat('es-GT', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
+
+export const SIMBOLO_MONEDA = '$';
 
 const formateadorFecha = new Intl.DateTimeFormat('es-GT', {
   dateStyle: 'medium',
@@ -9,7 +14,8 @@ const formateadorFecha = new Intl.DateTimeFormat('es-GT', {
 });
 
 export function formatearMoneda(valor: number): string {
-  return formateadorMoneda.format(valor);
+  const absoluto = formateadorNumero.format(Math.abs(valor));
+  return `${valor < 0 ? '-' : ''}${SIMBOLO_MONEDA}${absoluto}`;
 }
 
 export function formatearFecha(valor: string | Date): string {

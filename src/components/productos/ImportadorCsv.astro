@@ -129,7 +129,7 @@
       .map((f) => {
         const detalle =
           f.accion === 'crear'
-            ? `${f.categoria} · Q ${f.precio_venta.toFixed(2)}${f.stock_objetivo ? ` · stock ${f.stock_objetivo}` : ''}${f.codigoGenerado ? ' · código nuevo' : ''}`
+            ? `${f.categoria} · $${f.precio_venta.toFixed(2)}${f.stock_objetivo ? ` · stock ${f.stock_objetivo}` : ''}${f.codigoGenerado ? ' · código nuevo' : ''}`
             : f.cambios.join('; ');
         const etiqueta =
           f.accion === 'crear'

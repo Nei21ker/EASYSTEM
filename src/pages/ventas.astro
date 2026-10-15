@@ -63,7 +63,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
           <div class="flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
             <span>Total</span>
-            <span id="pos-total" class="inline-block origin-right">Q 0.00</span>
+            <span id="pos-total" class="inline-block origin-right">$0.00</span>
           </div>
           <p id="pos-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <button
@@ -83,7 +83,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
     <div class="min-w-0 flex-1">
       <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
-      <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">Q 0.00</p>
+      <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">$0.00</p>
     </div>
     <button
       id="pos-barra-cobrar"

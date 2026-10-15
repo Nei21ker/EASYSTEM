@@ -47,12 +47,18 @@ export function contarHasta(
 ) {
   if (!el) return;
   if (sinMovimiento() || destino === 0 || !Number.isFinite(destino)) {
+    delete el.dataset.contando; // cancela cualquier conteo anterior en curso
     el.textContent = formato(destino);
     return;
   }
 
   const inicio = performance.now();
+  // Si el mismo elemento vuelve a animarse (p. ej. al cambiar un filtro), la
+  // animación anterior se descarta para que no pise el valor nuevo.
+  const id = String(inicio);
+  el.dataset.contando = id;
   const paso = (ahora: number) => {
+    if (el.dataset.contando !== id) return;
     const t = Math.min(1, (ahora - inicio) / duracionMs);
     const suave = 1 - Math.pow(1 - t, 3); // ease-out cúbico
     el.textContent = formato(destino * suave);
@@ -60,4 +66,10 @@ export function contarHasta(
     else el.textContent = formato(destino);
   };
   requestAnimationFrame(paso);
+
+  // requestAnimationFrame se pausa en pestañas en segundo plano: este respaldo
+  // garantiza que el valor final siempre quede escrito.
+  window.setTimeout(() => {
+    if (el.dataset.contando === id) el.textContent = formato(destino);
+  }, duracionMs + 150);
 }

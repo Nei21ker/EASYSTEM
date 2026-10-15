@@ -4,10 +4,10 @@
 -- Requiere 0005 (catálogo de modelos) y 0006 (función ean13_interno).
 --
 -- Tipos y precio de venta INICIAL (ajústalos luego con Importar CSV o Editar):
---   Forro de silicona ............ Q 38    (todos los modelos)
---   Forro antigolpes ............. Q 55    (todos los modelos)
---   Forro transparente ........... Q 35    (todos los modelos)
---   Forro con soporte MagSafe .... Q 115   (solo iPhone 12 en adelante)
+--   Forro de silicona ............ $38    (todos los modelos)
+--   Forro antigolpes ............. $55    (todos los modelos)
+--   Forro transparente ........... $35    (todos los modelos)
+--   Forro con soporte MagSafe .... $115   (solo iPhone 12 en adelante)
 --
 -- Cada producto nace con: stock 0, precio de compra 0, stock mínimo 0 (sin
 -- alertas) y un código de barras interno EAN-13. La compatibilidad con su

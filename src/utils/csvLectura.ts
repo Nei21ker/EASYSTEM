@@ -67,7 +67,7 @@ export function parsearCSV(texto: string): string[][] {
   return filas.filter((f) => f.some((c) => c.trim() !== ''));
 }
 
-/** "Q 1,234.50" → 1234.5 · "38,5" → 38.5 · "" → null · "abc" → NaN */
+/** "$1,234.50" o "Q 1,234.50" → 1234.5 · "38,5" → 38.5 · "" → null · "abc" → NaN */
 export function parsearNumero(valor: string): number | null {
   let s = valor.replace(/[Qq$\s]/g, '').trim();
   if (s === '') return null;
