@@ -1,14 +1,17 @@
 ---
 import DashboardLayout from '../../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../../components/CamaraEscaner.astro';
+import FormularioProducto from '../../components/productos/FormularioProducto.astro';
+import EntradaStock from '../../components/productos/EntradaStock.astro';
+import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
 ---
 
 <DashboardLayout titulo="Productos" subtitulo="Catálogo de forros, cargadores, vidrios y más">
   <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
     <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
       <h2 id="pr-contador" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando...</h2>
-      <div class="flex flex-col gap-2 sm:flex-row">
-        <div class="relative">
+      <div class="flex flex-wrap gap-2">
+        <div class="relative w-full sm:w-auto">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
           </svg>
@@ -37,11 +40,27 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
           type="button"
           class="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
         >
-          Exportar inventario a CSV
+          Exportar a CSV
+        </button>
+        <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
+        <button
+          id="pr-importar"
+          type="button"
+          class="hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800"
+        >
+          Importar CSV
         </button>
         <button
+          id="pr-entrada"
           type="button"
-          class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700"
+          class="hidden rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800"
+        >
+          Registrar entrada
+        </button>
+        <button
+          id="pr-nuevo"
+          type="button"
+          class="bg-marca hidden rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-110"
         >
           + Nuevo producto
         </button>
@@ -58,6 +77,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
             <th id="pr-th-costo" class="hidden px-5 py-3 font-medium">Precio compra</th>
             <th class="px-5 py-3 font-medium">Precio venta</th>
             <th class="px-5 py-3 font-medium">Stock</th>
+            <th id="pr-th-acciones" class="hidden px-5 py-3 font-medium">Acciones</th>
           </tr>
         </thead>
         <tbody id="pr-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -66,9 +86,13 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
     <p id="pr-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
       No se encontraron productos con esa búsqueda.
     </p>
+    <p id="pr-limite" class="hidden border-t border-slate-100 px-5 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400"></p>
   </div>
 
   <CamaraEscaner />
+  <FormularioProducto />
+  <EntradaStock />
+  <ImportadorCsv />
 </DashboardLayout>
 
 <script>
@@ -85,6 +109,14 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
   const thCosto = document.getElementById('pr-th-costo') as HTMLTableCellElement;
   const buscador = document.getElementById('pr-buscador') as HTMLInputElement;
   const sinResultados = document.getElementById('pr-sin-resultados') as HTMLParagraphElement;
+
+  const thAcciones = document.getElementById('pr-th-acciones') as HTMLTableCellElement;
+  const avisoLimite = document.getElementById('pr-limite') as HTMLParagraphElement;
+  const botonesAdmin = ['pr-importar', 'pr-entrada', 'pr-nuevo'].map((id) => document.getElementById(id) as HTMLButtonElement);
+
+  // Con cientos de productos, pintar todo en cada tecla es lento en un teléfono:
+  // se muestran los primeros resultados y el buscador afina el resto.
+  const LIMITE_FILAS = 150;
 
   let productosCargados: ProductoConRelaciones[] = [];
   let esAdministrador = false;
@@ -120,6 +152,7 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
 
   function renderizarFilas(productos: ProductoConRelaciones[]) {
     filas.innerHTML = productos
+      .slice(0, LIMITE_FILAS)
       .map((producto) => {
         const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
         const compatibles = producto.modelos_compatibles.length
@@ -144,6 +177,16 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
             <td data-label="Stock" class="px-5 py-3">
               <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[estado]}">${producto.stock_actual} u.</span>
             </td>
+            ${
+              esAdministrador
+                ? `<td class="px-5 py-3">
+                    <div class="flex gap-2">
+                      <button type="button" data-entrada="${producto.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
+                      <button type="button" data-editar="${producto.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
+                    </div>
+                  </td>`
+                : ''
+            }
           </tr>
         `;
       })
@@ -166,6 +209,8 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
     const resultado = filtrarProductos(buscador.value);
     renderizarFilas(resultado);
     sinResultados.classList.toggle('hidden', resultado.length > 0);
+    avisoLimite.classList.toggle('hidden', resultado.length <= LIMITE_FILAS);
+    avisoLimite.textContent = `Mostrando los primeros ${LIMITE_FILAS} de ${resultado.length}. Escribe en el buscador (nombre, modelo o código) para afinar.`;
     contador.textContent = buscador.value.trim()
       ? `${resultado.length} de ${productosCargados.length} productos`
       : `${productosCargados.length} productos`;
@@ -179,10 +224,33 @@ import CamaraEscaner from '../../components/CamaraEscaner.astro';
     actualizarLista();
   }) as EventListener);
 
+  // Herramientas de administrador (formularios en src/components/productos/, que
+  // escuchan estos eventos; esta página no depende de sus detalles internos).
+  const abrir = (evento: string, detalle?: object) => window.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
+  document.getElementById('pr-importar')!.addEventListener('click', () => abrir('easystem:abrir-importador'));
+  document.getElementById('pr-entrada')!.addEventListener('click', () => abrir('easystem:abrir-entrada'));
+  document.getElementById('pr-nuevo')!.addEventListener('click', () => abrir('easystem:abrir-producto'));
+
+  filas.addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+    const entrada = objetivo.closest<HTMLElement>('[data-entrada]')?.dataset.entrada;
+    const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
+    if (entrada) abrir('easystem:abrir-entrada', { productoId: entrada });
+    else if (editar) abrir('easystem:abrir-producto', { productoId: editar });
+  });
+
+  // Tras guardar/importar/registrar entrada, las ventanas avisan con este evento.
+  window.addEventListener('easystem:productos-cambiaron', async () => {
+    productosCargados = await inventoryService.listarProductos();
+    actualizarLista();
+  });
+
   Promise.all([inventoryService.listarProductos(), obtenerSesionActual()]).then(([productos, sesion]) => {
     productosCargados = productos;
     esAdministrador = sesion?.rol === 'administrador';
     thCosto.classList.toggle('hidden', !esAdministrador);
+    thAcciones.classList.toggle('hidden', !esAdministrador);
+    for (const boton of botonesAdmin) boton.classList.toggle('hidden', !esAdministrador);
     animarLista(filas);
     actualizarLista();
   });

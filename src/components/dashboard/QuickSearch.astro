@@ -65,6 +65,9 @@
   import { animarLista } from '../../utils/animaciones';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
+  // Con cientos de productos, pintarlos todos en cada tecla es lento en un teléfono.
+  const LIMITE_FILAS = 100;
+
   let productos: ProductoConRelaciones[] = [];
 
   const buscador = document.getElementById('qs-buscador') as HTMLInputElement;
@@ -149,9 +152,12 @@
 
   function actualizar() {
     const resultado = filtrarProductos();
-    tbody.innerHTML = resultado.map(renderFila).join('');
+    tbody.innerHTML = resultado.slice(0, LIMITE_FILAS).map(renderFila).join('');
     sinResultados.classList.toggle('hidden', resultado.length > 0);
-    contador.textContent = `${resultado.length} de ${productos.length} productos`;
+    contador.textContent =
+      resultado.length > LIMITE_FILAS
+        ? `${resultado.length} de ${productos.length} productos · mostrando los primeros ${LIMITE_FILAS}, afina la búsqueda`
+        : `${resultado.length} de ${productos.length} productos`;
   }
 
   buscador.addEventListener('input', actualizar);

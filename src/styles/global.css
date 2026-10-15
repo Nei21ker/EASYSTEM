@@ -214,11 +214,11 @@ body {
 .anim-anillo { animation: anillo 1.8s ease-out infinite; }
 
 /* Entrada de página: el layout agrega .shell-listo al revelar el contenido */
-.shell-listo main > * { animation: subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
-.shell-listo main > *:nth-child(2) { animation-delay: 70ms; }
-.shell-listo main > *:nth-child(3) { animation-delay: 140ms; }
-.shell-listo main > *:nth-child(4) { animation-delay: 210ms; }
-.shell-listo main > *:nth-child(n + 5) { animation-delay: 280ms; }
+.shell-listo main > *:not(dialog, .fixed) { animation: subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
+.shell-listo main > *:not(dialog, .fixed):nth-child(2) { animation-delay: 70ms; }
+.shell-listo main > *:not(dialog, .fixed):nth-child(3) { animation-delay: 140ms; }
+.shell-listo main > *:not(dialog, .fixed):nth-child(4) { animation-delay: 210ms; }
+.shell-listo main > *:not(dialog, .fixed):nth-child(n + 5) { animation-delay: 280ms; }
 
 /* Listas y tablas: entran escalonadas (animarLista() pone y quita esta clase) */
 .anim-lista > * { animation: subir 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards; }

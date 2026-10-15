@@ -87,6 +87,35 @@ export async function eliminarProducto(id: string) {
   if (error) throw error;
 }
 
+/** Inserta productos en lotes; devuelve id y código de cada uno (para enlazar compatibilidades y stock). */
+export async function crearProductosLote(
+  filas: (Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>)[]
+): Promise<{ id: string; codigo_barras: string }[]> {
+  const creados: { id: string; codigo_barras: string }[] = [];
+  for (let i = 0; i < filas.length; i += 200) {
+    const { data, error } = await supabase
+      .from('productos')
+      .insert(filas.slice(i, i + 200))
+      .select('id, codigo_barras')
+      .overrideTypes<{ id: string; codigo_barras: string }[], { merge: false }>();
+    if (error) throw error;
+    creados.push(...(data ?? []));
+  }
+  return creados;
+}
+
+/** Reemplaza las compatibilidades de varios productos: borra las actuales y inserta las nuevas en lote. */
+export async function reemplazarCompatibilidadesLote(pares: { producto_id: string; modelo_id: string }[], productoIds: string[]) {
+  for (let i = 0; i < productoIds.length; i += 100) {
+    const { error } = await supabase.from('compatibilidades').delete().in('producto_id', productoIds.slice(i, i + 100));
+    if (error) throw error;
+  }
+  for (let i = 0; i < pares.length; i += 500) {
+    const { error } = await supabase.from('compatibilidades').insert(pares.slice(i, i + 500));
+    if (error) throw error;
+  }
+}
+
 export async function establecerCompatibilidades(productoId: string, modeloIds: string[]) {
   await supabase.from('compatibilidades').delete().eq('producto_id', productoId);
   if (modeloIds.length === 0) return;

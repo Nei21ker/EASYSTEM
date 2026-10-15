@@ -1,0 +1,305 @@
+---
+// Formulario para crear/editar un producto (solo administrador).
+// Se abre con el evento window "easystem:abrir-producto" ({ detail: { productoId? } })
+// y avisa con "easystem:productos-cambiaron" al guardar, igual que el escáner
+// de cámara: la página que lo usa no depende de sus detalles internos.
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<dialog
+  id="fp-dialogo"
+  class="anim-escalar m-auto w-[min(40rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form id="fp-form" class="flex max-h-[90vh] flex-col" novalidate>
+    <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <h2 id="fp-titulo" class="text-base font-semibold">Nuevo producto</h2>
+      <button type="button" id="fp-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="space-y-4 overflow-y-auto px-5 py-4">
+      <div>
+        <label for="fp-nombre" class={claseEtiqueta}>Nombre del producto *</label>
+        <input id="fp-nombre" type="text" autocomplete="off" placeholder="Ej: Forro antigolpes iPhone 15" class={claseCampo} />
+      </div>
+
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label for="fp-categoria" class={claseEtiqueta}>Categoría *</label>
+          <input id="fp-categoria" type="text" list="fp-categorias" autocomplete="off" placeholder="Forros, Cargadores..." class={claseCampo} />
+          <datalist id="fp-categorias"></datalist>
+        </div>
+        <div>
+          <label for="fp-codigo" class={claseEtiqueta}>Código de barras</label>
+          <div class="flex gap-2">
+            <input id="fp-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Vacío = generar uno interno" class={claseCampo} />
+            <button type="button" id="fp-generar" class="mt-1 shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+              Generar
+            </button>
+          </div>
+          <p id="fp-codigo-ayuda" class="mt-1 text-xs text-slate-400">Si el producto trae código, escríbelo o escanéalo aquí.</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <div>
+          <label for="fp-precio-venta" class={claseEtiqueta}>Precio venta (Q) *</label>
+          <input id="fp-precio-venta" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
+        </div>
+        <div>
+          <label for="fp-precio-compra" class={claseEtiqueta}>Precio compra (Q)</label>
+          <input id="fp-precio-compra" type="number" inputmode="decimal" min="0" step="0.01" value="0" class={claseCampo} />
+        </div>
+        <div id="fp-grupo-stock">
+          <label for="fp-stock" class={claseEtiqueta}>Stock inicial</label>
+          <input id="fp-stock" type="number" inputmode="numeric" min="0" step="1" value="0" class={claseCampo} />
+        </div>
+        <div>
+          <label for="fp-minimo" class={claseEtiqueta}>Stock mínimo</label>
+          <input id="fp-minimo" type="number" inputmode="numeric" min="0" step="1" value="0" class={claseCampo} />
+        </div>
+      </div>
+      <p class="-mt-2 text-xs text-slate-400">Stock mínimo 0 = el producto no genera alertas de reabastecimiento.</p>
+
+      <div>
+        <div class="flex items-baseline justify-between">
+          <span class={claseEtiqueta}>Compatible con</span>
+          <span id="fp-modelos-contador" class="text-xs text-slate-400">0 seleccionados</span>
+        </div>
+        <input id="fp-modelos-buscar" type="search" autocomplete="off" placeholder="Buscar modelo..." class={claseCampo} />
+        <div id="fp-modelos" class="mt-2 max-h-52 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-700"></div>
+      </div>
+    </div>
+
+    <footer class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+      <p id="fp-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      <div class="flex justify-end gap-2">
+        <button type="button" id="fp-cancelar" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+          Cancelar
+        </button>
+        <button type="submit" id="fp-guardar" class="bg-marca rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
+          Guardar
+        </button>
+      </div>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { obtenerSesionActual } from '../../lib/auth';
+  import { generarCodigosInternos } from '../../utils/codigos';
+  import { reanimar } from '../../utils/animaciones';
+  import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('fp-dialogo');
+  const form = $<HTMLFormElement>('fp-form');
+  const titulo = $('fp-titulo');
+  const error = $('fp-error');
+  const guardar = $<HTMLButtonElement>('fp-guardar');
+  const campos = {
+    nombre: $<HTMLInputElement>('fp-nombre'),
+    categoria: $<HTMLInputElement>('fp-categoria'),
+    codigo: $<HTMLInputElement>('fp-codigo'),
+    precioVenta: $<HTMLInputElement>('fp-precio-venta'),
+    precioCompra: $<HTMLInputElement>('fp-precio-compra'),
+    stock: $<HTMLInputElement>('fp-stock'),
+    minimo: $<HTMLInputElement>('fp-minimo'),
+  };
+  const contenedorModelos = $('fp-modelos');
+  const contadorModelos = $('fp-modelos-contador');
+  const buscarModelo = $<HTMLInputElement>('fp-modelos-buscar');
+
+  let productos: ProductoConRelaciones[] = [];
+  let modelos: ModeloTelefono[] = [];
+  let editando: ProductoConRelaciones | null = null;
+  const seleccion = new Set<string>();
+
+  const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos'];
+
+  function normalizar(t: string): string {
+    return t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  function mostrarError(msg: string) {
+    error.textContent = msg;
+    error.classList.remove('hidden');
+    reanimar(error, 'anim-sacudir');
+  }
+
+  function pintarModelos() {
+    const porMarca = new Map<string, ModeloTelefono[]>();
+    for (const m of modelos) (porMarca.get(m.marca) ?? porMarca.set(m.marca, []).get(m.marca)!).push(m);
+
+    contenedorModelos.innerHTML = [...porMarca.entries()]
+      .map(
+        ([marca, lista]) => `
+        <div data-grupo>
+          <p class="mb-1 text-xs font-semibold text-slate-500 dark:text-slate-400">${marca}</p>
+          <div class="flex flex-wrap gap-1.5">
+            ${lista
+              .map(
+                (m) => `
+              <label data-texto="${normalizar(`${m.marca} ${m.modelo}`)}" class="cursor-pointer">
+                <input type="checkbox" value="${m.id}" class="peer sr-only" ${seleccion.has(m.id) ? 'checked' : ''} />
+                <span class="inline-block rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition peer-checked:border-brand-600 peer-checked:bg-brand-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 dark:border-slate-700 dark:text-slate-300">${m.modelo}</span>
+              </label>`
+              )
+              .join('')}
+          </div>
+        </div>`
+      )
+      .join('');
+    actualizarContador();
+  }
+
+  function actualizarContador() {
+    contadorModelos.textContent = `${seleccion.size} seleccionado${seleccion.size === 1 ? '' : 's'}`;
+  }
+
+  contenedorModelos.addEventListener('change', (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.type !== 'checkbox') return;
+    if (input.checked) seleccion.add(input.value);
+    else seleccion.delete(input.value);
+    actualizarContador();
+  });
+
+  buscarModelo.addEventListener('input', () => {
+    const q = normalizar(buscarModelo.value.trim());
+    for (const etiqueta of contenedorModelos.querySelectorAll<HTMLElement>('[data-texto]')) {
+      etiqueta.classList.toggle('hidden', q !== '' && !(etiqueta.dataset.texto ?? '').includes(q));
+    }
+    for (const grupo of contenedorModelos.querySelectorAll<HTMLElement>('[data-grupo]')) {
+      grupo.classList.toggle('hidden', grupo.querySelectorAll('[data-texto]:not(.hidden)').length === 0);
+    }
+  });
+
+  function generarCodigo() {
+    campos.codigo.value = generarCodigosInternos(productos.map((p) => p.codigo_barras))[0];
+    $('fp-codigo-ayuda').textContent = 'Código interno generado (EAN-13, prefijo 20). Imprímelo en la etiqueta del producto.';
+  }
+  $('fp-generar').addEventListener('click', generarCodigo);
+
+  async function abrir(productoId?: string) {
+    error.classList.add('hidden');
+    const sesion = await obtenerSesionActual();
+    if (sesion?.rol !== 'administrador') return;
+
+    [productos, modelos] = await Promise.all([inventoryService.listarProductos(), inventoryService.listarModelos()]);
+    editando = productoId ? (productos.find((p) => p.id === productoId) ?? null) : null;
+
+    const categorias = [...new Set([...CATEGORIAS_BASE, ...productos.map((p) => p.categoria)])].sort();
+    $('fp-categorias').innerHTML = categorias.map((c) => `<option value="${c}"></option>`).join('');
+
+    seleccion.clear();
+    buscarModelo.value = '';
+    $('fp-grupo-stock').classList.toggle('hidden', editando !== null);
+    $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
+
+    if (editando) {
+      titulo.textContent = 'Editar producto';
+      campos.nombre.value = editando.nombre;
+      campos.categoria.value = editando.categoria;
+      campos.codigo.value = editando.codigo_barras;
+      campos.precioVenta.value = String(editando.precio_venta);
+      campos.precioCompra.value = String(editando.precio_compra);
+      campos.minimo.value = String(editando.stock_minimo);
+      editando.modelos_compatibles.forEach((m) => seleccion.add(m.id));
+    } else {
+      titulo.textContent = 'Nuevo producto';
+      form.reset();
+      campos.precioCompra.value = '0';
+      campos.stock.value = '0';
+      campos.minimo.value = '0';
+    }
+
+    pintarModelos();
+    buscarModelo.dispatchEvent(new Event('input'));
+    dialogo.showModal();
+    campos.nombre.focus();
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    error.classList.add('hidden');
+
+    const nombre = campos.nombre.value.trim();
+    const categoria = campos.categoria.value.trim();
+    const precioVenta = Number(campos.precioVenta.value);
+    const precioCompra = Number(campos.precioCompra.value || 0);
+    const stock = Number(campos.stock.value || 0);
+    const minimo = Number(campos.minimo.value || 0);
+
+    if (!nombre) return mostrarError('El nombre es obligatorio.');
+    if (!categoria) return mostrarError('La categoría es obligatoria.');
+    if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
+    if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
+    if (!Number.isInteger(stock) || stock < 0) return mostrarError('El stock inicial debe ser un entero mayor o igual a 0.');
+    if (!Number.isInteger(minimo) || minimo < 0) return mostrarError('El stock mínimo debe ser un entero mayor o igual a 0.');
+
+    const sesion = await obtenerSesionActual();
+    if (sesion?.rol !== 'administrador') return mostrarError('Solo un administrador puede guardar productos.');
+
+    let codigo = campos.codigo.value.trim();
+    if (!codigo) codigo = generarCodigosInternos(productos.map((p) => p.codigo_barras))[0];
+    if (productos.some((p) => p.codigo_barras === codigo && p.id !== editando?.id)) {
+      return mostrarError(`El código ${codigo} ya pertenece a otro producto.`);
+    }
+
+    guardar.disabled = true;
+    guardar.textContent = 'Guardando...';
+    try {
+      if (editando) {
+        await inventoryService.actualizarProducto(editando.id, {
+          nombre,
+          categoria,
+          codigo_barras: codigo,
+          precio_venta: precioVenta,
+          precio_compra: precioCompra,
+          stock_minimo: minimo,
+        });
+        await inventoryService.establecerCompatibilidades(editando.id, [...seleccion]);
+      } else {
+        const creado = await inventoryService.crearProducto({
+          codigo_barras: codigo,
+          nombre,
+          categoria,
+          precio_venta: precioVenta,
+          precio_compra: precioCompra,
+          stock_actual: 0,
+          stock_minimo: minimo,
+        });
+        if (seleccion.size > 0) await inventoryService.establecerCompatibilidades(creado.id, [...seleccion]);
+        if (stock > 0) {
+          await inventoryService.registrarMovimiento({
+            producto_id: creado.id,
+            tipo: 'ENTRADA',
+            cantidad: stock,
+            motivo: 'Carga inicial',
+          });
+        }
+      }
+      dialogo.close();
+      window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo guardar el producto.');
+    } finally {
+      guardar.disabled = false;
+      guardar.textContent = 'Guardar';
+    }
+  });
+
+  $('fp-cerrar').addEventListener('click', () => dialogo.close());
+  $('fp-cancelar').addEventListener('click', () => dialogo.close());
+  // Clic en el fondo oscuro (fuera del cuadro) cierra
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  window.addEventListener('easystem:abrir-producto', ((e: CustomEvent<{ productoId?: string }>) => {
+    abrir(e.detail?.productoId);
+  }) as EventListener);
+</script>

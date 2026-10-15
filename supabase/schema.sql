@@ -91,9 +91,13 @@ create index if not exists movimientos_inventario_fecha_idx on public.movimiento
 -- ----------------------------------------------------------------------------
 -- Trigger: aplicar el movimiento al stock del producto
 -- ----------------------------------------------------------------------------
+-- SECURITY DEFINER: una venta de un vendedor debe poder descontar stock aunque
+-- él no tenga permiso de escritura sobre productos (ver sección 7).
 create or replace function public.aplicar_movimiento_inventario()
 returns trigger
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
   stock_actual_real integer;
@@ -137,22 +141,17 @@ create policy "Lectura para usuarios autenticados" on public.modelos_telefono fo
 create policy "Lectura para usuarios autenticados" on public.compatibilidades for select using (auth.role() = 'authenticated');
 create policy "Lectura para usuarios autenticados" on public.movimientos_inventario for select using (auth.role() = 'authenticated');
 
-create policy "Usuarios autenticados gestionan productos" on public.productos
-  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-create policy "Usuarios autenticados gestionan modelos" on public.modelos_telefono
-  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-create policy "Usuarios autenticados gestionan compatibilidades" on public.compatibilidades
-  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-create policy "Usuarios autenticados gestionan movimientos" on public.movimientos_inventario
-  for insert with check (auth.role() = 'authenticated');
+-- Las políticas de ESCRITURA (solo administrador; ventas abiertas a vendedores)
+-- dependen de public.rol_actual(), que se define más abajo: ver sección 7.
 
 -- ----------------------------------------------------------------------------
--- Vista de apoyo para el Dashboard: stock bajo mínimo
+-- Vista de apoyo para el Dashboard: stock bajo mínimo.
+-- stock_minimo = 0 significa "sin control de reabastecimiento": no genera alerta.
 -- ----------------------------------------------------------------------------
 create or replace view public.vw_productos_stock_bajo as
 select id, codigo_barras, nombre, categoria, stock_actual, stock_minimo
 from public.productos
-where stock_actual <= stock_minimo
+where stock_minimo > 0 and stock_actual <= stock_minimo
 order by stock_actual asc;
 
 -- ----------------------------------------------------------------------------
@@ -284,3 +283,50 @@ create trigger trg_verificar_registro
 --   3. update public.perfiles set rol = 'administrador' where email = 'jefe@dominio.com';
 -- Desde ahí, ese administrador crea a los empleados en /usuarios.
 -- ----------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------
+-- 7. Permisos de escritura por rol y utilidades (migración 0006)
+--    Lectura: cualquier usuario autenticado. Escritura de productos, modelos y
+--    compatibilidades: solo administrador. Movimientos: cualquier autenticado
+--    registra SALIDAS (ventas); las ENTRADAS (mercancía) solo el administrador.
+-- ----------------------------------------------------------------------------
+create policy "Administradores insertan productos" on public.productos
+  for insert with check (public.rol_actual() = 'administrador');
+create policy "Administradores actualizan productos" on public.productos
+  for update using (public.rol_actual() = 'administrador') with check (public.rol_actual() = 'administrador');
+create policy "Administradores eliminan productos" on public.productos
+  for delete using (public.rol_actual() = 'administrador');
+
+create policy "Administradores insertan modelos" on public.modelos_telefono
+  for insert with check (public.rol_actual() = 'administrador');
+create policy "Administradores actualizan modelos" on public.modelos_telefono
+  for update using (public.rol_actual() = 'administrador') with check (public.rol_actual() = 'administrador');
+create policy "Administradores eliminan modelos" on public.modelos_telefono
+  for delete using (public.rol_actual() = 'administrador');
+
+create policy "Administradores insertan compatibilidades" on public.compatibilidades
+  for insert with check (public.rol_actual() = 'administrador');
+create policy "Administradores actualizan compatibilidades" on public.compatibilidades
+  for update using (public.rol_actual() = 'administrador') with check (public.rol_actual() = 'administrador');
+create policy "Administradores eliminan compatibilidades" on public.compatibilidades
+  for delete using (public.rol_actual() = 'administrador');
+
+create policy "Salidas para autenticados, entradas solo administrador" on public.movimientos_inventario
+  for insert with check (
+    auth.role() = 'authenticated'
+    and (tipo = 'SALIDA' or public.rol_actual() = 'administrador')
+  );
+
+-- Código de barras interno EAN-13 (prefijo 20 = uso interno de tiendas, GS1).
+-- ean13_interno(1) -> '2000000000015'. Misma regla que src/utils/codigos.ts.
+create or replace function public.ean13_interno(secuencia bigint)
+returns text
+language sql
+immutable
+as $$
+  select b.base || (((10 - (
+    (select sum((substr(b.base, i, 1))::int * case when i % 2 = 1 then 1 else 3 end)
+     from generate_series(1, 12) as i) % 10
+  )) % 10))::text
+  from (select '20' || lpad(secuencia::text, 10, '0') as base) b;
+$$;

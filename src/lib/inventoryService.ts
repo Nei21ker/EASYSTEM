@@ -20,6 +20,8 @@ import * as modelosDb from './db/modelos';
 import * as movimientosDb from './db/movimientos';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
+import { esStockBajo } from '../utils/format';
+import type { FilaImportacion } from './importador';
 import type {
   Compatibilidad,
   ModeloTelefono,
@@ -300,7 +302,7 @@ export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
   if (!supabaseConfigurado) {
     const db = leerDB();
     return db.productos
-      .filter((p) => p.stock_actual <= p.stock_minimo)
+      .filter(esStockBajo)
       .sort((a, b) => a.stock_actual - b.stock_actual)
       .map(({ id, codigo_barras, nombre, categoria, stock_actual, stock_minimo }) => ({
         id,
@@ -319,7 +321,7 @@ export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
     // Sin conexión: lo derivamos del catálogo en caché en vez de fallar.
     const productos = await listarProductos();
     return productos
-      .filter((p) => p.stock_actual <= p.stock_minimo)
+      .filter(esStockBajo)
       .sort((a, b) => a.stock_actual - b.stock_actual)
       .map(({ id, codigo_barras, nombre, categoria, stock_actual, stock_minimo }) => ({
         id,
@@ -356,7 +358,9 @@ export async function crearProducto(
   return producto;
 }
 
-export async function actualizarProducto(id: string, cambios: Partial<Producto>): Promise<Producto> {
+export async function actualizarProducto(id: string, cambiosCrudos: Partial<Producto>): Promise<Producto> {
+  // El stock solo cambia mediante movimientos (kardex); nunca por edición directa.
+  const { stock_actual: _ignorado, id: _id, created_at: _creado, ...cambios } = cambiosCrudos;
   if (supabaseConfigurado) return productosDb.actualizarProducto(id, cambios);
 
   const db = leerDB();
@@ -526,4 +530,150 @@ export async function registrarVenta(
     );
   }
   return resultados;
+}
+
+// ----------------------------------------------------------------------------
+// Importación masiva (plan preparado por src/lib/importador.ts)
+// ----------------------------------------------------------------------------
+export interface ResultadoImportacion {
+  creados: number;
+  actualizados: number;
+  movimientos: number;
+}
+
+const MOTIVO_CARGA_INICIAL = 'Carga inicial (importación)';
+const MOTIVO_AJUSTE = 'Ajuste por importación';
+
+/**
+ * Aplica un plan de importación. El stock NUNCA se escribe directo: los
+ * productos nuevos nacen en 0 y la cantidad entra como movimiento ENTRADA; en
+ * los existentes la diferencia contra el stock actual se registra como
+ * ENTRADA/SALIDA ("ajuste por importación").
+ * Requiere conexión cuando Supabase está configurado (no se encola offline).
+ */
+export async function importarProductos(filas: FilaImportacion[]): Promise<ResultadoImportacion> {
+  const resultado: ResultadoImportacion = { creados: 0, actualizados: 0, movimientos: 0 };
+  const nuevas = filas.filter((f) => f.accion === 'crear');
+  const existentes = filas.filter((f) => f.accion === 'actualizar' && f.productoId);
+
+  if (!supabaseConfigurado) {
+    const db = leerDB();
+    const codigos = new Set(db.productos.map((p) => p.codigo_barras));
+    const repetido = nuevas.find((f) => codigos.has(f.codigo_barras));
+    if (repetido) throw new Error(`El código ${repetido.codigo_barras} ya existe en el inventario.`);
+
+    const ahora = new Date().toISOString();
+    const mover = (producto: Producto, tipo: TipoMovimiento, cantidad: number, motivo: string) => {
+      producto.stock_actual += tipo === 'ENTRADA' ? cantidad : -cantidad;
+      db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora });
+      resultado.movimientos++;
+    };
+
+    for (const f of nuevas) {
+      const producto: Producto = {
+        id: generarId(),
+        codigo_barras: f.codigo_barras,
+        nombre: f.nombre,
+        categoria: f.categoria,
+        precio_compra: f.precio_compra ?? 0,
+        precio_venta: f.precio_venta,
+        stock_actual: 0,
+        stock_minimo: f.stock_minimo ?? 0,
+        created_at: ahora,
+      };
+      db.productos.push(producto);
+      for (const modelo_id of f.modeloIds ?? []) db.compatibilidades.push({ id: generarId(), producto_id: producto.id, modelo_id });
+      if ((f.stock_objetivo ?? 0) > 0) mover(producto, 'ENTRADA', f.stock_objetivo!, MOTIVO_CARGA_INICIAL);
+      resultado.creados++;
+    }
+
+    for (const f of existentes) {
+      const producto = db.productos.find((p) => p.id === f.productoId);
+      if (!producto) continue;
+      producto.nombre = f.nombre;
+      producto.categoria = f.categoria;
+      producto.precio_venta = f.precio_venta;
+      if (f.precio_compra !== null) producto.precio_compra = f.precio_compra;
+      if (f.stock_minimo !== null) producto.stock_minimo = f.stock_minimo;
+      if (f.modeloIds !== null) {
+        db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== producto.id);
+        for (const modelo_id of f.modeloIds) db.compatibilidades.push({ id: generarId(), producto_id: producto.id, modelo_id });
+      }
+      if (f.stock_objetivo !== null && f.stock_objetivo !== producto.stock_actual) {
+        const delta = f.stock_objetivo - producto.stock_actual;
+        mover(producto, delta > 0 ? 'ENTRADA' : 'SALIDA', Math.abs(delta), MOTIVO_AJUSTE);
+      }
+      resultado.actualizados++;
+    }
+
+    guardarDB(db);
+    return resultado;
+  }
+
+  // --- Supabase ---
+  const stockActual = new Map((await productosDb.listarProductos()).map((p) => [p.id, p.stock_actual]));
+  const movimientos: { producto_id: string; tipo: TipoMovimiento; cantidad: number; motivo: string }[] = [];
+  const pares: { producto_id: string; modelo_id: string }[] = [];
+
+  if (nuevas.length > 0) {
+    const creados = await productosDb.crearProductosLote(
+      nuevas.map((f) => ({
+        codigo_barras: f.codigo_barras,
+        nombre: f.nombre,
+        categoria: f.categoria,
+        precio_compra: f.precio_compra ?? 0,
+        precio_venta: f.precio_venta,
+        stock_actual: 0,
+        stock_minimo: f.stock_minimo ?? 0,
+      }))
+    );
+    const idPorCodigo = new Map(creados.map((c) => [c.codigo_barras, c.id]));
+    for (const f of nuevas) {
+      const id = idPorCodigo.get(f.codigo_barras);
+      if (!id) continue;
+      for (const modelo_id of f.modeloIds ?? []) pares.push({ producto_id: id, modelo_id });
+      if ((f.stock_objetivo ?? 0) > 0) {
+        movimientos.push({ producto_id: id, tipo: 'ENTRADA', cantidad: f.stock_objetivo!, motivo: MOTIVO_CARGA_INICIAL });
+      }
+    }
+    resultado.creados = creados.length;
+  }
+
+  const idsConCompatibilidad: string[] = [];
+  for (let i = 0; i < existentes.length; i += 5) {
+    await Promise.all(
+      existentes.slice(i, i + 5).map(async (f) => {
+        const cambios: Partial<Producto> = { nombre: f.nombre, categoria: f.categoria, precio_venta: f.precio_venta };
+        if (f.precio_compra !== null) cambios.precio_compra = f.precio_compra;
+        if (f.stock_minimo !== null) cambios.stock_minimo = f.stock_minimo;
+        await productosDb.actualizarProducto(f.productoId!, cambios);
+
+        if (f.modeloIds !== null) {
+          idsConCompatibilidad.push(f.productoId!);
+          for (const modelo_id of f.modeloIds) pares.push({ producto_id: f.productoId!, modelo_id });
+        }
+        const actual = stockActual.get(f.productoId!);
+        if (f.stock_objetivo !== null && actual !== undefined && f.stock_objetivo !== actual) {
+          const delta = f.stock_objetivo - actual;
+          movimientos.push({
+            producto_id: f.productoId!,
+            tipo: delta > 0 ? 'ENTRADA' : 'SALIDA',
+            cantidad: Math.abs(delta),
+            motivo: MOTIVO_AJUSTE,
+          });
+        }
+        resultado.actualizados++;
+      })
+    );
+  }
+
+  if (pares.length > 0 || idsConCompatibilidad.length > 0) {
+    await productosDb.reemplazarCompatibilidadesLote(pares, idsConCompatibilidad);
+  }
+  if (movimientos.length > 0) {
+    await movimientosDb.registrarMovimientosLote(movimientos);
+    resultado.movimientos = movimientos.length;
+  }
+
+  return resultado;
 }

@@ -1,0 +1,238 @@
+---
+// Importación masiva de productos desde CSV, solo administrador.
+// Se abre con "easystem:abrir-importador". Flujo: elegir archivo -> VISTA PREVIA
+// (qué se crea/actualiza/falla, sin tocar nada) -> confirmar. Excel: "Guardar
+// como CSV". Ver src/lib/importador.ts para las reglas de validación.
+---
+
+<dialog
+  id="im-dialogo"
+  class="anim-escalar m-auto w-[min(46rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="flex max-h-[90vh] flex-col">
+    <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <h2 class="text-base font-semibold">Importar productos desde CSV</h2>
+      <button type="button" id="im-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="space-y-4 overflow-y-auto px-5 py-4">
+      <div class="rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
+        <label for="im-archivo" class="block text-sm font-medium">Archivo CSV</label>
+        <input id="im-archivo" type="file" accept=".csv,.txt,text/csv" class="mt-2 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-500/20 dark:file:text-brand-300" />
+        <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          Columnas: <code>codigo_barras</code>, <code>nombre</code>, <code>categoria</code>, <code>precio_venta</code>,
+          <code>precio_compra</code>, <code>stock_actual</code>, <code>stock_minimo</code>, <code>compatible_con</code>
+          (modelos separados por <code>|</code>). Si <code>codigo_barras</code> va vacío se genera un código interno.
+          Si el código ya existe, el producto se <strong>actualiza</strong>.
+        </p>
+        <button type="button" id="im-plantilla" class="mt-2 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
+          Descargar plantilla de ejemplo
+        </button>
+      </div>
+
+      <div id="im-vista" class="hidden space-y-3">
+        <div id="im-resumen" class="flex flex-wrap gap-2 text-xs font-medium"></div>
+
+        <div id="im-bloque-filas" class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+          <table class="w-full text-left text-xs">
+            <thead>
+              <tr class="border-b border-slate-200 bg-slate-50 uppercase tracking-wide text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400">
+                <th class="px-3 py-2 font-medium">Acción</th>
+                <th class="px-3 py-2 font-medium">Producto</th>
+                <th class="px-3 py-2 font-medium">Código</th>
+                <th class="px-3 py-2 font-medium">Detalle</th>
+              </tr>
+            </thead>
+            <tbody id="im-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+        <p id="im-mas" class="hidden text-xs text-slate-400"></p>
+
+        <div id="im-bloque-errores" class="hidden rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-500/30 dark:bg-red-500/10">
+          <p class="text-xs font-semibold text-red-700 dark:text-red-400">Filas con errores (no se importarán)</p>
+          <ul id="im-errores" class="mt-1 list-inside list-disc space-y-0.5 text-xs text-red-700 dark:text-red-400"></ul>
+        </div>
+
+        <div id="im-bloque-avisos" class="hidden rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+          <p class="text-xs font-semibold text-amber-700 dark:text-amber-400">Avisos</p>
+          <ul id="im-avisos" class="mt-1 list-inside list-disc space-y-0.5 text-xs text-amber-700 dark:text-amber-400"></ul>
+        </div>
+      </div>
+
+      <p id="im-resultado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+      <p id="im-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+
+    <footer class="flex justify-end gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+      <button type="button" id="im-cancelar" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">
+        Cerrar
+      </button>
+      <button type="button" id="im-aplicar" disabled class="bg-marca rounded-lg px-5 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+        Importar
+      </button>
+    </footer>
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { obtenerSesionActual } from '../../lib/auth';
+  import { PLANTILLA_CSV, prepararImportacion, type PlanImportacion } from '../../lib/importador';
+  import { decodificarArchivo } from '../../utils/csvLectura';
+  import { reanimar } from '../../utils/animaciones';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('im-dialogo');
+  const archivo = $<HTMLInputElement>('im-archivo');
+  const vista = $('im-vista');
+  const aplicar = $<HTMLButtonElement>('im-aplicar');
+  const error = $('im-error');
+  const resultado = $('im-resultado');
+
+  const LIMITE_FILAS_VISTA = 10;
+  let plan: PlanImportacion | null = null;
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+
+  function reiniciar() {
+    plan = null;
+    archivo.value = '';
+    vista.classList.add('hidden');
+    error.classList.add('hidden');
+    resultado.classList.add('hidden');
+    aplicar.disabled = true;
+    aplicar.textContent = 'Importar';
+  }
+
+  function chip(texto: string, clases: string): string {
+    return `<span class="rounded-full px-2.5 py-1 ${clases}">${texto}</span>`;
+  }
+
+  function pintarPlan(p: PlanImportacion) {
+    const r = p.resumen;
+    $('im-resumen').innerHTML = [
+      chip(`${r.creados} nuevos`, 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'),
+      chip(`${r.actualizados} por actualizar`, 'bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300'),
+      chip(`${r.sinCambios} sin cambios`, 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'),
+      r.codigosGenerados ? chip(`${r.codigosGenerados} códigos internos`, 'bg-accent-100 text-accent-700 dark:bg-accent-500/10 dark:text-accent-300') : '',
+      r.ajustesStock ? chip(`${r.ajustesStock} ajustes de stock`, 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400') : '',
+      p.errores.length ? chip(`${p.errores.length} con error`, 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400') : '',
+    ].join('');
+
+    $('im-bloque-filas').classList.toggle('hidden', p.filas.length === 0);
+    $('im-filas').innerHTML = p.filas
+      .slice(0, LIMITE_FILAS_VISTA)
+      .map((f) => {
+        const detalle =
+          f.accion === 'crear'
+            ? `${f.categoria} · Q ${f.precio_venta.toFixed(2)}${f.stock_objetivo ? ` · stock ${f.stock_objetivo}` : ''}${f.codigoGenerado ? ' · código nuevo' : ''}`
+            : f.cambios.join('; ');
+        const etiqueta =
+          f.accion === 'crear'
+            ? '<span class="font-semibold text-emerald-600 dark:text-emerald-400">Crear</span>'
+            : '<span class="font-semibold text-brand-600 dark:text-brand-300">Actualizar</span>';
+        return `<tr><td class="px-3 py-2">${etiqueta}</td><td class="px-3 py-2">${escapar(f.nombre)}</td><td class="px-3 py-2 font-mono">${escapar(f.codigo_barras)}</td><td class="px-3 py-2 text-slate-500 dark:text-slate-400">${escapar(detalle)}</td></tr>`;
+      })
+      .join('');
+
+    const restantes = p.filas.length - LIMITE_FILAS_VISTA;
+    $('im-mas').classList.toggle('hidden', restantes <= 0);
+    $('im-mas').textContent = `… y ${restantes} filas más (se muestran las primeras ${LIMITE_FILAS_VISTA}).`;
+
+    $('im-bloque-errores').classList.toggle('hidden', p.errores.length === 0);
+    $('im-errores').innerHTML = p.errores
+      .slice(0, 12)
+      .map((e) => `<li>Línea ${e.linea}: ${escapar(e.mensaje)}</li>`)
+      .join('') + (p.errores.length > 12 ? `<li>… y ${p.errores.length - 12} más</li>` : '');
+
+    $('im-bloque-avisos').classList.toggle('hidden', p.advertencias.length === 0);
+    $('im-avisos').innerHTML = p.advertencias
+      .slice(0, 8)
+      .map((a) => `<li>Línea ${a.linea}: ${escapar(a.mensaje)}</li>`)
+      .join('') + (p.advertencias.length > 8 ? `<li>… y ${p.advertencias.length - 8} más</li>` : '');
+
+    vista.classList.remove('hidden');
+    reanimar(vista, 'anim-subir');
+    aplicar.disabled = p.filas.length === 0;
+    aplicar.textContent = p.filas.length ? `Importar ${p.filas.length} cambio${p.filas.length === 1 ? '' : 's'}` : 'Nada que importar';
+  }
+
+  archivo.addEventListener('change', async () => {
+    error.classList.add('hidden');
+    resultado.classList.add('hidden');
+    const file = archivo.files?.[0];
+    if (!file) return reiniciar();
+
+    try {
+      const texto = decodificarArchivo(await file.arrayBuffer());
+      const [productos, modelos] = await Promise.all([inventoryService.listarProductos(), inventoryService.listarModelos()]);
+      plan = prepararImportacion(texto, productos, modelos);
+      pintarPlan(plan);
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudo leer el archivo.';
+      error.classList.remove('hidden');
+    }
+  });
+
+  aplicar.addEventListener('click', async () => {
+    if (!plan || plan.filas.length === 0) return;
+    const sesion = await obtenerSesionActual();
+    if (sesion?.rol !== 'administrador') {
+      error.textContent = 'Solo un administrador puede importar productos.';
+      error.classList.remove('hidden');
+      return;
+    }
+
+    aplicar.disabled = true;
+    aplicar.textContent = 'Importando...';
+    error.classList.add('hidden');
+    try {
+      const r = await inventoryService.importarProductos(plan.filas);
+      resultado.textContent = `Listo: ${r.creados} creados, ${r.actualizados} actualizados, ${r.movimientos} movimientos de stock registrados.`;
+      resultado.classList.remove('hidden');
+      reanimar(resultado, 'anim-subir');
+      vista.classList.add('hidden');
+      plan = null;
+      archivo.value = '';
+      aplicar.textContent = 'Importar';
+      window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'La importación falló.';
+      error.classList.remove('hidden');
+      reanimar(error, 'anim-sacudir');
+      aplicar.disabled = false;
+      aplicar.textContent = 'Reintentar importación';
+    }
+  });
+
+  $('im-plantilla').addEventListener('click', () => {
+    const blob = new Blob(['﻿' + PLANTILLA_CSV], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'easystem-plantilla-productos.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  const cerrar = () => dialogo.close();
+  $('im-cerrar').addEventListener('click', cerrar);
+  $('im-cancelar').addEventListener('click', cerrar);
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) cerrar();
+  });
+  dialogo.addEventListener('close', reiniciar);
+
+  window.addEventListener('easystem:abrir-importador', async () => {
+    const sesion = await obtenerSesionActual();
+    if (sesion?.rol !== 'administrador') return;
+    reiniciar();
+    dialogo.showModal();
+  });
+</script>

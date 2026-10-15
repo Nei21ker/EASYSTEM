@@ -35,6 +35,16 @@ export async function registrarMovimiento(input: {
   return data as MovimientoInventario;
 }
 
+/** Inserta varios movimientos en lote (el trigger actualiza el stock fila por fila). */
+export async function registrarMovimientosLote(
+  filas: { producto_id: string; tipo: TipoMovimiento; cantidad: number; motivo?: string }[]
+): Promise<void> {
+  for (let i = 0; i < filas.length; i += 200) {
+    const { error } = await supabase.from('movimientos_inventario').insert(filas.slice(i, i + 200));
+    if (error) throw error;
+  }
+}
+
 /** Suscripción realtime: notifica cambios de stock para refrescar el Dashboard */
 export function suscribirseAMovimientos(onCambio: (payload: unknown) => void) {
   const canal = supabase

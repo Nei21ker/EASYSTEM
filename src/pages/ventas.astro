@@ -190,15 +190,21 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
   function filtrarProductos(texto: string): ProductoConRelaciones[] {
     const q = texto.trim().toLowerCase();
-    if (!q) return productos;
-    return productos.filter(
-      (p) =>
-        p.nombre.toLowerCase().includes(q) ||
-        p.codigo_barras.toLowerCase().includes(q) ||
-        p.categoria.toLowerCase().includes(q) ||
-        p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
-    );
+    const coincidencias = !q
+      ? productos
+      : productos.filter(
+          (p) =>
+            p.nombre.toLowerCase().includes(q) ||
+            p.codigo_barras.toLowerCase().includes(q) ||
+            p.categoria.toLowerCase().includes(q) ||
+            p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
+        );
+    // Lo que se puede vender (stock > 0) va primero; el orden alfabético se conserva dentro de cada grupo.
+    return [...coincidencias].sort((a, b) => Number(b.stock_actual > 0) - Number(a.stock_actual > 0));
   }
+
+  // Con cientos de productos, pintarlos todos en cada tecla es lento en un teléfono.
+  const LIMITE_RESULTADOS = 80;
 
   const estilosBadge: Record<string, string> = {
     ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
@@ -210,7 +216,9 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     const lista = filtrarProductos(texto);
     sinResultados.classList.toggle('hidden', lista.length > 0);
 
+    const recortada = lista.length > LIMITE_RESULTADOS;
     resultados.innerHTML = lista
+      .slice(0, LIMITE_RESULTADOS)
       .map((producto) => {
         const disponible = producto.stock_actual - cantidadEnCarrito(producto.id);
         const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
@@ -241,7 +249,10 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
           </li>
         `;
       })
-      .join('');
+      .join('') +
+      (recortada
+        ? `<li class="px-5 py-3 text-xs text-slate-500 dark:text-slate-400">Mostrando ${LIMITE_RESULTADOS} de ${lista.length}. Escribe más del nombre, modelo o código para afinar.</li>`
+        : '');
   }
 
   function renderCarrito() {

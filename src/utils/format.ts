@@ -21,3 +21,13 @@ export function estadoStock(stockActual: number, stockMinimo: number): 'critico'
   if (stockActual <= stockMinimo) return 'bajo';
   return 'ok';
 }
+
+/**
+ * ¿Debe generar alerta de reabastecimiento? Un stock mínimo de 0 significa
+ * "este producto no se controla": así los productos recién cargados (stock 0,
+ * mínimo 0) no inundan la campana de alertas. Misma regla que la vista
+ * vw_productos_stock_bajo (migración 0006).
+ */
+export function esStockBajo(p: { stock_actual: number; stock_minimo: number }): boolean {
+  return p.stock_minimo > 0 && p.stock_actual <= p.stock_minimo;
+}
