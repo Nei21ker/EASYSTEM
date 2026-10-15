@@ -7,11 +7,13 @@ import type { Rol } from '../lib/auth';
 interface Props {
   titulo: string;
   subtitulo?: string;
+  /** Texto completo de la pestaña del navegador; por defecto "<titulo> · EASYSTEM". */
+  tituloPestana?: string;
   /** Si se define, solo ese rol puede ver la página (los demás son enviados a "/"). */
   rolMinimo?: Rol;
 }
 
-const { titulo, subtitulo, rolMinimo } = Astro.props;
+const { titulo, subtitulo, rolMinimo, tituloPestana } = Astro.props;
 ---
 
 <!doctype html>
@@ -23,7 +25,7 @@ const { titulo, subtitulo, rolMinimo } = Astro.props;
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#1871d3" />
-    <title>{titulo} · EASYSTEM</title>
+    <title>{tituloPestana ?? `${titulo} · EASYSTEM`}</title>
     <meta name="description" content="EASYSTEM — Gestión de inventario para Edward Accesorios" />
     <script is:inline>
       // Evita el "flash" de tema incorrecto: aplica la clase antes de pintar la página.

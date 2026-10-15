@@ -6,7 +6,11 @@ import LowStockTable from '../components/dashboard/LowStockTable.astro';
 import RecentMovements from '../components/dashboard/RecentMovements.astro';
 ---
 
-<DashboardLayout titulo="Dashboard" subtitulo="Resumen general del inventario de Edward Accesorios">
+<DashboardLayout
+  titulo="Dashboard"
+  tituloPestana="EASYSTEM"
+  subtitulo="Resumen general del inventario de Edward Accesorios"
+>
   <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
     <StatCard id="stat-total-productos" etiqueta="Total de productos" valor="—" icono="productos" />
     <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" icono="valor" />
