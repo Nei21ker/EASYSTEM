@@ -1,0 +1,91 @@
+---
+// Fondo decorativo del login: auroras con los colores del logo, una malla de
+// puntos (inventario), íconos de accesorios flotando y un "láser" de lector de
+// códigos de barras que barre la pantalla. Todo es CSS (ver "Fondo animado del
+// login" en global.css) y se queda quieto con "reducir movimiento".
+
+// Cada ícono: trazos de 24x24, posición, tamaño (px), y duración/retardo de su flote.
+const iconos = [
+  { // smartphone
+    d: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z', 'M12 18h.01'],
+    x: '8%', y: '14%', t: 56, dur: 11, ret: 0
+  },
+  { // cargador / enchufe
+    d: ['M12 22v-5', 'M9 8V2', 'M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'],
+    x: '84%', y: '12%', t: 48, dur: 13, ret: -4
+  },
+  { // audífonos
+    d: ['M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3'],
+    x: '90%', y: '48%', t: 60, dur: 15, ret: -7
+  },
+  { // código de barras
+    d: ['M3 5v14', 'M7 5v14', 'M11 5v14', 'M14 5v14', 'M18 5v14', 'M21 5v14'],
+    x: '5%', y: '56%', t: 52, dur: 12, ret: -2
+  },
+  { // cable
+    d: ['M4 9a2 2 0 0 1-2-2V5h6v2a2 2 0 0 1-2 2Z', 'M3 5V3', 'M7 5V3', 'M19 15V6.5a3.5 3.5 0 0 0-7 0v11a3.5 3.5 0 0 1-7 0V9', 'M17 21v-2', 'M21 21v-2', 'M22 19h-6v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2Z'],
+    x: '16%', y: '82%', t: 58, dur: 14, ret: -9
+  },
+  { // caja / inventario
+    d: ['m7.5 4.27 9 5.15', 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z', 'm3.3 7 8.7 5 8.7-5', 'M12 22V12'],
+    x: '78%', y: '80%', t: 54, dur: 12.5, ret: -5
+  },
+  { // batería cargando
+    d: ['M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2', 'M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1', 'm11 7-3 5h4l-3 5', 'M22 11v2'],
+    x: '30%', y: '7%', t: 40, dur: 16, ret: -11
+  },
+  { // etiqueta de precio
+    d: ['M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z', 'M7.5 7.5h.01'],
+    x: '66%', y: '6%', t: 38, dur: 14.5, ret: -6
+  },
+  { // smartphone pequeño
+    d: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z', 'M12 18h.01'],
+    x: '92%', y: '88%', t: 34, dur: 17, ret: -3
+  },
+  { // código de barras pequeño
+    d: ['M3 5v14', 'M7 5v14', 'M11 5v14', 'M14 5v14', 'M18 5v14', 'M21 5v14'],
+    x: '44%', y: '92%', t: 34, dur: 13.5, ret: -8
+  },
+  { // cargador pequeño
+    d: ['M12 22v-5', 'M9 8V2', 'M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'],
+    x: '3%', y: '30%', t: 36, dur: 15.5, ret: -1
+  }
+];
+---
+
+<div class="fondo-login pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+  <!-- Auroras -->
+  <div class="fondo-aurora fondo-aurora-1 bg-brand-500/25 dark:bg-brand-500/30"></div>
+  <div class="fondo-aurora fondo-aurora-2 bg-accent-400/25 dark:bg-accent-400/20"></div>
+  <div class="fondo-aurora fondo-aurora-3 bg-brand-700/20 dark:bg-brand-700/40"></div>
+
+  <!-- Malla de puntos -->
+  <div class="fondo-puntos absolute inset-0"></div>
+
+  <!-- Láser de lector de códigos de barras -->
+  <div class="fondo-laser absolute inset-x-0 top-0">
+    <div class="fondo-laser-estela"></div>
+    <div class="fondo-laser-linea"></div>
+  </div>
+
+  <!-- Íconos de accesorios -->
+  {
+    iconos.map((i) => (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.1"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        class="fondo-icono absolute text-brand-600/25 dark:text-brand-300/20"
+        style={`left:${i.x};top:${i.y};width:${i.t}px;height:${i.t}px;--dur:${i.dur}s;--ret:${i.ret}s`}
+      >
+        {i.d.map((trazo) => (
+          <path d={trazo} />
+        ))}
+      </svg>
+    ))
+  }
+</div>
