@@ -4,11 +4,11 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 ---
 
 <DashboardLayout titulo="Nueva Venta" subtitulo="Punto de venta (POS) — Edward Accesorios">
-  <div id="pos-app" class="grid grid-cols-1 gap-6 pb-20 lg:grid-cols-5 lg:pb-0 print:hidden">
+  <div id="pos-app" class="grid grid-cols-1 gap-6 pb-20 lg:h-[calc(100dvh-10rem)] lg:min-h-[30rem] lg:grid-cols-5 lg:grid-rows-1 lg:pb-0 print:hidden">
     <!-- Buscador + resultados -->
-    <div class="lg:col-span-3">
-      <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <div class="min-h-0 lg:col-span-3">
+      <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
+        <div class="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Buscar producto</h2>
           <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
             Escanea el código de barras o escribe nombre / modelo de teléfono compatible. Enter agrega una coincidencia exacta de código.
@@ -39,7 +39,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
           </div>
         </div>
 
-        <ul id="pos-resultados" class="max-h-[28rem] divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+        <ul id="pos-resultados" class="empty:hidden max-h-[28rem] divide-y divide-slate-100 overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 dark:divide-slate-800"></ul>
         <p id="pos-cargando" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
         <p id="pos-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
           No se encontraron productos con esa búsqueda.
@@ -48,19 +48,19 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     </div>
 
     <!-- Carrito -->
-    <div class="lg:col-span-2">
-      <div class="sticky top-6 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <div class="min-h-0 lg:col-span-2">
+      <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Carrito de venta</h2>
           <span id="pos-carrito-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</span>
         </div>
 
-        <ul id="pos-carrito" class="max-h-96 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
-        <p id="pos-carrito-vacio" class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
+        <ul id="pos-carrito" class="empty:hidden max-h-96 divide-y divide-slate-100 overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 dark:divide-slate-800"></ul>
+        <p id="pos-carrito-vacio" class="px-5 py-6 text-sm lg:flex-1 text-slate-500 dark:text-slate-400">
           Agrega productos desde el buscador para iniciar una venta.
         </p>
 
-        <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+        <div class="shrink-0 space-y-3 border-t border-slate-200 px-5 py-4 lg:mt-auto dark:border-slate-800">
           <div class="flex items-center justify-between text-base font-semibold text-slate-900 dark:text-white">
             <span>Total</span>
             <span id="pos-total" class="inline-block origin-right">$0.00</span>
