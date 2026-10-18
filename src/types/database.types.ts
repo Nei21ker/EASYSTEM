@@ -53,3 +53,60 @@ export interface ProductoStockBajo {
   stock_actual: number;
   stock_minimo: number;
 }
+
+export type MetodoPago = 'BS_PAGO_MOVIL' | 'BS_PUNTO_VENTA' | 'BS_EFECTIVO' | 'USD_EFECTIVO' | 'BINANCE_USDT';
+
+export interface VentaItem {
+  producto_id: string;
+  nombre: string;
+  codigo_barras: string;
+  cantidad: number;
+  /** Precio de venta vigente al momento de la venta */
+  precio_unitario: number;
+}
+
+export interface ClienteVenta {
+  /** Con prefijo de nacionalidad, p. ej. "V-12345678" */
+  cedula: string;
+  nombre: string;
+  telefono: string;
+}
+
+/** Lo que el POS envía al registrar una venta (el folio lo asigna el sistema). */
+export interface NuevaVenta {
+  fecha: string;
+  cliente_cedula: string;
+  cliente_nombre: string;
+  cliente_telefono: string;
+  metodo_pago: MetodoPago;
+  /** Total en dólares (los precios del catálogo están en $) */
+  total: number;
+  items: VentaItem[];
+  vendedor_nombre?: string | null;
+  /** Bs por $ vigente al momento de la venta */
+  tasa_cambio?: number | null;
+  /** Monto cobrado en bolívares; solo si el tipo de cobro fue en Bs */
+  total_bs?: number | null;
+}
+
+export interface Venta extends NuevaVenta {
+  id: string;
+  folio: number;
+  vendedor_id?: string | null;
+}
+
+/** Tasa del dólar: bolívares por 1 USD. Cada cambio es una fila (historial); la vigente es la última. */
+export interface TasaCambio {
+  id: string;
+  /** Día al que corresponde (YYYY-MM-DD, hora local del negocio) */
+  fecha: string;
+  tasa: number;
+  created_at: string;
+  registrado_nombre?: string | null;
+}
+
+export interface NuevaTasa {
+  fecha: string;
+  tasa: number;
+  registrado_nombre?: string | null;
+}

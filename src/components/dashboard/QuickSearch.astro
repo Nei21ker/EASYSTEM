@@ -45,7 +45,7 @@
         <col />
         <col class="w-28" />
         <col class="w-[26%]" />
-        <col class="w-24" />
+        <col class="w-32" />
         <col class="w-32" />
       </colgroup>
       <thead>
@@ -68,7 +68,8 @@
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { formatearMoneda } from '../../utils/format';
+  import { htmlPrecioDual } from '../../utils/format';
+  import { tasaActual } from '../../stores/tasa';
   import { animarLista } from '../../utils/animaciones';
   import { htmlMiniatura } from '../../utils/imagenes';
   import { alternarCompatibles, escaparHtml, htmlCompatibles, htmlPildoraStock } from '../../utils/productosUI';
@@ -102,7 +103,7 @@
           <span class="inline-flex whitespace-nowrap rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">${escaparHtml(producto.categoria)}</span>
         </td>
         <td data-label="Compatible con" class="px-4 py-3">${htmlCompatibles(producto)}</td>
-        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(producto.precio_venta)}</td>
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(producto.precio_venta, tasaActual.get())}</td>
         <td data-label="Stock" class="px-5 py-3">${htmlPildoraStock(producto)}</td>
       </tr>
     `;
@@ -156,6 +157,7 @@
   tbody.addEventListener('click', (e) => {
     alternarCompatibles(e.target);
   });
+  tasaActual.listen(() => actualizar());
   buscador.addEventListener('input', actualizar);
   selectCategoria.addEventListener('change', actualizar);
   selectModelo.addEventListener('change', actualizar);

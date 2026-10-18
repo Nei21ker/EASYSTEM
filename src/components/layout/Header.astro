@@ -29,8 +29,31 @@ const { titulo, subtitulo } = Astro.props;
     </div>
   </div>
   <div class="flex shrink-0 items-center gap-2 sm:gap-3">
+    <button
+      id="tasa-chip"
+      type="button"
+      title="Tasa del dólar del día: clic para corregirla"
+      class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5 text-brand-600 dark:text-brand-300" aria-hidden="true">
+        <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span id="tasa-chip-texto" class="whitespace-nowrap tabular-nums">Tasa: —</span>
+    </button>
     <ConnectionStatus />
     <NotificationsBell />
     <ThemeToggle />
   </div>
 </header>
+
+<script>
+  import { tasaActual } from '../../stores/tasa';
+  import { formatearBolivares } from '../../utils/format';
+
+  const texto = document.getElementById('tasa-chip-texto') as HTMLSpanElement;
+  const pintar = (tasa: number | null) => (texto.textContent = tasa ? `$1 = ${formatearBolivares(tasa)}` : 'Tasa: —');
+
+  pintar(tasaActual.get());
+  tasaActual.listen(pintar);
+  document.getElementById('tasa-chip')!.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-tasa')));
+</script>

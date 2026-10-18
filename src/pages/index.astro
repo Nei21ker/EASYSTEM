@@ -13,7 +13,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 >
   <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
     <StatCard id="stat-total-productos" etiqueta="Total de productos" valor="—" icono="productos" />
-    <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" icono="valor" />
+    <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" tendencia=" " icono="valor" />
     <StatCard
       id="stat-stock-bajo"
       etiqueta="Alertas de stock bajo"
@@ -37,11 +37,26 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
-  import { esStockBajo, formatearMoneda } from '../utils/format';
+  import { convertirABs, esStockBajo, formatearBolivares, formatearMoneda } from '../utils/format';
+  import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
+
+  // Valor del inventario en bolívares (a la tasa del día), debajo del monto en dólares
+  let valorInventarioUsd = 0;
+  function pintarValorEnBs() {
+    const el = document.getElementById('stat-valor-inventario-tendencia');
+    if (!el) return;
+    const tasa = tasaActual.get();
+    el.textContent = tasa ? `≈ ${formatearBolivares(convertirABs(valorInventarioUsd, tasa))}` : '';
+    el.classList.remove('text-emerald-600', 'dark:text-emerald-400');
+    el.classList.add('text-slate-500', 'dark:text-slate-400');
+  }
+  tasaActual.listen(pintarValorEnBs);
 
   inventoryService.listarProductos().then((productos) => {
     const valorInventario = productos.reduce((total, p) => total + p.precio_venta * p.stock_actual, 0);
+    valorInventarioUsd = valorInventario;
+    pintarValorEnBs();
     const stockBajo = productos.filter(esStockBajo);
 
     contarHasta(document.getElementById('stat-total-productos'), productos.length);

@@ -1,6 +1,7 @@
 ---
 import Sidebar from '../components/layout/Sidebar.astro';
 import Header from '../components/layout/Header.astro';
+import TasaDelDia from '../components/layout/TasaDelDia.astro';
 import '../styles/global.css';
 import type { Rol } from '../lib/auth';
 
@@ -46,6 +47,9 @@ const { titulo, subtitulo, rolMinimo, tituloPestana } = Astro.props;
         </main>
       </div>
     </div>
+
+    <!-- Tasa del dólar: ventana obligatoria en la primera entrada de cada día -->
+    <TasaDelDia />
 
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';

@@ -354,3 +354,73 @@ create policy "Fotos de productos: reemplazar (solo administrador)" on storage.o
   with check (bucket_id = 'productos' and public.rol_actual() = 'administrador');
 create policy "Fotos de productos: borrar (solo administrador)" on storage.objects
   for delete using (bucket_id = 'productos' and public.rol_actual() = 'administrador');
+
+-- ----------------------------------------------------------------------------
+-- 8. Ventas con datos del cliente y tipo de cobro (migración 0011)
+-- ----------------------------------------------------------------------------
+create table if not exists public.ventas (
+  id               uuid primary key default gen_random_uuid(),
+  folio            bigint generated always as identity unique,
+  fecha            timestamptz not null default now(),
+  cliente_cedula   text not null check (char_length(cliente_cedula) between 5 and 20),
+  cliente_nombre   text not null check (char_length(btrim(cliente_nombre)) between 3 and 120),
+  cliente_telefono text not null check (char_length(cliente_telefono) between 7 and 25),
+  metodo_pago      text not null check (metodo_pago in (
+                     'BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT')),
+  total            numeric(12, 2) not null check (total >= 0),
+  -- [{ producto_id, nombre, codigo_barras, cantidad, precio_unitario }]
+  items            jsonb not null check (jsonb_typeof(items) = 'array'),
+  vendedor_id      uuid default auth.uid() references auth.users (id) on delete set null,
+  vendedor_nombre  text
+);
+
+comment on table public.ventas is 'Ventas del POS con datos del cliente y tipo de cobro (el stock se mueve vía movimientos_inventario)';
+
+create index if not exists ventas_fecha_idx on public.ventas (fecha desc);
+create index if not exists ventas_cliente_cedula_idx on public.ventas (cliente_cedula);
+create index if not exists ventas_vendedor_id_idx on public.ventas (vendedor_id);
+
+alter table public.ventas enable row level security;
+
+drop policy if exists "Ventas: el administrador ve todas, el vendedor las suyas" on public.ventas;
+drop policy if exists "Ventas: registrar a nombre propio" on public.ventas;
+
+create policy "Ventas: el administrador ve todas, el vendedor las suyas" on public.ventas
+  for select using (public.rol_actual() = 'administrador' or vendedor_id = auth.uid());
+
+create policy "Ventas: registrar a nombre propio" on public.ventas
+  for insert with check (auth.role() = 'authenticated' and vendedor_id = auth.uid());
+
+-- ----------------------------------------------------------------------------
+-- 9. Tasa de cambio del dólar y ventas con monto en bolívares (migración 0012)
+-- ----------------------------------------------------------------------------
+create table if not exists public.tasas_cambio (
+  id                uuid primary key default gen_random_uuid(),
+  fecha             date not null,
+  tasa              numeric(14, 4) not null check (tasa > 0 and tasa < 10000000),
+  created_at        timestamptz not null default now(),
+  registrado_por    uuid default auth.uid() references auth.users (id) on delete set null,
+  registrado_nombre text
+);
+
+comment on table public.tasas_cambio is 'Historial de la tasa del dólar (Bs por $); la vigente es la última fila';
+
+create index if not exists tasas_cambio_reciente_idx on public.tasas_cambio (created_at desc);
+
+alter table public.tasas_cambio enable row level security;
+
+drop policy if exists "Tasas: lectura para usuarios autenticados" on public.tasas_cambio;
+drop policy if exists "Tasas: registrar a nombre propio" on public.tasas_cambio;
+
+create policy "Tasas: lectura para usuarios autenticados" on public.tasas_cambio
+  for select using (auth.role() = 'authenticated');
+
+create policy "Tasas: registrar a nombre propio" on public.tasas_cambio
+  for insert with check (auth.role() = 'authenticated' and registrado_por = auth.uid());
+
+-- Ventas: tasa usada y monto en bolívares (null en ventas anteriores o cobradas en dólares)
+alter table public.ventas add column if not exists tasa_cambio numeric(14, 4) check (tasa_cambio > 0);
+alter table public.ventas add column if not exists total_bs numeric(14, 2) check (total_bs >= 0);
+
+comment on column public.ventas.tasa_cambio is 'Bs por $ vigente al momento de la venta';
+comment on column public.ventas.total_bs is 'Monto cobrado en bolívares (solo si el cobro fue en Bs)';

@@ -33,7 +33,8 @@
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import { estadoStock, htmlPrecioDual } from '../../utils/format';
+  import { tasaActual } from '../../stores/tasa';
   import { htmlMiniatura } from '../../utils/imagenes';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
@@ -78,7 +79,7 @@
           <p class="truncate font-mono text-xs text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
         </div>
         <div class="shrink-0 text-right">
-          <p class="text-sm font-semibold text-slate-900 dark:text-white">${formatearMoneda(p.precio_venta)}</p>
+          <div class="text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</div>
           <span class="mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${estilosBadge[estado]}">${texto}</span>
         </div>
       </li>`;

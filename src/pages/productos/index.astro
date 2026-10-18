@@ -91,7 +91,7 @@ const claseSelect =
             <col class="w-28" />
             <col class="w-[22%]" />
             <col id="pr-col-costo" class="hidden w-24" />
-            <col class="w-24" />
+            <col class="w-32" />
             <col class="w-32" />
             <col id="pr-col-acciones" class="hidden w-40" />
           </colgroup>
@@ -149,7 +149,8 @@ const claseSelect =
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { obtenerSesionActual } from '../../lib/auth';
-  import { formatearMoneda } from '../../utils/format';
+  import { formatearMoneda, htmlPrecioDual } from '../../utils/format';
+  import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
   import { htmlMiniatura } from '../../utils/imagenes';
@@ -257,7 +258,7 @@ const claseSelect =
             ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
             : ''
         }
-        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(p.precio_venta)}</td>
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</td>
         <td data-label="Stock" class="px-4 py-3">${pildoraStock(p)}</td>
         ${
           esAdministrador
@@ -357,6 +358,9 @@ const claseSelect =
     pintarCategorias();
     pintarAnimado();
   });
+
+  // La tasa cambió (se registró la del día o se corrigió): recalcula los Bs.
+  tasaActual.listen(() => pintar());
 
   // Escaneo con cámara (ver src/components/CamaraEscaner.astro): autocompleta el buscador.
   window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {

@@ -18,19 +18,29 @@ import { supabaseConfigurado } from './supabase';
 import * as productosDb from './db/productos';
 import * as modelosDb from './db/modelos';
 import * as movimientosDb from './db/movimientos';
+import * as ventasDb from './db/ventas';
+import * as tasasDb from './db/tasas';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
-import { esStockBajo } from '../utils/format';
+import { convertirABs, esStockBajo, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
+import { esMetodoBolivares, METODOS_PAGO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
 import type {
+  ClienteVenta,
   Compatibilidad,
+  MetodoPago,
   ModeloTelefono,
   MovimientoInventario,
   Producto,
   ProductoConRelaciones,
+  NuevaTasa,
+  NuevaVenta,
   ProductoStockBajo,
+  TasaCambio,
   TipoMovimiento,
+  Venta,
+  VentaItem,
 } from '../types/database.types';
 
 // ----------------------------------------------------------------------------
@@ -43,6 +53,10 @@ interface LocalDB {
   modelos: ModeloTelefono[];
   compatibilidades: Compatibilidad[];
   movimientos: MovimientoInventario[];
+  /** Opcional: los navegadores con datos anteriores a las ventas con cliente no lo traen */
+  ventas?: Venta[];
+  /** Historial de la tasa del dólar (opcional por la misma razón que ventas) */
+  tasas?: TasaCambio[];
 }
 
 function generarId(): string {
@@ -117,6 +131,9 @@ const LS_CACHE_PRODUCTOS = 'easystem:cache:productos';
 const LS_CACHE_MODELOS = 'easystem:cache:modelos';
 const LS_CACHE_MOVIMIENTOS = 'easystem:cache:movimientos';
 const LS_COLA_SYNC = 'easystem:cola-sync';
+const LS_COLA_VENTAS = 'easystem:cola-ventas';
+const LS_CACHE_TASA = 'easystem:cache:tasa';
+const LS_COLA_TASAS = 'easystem:cola-tasas';
 const EVENTO_CONEXION = 'easystem:conexion-cambio';
 
 interface MovimientoPendiente {
@@ -151,6 +168,26 @@ function leerColaSync(): MovimientoPendiente[] {
 
 function guardarColaSync(cola: MovimientoPendiente[]) {
   guardarCache(LS_COLA_SYNC, cola);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_CONEXION));
+}
+
+/** Registros de venta (cliente + tipo de cobro) que no se pudieron guardar por falta de red. */
+function leerColaVentas(): NuevaVenta[] {
+  return leerCache<NuevaVenta[]>(LS_COLA_VENTAS) ?? [];
+}
+
+function guardarColaVentas(cola: NuevaVenta[]) {
+  guardarCache(LS_COLA_VENTAS, cola);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_CONEXION));
+}
+
+/** Tasas del dólar registradas sin conexión, pendientes de enviarse. */
+function leerColaTasas(): TasaCambio[] {
+  return leerCache<TasaCambio[]>(LS_COLA_TASAS) ?? [];
+}
+
+function guardarColaTasas(cola: TasaCambio[]) {
+  guardarCache(LS_COLA_TASAS, cola);
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_CONEXION));
 }
 
@@ -195,12 +232,14 @@ function encolarMovimientoPendiente(input: {
   };
 }
 
-/** Reintenta enviar a Supabase los movimientos encolados mientras no había conexión. */
+/** Reintenta enviar a Supabase los movimientos y registros de venta encolados mientras no había conexión. */
 export async function sincronizarPendientes(): Promise<{ sincronizados: number; pendientes: number }> {
   if (!supabaseConfigurado) return { sincronizados: 0, pendientes: 0 };
 
   const cola = leerColaSync();
-  if (cola.length === 0) return { sincronizados: 0, pendientes: 0 };
+  const colaVentas = leerColaVentas();
+  const colaTasas = leerColaTasas();
+  if (cola.length === 0 && colaVentas.length === 0 && colaTasas.length === 0) return { sincronizados: 0, pendientes: 0 };
 
   let sincronizados = 0;
   const restantes: MovimientoPendiente[] = [];
@@ -222,9 +261,39 @@ export async function sincronizarPendientes(): Promise<{ sincronizados: number; 
       }
     }
   }
-
   guardarColaSync(restantes);
-  return { sincronizados, pendientes: restantes.length };
+
+  const tasasRestantes: TasaCambio[] = [];
+  for (const pendiente of colaTasas) {
+    try {
+      await tasasDb.insertarTasa({ fecha: pendiente.fecha, tasa: pendiente.tasa, registrado_nombre: pendiente.registrado_nombre });
+      sincronizados++;
+    } catch (err) {
+      if (esErrorDeRed(err)) {
+        tasasRestantes.push(pendiente);
+      } else {
+        console.error('[EASYSTEM] Una tasa de cambio pendiente fue rechazada al sincronizar y se descartó:', pendiente, err);
+      }
+    }
+  }
+  guardarColaTasas(tasasRestantes);
+
+  const ventasRestantes: NuevaVenta[] = [];
+  for (const venta of colaVentas) {
+    try {
+      await ventasDb.insertarVenta(venta);
+      sincronizados++;
+    } catch (err) {
+      if (esErrorDeRed(err)) {
+        ventasRestantes.push(venta);
+      } else {
+        console.error('[EASYSTEM] Un registro de venta pendiente fue rechazado al sincronizar y se descartó:', venta, err);
+      }
+    }
+  }
+  guardarColaVentas(ventasRestantes);
+
+  return { sincronizados, pendientes: restantes.length + ventasRestantes.length + tasasRestantes.length };
 }
 
 export interface EstadoConexion {
@@ -236,7 +305,7 @@ export interface EstadoConexion {
 export function obtenerEstadoConexion(): EstadoConexion {
   return {
     online: typeof navigator === 'undefined' ? true : navigator.onLine,
-    pendientes: supabaseConfigurado ? leerColaSync().length : 0,
+    pendientes: supabaseConfigurado ? leerColaSync().length + leerColaVentas().length + leerColaTasas().length : 0,
     usaSupabase: supabaseConfigurado,
   };
 }
@@ -483,6 +552,81 @@ export async function crearModelo(input: Pick<ModeloTelefono, 'marca' | 'modelo'
 }
 
 // ----------------------------------------------------------------------------
+// Tasa del dólar (Bs por $)
+// ----------------------------------------------------------------------------
+
+/** Última tasa conocida en este navegador (sin red), para pintar Bs. enseguida al cargar una página. */
+export function leerTasaCacheada(): TasaCambio | null {
+  if (typeof window === 'undefined') return null;
+  return leerCache<TasaCambio>(LS_CACHE_TASA);
+}
+
+export interface EstadoTasa {
+  /** La tasa registrada HOY (null = todavía hay que pedirla) */
+  hoy: TasaCambio | null;
+  /** La última registrada, de cualquier día (para sugerirla/confirmarla) */
+  ultima: TasaCambio | null;
+}
+
+function estadoDeTasa(ultima: TasaCambio | null): EstadoTasa {
+  return { ultima, hoy: ultima && ultima.fecha === fechaLocalISO() ? ultima : null };
+}
+
+export async function obtenerTasaVigente(): Promise<EstadoTasa> {
+  let ultima: TasaCambio | null;
+
+  if (!supabaseConfigurado) {
+    const tasas = leerDB().tasas ?? [];
+    ultima = tasas.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
+  } else {
+    try {
+      ultima = await tasasDb.obtenerUltimaTasa();
+    } catch (err) {
+      if (!esErrorDeRed(err)) throw err;
+      console.warn('[EASYSTEM] Sin conexión con Supabase; usando la última tasa guardada localmente.', err);
+      ultima = leerTasaCacheada();
+    }
+    // Una tasa registrada sin conexión es más reciente que cualquier otra del servidor
+    const pendientes = leerColaTasas();
+    if (pendientes.length > 0) ultima = pendientes[pendientes.length - 1];
+  }
+
+  if (ultima) guardarCache(LS_CACHE_TASA, ultima);
+  return estadoDeTasa(ultima);
+}
+
+/** Registra la tasa de hoy (nueva fila del historial). Sin conexión se guarda local y se envía al reconectar. */
+export async function registrarTasa(tasa: number, registradoNombre?: string): Promise<TasaCambio> {
+  if (!Number.isFinite(tasa) || tasa <= 0 || tasa >= 10_000_000) throw new Error('La tasa debe ser un número mayor a 0.');
+
+  const nueva: NuevaTasa = {
+    fecha: fechaLocalISO(),
+    tasa: Math.round(tasa * 10000) / 10000,
+    registrado_nombre: registradoNombre ?? null,
+  };
+
+  let guardada: TasaCambio;
+  if (!supabaseConfigurado) {
+    const db = leerDB();
+    guardada = { ...nueva, id: generarId(), created_at: new Date().toISOString() };
+    (db.tasas ?? (db.tasas = [])).unshift(guardada);
+    guardarDB(db);
+  } else {
+    try {
+      guardada = await tasasDb.insertarTasa(nueva);
+    } catch (err) {
+      if (!esErrorDeRed(err)) throw err;
+      console.warn('[EASYSTEM] Sin conexión con Supabase; la tasa se guardó localmente para sincronizar después.', err);
+      guardada = { ...nueva, id: `pendiente-${generarId()}`, created_at: new Date().toISOString() };
+      guardarColaTasas([...leerColaTasas(), guardada]);
+    }
+  }
+
+  guardarCache(LS_CACHE_TASA, guardada);
+  return guardada;
+}
+
+// ----------------------------------------------------------------------------
 // Movimientos de inventario / Ventas
 // ----------------------------------------------------------------------------
 export async function listarMovimientos(limite = 100): Promise<MovimientoConProducto[]> {
@@ -566,25 +710,122 @@ export async function registrarMovimiento(input: {
 }
 
 /**
- * Registra una venta (una o más líneas de carrito) como movimientos SALIDA.
- * Nota: se procesan en secuencia y no son atómicos entre sí -- si el stock
- * alcanza para las primeras líneas pero no para una posterior, esas primeras
- * quedan registradas igual. Para una venta transaccional real se necesitaría
- * una función RPC de Postgres; fuera del alcance de este scaffold.
+ * La venta quedó (total o parcialmente) descontada del inventario pero algo
+ * falló después. `productosRegistrados` lista las líneas que YA salieron del
+ * stock: la pantalla debe quitarlas del carrito para no cobrarlas dos veces.
  */
-export async function registrarVenta(
-  items: { producto_id: string; cantidad: number }[],
-  motivo = 'Venta POS'
-): Promise<MovimientoInventario[]> {
+export class VentaIncompletaError extends Error {
+  constructor(
+    mensaje: string,
+    public productosRegistrados: string[]
+  ) {
+    super(mensaje);
+    this.name = 'VentaIncompletaError';
+  }
+}
+
+export interface DatosVenta {
+  cliente: ClienteVenta;
+  metodo_pago: MetodoPago;
+  /** Bs por $ del día; se guarda en la venta (y fija el monto en Bs si el cobro es en bolívares) */
+  tasa_cambio: number;
+  vendedor_nombre?: string;
+}
+
+/** Venta ya guardada. `pendienteSincronizar`: se hizo sin conexión y el folio se asignará al sincronizar (folio = 0). */
+export type VentaRegistrada = Venta & { pendienteSincronizar?: boolean };
+
+async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegistrada> {
+  if (!supabaseConfigurado) {
+    const db = leerDB();
+    const ventas = db.ventas ?? (db.ventas = []);
+    const venta: Venta = { ...registro, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
+    ventas.unshift(venta);
+    guardarDB(db);
+    return venta;
+  }
+
+  try {
+    return await ventasDb.insertarVenta(registro);
+  } catch (err) {
+    if (!esErrorDeRed(err)) throw err;
+    console.warn('[EASYSTEM] Sin conexión con Supabase; el registro de la venta se guardó localmente para sincronizar después.', err);
+    guardarColaVentas([...leerColaVentas(), registro]);
+    return { ...registro, id: `pendiente-${generarId()}`, folio: 0, pendienteSincronizar: true };
+  }
+}
+
+/**
+ * Registra una venta del POS: cada línea del carrito sale del inventario como un
+ * movimiento SALIDA y después se guarda el registro de la venta (cliente, tipo
+ * de cobro, total y detalle con los precios del momento).
+ * Nota: las líneas se procesan en secuencia y no son atómicas entre sí -- si el
+ * stock alcanza para las primeras pero no para una posterior, esas primeras
+ * quedan registradas (y la venta se guarda solo con ellas) y se lanza
+ * VentaIncompletaError. Una venta transaccional real requeriría una función RPC
+ * de Postgres.
+ */
+export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Promise<VentaRegistrada> {
   if (items.length === 0) throw new Error('El carrito está vacío.');
 
-  const resultados: MovimientoInventario[] = [];
+  const cliente = {
+    cedula: datos.cliente.cedula.trim(),
+    nombre: datos.cliente.nombre.trim().replace(/\s+/g, ' '),
+    telefono: datos.cliente.telefono.trim(),
+  };
+  if (!cliente.cedula || !cliente.nombre || !cliente.telefono) {
+    throw new Error('Faltan datos del cliente (cédula, nombre y teléfono).');
+  }
+  if (!METODOS_PAGO.some((m) => m.valor === datos.metodo_pago)) throw new Error('Selecciona un tipo de cobro válido.');
+  if (!(datos.tasa_cambio > 0)) throw new Error('Falta la tasa del dólar del día. Regístrala e inténtalo de nuevo.');
+
+  const registradas: VentaItem[] = [];
+  let fallo: unknown = null;
   for (const item of items) {
-    resultados.push(
-      await registrarMovimiento({ producto_id: item.producto_id, tipo: 'SALIDA', cantidad: item.cantidad, motivo })
+    try {
+      await registrarMovimiento({ producto_id: item.producto_id, tipo: 'SALIDA', cantidad: item.cantidad, motivo: 'Venta POS' });
+      registradas.push(item);
+    } catch (err) {
+      fallo = err;
+      break;
+    }
+  }
+  if (registradas.length === 0) throw fallo; // nada salió del inventario: se puede reintentar tal cual
+
+  const totalUsd = Math.round(registradas.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
+  const registro: NuevaVenta = {
+    fecha: new Date().toISOString(),
+    cliente_cedula: cliente.cedula,
+    cliente_nombre: cliente.nombre,
+    cliente_telefono: cliente.telefono,
+    metodo_pago: datos.metodo_pago,
+    total: totalUsd,
+    items: registradas,
+    vendedor_nombre: datos.vendedor_nombre ?? null,
+    tasa_cambio: datos.tasa_cambio,
+    total_bs: esMetodoBolivares(datos.metodo_pago) ? convertirABs(totalUsd, datos.tasa_cambio) : null,
+  };
+  const ids = registradas.map((i) => i.producto_id);
+
+  let venta: VentaRegistrada;
+  try {
+    venta = await guardarRegistroDeVenta(registro);
+  } catch (err) {
+    const detalle = err instanceof Error ? err.message : String(err);
+    throw new VentaIncompletaError(
+      `El inventario se descontó, pero no se pudo guardar el registro de la venta: ${detalle}`,
+      ids
     );
   }
-  return resultados;
+
+  if (fallo) {
+    const detalle = fallo instanceof Error ? fallo.message : String(fallo);
+    throw new VentaIncompletaError(
+      `${detalle} Se registraron solo ${registradas.length} de ${items.length} líneas (venta #${venta.folio || 'pendiente'}); las demás siguen en el carrito.`,
+      ids
+    );
+  }
+  return venta;
 }
 
 // ----------------------------------------------------------------------------

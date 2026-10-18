@@ -1,6 +1,11 @@
 ---
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
+import { METODOS_PAGO } from '../utils/pagos';
+
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
 ---
 
 <DashboardLayout titulo="Nueva Venta" subtitulo="Punto de venta (POS) — Edward Accesorios">
@@ -65,6 +70,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
             <span>Total</span>
             <span id="pos-total" class="inline-block origin-right">$0.00</span>
           </div>
+          <p id="pos-total-bs" class="-mt-2 text-right text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400"></p>
           <p id="pos-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <button
             id="pos-procesar"
@@ -84,6 +90,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     <div class="min-w-0 flex-1">
       <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
       <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">$0.00</p>
+      <p id="pos-barra-total-bs" class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400"></p>
     </div>
     <button
       id="pos-barra-cobrar"
@@ -104,6 +111,8 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         <p class="text-xs text-slate-500 dark:text-slate-400 print:text-black">Ticket de venta</p>
         <p id="ticket-folio" class="mt-2 text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
         <p id="ticket-fecha" class="text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
+        <p id="ticket-cliente" class="mt-2 text-xs text-slate-600 dark:text-slate-300 print:text-black"></p>
+        <p id="ticket-cobro" class="text-xs text-slate-600 dark:text-slate-300 print:text-black"></p>
       </div>
       <div class="my-4 border-t border-dashed border-slate-300 dark:border-slate-700 print:border-black"></div>
       <ul id="ticket-lineas" class="space-y-2 text-sm text-slate-700 dark:text-slate-300 print:text-black"></ul>
@@ -112,6 +121,11 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
         <span>Total</span>
         <span id="ticket-total"></span>
       </div>
+      <div id="ticket-bs" class="mt-1 hidden justify-between text-sm font-semibold text-slate-900 dark:text-white print:text-black">
+        <span>Total en bolívares</span>
+        <span id="ticket-total-bs"></span>
+      </div>
+      <p id="ticket-tasa" class="mt-1 text-right text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
       <p class="mt-4 text-center text-xs text-slate-400 print:text-black">¡Gracias por su compra!</p>
     </div>
 
@@ -133,42 +147,89 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     </div>
   </div>
 
-  <!-- Confirmación antes de procesar la venta -->
+  <!-- Confirmación antes de procesar la venta + datos del cliente y tipo de cobro -->
   <dialog
     id="pos-confirmar"
     aria-labelledby="pos-confirmar-titulo"
-    class="anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+    class="anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
   >
-    <div class="px-5 pb-4 pt-5">
-      <div class="flex items-start gap-3">
-        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
-            <circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" stroke-linecap="round" />
-          </svg>
-        </span>
-        <div class="min-w-0">
-          <h2 id="pos-confirmar-titulo" class="text-base font-semibold">¿Procesar esta venta?</h2>
-          <p id="pos-confirmar-resumen" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"></p>
+    <form id="pos-confirmar-form" class="flex max-h-[92dvh] flex-col" novalidate>
+      <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+        <div class="flex items-start gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" aria-hidden="true">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+              <circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" stroke-linecap="round" />
+            </svg>
+          </span>
+          <div class="min-w-0">
+            <h2 id="pos-confirmar-titulo" class="text-base font-semibold">¿Procesar esta venta?</h2>
+            <p id="pos-confirmar-resumen" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"></p>
+          </div>
         </div>
+
+        <div>
+          <ul id="pos-confirmar-lineas" class="max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+          <div class="mt-3 flex items-center justify-between text-base font-semibold">
+            <span>Total a cobrar</span>
+            <span id="pos-confirmar-total"></span>
+          </div>
+          <p id="pos-confirmar-total-bs" class="text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
+        </div>
+
+        <fieldset class="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <legend class="sr-only">Datos del cliente</legend>
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Datos del cliente</p>
+
+          <div>
+            <label for="pos-cli-cedula" class={claseEtiqueta}>Cédula *</label>
+            <div class="mt-1 flex gap-2">
+              <select id="pos-cli-nac" aria-label="Nacionalidad" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                <option value="V">V</option>
+                <option value="E">E</option>
+              </select>
+              <input id="pos-cli-cedula" type="text" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="12345678" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label for="pos-cli-nombre" class={claseEtiqueta}>Nombre *</label>
+              <input id="pos-cli-nombre" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
+            </div>
+            <div>
+              <label for="pos-cli-apellido" class={claseEtiqueta}>Apellido *</label>
+              <input id="pos-cli-apellido" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
+            </div>
+          </div>
+
+          <div>
+            <label for="pos-cli-telefono" class={claseEtiqueta}>Número de teléfono *</label>
+            <input id="pos-cli-telefono" type="tel" inputmode="tel" autocomplete="off" maxlength="20" placeholder="0414-1234567" class={claseCampo} />
+          </div>
+        </fieldset>
+
+        <div>
+          <label for="pos-cli-pago" class={claseEtiqueta}>Tipo de cobro *</label>
+          <select id="pos-cli-pago" class={claseCampo}>
+            <option value="">Selecciona cómo paga el cliente...</option>
+            {METODOS_PAGO.map((m) => <option value={m.valor}>{m.etiqueta}</option>)}
+          </select>
+          <p id="pos-cobrar-monto" class="mt-2 hidden rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200"></p>
+        </div>
+
+        <p id="pos-confirmar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
       </div>
 
-      <ul id="pos-confirmar-lineas" class="mt-4 max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
-
-      <div class="mt-4 flex items-center justify-between text-base font-semibold">
-        <span>Total a cobrar</span>
-        <span id="pos-confirmar-total"></span>
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pos-confirmar-no" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          Cancelar
+        </button>
+        <button id="pos-confirmar-si" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">
+          Sí, procesar venta
+        </button>
       </div>
-      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
-    </div>
-
-    <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
-      <button id="pos-confirmar-no" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-        Cancelar
-      </button>
-      <button id="pos-confirmar-si" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">
-        Sí, procesar venta
-      </button>
-    </div>
+    </form>
   </dialog>
 
   <CamaraEscaner />
@@ -176,10 +237,14 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
-  import { estadoStock, formatearMoneda } from '../utils/format';
+  import type { VentaRegistrada } from '../lib/inventoryService';
+  import { obtenerSesionActual } from '../lib/auth';
+  import { esMetodoBolivares, etiquetaMetodoPago } from '../utils/pagos';
+  import { tasaActual } from '../stores/tasa';
+  import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { htmlMiniatura } from '../utils/imagenes';
-  import type { ProductoConRelaciones } from '../types/database.types';
+  import type { ClienteVenta, MetodoPago, ProductoConRelaciones, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
     producto: ProductoConRelaciones;
@@ -188,7 +253,6 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
 
   let productos: ProductoConRelaciones[] = [];
   let carrito: LineaCarrito[] = [];
-  let folioActual = 0;
 
   const buscador = document.getElementById('pos-buscador') as HTMLInputElement;
   const resultados = document.getElementById('pos-resultados') as HTMLUListElement;
@@ -211,6 +275,12 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     const div = document.createElement('div');
     div.textContent = texto;
     return div.innerHTML;
+  }
+
+  /** "$5.00 · Bs. 182,50" (solo "$5.00" mientras no haya tasa). */
+  function precioEnLinea(usd: number): string {
+    const tasa = tasaActual.get();
+    return tasa ? `${formatearMoneda(usd)} · ${formatearBolivares(convertirABs(usd, tasa))}` : formatearMoneda(usd);
   }
 
   function mostrarError(mensaje: string) {
@@ -275,7 +345,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
               </p>
               <p class="mt-1 text-xs">
                 <span class="rounded-full px-2 py-0.5 font-medium ${estilosBadge[estado]}">${disponible} disponible${disponible === 1 ? '' : 's'}</span>
-                <span class="ml-1 text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)}</span>
+                <span class="ml-1 text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)}</span>
               </p>
             </div>
             <button
@@ -309,13 +379,13 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
             ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-10 w-10')}
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)} c/u</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)} c/u</p>
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <button type="button" data-restar="${producto.id}" class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
               <span class="w-6 text-center text-sm text-slate-900 dark:text-white">${cantidad}</span>
               <button type="button" data-sumar="${producto.id}" ${alMaximo ? 'disabled' : ''} class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
-              <span class="w-16 text-right text-sm font-semibold text-slate-900 dark:text-white">${formatearMoneda(subtotal)}</span>
+              <span class="min-w-16 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
               <button type="button" data-eliminar="${producto.id}" aria-label="Quitar" class="text-slate-400 hover:text-red-600">✕</button>
             </div>
           </li>
@@ -324,10 +394,14 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
       .join('');
 
     const total = carrito.reduce((acc, l) => acc + l.producto.precio_venta * l.cantidad, 0);
+    const tasa = tasaActual.get();
+    const totalBs = tasa && carrito.length > 0 ? formatearBolivares(convertirABs(total, tasa)) : '';
     totalEl.textContent = formatearMoneda(total);
+    document.getElementById('pos-total-bs')!.textContent = totalBs;
 
     barraContador.textContent = `${carrito.length} línea${carrito.length === 1 ? '' : 's'}`;
     barraTotal.textContent = formatearMoneda(total);
+    document.getElementById('pos-barra-total-bs')!.textContent = totalBs;
     barraCobrar.disabled = carrito.length === 0;
   }
 
@@ -386,30 +460,34 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     renderResultados(buscador.value);
   }
 
-  function mostrarTicket() {
-    folioActual += 1;
-    const fecha = new Date();
-
-    document.getElementById('ticket-folio')!.textContent = `Folio #${folioActual.toString().padStart(4, '0')}`;
-    document.getElementById('ticket-fecha')!.textContent = fecha.toLocaleString('es-GT', {
+  function mostrarTicket(venta: VentaRegistrada) {
+    document.getElementById('ticket-folio')!.textContent = venta.folio
+      ? `Folio #${venta.folio.toString().padStart(4, '0')}`
+      : 'Folio pendiente (se asigna al sincronizar)';
+    document.getElementById('ticket-fecha')!.textContent = new Date(venta.fecha).toLocaleString('es-GT', {
       dateStyle: 'medium',
       timeStyle: 'short',
     });
+    document.getElementById('ticket-cliente')!.textContent = `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}`;
+    document.getElementById('ticket-cobro')!.textContent = `Cobro: ${etiquetaMetodoPago(venta.metodo_pago)}`;
 
-    const lineasHtml = carrito
+    document.getElementById('ticket-lineas')!.innerHTML = venta.items
       .map(
-        ({ producto, cantidad }) => `
+        (item) => `
           <li class="flex justify-between gap-2">
-            <span>${escaparHtml(producto.nombre)} <span class="text-slate-400">x${cantidad}</span></span>
-            <span>${formatearMoneda(producto.precio_venta * cantidad)}</span>
+            <span>${escaparHtml(item.nombre)} <span class="text-slate-400">x${item.cantidad}</span></span>
+            <span>${formatearMoneda(item.precio_unitario * item.cantidad)}</span>
           </li>
         `
       )
       .join('');
-    document.getElementById('ticket-lineas')!.innerHTML = lineasHtml;
-
-    const total = carrito.reduce((acc, l) => acc + l.producto.precio_venta * l.cantidad, 0);
-    document.getElementById('ticket-total')!.textContent = formatearMoneda(total);
+    document.getElementById('ticket-total')!.textContent = formatearMoneda(venta.total);
+    const filaBs = document.getElementById('ticket-bs')!;
+    const cobraEnBs = venta.total_bs != null;
+    filaBs.classList.toggle('hidden', !cobraEnBs);
+    filaBs.classList.toggle('flex', cobraEnBs);
+    document.getElementById('ticket-total-bs')!.textContent = cobraEnBs ? formatearBolivares(venta.total_bs!) : '';
+    document.getElementById('ticket-tasa')!.textContent = venta.tasa_cambio ? `Tasa del día: ${formatearBolivares(venta.tasa_cambio)} por $1` : '';
 
     posApp.classList.add('hidden');
     barraMovil.classList.add('hidden');
@@ -420,8 +498,71 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   }
 
   const dialogoConfirmar = document.getElementById('pos-confirmar') as HTMLDialogElement;
+  const formConfirmar = document.getElementById('pos-confirmar-form') as HTMLFormElement;
+  const errorConfirmar = document.getElementById('pos-confirmar-error') as HTMLParagraphElement;
+  const campo = (id: string) => document.getElementById(id) as HTMLInputElement & HTMLSelectElement;
+  const campoNac = campo('pos-cli-nac');
+  const campoCedula = campo('pos-cli-cedula');
+  const campoNombre = campo('pos-cli-nombre');
+  const campoApellido = campo('pos-cli-apellido');
+  const campoTelefono = campo('pos-cli-telefono');
+  const campoPago = campo('pos-cli-pago');
 
-  /** Paso previo: muestra el resumen y pide confirmación; la venta solo se registra al aceptar. */
+  // Los datos del cliente solo viven mientras dura la venta (se borran al cobrar).
+  function limpiarDatosCliente() {
+    for (const c of [campoCedula, campoNombre, campoApellido, campoTelefono]) c.value = '';
+    campoNac.value = 'V';
+    campoPago.value = '';
+    document.getElementById('pos-cobrar-monto')!.classList.add('hidden');
+    errorConfirmar.classList.add('hidden');
+  }
+
+  /** Devuelve los datos del cliente ya validados, o muestra el primer error y devuelve null. */
+  function leerDatosCliente(): { cliente: ClienteVenta; metodo_pago: MetodoPago } | null {
+    const fallar = (mensaje: string, el: HTMLElement) => {
+      errorConfirmar.textContent = mensaje;
+      errorConfirmar.classList.remove('hidden');
+      el.focus();
+      return null;
+    };
+    const cedula = campoCedula.value.replace(/\D/g, '');
+    const nombre = campoNombre.value.trim().replace(/\s+/g, ' ');
+    const apellido = campoApellido.value.trim().replace(/\s+/g, ' ');
+    const telefono = campoTelefono.value.trim();
+    const patronNombre = /^[\p{L}][\p{L} '.-]*$/u;
+
+    if (!/^\d{5,9}$/.test(cedula)) return fallar('La cédula debe tener entre 5 y 9 dígitos (solo números).', campoCedula);
+    if (nombre.length < 2 || !patronNombre.test(nombre)) return fallar('Escribe el nombre del cliente.', campoNombre);
+    if (apellido.length < 2 || !patronNombre.test(apellido)) return fallar('Escribe el apellido del cliente.', campoApellido);
+    const digitos = telefono.replace(/\D/g, '');
+    if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
+      return fallar('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', campoTelefono);
+    }
+    if (!campoPago.value) return fallar('Selecciona el tipo de cobro.', campoPago);
+
+    errorConfirmar.classList.add('hidden');
+    return {
+      cliente: { cedula: `${campoNac.value}-${cedula}`, nombre: `${nombre} ${apellido}`, telefono },
+      metodo_pago: campoPago.value as MetodoPago,
+    };
+  }
+
+  let totalAConfirmar = 0;
+
+  /** Según el tipo de cobro: en bolívares se cobra el total × tasa; en dólares/USDT, el total en $. */
+  function mostrarMontoACobrar() {
+    const caja = document.getElementById('pos-cobrar-monto')!;
+    const metodo = campoPago.value;
+    const tasa = tasaActual.get();
+    caja.classList.toggle('hidden', !metodo);
+    if (!metodo) return;
+    caja.textContent =
+      esMetodoBolivares(metodo) && tasa
+        ? `Cobrar en bolívares: ${formatearBolivares(convertirABs(totalAConfirmar, tasa))}`
+        : `Cobrar en dólares: ${formatearMoneda(totalAConfirmar)}`;
+  }
+
+  /** Paso previo: muestra el resumen y pide los datos del cliente; la venta solo se registra al confirmar. */
   function pedirConfirmacion() {
     if (carrito.length === 0 || dialogoConfirmar.open) return;
     const unidades = carrito.reduce((suma, l) => suma + l.cantidad, 0);
@@ -430,6 +571,10 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     document.getElementById('pos-confirmar-resumen')!.textContent =
       `${carrito.length} línea${carrito.length === 1 ? '' : 's'} · ${unidades} unidad${unidades === 1 ? '' : 'es'}`;
     document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
+    totalAConfirmar = total;
+    const tasaDia = tasaActual.get();
+    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(total, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
+    mostrarMontoACobrar();
     document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
       .map(
         ({ producto, cantidad }) => `
@@ -440,35 +585,69 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
       )
       .join('');
 
+    errorConfirmar.classList.add('hidden');
     dialogoConfirmar.showModal();
-    // El foco queda en "Cancelar": un Enter accidental (p. ej. de la pistola lectora) no cobra la venta.
-    document.getElementById('pos-confirmar-no')!.focus();
+    // Foco en la cédula: la pistola lectora no cobra nada (Enter con datos incompletos solo muestra un aviso).
+    campoCedula.focus();
+  }
+
+  function pedirConfirmacionActualiza() {
+    const tasaDia = tasaActual.get();
+    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(totalAConfirmar, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
+    mostrarMontoACobrar();
   }
 
   document.getElementById('pos-confirmar-no')!.addEventListener('click', () => dialogoConfirmar.close());
-  document.getElementById('pos-confirmar-si')!.addEventListener('click', () => {
-    dialogoConfirmar.close();
-    procesarVenta();
-  });
-  // Clic en el fondo oscuro = cancelar
+  // Clic en el fondo oscuro = cancelar (los datos escritos se conservan si se reabre)
   dialogoConfirmar.addEventListener('click', (e) => {
     if (e.target === dialogoConfirmar) dialogoConfirmar.close();
   });
+  formConfirmar.addEventListener('input', () => errorConfirmar.classList.add('hidden'));
+  campoPago.addEventListener('change', mostrarMontoACobrar);
+  campoCedula.addEventListener('input', () => (campoCedula.value = campoCedula.value.replace(/\D/g, '')));
+  formConfirmar.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const datos = leerDatosCliente();
+    if (!datos) return;
+    dialogoConfirmar.close();
+    procesarVenta(datos);
+  });
 
-  async function procesarVenta() {
+  async function procesarVenta(datos: { cliente: ClienteVenta; metodo_pago: MetodoPago }) {
     if (carrito.length === 0) return;
     limpiarError();
+    const tasa = tasaActual.get();
+    if (!tasa) {
+      mostrarError('Falta la tasa del dólar del día. Regístrala para poder vender.');
+      window.dispatchEvent(new Event('easystem:abrir-tasa'));
+      return;
+    }
     botonProcesar.disabled = true;
     botonProcesar.textContent = 'Procesando...';
     barraCobrar.disabled = true;
 
     try {
-      const items = carrito.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad }));
-      await inventoryService.registrarVenta(items, `Venta POS #${folioActual + 1}`);
-      mostrarTicket();
+      const items: VentaItem[] = carrito.map((l) => ({
+        producto_id: l.producto.id,
+        nombre: l.producto.nombre,
+        codigo_barras: l.producto.codigo_barras,
+        cantidad: l.cantidad,
+        precio_unitario: l.producto.precio_venta,
+      }));
+      const sesion = await obtenerSesionActual();
+      const venta = await inventoryService.registrarVenta(items, { ...datos, tasa_cambio: tasa, vendedor_nombre: sesion?.nombre });
+      mostrarTicket(venta);
       carrito = [];
+      limpiarDatosCliente();
       await cargarProductos();
     } catch (err) {
+      if (err instanceof inventoryService.VentaIncompletaError) {
+        // Esas líneas ya salieron del inventario: se quitan del carrito para no cobrarlas dos veces.
+        carrito = carrito.filter((l) => !err.productosRegistrados.includes(l.producto.id));
+        if (carrito.length === 0) limpiarDatosCliente();
+        await cargarProductos();
+        renderCarrito();
+      }
       mostrarError(err instanceof Error ? err.message : 'No se pudo procesar la venta.');
     } finally {
       botonProcesar.textContent = 'Procesar venta';
@@ -476,6 +655,15 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
       barraCobrar.disabled = carrito.length === 0;
     }
   }
+
+  // La tasa cambió: recalcula todos los Bs. visibles (y el monto a cobrar si el diálogo está abierto)
+  tasaActual.listen(() => {
+    renderResultados(buscador.value);
+    renderCarrito();
+    if (dialogoConfirmar.open) {
+      pedirConfirmacionActualiza();
+    }
+  });
 
   function iniciarNuevaVenta() {
     ticket.classList.add('hidden');
