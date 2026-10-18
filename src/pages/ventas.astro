@@ -133,6 +133,44 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     </div>
   </div>
 
+  <!-- Confirmación antes de procesar la venta -->
+  <dialog
+    id="pos-confirmar"
+    aria-labelledby="pos-confirmar-titulo"
+    class="anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <div class="px-5 pb-4 pt-5">
+      <div class="flex items-start gap-3">
+        <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+            <circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" stroke-linecap="round" />
+          </svg>
+        </span>
+        <div class="min-w-0">
+          <h2 id="pos-confirmar-titulo" class="text-base font-semibold">¿Procesar esta venta?</h2>
+          <p id="pos-confirmar-resumen" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+      </div>
+
+      <ul id="pos-confirmar-lineas" class="mt-4 max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+
+      <div class="mt-4 flex items-center justify-between text-base font-semibold">
+        <span>Total a cobrar</span>
+        <span id="pos-confirmar-total"></span>
+      </div>
+      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
+    </div>
+
+    <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="pos-confirmar-no" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+        Cancelar
+      </button>
+      <button id="pos-confirmar-si" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">
+        Sí, procesar venta
+      </button>
+    </div>
+  </dialog>
+
   <CamaraEscaner />
 </DashboardLayout>
 
@@ -381,6 +419,42 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     ticket.scrollIntoView({ behavior: 'smooth' });
   }
 
+  const dialogoConfirmar = document.getElementById('pos-confirmar') as HTMLDialogElement;
+
+  /** Paso previo: muestra el resumen y pide confirmación; la venta solo se registra al aceptar. */
+  function pedirConfirmacion() {
+    if (carrito.length === 0 || dialogoConfirmar.open) return;
+    const unidades = carrito.reduce((suma, l) => suma + l.cantidad, 0);
+    const total = carrito.reduce((suma, l) => suma + l.producto.precio_venta * l.cantidad, 0);
+
+    document.getElementById('pos-confirmar-resumen')!.textContent =
+      `${carrito.length} línea${carrito.length === 1 ? '' : 's'} · ${unidades} unidad${unidades === 1 ? '' : 'es'}`;
+    document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
+    document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
+      .map(
+        ({ producto, cantidad }) => `
+          <li class="flex items-center justify-between gap-3 px-3 py-2">
+            <span class="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-300">${cantidad} × ${escaparHtml(producto.nombre)}</span>
+            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(producto.precio_venta * cantidad)}</span>
+          </li>`
+      )
+      .join('');
+
+    dialogoConfirmar.showModal();
+    // El foco queda en "Cancelar": un Enter accidental (p. ej. de la pistola lectora) no cobra la venta.
+    document.getElementById('pos-confirmar-no')!.focus();
+  }
+
+  document.getElementById('pos-confirmar-no')!.addEventListener('click', () => dialogoConfirmar.close());
+  document.getElementById('pos-confirmar-si')!.addEventListener('click', () => {
+    dialogoConfirmar.close();
+    procesarVenta();
+  });
+  // Clic en el fondo oscuro = cancelar
+  dialogoConfirmar.addEventListener('click', (e) => {
+    if (e.target === dialogoConfirmar) dialogoConfirmar.close();
+  });
+
   async function procesarVenta() {
     if (carrito.length === 0) return;
     limpiarError();
@@ -472,8 +546,8 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     void buscarYAgregarPorCodigo(e.detail.codigo);
   }) as EventListener);
 
-  botonProcesar.addEventListener('click', procesarVenta);
-  barraCobrar.addEventListener('click', procesarVenta);
+  botonProcesar.addEventListener('click', pedirConfirmacion);
+  barraCobrar.addEventListener('click', pedirConfirmacion);
   document.getElementById('pos-imprimir')?.addEventListener('click', () => window.print());
   document.getElementById('pos-nueva-venta')?.addEventListener('click', iniciarNuevaVenta);
 
