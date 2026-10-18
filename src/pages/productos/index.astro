@@ -149,11 +149,19 @@ const claseSelect =
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { obtenerSesionActual } from '../../lib/auth';
-  import { esStockBajo, formatearMoneda } from '../../utils/format';
+  import { formatearMoneda } from '../../utils/format';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
   import { htmlMiniatura } from '../../utils/imagenes';
-  import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
+  import {
+    alternarCompatibles,
+    compararNatural as natural,
+    escaparHtml as escapar,
+    htmlCompatibles,
+    htmlPildoraStock as pildoraStock,
+    normalizarTexto as normalizar,
+  } from '../../utils/productosUI';
+  import type { ProductoConRelaciones } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const filas = $<HTMLTableSectionElement>('pr-filas');
@@ -167,7 +175,6 @@ const claseSelect =
 
   const COLUMNAS_ADMIN = ['pr-th-costo', 'pr-th-acciones', 'pr-col-costo', 'pr-col-acciones'];
   const BOTONES_ADMIN = ['pr-importar', 'pr-entrada', 'pr-nuevo'];
-  const CHIPS_VISIBLES = 2;
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
@@ -176,57 +183,6 @@ const claseSelect =
   let pagina = 1;
   /** id -> texto normalizado (nombre + código + categoría + modelos) para buscar rápido */
   const indice = new Map<string, string>();
-
-  // --- Utilidades -----------------------------------------------------------
-  const normalizar = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  const escapar = (t: string) => {
-    const d = document.createElement('div');
-    d.textContent = t;
-    return d.innerHTML;
-  };
-  const natural = (a: string, b: string) => a.localeCompare(b, 'es', { numeric: true });
-
-  /** "iPhone 12" en vez de "Apple iPhone 12": la marca solo se repite donde el modelo no la trae. */
-  function nombreCorto(m: ModeloTelefono): string {
-    if (['Apple', 'Samsung', 'Xiaomi'].includes(m.marca)) return m.modelo;
-    return normalizar(m.modelo).startsWith(normalizar(m.marca)) ? m.modelo : `${m.marca} ${m.modelo}`;
-  }
-
-  // --- Estado de stock -------------------------------------------------------
-  // Un producto sin stock y SIN mínimo definido es "no controlado" (recién cargado):
-  // se muestra neutro. Solo es rojo si tiene mínimo y se quedó en cero.
-  function pildoraStock(p: ProductoConRelaciones): string {
-    const base = 'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold';
-    if (p.stock_actual <= 0) {
-      return p.stock_minimo > 0
-        ? `<span class="${base} bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400"><span class="h-1.5 w-1.5 rounded-full bg-red-500"></span>Sin stock</span>`
-        : `<span class="${base} bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"><span class="h-1.5 w-1.5 rounded-full bg-slate-400"></span>Sin stock</span>`;
-    }
-    if (esStockBajo(p)) {
-      return `<span class="${base} bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400"><span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>${p.stock_actual} u.</span>`;
-    }
-    return `<span class="${base} bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"><span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>${p.stock_actual} u.</span>`;
-  }
-
-  // --- Compatibilidades resumidas -----------------------------------------------
-  function htmlCompatibles(p: ProductoConRelaciones): string {
-    if (p.modelos_compatibles.length === 0) {
-      return '<span class="text-xs text-slate-400">Universal</span>';
-    }
-    const nombres = [...p.modelos_compatibles].map(nombreCorto).sort(natural);
-    const chip = (n: string, oculto: boolean) =>
-      `<span ${oculto ? 'style="display:none"' : ''} class="extra-chip inline-flex items-center whitespace-nowrap rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">${escapar(n)}</span>`;
-
-    const resto = nombres.length - CHIPS_VISIBLES;
-    return `<div data-compat class="flex flex-wrap items-center gap-1">
-      ${nombres.map((n, i) => chip(n, i >= CHIPS_VISIBLES)).join('')}
-      ${
-        resto > 0
-          ? `<button type="button" data-expandir data-resto="${resto}" class="rounded-md px-1.5 py-0.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-slate-800">+${resto} más</button>`
-          : ''
-      }
-    </div>`;
-  }
 
   // --- Filtrado, orden y paginación -----------------------------------------------
   function filtrar(): ProductoConRelaciones[] {
@@ -419,17 +375,7 @@ const claseSelect =
   filas.addEventListener('click', (e) => {
     const objetivo = e.target as HTMLElement;
 
-    const expandir = objetivo.closest<HTMLButtonElement>('[data-expandir]');
-    if (expandir) {
-      const contenedor = expandir.closest<HTMLElement>('[data-compat]')!;
-      const abierto = contenedor.dataset.abierto === '1';
-      contenedor.dataset.abierto = abierto ? '0' : '1';
-      contenedor.querySelectorAll('.extra-chip').forEach((chip, i) => {
-        if (i >= CHIPS_VISIBLES) (chip as HTMLElement).style.display = abierto ? 'none' : '';
-      });
-      expandir.textContent = abierto ? `+${expandir.dataset.resto} más` : 'Ver menos';
-      return;
-    }
+    if (alternarCompatibles(objetivo)) return;
 
     const entrada = objetivo.closest<HTMLElement>('[data-entrada]')?.dataset.entrada;
     const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;

@@ -40,14 +40,21 @@
   <p id="qs-contador" class="px-5 pt-3 text-xs text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
 
   <div class="overflow-x-auto">
-    <table class="tabla-tarjetas w-full text-left text-sm">
+    <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[48rem] md:table-fixed">
+      <colgroup>
+        <col />
+        <col class="w-28" />
+        <col class="w-[26%]" />
+        <col class="w-24" />
+        <col class="w-32" />
+      </colgroup>
       <thead>
-        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
-          <th class="px-5 py-3 font-medium">Producto</th>
-          <th class="px-5 py-3 font-medium">Categoría</th>
-          <th class="px-5 py-3 font-medium">Compatible con</th>
-          <th class="px-5 py-3 font-medium">Precio venta</th>
-          <th class="px-5 py-3 font-medium">Stock</th>
+        <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+          <th class="px-5 py-3 font-semibold">Producto</th>
+          <th class="px-4 py-3 font-semibold">Categoría</th>
+          <th class="px-4 py-3 font-semibold">Compatible con</th>
+          <th class="px-4 py-3 text-right font-semibold">Venta</th>
+          <th class="px-5 py-3 font-semibold">Stock</th>
         </tr>
       </thead>
       <tbody id="qs-resultados" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -61,8 +68,10 @@
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { estadoStock, formatearMoneda } from '../../utils/format';
+  import { formatearMoneda } from '../../utils/format';
   import { animarLista } from '../../utils/animaciones';
+  import { htmlMiniatura } from '../../utils/imagenes';
+  import { alternarCompatibles, escaparHtml, htmlCompatibles, htmlPildoraStock } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
   // Con cientos de productos, pintarlos todos en cada tecla es lento en un teléfono.
@@ -77,40 +86,24 @@
   const sinResultados = document.getElementById('qs-sin-resultados') as HTMLParagraphElement;
   const contador = document.getElementById('qs-contador') as HTMLParagraphElement;
 
-  const estilosBadge: Record<string, string> = {
-    ok: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
-    bajo: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
-    critico: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-    neutro: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-  };
-  const etiquetaEstado: Record<string, string> = { ok: 'OK', bajo: 'Stock bajo', critico: 'Sin stock' };
-
-  function badge(texto: string, variante: string): string {
-    return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${estilosBadge[variante]}">${texto}</span>`;
-  }
-
-  function escaparHtml(texto: string): string {
-    const div = document.createElement('div');
-    div.textContent = texto;
-    return div.innerHTML;
-  }
-
   function renderFila(producto: ProductoConRelaciones): string {
-    const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
-    const compatibles = producto.modelos_compatibles.length
-      ? producto.modelos_compatibles.map((m) => badge(escaparHtml(`${m.marca} ${m.modelo}`), 'neutro')).join(' ')
-      : '<span class="text-xs text-slate-400">Universal / sin definir</span>';
-
     return `
-      <tr class="text-slate-700 dark:text-slate-300">
+      <tr class="align-middle text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
         <td class="px-5 py-3">
-          <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-          <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+          <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+            ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
+            <div class="min-w-0">
+              <p class="line-clamp-2 break-words font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+            </div>
+          </div>
         </td>
-        <td data-label="Categoría" class="px-5 py-3">${escaparHtml(producto.categoria)}</td>
-        <td data-label="Compatible con" class="px-5 py-3"><div class="flex flex-wrap gap-1">${compatibles}</div></td>
-        <td data-label="Precio venta" class="px-5 py-3">${formatearMoneda(producto.precio_venta)}</td>
-        <td data-label="Stock" class="px-5 py-3">${badge(`${producto.stock_actual} u.`, estado)} <span class="ml-1 text-xs text-slate-400">${etiquetaEstado[estado]}</span></td>
+        <td data-label="Categoría" class="px-4 py-3">
+          <span class="inline-flex whitespace-nowrap rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">${escaparHtml(producto.categoria)}</span>
+        </td>
+        <td data-label="Compatible con" class="px-4 py-3">${htmlCompatibles(producto)}</td>
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(producto.precio_venta)}</td>
+        <td data-label="Stock" class="px-5 py-3">${htmlPildoraStock(producto)}</td>
       </tr>
     `;
   }
@@ -160,6 +153,9 @@
         : `${resultado.length} de ${productos.length} productos`;
   }
 
+  tbody.addEventListener('click', (e) => {
+    alternarCompatibles(e.target);
+  });
   buscador.addEventListener('input', actualizar);
   selectCategoria.addEventListener('change', actualizar);
   selectModelo.addEventListener('change', actualizar);
