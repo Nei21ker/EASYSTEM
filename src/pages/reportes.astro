@@ -67,7 +67,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
     <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Ventas por tipo de cobro</h2>
       <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-        Total vendido en dólares según cómo pagó el cliente. Incluye solo ventas registradas con datos de cliente (desde que se activó ese registro).
+        Dólares netos cobrados con cada tipo de cobro (si un cliente paga con varios, cada parte suma en el suyo; el vuelto y los reembolsos de devoluciones restan). Incluye solo ventas registradas con datos de cliente (desde que se activó ese registro).
       </p>
       <p id="rp-metodos-error" class="mt-3 hidden text-xs text-red-600 dark:text-red-400"></p>
       <div class="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -112,11 +112,13 @@ import StatCard from '../components/dashboard/StatCard.astro';
   } from '../utils/dateRange';
   import type { ProductoConRelaciones } from '../types/database.types';
   import type { MovimientoConProducto } from '../lib/db/movimientos';
+  import type { Devolucion } from '../types/database.types';
   import type { VentaRegistrada } from '../lib/inventoryService';
 
   let productos: ProductoConRelaciones[] = [];
   let movimientos: MovimientoConProducto[] = [];
   let ventasRegistradas: VentaRegistrada[] = [];
+  let devoluciones: Devolucion[] = [];
   let rangoActual: RangoPreestablecido = 'semana';
 
   const botonesRango = Array.from(document.querySelectorAll<HTMLButtonElement>('.rp-rango'));
@@ -227,7 +229,8 @@ import StatCard from '../components/dashboard/StatCard.astro';
     topCategorias: [string, number][],
     topModelos: [string, number][],
     lineasVenta: number,
-    porMetodo: ResumenMetodo[]
+    porMetodo: ResumenMetodo[],
+    devolucionesPeriodo: Devolucion[]
   ) {
     const periodo = `${rango.desde.toLocaleDateString('es-GT', { dateStyle: 'medium' })} – ${rango.hasta.toLocaleDateString('es-GT', { dateStyle: 'medium' })}`;
 
@@ -266,6 +269,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
         </table>
 
         <p class="mt-6 text-xs text-slate-400">Total de líneas de venta en el periodo: ${lineasVenta}</p>
+        ${devolucionesPeriodo.length ? `<p class="text-xs text-slate-400">Las cifras ya descuentan ${devolucionesPeriodo.length} devolución(es) o cambio(s) del periodo.</p>` : ''}
       </div>
     `;
   }
@@ -321,6 +325,33 @@ import StatCard from '../components/dashboard/StatCard.astro';
       }
     }
 
+    // Devoluciones y cambios del periodo: lo devuelto resta ingreso, costo y unidades (lo entregado a
+    // cambio ya está en las ventas, porque sale del inventario como una SALIDA).
+    const devolucionesPeriodo = devoluciones.filter((d) => {
+      const fecha = new Date(d.fecha);
+      return fecha >= rango.desde && fecha <= rango.hasta;
+    });
+    for (const dev of devolucionesPeriodo) {
+      const clave = formatearClaveDia(new Date(dev.fecha));
+      for (const item of dev.items_devueltos) {
+        const producto = productosPorId[item.producto_id];
+        const ingreso = item.precio_unitario * item.cantidad;
+        const costo = (producto?.precio_compra ?? 0) * item.cantidad;
+        ingresosTotal -= ingreso;
+        costosTotal -= costo;
+        if (porDia[clave]) {
+          porDia[clave].ingresos -= ingreso;
+          porDia[clave].costos -= costo;
+        }
+        if (!producto) continue;
+        porCategoria[producto.categoria] = (porCategoria[producto.categoria] ?? 0) - item.cantidad;
+        for (const modelo of producto.modelos_compatibles) {
+          const claveModelo = `${modelo.marca} ${modelo.modelo}`;
+          porModelo[claveModelo] = (porModelo[claveModelo] ?? 0) - item.cantidad;
+        }
+      }
+    }
+
     const gananciaTotal = ingresosTotal - costosTotal;
     contarHasta(elIngresos, ingresosTotal, formatearMoneda, 800);
     contarHasta(elCostos, costosTotal, formatearMoneda, 800);
@@ -333,6 +364,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
     chartVentas.update();
 
     const topCategorias = Object.entries(porCategoria)
+      .filter(([, cantidad]) => cantidad > 0)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
     chartCategorias.data.labels = topCategorias.map(([nombre]) => nombre);
@@ -340,6 +372,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
     chartCategorias.update();
 
     const topModelos = Object.entries(porModelo)
+      .filter(([, cantidad]) => cantidad > 0)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
     chartModelos.data.labels = topModelos.map(([nombre]) => nombre);
@@ -351,7 +384,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
       const fecha = new Date(v.fecha);
       return fecha >= rango.desde && fecha <= rango.hasta;
     });
-    const porMetodo = resumirPorMetodo(ventasDelPeriodo);
+    const porMetodo = resumirPorMetodo(ventasDelPeriodo, devolucionesPeriodo);
     chartMetodos.data.labels = porMetodo.map((r) => r.etiqueta);
     chartMetodos.data.datasets[0].data = porMetodo.map((r) => Number(r.totalUsd.toFixed(2)));
     chartMetodos.update();
@@ -367,7 +400,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
       )
       .join('');
 
-    actualizarReportePrintable(rango, ingresosTotal, costosTotal, gananciaTotal, topCategorias, topModelos, ventas.length, porMetodo);
+    actualizarReportePrintable(rango, ingresosTotal, costosTotal, gananciaTotal, topCategorias, topModelos, ventas.length, porMetodo, devolucionesPeriodo);
   }
 
   for (const boton of botonesRango) {
@@ -393,11 +426,17 @@ import StatCard from '../components/dashboard/StatCard.astro';
     return [] as VentaRegistrada[];
   });
 
-  Promise.all([inventoryService.listarProductos(), inventoryService.listarMovimientos(2000), cargarVentas]).then(
-    ([listaProductos, listaMovimientos, listaVentas]) => {
+  const cargarDevoluciones = inventoryService.listarDevoluciones().catch((err) => {
+    console.error('[EASYSTEM] No se pudieron cargar las devoluciones.', err);
+    return [] as Devolucion[];
+  });
+
+  Promise.all([inventoryService.listarProductos(), inventoryService.listarMovimientos(2000), cargarVentas, cargarDevoluciones]).then(
+    ([listaProductos, listaMovimientos, listaVentas, listaDevoluciones]) => {
       productos = listaProductos;
       movimientos = listaMovimientos;
       ventasRegistradas = listaVentas;
+      devoluciones = listaDevoluciones;
       actualizarReporte();
     }
   );

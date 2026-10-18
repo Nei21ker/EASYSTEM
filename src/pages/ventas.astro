@@ -1,7 +1,6 @@
 ---
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
-import { METODOS_PAGO } from '../utils/pagos';
 
 const claseCampo =
   'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -112,7 +111,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <p id="ticket-folio" class="mt-2 text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
         <p id="ticket-fecha" class="text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
         <p id="ticket-cliente" class="mt-2 text-xs text-slate-600 dark:text-slate-300 print:text-black"></p>
-        <p id="ticket-cobro" class="text-xs text-slate-600 dark:text-slate-300 print:text-black"></p>
       </div>
       <div class="my-4 border-t border-dashed border-slate-300 dark:border-slate-700 print:border-black"></div>
       <ul id="ticket-lineas" class="space-y-2 text-sm text-slate-700 dark:text-slate-300 print:text-black"></ul>
@@ -122,10 +120,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <span id="ticket-total"></span>
       </div>
       <div id="ticket-bs" class="mt-1 hidden justify-between text-sm font-semibold text-slate-900 dark:text-white print:text-black">
-        <span>Total en bolívares</span>
+        <span>Cobrado en bolívares</span>
         <span id="ticket-total-bs"></span>
       </div>
       <p id="ticket-tasa" class="mt-1 text-right text-xs text-slate-500 dark:text-slate-400 print:text-black"></p>
+      <div class="mt-3 border-t border-dashed border-slate-300 pt-3 dark:border-slate-700 print:border-black">
+        <p class="text-xs font-semibold text-slate-600 dark:text-slate-300 print:text-black">Forma de pago</p>
+        <ul id="ticket-pagos" class="mt-1 space-y-0.5 text-xs text-slate-600 dark:text-slate-300 print:text-black"></ul>
+      </div>
       <p class="mt-4 text-center text-xs text-slate-400 print:text-black">¡Gracias por su compra!</p>
     </div>
 
@@ -208,14 +210,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           </div>
         </fieldset>
 
-        <div>
-          <label for="pos-cli-pago" class={claseEtiqueta}>Tipo de cobro *</label>
-          <select id="pos-cli-pago" class={claseCampo}>
-            <option value="">Selecciona cómo paga el cliente...</option>
-            {METODOS_PAGO.map((m) => <option value={m.valor}>{m.etiqueta}</option>)}
-          </select>
-          <p id="pos-cobrar-monto" class="mt-2 hidden rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-800 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-200"></p>
-        </div>
+        <!-- Formas de pago y vuelto (utils/formularioPagos.ts) -->
+        <div id="pos-formulario-pagos"></div>
 
         <p id="pos-confirmar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
         <p class="text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
@@ -239,12 +235,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../lib/inventoryService';
   import type { VentaRegistrada } from '../lib/inventoryService';
   import { obtenerSesionActual } from '../lib/auth';
-  import { esMetodoBolivares, etiquetaMetodoPago } from '../utils/pagos';
+  import { etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
+  import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { htmlMiniatura } from '../utils/imagenes';
-  import type { ClienteVenta, MetodoPago, ProductoConRelaciones, VentaItem } from '../types/database.types';
+  import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
     producto: ProductoConRelaciones;
@@ -469,7 +466,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       timeStyle: 'short',
     });
     document.getElementById('ticket-cliente')!.textContent = `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}`;
-    document.getElementById('ticket-cobro')!.textContent = `Cobro: ${etiquetaMetodoPago(venta.metodo_pago)}`;
 
     document.getElementById('ticket-lineas')!.innerHTML = venta.items
       .map(
@@ -487,6 +483,25 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     filaBs.classList.toggle('hidden', !cobraEnBs);
     filaBs.classList.toggle('flex', cobraEnBs);
     document.getElementById('ticket-total-bs')!.textContent = cobraEnBs ? formatearBolivares(venta.total_bs!) : '';
+    document.getElementById('ticket-pagos')!.innerHTML = pagosDeVenta(venta)
+      .map(
+        (p) => `
+          <li class="flex justify-between gap-2">
+            <span>${escaparHtml(etiquetaMetodoPago(p.metodo))}</span>
+            <span>${p.monto_bs != null ? `${formatearBolivares(p.monto_bs)} <span class="text-slate-400 print:text-black">(${formatearMoneda(p.monto_usd)})</span>` : formatearMoneda(p.monto_usd)}</span>
+          </li>`
+      )
+      .join('');
+    if (venta.vuelto) {
+      const v = venta.vuelto;
+      document.getElementById('ticket-pagos')!.insertAdjacentHTML(
+        'beforeend',
+        `<li class="flex justify-between gap-2 font-medium">
+          <span>Vuelto (${escaparHtml(etiquetaMetodoPago(v.metodo))})</span>
+          <span>−${v.monto_bs != null ? `${formatearBolivares(v.monto_bs)} <span class="text-slate-400 print:text-black">(${formatearMoneda(v.monto_usd)})</span>` : formatearMoneda(v.monto_usd)}</span>
+        </li>`
+      );
+    }
     document.getElementById('ticket-tasa')!.textContent = venta.tasa_cambio ? `Tasa del día: ${formatearBolivares(venta.tasa_cambio)} por $1` : '';
 
     posApp.classList.add('hidden');
@@ -506,23 +521,25 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const campoNombre = campo('pos-cli-nombre');
   const campoApellido = campo('pos-cli-apellido');
   const campoTelefono = campo('pos-cli-telefono');
-  const campoPago = campo('pos-cli-pago');
+
+  // Formas de pago (una o varias) y vuelto: lo maneja utils/formularioPagos.ts
+  const formPagos = new FormularioPagos(document.getElementById('pos-formulario-pagos')!);
+  let totalAConfirmar = 0;
 
   // Los datos del cliente solo viven mientras dura la venta (se borran al cobrar).
   function limpiarDatosCliente() {
     for (const c of [campoCedula, campoNombre, campoApellido, campoTelefono]) c.value = '';
     campoNac.value = 'V';
-    campoPago.value = '';
-    document.getElementById('pos-cobrar-monto')!.classList.add('hidden');
     errorConfirmar.classList.add('hidden');
+    formPagos.reiniciar();
   }
 
-  /** Devuelve los datos del cliente ya validados, o muestra el primer error y devuelve null. */
-  function leerDatosCliente(): { cliente: ClienteVenta; metodo_pago: MetodoPago } | null {
-    const fallar = (mensaje: string, el: HTMLElement) => {
+  /** Devuelve los datos del cliente y los pagos ya validados, o muestra el primer error y devuelve null. */
+  function leerDatosCliente(): { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null } | null {
+    const fallar = (mensaje: string, el: HTMLElement | null | undefined) => {
       errorConfirmar.textContent = mensaje;
       errorConfirmar.classList.remove('hidden');
-      el.focus();
+      el?.focus();
       return null;
     };
     const cedula = campoCedula.value.replace(/\D/g, '');
@@ -538,28 +555,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
       return fallar('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', campoTelefono);
     }
-    if (!campoPago.value) return fallar('Selecciona el tipo de cobro.', campoPago);
+
+    const lectura = formPagos.leer();
+    if (!lectura.ok) return fallar(lectura.mensaje, lectura.foco);
 
     errorConfirmar.classList.add('hidden');
     return {
       cliente: { cedula: `${campoNac.value}-${cedula}`, nombre: `${nombre} ${apellido}`, telefono },
-      metodo_pago: campoPago.value as MetodoPago,
+      pagos: lectura.pagos,
+      vuelto: lectura.vuelto,
     };
-  }
-
-  let totalAConfirmar = 0;
-
-  /** Según el tipo de cobro: en bolívares se cobra el total × tasa; en dólares/USDT, el total en $. */
-  function mostrarMontoACobrar() {
-    const caja = document.getElementById('pos-cobrar-monto')!;
-    const metodo = campoPago.value;
-    const tasa = tasaActual.get();
-    caja.classList.toggle('hidden', !metodo);
-    if (!metodo) return;
-    caja.textContent =
-      esMetodoBolivares(metodo) && tasa
-        ? `Cobrar en bolívares: ${formatearBolivares(convertirABs(totalAConfirmar, tasa))}`
-        : `Cobrar en dólares: ${formatearMoneda(totalAConfirmar)}`;
   }
 
   /** Paso previo: muestra el resumen y pide los datos del cliente; la venta solo se registra al confirmar. */
@@ -572,9 +577,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       `${carrito.length} línea${carrito.length === 1 ? '' : 's'} · ${unidades} unidad${unidades === 1 ? '' : 'es'}`;
     document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
     totalAConfirmar = total;
+    formPagos.establecerTotal(total);
     const tasaDia = tasaActual.get();
     document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(total, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
-    mostrarMontoACobrar();
     document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
       .map(
         ({ producto, cantidad }) => `
@@ -594,7 +599,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   function pedirConfirmacionActualiza() {
     const tasaDia = tasaActual.get();
     document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(totalAConfirmar, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
-    mostrarMontoACobrar();
+    formPagos.refrescar();
   }
 
   document.getElementById('pos-confirmar-no')!.addEventListener('click', () => dialogoConfirmar.close());
@@ -603,7 +608,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (e.target === dialogoConfirmar) dialogoConfirmar.close();
   });
   formConfirmar.addEventListener('input', () => errorConfirmar.classList.add('hidden'));
-  campoPago.addEventListener('change', mostrarMontoACobrar);
   campoCedula.addEventListener('input', () => (campoCedula.value = campoCedula.value.replace(/\D/g, '')));
   formConfirmar.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -613,7 +617,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     procesarVenta(datos);
   });
 
-  async function procesarVenta(datos: { cliente: ClienteVenta; metodo_pago: MetodoPago }) {
+  async function procesarVenta(datos: { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null }) {
     if (carrito.length === 0) return;
     limpiarError();
     const tasa = tasaActual.get();
@@ -645,6 +649,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         // Esas líneas ya salieron del inventario: se quitan del carrito para no cobrarlas dos veces.
         carrito = carrito.filter((l) => !err.productosRegistrados.includes(l.producto.id));
         if (carrito.length === 0) limpiarDatosCliente();
+        else formPagos.reiniciar(); // el total cambió: hay que volver a repartir los pagos
         await cargarProductos();
         renderCarrito();
       }

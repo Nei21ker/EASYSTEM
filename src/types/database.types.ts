@@ -56,6 +56,26 @@ export interface ProductoStockBajo {
 
 export type MetodoPago = 'BS_PAGO_MOVIL' | 'BS_PUNTO_VENTA' | 'BS_EFECTIVO' | 'USD_EFECTIVO' | 'BINANCE_USDT';
 
+/** Lo que se cobró con un tipo de cobro dentro de una venta (una venta puede tener varios). */
+export interface PagoVenta {
+  metodo: MetodoPago;
+  /** Valor en dólares de este pago; la suma de todos los pagos es el total de la venta */
+  monto_usd: number;
+  /** Bolívares recibidos (solo en los tipos de cobro en Bs; null en dólares/USDT) */
+  monto_bs: number | null;
+}
+
+/** Dinero que sale hacia el cliente: vuelto de una venta o reembolso de una devolución. */
+export interface DineroEntregado {
+  metodo: MetodoPago;
+  monto_usd: number;
+  /** Bolívares entregados (solo en los tipos de cobro en Bs) */
+  monto_bs: number | null;
+}
+
+/** En la venta, 'MIXTO' = se usaron varios tipos de cobro (el detalle está en `pagos`). */
+export type MetodoPagoVenta = MetodoPago | 'MIXTO';
+
 export interface VentaItem {
   producto_id: string;
   nombre: string;
@@ -78,14 +98,18 @@ export interface NuevaVenta {
   cliente_cedula: string;
   cliente_nombre: string;
   cliente_telefono: string;
-  metodo_pago: MetodoPago;
+  metodo_pago: MetodoPagoVenta;
+  /** Detalle de cobros por tipo; las ventas anteriores a las migraciones 0013 pueden no traerlo (ver pagosDeVenta) */
+  pagos?: PagoVenta[] | null;
+  /** Vuelto entregado si el cliente pagó de más: suma de pagos − vuelto = total */
+  vuelto?: DineroEntregado | null;
   /** Total en dólares (los precios del catálogo están en $) */
   total: number;
   items: VentaItem[];
   vendedor_nombre?: string | null;
   /** Bs por $ vigente al momento de la venta */
   tasa_cambio?: number | null;
-  /** Monto cobrado en bolívares; solo si el tipo de cobro fue en Bs */
+  /** Bolívares cobrados (suma de los pagos en Bs); null si no se cobró nada en Bs */
   total_bs?: number | null;
 }
 
@@ -109,4 +133,31 @@ export interface NuevaTasa {
   fecha: string;
   tasa: number;
   registrado_nombre?: string | null;
+}
+
+/** Devolución o cambio de producto sobre una venta (ver migración 0014). */
+export interface NuevaDevolucion {
+  fecha: string;
+  venta_id: string;
+  venta_folio: number;
+  motivo: string;
+  items_devueltos: VentaItem[];
+  /** Productos entregados a cambio (vacío en una devolución simple) */
+  items_nuevos: VentaItem[];
+  total_devuelto: number;
+  total_nuevo: number;
+  /** total_nuevo − total_devuelto: > 0 el cliente paga la diferencia, < 0 se le reembolsa */
+  diferencia: number;
+  tasa_cambio?: number | null;
+  /** Cobro de la diferencia (cuando el cliente paga más) */
+  pagos?: PagoVenta[] | null;
+  vuelto?: DineroEntregado | null;
+  /** Dinero devuelto al cliente (cuando la diferencia es a su favor) */
+  reembolso?: DineroEntregado | null;
+  registrado_nombre?: string | null;
+}
+
+export interface Devolucion extends NuevaDevolucion {
+  id: string;
+  folio: number;
 }

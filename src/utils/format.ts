@@ -58,6 +58,9 @@ export function parsearTasa(texto: string): number | null {
   return Number.isFinite(valor) && valor > 0 && valor < 10_000_000 ? valor : null;
 }
 
+/** Un monto escrito a mano se lee igual que la tasa ("1.234,56", "36,5", "36.50"). */
+export const parsearMonto = parsearTasa;
+
 /**
  * Precio en dólares con su equivalente en bolívares debajo (si ya hay tasa).
  * El texto de Bs. va en un <span> en bloque, pensado para celdas y filas de lista.

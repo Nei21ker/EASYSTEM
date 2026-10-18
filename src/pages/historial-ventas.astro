@@ -1,6 +1,7 @@
 ---
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import StatCard from '../components/dashboard/StatCard.astro';
+import DevolucionVenta from '../components/ventas/DevolucionVenta.astro';
 import { METODOS_PAGO } from '../utils/pagos';
 
 const claseSelect =
@@ -13,6 +14,8 @@ const claseBotonSecundario =
 
 <DashboardLayout titulo="Ventas realizadas" subtitulo="Historial de ventas con cliente y tipo de cobro">
   <div class="space-y-4">
+    <p id="hv-aviso-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+
     <!-- Filtros -->
     <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -46,6 +49,7 @@ const claseBotonSecundario =
         <select id="hv-metodo" class={claseSelect} aria-label="Filtrar por tipo de cobro">
           <option value="">Todos los tipos de cobro</option>
           {METODOS_PAGO.map((m) => <option value={m.valor}>{m.etiqueta}</option>)}
+          <option value="MIXTO">Pago mixto (varios tipos de cobro)</option>
         </select>
       </div>
 
@@ -57,13 +61,14 @@ const claseBotonSecundario =
     <!-- Resumen -->
     <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <StatCard id="hv-stat-ventas" etiqueta="Ventas" valor="—" icono="movimientos" />
-      <StatCard id="hv-stat-total" etiqueta="Total vendido" valor="—" icono="valor" />
+      <StatCard id="hv-stat-total" etiqueta="Total vendido" valor="—" tendencia=" " icono="valor" />
       <StatCard id="hv-stat-bs" etiqueta="Cobrado en bolívares" valor="—" icono="valor" />
     </section>
 
     <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Por tipo de cobro</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Si un cliente pagó con varios tipos de cobro, cada parte suma en su tipo; "Ventas" cuenta en cuántas ventas se usó.</p>
       </div>
       <div class="overflow-x-auto">
         <table class="w-full min-w-[30rem] text-left text-sm">
@@ -83,7 +88,7 @@ const claseBotonSecundario =
     <!-- Listado -->
     <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="overflow-x-auto">
-        <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[56rem] md:table-fixed">
+        <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[68rem] md:table-fixed">
           <colgroup>
             <col class="w-40" />
             <col class="w-[24%]" />
@@ -91,6 +96,7 @@ const claseBotonSecundario =
             <col />
             <col class="w-36" />
             <col id="hv-col-vendedor" class="hidden w-32" />
+            <col id="hv-col-acciones" class="hidden w-36" />
           </colgroup>
           <thead>
             <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
@@ -100,6 +106,7 @@ const claseBotonSecundario =
               <th class="px-4 py-3 font-semibold">Productos</th>
               <th class="px-4 py-3 text-right font-semibold">Total</th>
               <th id="hv-th-vendedor" class="hidden px-5 py-3 font-semibold">Vendedor</th>
+              <th id="hv-th-acciones" class="hidden px-4 py-3 text-right font-semibold">Acciones</th>
             </tr>
           </thead>
           <tbody id="hv-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -123,6 +130,7 @@ const claseBotonSecundario =
       </div>
     </div>
   </div>
+  <DevolucionVenta />
 </DashboardLayout>
 
 <script>
@@ -132,14 +140,16 @@ const claseBotonSecundario =
   import { descargarCSV } from '../utils/csv';
   import { animarLista, contarHasta } from '../utils/animaciones';
   import { calcularRango, type RangoPreestablecido } from '../utils/dateRange';
-  import { esMetodoBolivares, etiquetaMetodoPago } from '../utils/pagos';
+  import { esMetodoBolivares, etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
   import { resumirPorMetodo } from '../utils/ventasResumen';
   import { escaparHtml, normalizarTexto } from '../utils/productosUI';
+  import type { Devolucion } from '../types/database.types';
   import type { VentaRegistrada } from '../lib/inventoryService';
 
   const POR_PAGINA = 25;
 
   let ventas: VentaRegistrada[] = []; // ya filtradas por rango de fechas
+  let devolucionesPorVenta = new Map<string, Devolucion[]>();
   let rangoActual: RangoPreestablecido = 'mes';
   let esAdministrador = false;
   let nombreSesion = '';
@@ -173,7 +183,7 @@ const claseBotonSecundario =
     const tokens = q ? q.split(/\s+/) : [];
     const metodo = selectMetodo.value;
     return ventas.filter((v) => {
-      if (metodo && v.metodo_pago !== metodo) return false;
+      if (metodo === 'MIXTO' ? v.metodo_pago !== 'MIXTO' : metodo && !pagosDeVenta(v).some((p) => p.metodo === metodo)) return false;
       if (tokens.length === 0) return true;
       const texto = normalizarTexto(
         `${v.folio} ${String(v.folio).padStart(4, "0")} ${v.cliente_nombre} ${v.cliente_cedula} ${v.cliente_cedula.replace(/\D/g, '')} ${v.cliente_telefono} ${v.cliente_telefono.replace(/\D/g, '')}`
@@ -183,21 +193,55 @@ const claseBotonSecundario =
   }
 
   const estiloMetodo = (metodo: string) =>
-    esMetodoBolivares(metodo)
+    metodo === 'MIXTO'
+      ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/10 dark:text-violet-300'
+      : esMetodoBolivares(metodo)
       ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
       : metodo === 'BINANCE_USDT'
         ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
         : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400';
 
+  /** ¿Queda algo por devolver de esta venta? */
+  function quedaPorDevolver(v: VentaRegistrada): boolean {
+    const ya = new Map<string, number>();
+    for (const d of devolucionesDe(v)) for (const i of d.items_devueltos) ya.set(i.producto_id, (ya.get(i.producto_id) ?? 0) + i.cantidad);
+    return v.items.some((i) => i.cantidad - (ya.get(i.producto_id) ?? 0) > 0);
+  }
+
+  function botonDevolver(v: VentaRegistrada): string {
+    if (!v.folio) return '<span class="text-[11px] text-slate-400">Sincronizando…</span>';
+    if (!quedaPorDevolver(v)) return '<span class="text-[11px] text-slate-400">Totalmente devuelta</span>';
+    return `<button type="button" data-devolver-venta="${v.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-50 dark:border-slate-700 dark:text-orange-300 dark:hover:bg-slate-800">Devolución / cambio</button>`;
+  }
+
+  function htmlDevolucion(d: Devolucion): string {
+    const lineas = (items: { cantidad: number; nombre: string }[]) => items.map((i) => `${i.cantidad} × ${escaparHtml(i.nombre)}`).join(', ');
+    const dinero =
+      d.reembolso
+        ? `Reembolso: ${d.reembolso.monto_bs != null ? formatearBolivares(d.reembolso.monto_bs) : formatearMoneda(d.reembolso.monto_usd)} (${escaparHtml(etiquetaMetodoPago(d.reembolso.metodo))})`
+        : d.diferencia > 0.01
+          ? `Cliente pagó ${formatearMoneda(d.diferencia)} de diferencia`
+          : 'Sin diferencia de precio';
+    return `
+      <div class="mt-2 rounded-lg border border-orange-200 bg-orange-50/60 px-2.5 py-2 text-left text-[11px] text-slate-700 dark:border-orange-500/30 dark:bg-orange-500/5 dark:text-slate-300">
+        <p class="font-semibold text-orange-700 dark:text-orange-300">Devolución #${String(d.folio).padStart(4, '0')} · ${escaparHtml(formatearFecha(d.fecha))}</p>
+        <p>Devolvió: ${lineas(d.items_devueltos)}</p>
+        ${d.items_nuevos.length ? `<p>A cambio: ${lineas(d.items_nuevos)}</p>` : ''}
+        <p>${dinero} · Motivo: ${escaparHtml(d.motivo)}</p>
+      </div>`;
+  }
+
   function filaHtml(v: VentaRegistrada): string {
     const unidades = v.items.reduce((suma, i) => suma + i.cantidad, 0);
+    const pagos = pagosDeVenta(v);
+    const devs = devolucionesDe(v);
     const detalle = v.items
       .map(
         (i) => `<li class="flex justify-between gap-3"><span class="min-w-0 break-words">${i.cantidad} × ${escaparHtml(i.nombre)}</span><span class="shrink-0 tabular-nums">${formatearMoneda(i.precio_unitario * i.cantidad)}</span></li>`
       )
       .join('');
     const folio = v.folio
-      ? `#${String(v.folio).padStart(4, '0')}`
+      ? `#${String(v.folio).padStart(4, '0')}${devs.length ? ' <span class="ml-1 rounded-full bg-orange-100 px-2 py-0.5 align-middle text-[10px] font-semibold text-orange-700 dark:bg-orange-500/10 dark:text-orange-300">Devolución</span>' : ''}`
       : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Pendiente de sincronizar</span>';
 
     return `
@@ -214,6 +258,8 @@ const claseBotonSecundario =
         </td>
         <td data-label="Tipo de cobro" class="px-4 py-3">
           <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${estiloMetodo(v.metodo_pago)}">${escaparHtml(etiquetaMetodoPago(v.metodo_pago))}</span>
+          ${v.vuelto ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Vuelto: ${v.vuelto.monto_bs != null ? formatearBolivares(v.vuelto.monto_bs) : formatearMoneda(v.vuelto.monto_usd)} (${escaparHtml(etiquetaMetodoPago(v.vuelto.metodo))})</p>` : ''}
+          ${pagos.length > 1 ? `<ul class="mt-1.5 space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">${pagos.map((p) => `<li class="flex justify-between gap-3"><span>${escaparHtml(etiquetaMetodoPago(p.metodo))}</span><span class="shrink-0 tabular-nums">${p.monto_bs != null ? formatearBolivares(p.monto_bs) : formatearMoneda(p.monto_usd)}</span></li>`).join('')}</ul>` : ''}
         </td>
         <td data-label="Productos" class="px-4 py-3">
           <details class="group text-left">
@@ -222,6 +268,7 @@ const claseBotonSecundario =
             </summary>
             <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">${detalle}</ul>
           </details>
+          ${devs.map(htmlDevolucion).join('')}
         </td>
         <td data-label="Total" class="px-4 py-3 text-right">
           <span class="inline-block text-right">
@@ -231,17 +278,28 @@ const claseBotonSecundario =
           </span>
         </td>
         ${esAdministrador ? `<td data-label="Vendedor" class="px-5 py-3 text-xs text-slate-500 dark:text-slate-400">${escaparHtml(v.vendedor_nombre ?? '—')}</td>` : ''}
+        ${esAdministrador ? `<td class="px-4 py-3 text-right">${botonDevolver(v)}</td>` : ''}
       </tr>`;
   }
 
+  const devolucionesDe = (v: VentaRegistrada): Devolucion[] => devolucionesPorVenta.get(v.id) ?? [];
+
   function pintarResumen(lista: VentaRegistrada[]) {
-    const totalUsd = lista.reduce((suma, v) => suma + v.total, 0);
-    const totalBs = lista.reduce((suma, v) => suma + (v.total_bs ?? 0), 0);
+    const devoluciones = lista.flatMap(devolucionesDe);
+    // Neto: lo vendido, menos lo devuelto, más lo entregado a cambio
+    const ajuste = devoluciones.reduce((suma, d) => suma + d.diferencia, 0);
+    const totalUsd = lista.reduce((suma, v) => suma + v.total, 0) + ajuste;
+    const nota = $('hv-stat-total-tendencia');
+    nota.textContent = devoluciones.length ? `Neto: incluye ${devoluciones.length} devolución(es)/cambio(s) (${ajuste >= 0 ? '+' : ''}${formatearMoneda(ajuste)})` : '';
+    nota.classList.remove('text-emerald-600', 'dark:text-emerald-400');
+    nota.classList.add('text-slate-500', 'dark:text-slate-400');
+    nota.classList.toggle('hidden', devoluciones.length === 0);
+    const totalBs = resumirPorMetodo(lista, devoluciones).reduce((suma, r) => suma + r.totalBs, 0);
     contarHasta($('hv-stat-ventas'), lista.length, undefined, 600);
     contarHasta($('hv-stat-total'), totalUsd, formatearMoneda, 700);
     contarHasta($('hv-stat-bs'), totalBs, formatearBolivares, 700);
 
-    $('hv-resumen-metodos').innerHTML = resumirPorMetodo(lista)
+    $('hv-resumen-metodos').innerHTML = resumirPorMetodo(lista, devoluciones)
       .map(
         (r) => `
           <tr class="${r.cantidad === 0 ? 'text-slate-400 dark:text-slate-600' : 'text-slate-700 dark:text-slate-300'}">
@@ -286,8 +344,17 @@ const claseBotonSecundario =
     const miCarga = ++cargaId;
     $('hv-error').classList.add('hidden');
     try {
-      const lista = await inventoryService.listarVentas({ desde: rango.desde, hasta: rango.hasta });
+      const [lista, devoluciones] = await Promise.all([
+        inventoryService.listarVentas({ desde: rango.desde, hasta: rango.hasta }),
+        // Si falta la tabla de devoluciones (migración 0014 sin aplicar) el historial sigue funcionando
+        inventoryService.listarDevoluciones().catch((err) => {
+          console.error('[EASYSTEM] No se pudieron cargar las devoluciones.', err);
+          return [] as Devolucion[];
+        }),
+      ]);
       if (miCarga !== cargaId) return;
+      devolucionesPorVenta = new Map();
+      for (const d of devoluciones) devolucionesPorVenta.set(d.venta_id, [...(devolucionesPorVenta.get(d.venta_id) ?? []), d]);
       // Con Supabase la base de datos ya entrega solo las ventas del vendedor (RLS); en el modo demo
       // local se replica esa regla aquí para que el comportamiento sea el mismo.
       const filtrarPropias = !esAdministrador && !inventoryService.obtenerEstadoConexion().usaSupabase;
@@ -295,6 +362,7 @@ const claseBotonSecundario =
     } catch (err) {
       if (miCarga !== cargaId) return;
       ventas = [];
+      devolucionesPorVenta = new Map();
       const mensaje = err instanceof Error ? err.message : 'No se pudieron cargar las ventas.';
       $('hv-error').textContent = `No se pudieron cargar las ventas: ${mensaje}`;
       $('hv-error').classList.remove('hidden');
@@ -336,6 +404,21 @@ const claseBotonSecundario =
     pintar();
   });
 
+  filas.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-devolver-venta]')?.dataset.devolverVenta;
+    const venta = ventas.find((v) => v.id === id);
+    if (venta) window.dispatchEvent(new CustomEvent('easystem:abrir-devolucion', { detail: { venta } }));
+  });
+
+  // Se registró una devolución o cambio: recarga y avisa
+  window.addEventListener('easystem:ventas-cambiaron', ((e: CustomEvent<{ folio: number; ventaFolio: number }>) => {
+    const aviso = $('hv-aviso-exito');
+    aviso.textContent = `✓ Devolución #${String(e.detail.folio).padStart(4, '0')} registrada sobre la venta #${String(e.detail.ventaFolio).padStart(4, '0')}. El inventario ya se actualizó.`;
+    aviso.classList.remove('hidden');
+    setTimeout(() => aviso.classList.add('hidden'), 8000);
+    void cargar();
+  }) as EventListener);
+
   // Exporta todo lo filtrado (no solo la página visible). Solo administrador: son datos personales de clientes.
   $('hv-exportar').addEventListener('click', () => {
     descargarCSV(
@@ -347,9 +430,16 @@ const claseBotonSecundario =
         cliente: v.cliente_nombre,
         telefono: v.cliente_telefono,
         tipo_de_cobro: etiquetaMetodoPago(v.metodo_pago),
+        detalle_pagos: pagosDeVenta(v)
+          .map((p) => `${etiquetaMetodoPago(p.metodo)}: ${p.monto_bs != null ? `Bs. ${p.monto_bs.toFixed(2)} ($${p.monto_usd.toFixed(2)})` : `$${p.monto_usd.toFixed(2)}`}`)
+          .join('; '),
         total_usd: v.total.toFixed(2),
         tasa_bs_por_usd: v.tasa_cambio ?? '',
         total_bs: v.total_bs != null ? v.total_bs.toFixed(2) : '',
+        vuelto: v.vuelto ? (v.vuelto.monto_bs != null ? `Bs. ${v.vuelto.monto_bs.toFixed(2)}` : `$${v.vuelto.monto_usd.toFixed(2)}`) : '',
+        devoluciones: devolucionesDe(v)
+          .map((d) => `#${d.folio} (${d.motivo}): devolvió ${d.items_devueltos.map((i) => `${i.cantidad} x ${i.nombre}`).join(', ')}${d.items_nuevos.length ? `; a cambio ${d.items_nuevos.map((i) => `${i.cantidad} x ${i.nombre}`).join(', ')}` : ''}; diferencia $${d.diferencia.toFixed(2)}`)
+          .join(' | '),
         vendedor: v.vendedor_nombre ?? '',
         productos: v.items.map((i) => `${i.cantidad} x ${i.nombre}`).join('; '),
       }))
@@ -359,7 +449,7 @@ const claseBotonSecundario =
   obtenerSesionActual().then((sesion) => {
     esAdministrador = sesion?.rol === 'administrador';
     nombreSesion = sesion?.nombre ?? '';
-    for (const id of ['hv-th-vendedor', 'hv-col-vendedor']) $(id).classList.toggle('hidden', !esAdministrador);
+    for (const id of ['hv-th-vendedor', 'hv-col-vendedor', 'hv-th-acciones', 'hv-col-acciones']) $(id).classList.toggle('hidden', !esAdministrador);
     $('hv-exportar').classList.toggle('hidden', !esAdministrador);
     $('hv-aviso-vendedor').classList.toggle('hidden', esAdministrador);
     cargar();

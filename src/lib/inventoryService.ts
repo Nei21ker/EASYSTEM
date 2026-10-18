@@ -20,22 +20,27 @@ import * as modelosDb from './db/modelos';
 import * as movimientosDb from './db/movimientos';
 import * as ventasDb from './db/ventas';
 import * as tasasDb from './db/tasas';
+import * as devolucionesDb from './db/devoluciones';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
 import { convertirABs, esStockBajo, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
-import { esMetodoBolivares, METODOS_PAGO } from '../utils/pagos';
+import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
 import type {
   ClienteVenta,
   Compatibilidad,
+  Devolucion,
+  DineroEntregado,
   MetodoPago,
   ModeloTelefono,
   MovimientoInventario,
   Producto,
   ProductoConRelaciones,
+  NuevaDevolucion,
   NuevaTasa,
   NuevaVenta,
+  PagoVenta,
   ProductoStockBajo,
   TasaCambio,
   TipoMovimiento,
@@ -57,6 +62,7 @@ interface LocalDB {
   ventas?: Venta[];
   /** Historial de la tasa del dólar (opcional por la misma razón que ventas) */
   tasas?: TasaCambio[];
+  devoluciones?: Devolucion[];
 }
 
 function generarId(): string {
@@ -135,6 +141,7 @@ const LS_COLA_VENTAS = 'easystem:cola-ventas';
 const LS_CACHE_TASA = 'easystem:cache:tasa';
 const LS_COLA_TASAS = 'easystem:cola-tasas';
 const LS_CACHE_VENTAS = 'easystem:cache:ventas';
+const LS_CACHE_DEVOLUCIONES = 'easystem:cache:devoluciones';
 const EVENTO_CONEXION = 'easystem:conexion-cambio';
 
 interface MovimientoPendiente {
@@ -727,8 +734,14 @@ export class VentaIncompletaError extends Error {
 
 export interface DatosVenta {
   cliente: ClienteVenta;
-  metodo_pago: MetodoPago;
-  /** Bs por $ del día; se guarda en la venta (y fija el monto en Bs si el cobro es en bolívares) */
+  /**
+   * Cómo pagó el cliente: uno o varios tipos de cobro (sin repetir). La suma de monto_usd debe ser el
+   * total de la venta; en los cobros en Bs, monto_bs es lo que se recibió en bolívares.
+   */
+  pagos: PagoVenta[];
+  /** Vuelto entregado si los pagos superan el total (suma de pagos − vuelto = total) */
+  vuelto?: DineroEntregado | null;
+  /** Bs por $ del día; se guarda en la venta */
   tasa_cambio: number;
   vendedor_nombre?: string;
 }
@@ -756,6 +769,43 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
   }
 }
 
+/** Valida que el vuelto sea de un tipo permitido y coherente con su moneda. */
+function validarVuelto(vuelto: DineroEntregado | null | undefined, etiqueta: string, permitidos: MetodoPago[]) {
+  if (!vuelto) return;
+  if (!permitidos.includes(vuelto.metodo)) throw new Error(`${etiqueta}: ese tipo de cobro no se puede usar aquí.`);
+  if (!(vuelto.monto_usd > 0)) throw new Error(`${etiqueta} debe ser mayor a 0.`);
+  if (esMetodoBolivares(vuelto.metodo) !== (vuelto.monto_bs != null)) throw new Error(`${etiqueta}: el monto en bolívares no corresponde al tipo de cobro.`);
+}
+
+/**
+ * Reparte pagos (y vuelto) en proporción a un total menor (venta que solo se completó en parte);
+ * el residuo de centavos va al último pago, de modo que pagos − vuelto = totalNuevo.
+ */
+function ajustarPagos(
+  pagos: PagoVenta[],
+  vuelto: DineroEntregado | null,
+  totalAnterior: number,
+  totalNuevo: number,
+  tasa: number
+): { pagos: PagoVenta[]; vuelto: DineroEntregado | null } {
+  const factor = totalAnterior > 0 ? totalNuevo / totalAnterior : 0;
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const ajustados = pagos.map((p) => {
+    const usd = centavos(p.monto_usd * factor);
+    return { ...p, monto_usd: usd, monto_bs: p.monto_bs != null ? convertirABs(usd, tasa) : null };
+  });
+  let vueltoAjustado: DineroEntregado | null = null;
+  if (vuelto) {
+    const usd = centavos(vuelto.monto_usd * factor);
+    if (usd > 0) vueltoAjustado = { ...vuelto, monto_usd: usd, monto_bs: vuelto.monto_bs != null ? convertirABs(usd, tasa) : null };
+  }
+  const neto = ajustados.reduce((suma, p) => suma + p.monto_usd, 0) - (vueltoAjustado?.monto_usd ?? 0);
+  const ultimo = ajustados[ajustados.length - 1];
+  ultimo.monto_usd = centavos(ultimo.monto_usd + (totalNuevo - neto));
+  if (ultimo.monto_bs != null) ultimo.monto_bs = convertirABs(ultimo.monto_usd, tasa);
+  return { pagos: ajustados.filter((p) => p.monto_usd > 0), vuelto: vueltoAjustado };
+}
+
 /**
  * Registra una venta del POS: cada línea del carrito sale del inventario como un
  * movimiento SALIDA y después se guarda el registro de la venta (cliente, tipo
@@ -777,7 +827,19 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   if (!cliente.cedula || !cliente.nombre || !cliente.telefono) {
     throw new Error('Faltan datos del cliente (cédula, nombre y teléfono).');
   }
-  if (!METODOS_PAGO.some((m) => m.valor === datos.metodo_pago)) throw new Error('Selecciona un tipo de cobro válido.');
+  if (datos.pagos.length === 0) throw new Error('Indica cómo pagará el cliente.');
+  if (datos.pagos.some((p) => !METODOS_PAGO.some((m) => m.valor === p.metodo) || !(p.monto_usd > 0))) {
+    throw new Error('Cada forma de pago necesita un tipo de cobro válido y un monto mayor a 0.');
+  }
+  if (new Set(datos.pagos.map((p) => p.metodo)).size !== datos.pagos.length) {
+    throw new Error('No repitas un tipo de cobro: suma sus montos en una sola forma de pago.');
+  }
+  const totalSolicitado = Math.round(items.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
+  validarVuelto(datos.vuelto, 'El vuelto', METODOS_VUELTO);
+  const totalPagos = Math.round((datos.pagos.reduce((suma, p) => suma + p.monto_usd, 0) - (datos.vuelto?.monto_usd ?? 0)) * 100) / 100;
+  if (Math.abs(totalPagos - totalSolicitado) > 0.011) {
+    throw new Error(`Los pagos (menos el vuelto) suman ${totalPagos.toFixed(2)} y la venta es de ${totalSolicitado.toFixed(2)} dólares: deben coincidir.`);
+  }
   if (!(datos.tasa_cambio > 0)) throw new Error('Falta la tasa del dólar del día. Regístrala e inténtalo de nuevo.');
 
   const registradas: VentaItem[] = [];
@@ -794,17 +856,29 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   if (registradas.length === 0) throw fallo; // nada salió del inventario: se puede reintentar tal cual
 
   const totalUsd = Math.round(registradas.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
+  // Si solo se alcanzaron a registrar algunas líneas, los pagos se reparten en proporción al nuevo total.
+  const reparto =
+    registradas.length === items.length
+      ? { pagos: datos.pagos, vuelto: datos.vuelto ?? null }
+      : ajustarPagos(datos.pagos, datos.vuelto ?? null, totalSolicitado, totalUsd, datos.tasa_cambio);
+  const { pagos, vuelto } = reparto;
   const registro: NuevaVenta = {
     fecha: new Date().toISOString(),
     cliente_cedula: cliente.cedula,
     cliente_nombre: cliente.nombre,
     cliente_telefono: cliente.telefono,
-    metodo_pago: datos.metodo_pago,
+    metodo_pago: pagos.length === 1 ? pagos[0].metodo : 'MIXTO',
+    pagos,
+    vuelto,
     total: totalUsd,
     items: registradas,
     vendedor_nombre: datos.vendedor_nombre ?? null,
     tasa_cambio: datos.tasa_cambio,
-    total_bs: esMetodoBolivares(datos.metodo_pago) ? convertirABs(totalUsd, datos.tasa_cambio) : null,
+    // Bolívares netos: lo recibido en Bs menos el vuelto entregado en Bs
+    total_bs:
+      pagos.some((p) => p.monto_bs != null) || vuelto?.monto_bs != null
+        ? Math.round((pagos.reduce((suma, p) => suma + (p.monto_bs ?? 0), 0) - (vuelto?.monto_bs ?? 0)) * 100) / 100
+        : null,
   };
   const ids = registradas.map((i) => i.producto_id);
 
@@ -860,6 +934,176 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
     .map((v, i) => ({ ...v, id: `pendiente-${i}-${v.fecha}`, folio: 0, pendienteSincronizar: true }))
     .filter(enRango);
   return [...pendientes, ...remotas].sort(masNuevasPrimero).slice(0, limite);
+}
+
+// ----------------------------------------------------------------------------
+// Devoluciones y cambios de producto
+// ----------------------------------------------------------------------------
+
+/**
+ * Devoluciones, más nuevas primero. El administrador ve todas; un vendedor, solo las de las ventas
+ * que puede ver (lo exige la base de datos).
+ */
+export async function listarDevoluciones(opciones: { limite?: number; ventaId?: string } = {}): Promise<Devolucion[]> {
+  const limite = opciones.limite ?? 2000;
+  const pasa = (d: Devolucion) => !opciones.ventaId || d.venta_id === opciones.ventaId;
+  const masNuevasPrimero = (a: Devolucion, b: Devolucion) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
+
+  if (!supabaseConfigurado) {
+    return (leerDB().devoluciones ?? []).filter(pasa).sort(masNuevasPrimero).slice(0, limite);
+  }
+  try {
+    const remotas = await devolucionesDb.listarDevoluciones({ limite, ventaId: opciones.ventaId });
+    if (!opciones.ventaId) guardarCache(LS_CACHE_DEVOLUCIONES, remotas);
+    return remotas;
+  } catch (err) {
+    if (!esErrorDeRed(err)) throw err;
+    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las devoluciones guardadas localmente.', err);
+    return (leerCache<Devolucion[]>(LS_CACHE_DEVOLUCIONES) ?? []).filter(pasa).slice(0, limite);
+  }
+}
+
+export interface DatosDevolucion {
+  /** La venta original (ya guardada: con id y folio reales) */
+  venta: Venta;
+  /** Líneas de la venta que el cliente devuelve, con la cantidad (≤ lo vendido que aún no se devolvió) */
+  devueltos: { producto_id: string; cantidad: number }[];
+  /** Productos entregados a cambio, a su precio vigente (vacío = devolución simple) */
+  nuevos: VentaItem[];
+  motivo: string;
+  /** Bs por $ de hoy */
+  tasa_cambio: number;
+  /** Si el cliente paga más que lo devuelto: cómo paga la diferencia (suma de pagos − vuelto = diferencia) */
+  pagos?: PagoVenta[];
+  vuelto?: DineroEntregado | null;
+  /** Si se le debe dinero al cliente: con qué tipo de cobro se le devuelve (el monto se calcula) */
+  reembolso_metodo?: MetodoPago | null;
+  registrado_nombre?: string;
+}
+
+/** Lo que ya se devolvió de cada producto de una venta, sumando todas sus devoluciones. */
+function cantidadesYaDevueltas(devoluciones: Devolucion[]): Map<string, number> {
+  const mapa = new Map<string, number>();
+  for (const d of devoluciones) {
+    for (const i of d.items_devueltos) mapa.set(i.producto_id, (mapa.get(i.producto_id) ?? 0) + i.cantidad);
+  }
+  return mapa;
+}
+
+/**
+ * Registra una devolución o un cambio de producto de una venta. Lo devuelto entra al inventario
+ * (ENTRADA) y lo entregado a cambio sale (SALIDA); después se guarda el registro con la diferencia
+ * y su cobro o reembolso. Es una operación de administrador (la base de datos exige rol
+ * administrador para las ENTRADAS y para el registro) y necesita conexión.
+ */
+export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devolucion> {
+  const { venta } = datos;
+  if (!venta.folio || venta.id.startsWith('pendiente-')) {
+    throw new Error('Esa venta aún no se sincroniza (está pendiente de enviarse). Espera a que se sincronice para devolverla.');
+  }
+  if (supabaseConfigurado && !obtenerEstadoConexion().online) {
+    throw new Error('Las devoluciones necesitan conexión a internet. Inténtalo de nuevo cuando vuelva.');
+  }
+  const motivo = datos.motivo.trim().replace(/\s+/g, ' ');
+  if (motivo.length < 3) throw new Error('Escribe el motivo de la devolución.');
+  if (!(datos.tasa_cambio > 0)) throw new Error('Falta la tasa del dólar del día. Regístrala e inténtalo de nuevo.');
+  if (datos.devueltos.length === 0) throw new Error('Indica qué producto se devuelve.');
+
+  // 1) Cantidades: no se puede devolver más de lo vendido (descontando devoluciones anteriores)
+  const ya = cantidadesYaDevueltas(await listarDevoluciones({ ventaId: venta.id }));
+  const itemsDevueltos: VentaItem[] = [];
+  for (const d of datos.devueltos) {
+    const original = venta.items.find((i) => i.producto_id === d.producto_id);
+    if (!original) throw new Error('Uno de los productos a devolver no pertenece a esa venta.');
+    if (!Number.isInteger(d.cantidad) || d.cantidad <= 0) throw new Error(`La cantidad de "${original.nombre}" debe ser un número entero mayor a 0.`);
+    const disponible = original.cantidad - (ya.get(d.producto_id) ?? 0);
+    if (d.cantidad > disponible) {
+      throw new Error(`De "${original.nombre}" solo se pueden devolver ${disponible} unidad(es) (vendidas ${original.cantidad}, ya devueltas ${original.cantidad - disponible}).`);
+    }
+    itemsDevueltos.push({ ...original, cantidad: d.cantidad });
+  }
+  if (datos.nuevos.some((n) => !Number.isInteger(n.cantidad) || n.cantidad <= 0 || !(n.precio_unitario >= 0))) {
+    throw new Error('Revisa los productos de reemplazo: cantidad entera mayor a 0.');
+  }
+
+  // 2) Dinero: la diferencia decide si el cliente paga o se le reembolsa
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const totalDevuelto = centavos(itemsDevueltos.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0));
+  const totalNuevo = centavos(datos.nuevos.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0));
+  const diferencia = centavos(totalNuevo - totalDevuelto);
+
+  let pagos: PagoVenta[] | null = null;
+  let vuelto: DineroEntregado | null = null;
+  let reembolso: DineroEntregado | null = null;
+  if (diferencia > 0.01) {
+    pagos = datos.pagos ?? [];
+    vuelto = datos.vuelto ?? null;
+    if (pagos.length === 0 || pagos.some((p) => !METODOS_PAGO.some((m) => m.valor === p.metodo) || !(p.monto_usd > 0))) {
+      throw new Error('El cliente debe pagar la diferencia: indica cómo paga.');
+    }
+    validarVuelto(vuelto, 'El vuelto', METODOS_VUELTO);
+    const neto = centavos(pagos.reduce((suma, p) => suma + p.monto_usd, 0) - (vuelto?.monto_usd ?? 0));
+    if (Math.abs(neto - diferencia) > 0.011) {
+      throw new Error(`Los pagos (menos el vuelto) suman ${neto.toFixed(2)} y la diferencia a cobrar es ${diferencia.toFixed(2)} dólares: deben coincidir.`);
+    }
+  } else if (diferencia < -0.01) {
+    const metodo = datos.reembolso_metodo;
+    if (!metodo || !METODOS_REEMBOLSO.includes(metodo)) throw new Error('Indica con qué tipo de cobro se devuelve el dinero al cliente.');
+    const usd = centavos(-diferencia);
+    reembolso = { metodo, monto_usd: usd, monto_bs: esMetodoBolivares(metodo) ? convertirABs(usd, datos.tasa_cambio) : null };
+  }
+
+  // 3) Inventario. Primero lo que SALE (puede fallar por stock y entonces no se ha tocado nada más)
+  const salidas: VentaItem[] = [];
+  const motivoSalida = `Cambio de producto, venta #${venta.folio}`;
+  for (const n of datos.nuevos) {
+    try {
+      await registrarMovimiento({ producto_id: n.producto_id, tipo: 'SALIDA', cantidad: n.cantidad, motivo: motivoSalida });
+      salidas.push(n);
+    } catch (err) {
+      // Deshace lo que alcanzó a salir para no dejar el inventario a medias
+      for (const hecha of salidas) {
+        await registrarMovimiento({ producto_id: hecha.producto_id, tipo: 'ENTRADA', cantidad: hecha.cantidad, motivo: 'Reverso: cambio de producto no completado' }).catch(() => undefined);
+      }
+      throw err;
+    }
+  }
+  for (const d of itemsDevueltos) {
+    await registrarMovimiento({ producto_id: d.producto_id, tipo: 'ENTRADA', cantidad: d.cantidad, motivo: `Devolución, venta #${venta.folio}` }).catch((err) => {
+      throw new Error(`No se pudo devolver "${d.nombre}" al inventario: ${err instanceof Error ? err.message : err}`);
+    });
+  }
+
+  // 4) Registro
+  const registro: NuevaDevolucion = {
+    fecha: new Date().toISOString(),
+    venta_id: venta.id,
+    venta_folio: venta.folio,
+    motivo,
+    items_devueltos: itemsDevueltos,
+    items_nuevos: datos.nuevos,
+    total_devuelto: totalDevuelto,
+    total_nuevo: totalNuevo,
+    diferencia,
+    tasa_cambio: datos.tasa_cambio,
+    pagos,
+    vuelto,
+    reembolso,
+    registrado_nombre: datos.registrado_nombre ?? null,
+  };
+  try {
+    if (!supabaseConfigurado) {
+      const db = leerDB();
+      const lista = db.devoluciones ?? (db.devoluciones = []);
+      const devolucion: Devolucion = { ...registro, id: generarId(), folio: lista.reduce((m, d) => Math.max(m, d.folio), 0) + 1 };
+      lista.unshift(devolucion);
+      guardarDB(db);
+      return devolucion;
+    }
+    return await devolucionesDb.insertarDevolucion(registro);
+  } catch (err) {
+    throw new Error(`El inventario ya se ajustó, pero no se pudo guardar el registro de la devolución: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 // ----------------------------------------------------------------------------
