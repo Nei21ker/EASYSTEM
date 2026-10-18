@@ -18,6 +18,7 @@
     <div class="space-y-4 overflow-y-auto px-5 py-4">
       <div class="rounded-lg border border-dashed border-slate-300 p-4 dark:border-slate-700">
         <label for="im-archivo" class="block text-sm font-medium">Archivo CSV</label>
+        <p id="im-local" class="mt-1 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
         <input id="im-archivo" type="file" accept=".csv,.txt,text/csv" class="mt-2 block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-700 hover:file:bg-brand-100 dark:file:bg-brand-500/20 dark:file:text-brand-300" />
         <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
           Columnas: <code>codigo_barras</code>, <code>nombre</code>, <code>categoria</code>, <code>precio_venta</code>,
@@ -169,7 +170,8 @@
 
     try {
       const texto = decodificarArchivo(await file.arrayBuffer());
-      const [productos, modelos] = await Promise.all([inventoryService.listarProductos(), inventoryService.listarModelos()]);
+      // Catálogo completo: un código que ya existe en otro local se ACTUALIZA, no se duplica
+      const [productos, modelos] = await Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarModelos()]);
       plan = prepararImportacion(texto, productos, modelos);
       pintarPlan(plan);
     } catch (err) {
@@ -233,6 +235,16 @@
     const sesion = await obtenerSesionActual();
     if (sesion?.rol !== 'administrador') return;
     reiniciar();
+    // Las cantidades del archivo son las de UN local: el activo
+    const contexto = await inventoryService.obtenerContextoLocal();
+    if (!contexto?.local) {
+      error.textContent = 'Elige un local en el selector del encabezado: las cantidades del archivo se cargan en ese local.';
+      error.classList.remove('hidden');
+      archivo.disabled = true;
+    } else {
+      archivo.disabled = false;
+      $('im-local').textContent = `Las cantidades y mínimos del archivo se cargan en: ${contexto.local.nombre}.`;
+    }
     dialogo.showModal();
   });
 </script>

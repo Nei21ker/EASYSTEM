@@ -1,0 +1,30 @@
+---
+// "Provider" del contexto de local (multi-local). Al cargar cualquier página con DashboardLayout:
+//  · calcula el contexto (sesión + locales + local activo) con inventoryService.obtenerContextoLocal()
+//    y lo publica en el store $contextoLocal (stores/local.ts) para que lo lea cualquier componente;
+//  · deja el alcance en <html data-alcance="..."> (útil para estilos y pruebas);
+//  · si un empleado no tiene local asignado, muestra un aviso fijo (sus listas salen vacías porque la
+//    base de datos solo le entrega datos de su local).
+// El selector visible está en el encabezado: ver LocalSwitcher.astro.
+---
+
+<div
+  id="ctx-sin-local"
+  role="alert"
+  class="fixed inset-x-0 top-0 z-50 hidden bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-slate-900"
+>
+  Tu usuario no tiene un local asignado, así que no verás datos. Pídele al administrador que te asigne uno.
+</div>
+
+<script>
+  import { obtenerContextoLocal } from '../../lib/inventoryService';
+
+  obtenerContextoLocal().then((contexto) => {
+    if (!contexto) return;
+    document.documentElement.dataset.alcance = contexto.alcance ?? 'ninguno';
+    document.documentElement.dataset.tipoLocal = contexto.local?.tipo ?? '';
+    if (contexto.sesion.rol !== 'administrador' && !contexto.alcance) {
+      document.getElementById('ctx-sin-local')?.classList.remove('hidden');
+    }
+  });
+</script>

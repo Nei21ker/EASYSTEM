@@ -1,0 +1,205 @@
+---
+// Recepción de un equipo para reparar (orden de servicio nueva, estado Pendiente).
+// Se abre con "easystem:abrir-nueva-orden"; al guardar avisa con "easystem:ordenes-cambiaron".
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400';
+---
+
+<dialog
+  id="no-dialogo"
+  aria-labelledby="no-titulo"
+  class="anim-escalar m-auto w-[min(32rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form id="no-form" class="flex max-h-[92dvh] flex-col" novalidate>
+    <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <div class="min-w-0">
+        <h2 id="no-titulo" class="text-base font-semibold">Recibir equipo para reparar</h2>
+        <p id="no-local" class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <button type="button" id="no-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="space-y-5 overflow-y-auto px-5 py-4">
+      <section class="space-y-3">
+        <p class={claseTitulo}>Cliente</p>
+        <div>
+          <label for="no-cedula" class={claseEtiqueta}>Cédula *</label>
+          <div class="mt-1 flex gap-2">
+            <select id="no-nac" aria-label="Nacionalidad" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+              <option value="V">V</option>
+              <option value="E">E</option>
+            </select>
+            <input id="no-cedula" type="text" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="12345678" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="no-nombre" class={claseEtiqueta}>Nombre *</label>
+            <input id="no-nombre" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
+          </div>
+          <div>
+            <label for="no-apellido" class={claseEtiqueta}>Apellido *</label>
+            <input id="no-apellido" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
+          </div>
+        </div>
+        <div>
+          <label for="no-telefono" class={claseEtiqueta}>Número de teléfono *</label>
+          <input id="no-telefono" type="tel" inputmode="tel" autocomplete="off" maxlength="20" placeholder="0414-1234567" class={claseCampo} />
+        </div>
+      </section>
+
+      <section class="space-y-3">
+        <p class={claseTitulo}>Equipo</p>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="no-marca" class={claseEtiqueta}>Marca *</label>
+            <input id="no-marca" type="text" list="no-marcas" autocomplete="off" maxlength="60" placeholder="Apple, Samsung..." class={claseCampo} />
+            <datalist id="no-marcas"></datalist>
+          </div>
+          <div>
+            <label for="no-modelo" class={claseEtiqueta}>Modelo *</label>
+            <input id="no-modelo" type="text" list="no-modelos" autocomplete="off" maxlength="80" placeholder="iPhone 11" class={claseCampo} />
+            <datalist id="no-modelos"></datalist>
+          </div>
+        </div>
+        <div>
+          <label for="no-imei" class={claseEtiqueta}>IMEI o número de serie <span class="font-normal text-slate-400">(opcional)</span></label>
+          <input id="no-imei" type="text" autocomplete="off" maxlength="40" class={claseCampo} />
+        </div>
+        <div>
+          <label for="no-accesorios" class={claseEtiqueta}>Qué se recibe con el equipo <span class="font-normal text-slate-400">(opcional)</span></label>
+          <input id="no-accesorios" type="text" autocomplete="off" maxlength="300" placeholder="Cargador, funda, sin SIM..." class={claseCampo} />
+        </div>
+        <div>
+          <label for="no-falla" class={claseEtiqueta}>Falla reportada *</label>
+          <textarea id="no-falla" rows="3" maxlength="1000" placeholder="Ej. No enciende, pantalla rota, no carga..." class={claseCampo}></textarea>
+        </div>
+      </section>
+
+      <p id="no-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+
+    <footer class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="no-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+        Cancelar
+      </button>
+      <button id="no-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
+        Registrar orden
+      </button>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { obtenerSesionActual } from '../../lib/auth';
+  import type { ModeloTelefono } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('no-dialogo');
+  const form = $<HTMLFormElement>('no-form');
+  const errorEl = $('no-error');
+  const guardar = $<HTMLButtonElement>('no-guardar');
+  const c = {
+    nac: $<HTMLSelectElement>('no-nac'),
+    cedula: $<HTMLInputElement>('no-cedula'),
+    nombre: $<HTMLInputElement>('no-nombre'),
+    apellido: $<HTMLInputElement>('no-apellido'),
+    telefono: $<HTMLInputElement>('no-telefono'),
+    marca: $<HTMLInputElement>('no-marca'),
+    modelo: $<HTMLInputElement>('no-modelo'),
+    imei: $<HTMLInputElement>('no-imei'),
+    accesorios: $<HTMLInputElement>('no-accesorios'),
+    falla: $<HTMLTextAreaElement>('no-falla'),
+  };
+
+  let modelos: ModeloTelefono[] = [];
+
+  function mostrarError(mensaje: string, foco?: HTMLElement) {
+    errorEl.textContent = mensaje;
+    errorEl.classList.remove('hidden');
+    foco?.focus();
+  }
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+
+  // El modelo sugiere los de la marca escrita (del catálogo de teléfonos); se puede escribir cualquiera
+  function sugerirModelos() {
+    const marca = c.marca.value.trim().toLowerCase();
+    $('no-modelos').innerHTML = modelos
+      .filter((m) => !marca || m.marca.toLowerCase() === marca)
+      .slice(0, 300)
+      .map((m) => `<option value="${escapar(m.modelo)}"></option>`)
+      .join('');
+  }
+  c.marca.addEventListener('input', sugerirModelos);
+  c.cedula.addEventListener('input', () => (c.cedula.value = c.cedula.value.replace(/\D/g, '')));
+  form.addEventListener('input', () => errorEl.classList.add('hidden'));
+
+  async function abrir() {
+    const contexto = await inventoryService.obtenerContextoLocal();
+    if (contexto?.local?.tipo !== 'servicio_tecnico') return;
+    modelos = await inventoryService.listarModelos();
+    $('no-marcas').innerHTML = [...new Set(modelos.map((m) => m.marca))].map((m) => `<option value="${escapar(m)}"></option>`).join('');
+    sugerirModelos();
+    $('no-local').textContent = contexto.local.nombre;
+    form.reset();
+    errorEl.classList.add('hidden');
+    dialogo.showModal();
+    c.cedula.focus();
+  }
+
+  window.addEventListener('easystem:abrir-nueva-orden', () => void abrir());
+  $('no-cerrar').addEventListener('click', () => dialogo.close());
+  $('no-cancelar').addEventListener('click', () => dialogo.close());
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cedula = c.cedula.value.replace(/\D/g, '');
+    const nombre = c.nombre.value.trim().replace(/\s+/g, ' ');
+    const apellido = c.apellido.value.trim().replace(/\s+/g, ' ');
+    const telefono = c.telefono.value.trim();
+    const patronNombre = /^[\p{L}][\p{L} '.-]*$/u;
+
+    if (!/^\d{5,9}$/.test(cedula)) return mostrarError('La cédula debe tener entre 5 y 9 dígitos (solo números).', c.cedula);
+    if (nombre.length < 2 || !patronNombre.test(nombre)) return mostrarError('Escribe el nombre del cliente.', c.nombre);
+    if (apellido.length < 2 || !patronNombre.test(apellido)) return mostrarError('Escribe el apellido del cliente.', c.apellido);
+    const digitos = telefono.replace(/\D/g, '');
+    if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
+      return mostrarError('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', c.telefono);
+    }
+    if (!c.marca.value.trim()) return mostrarError('Indica la marca del equipo.', c.marca);
+    if (!c.modelo.value.trim()) return mostrarError('Indica el modelo del equipo.', c.modelo);
+    if (c.falla.value.trim().length < 3) return mostrarError('Describe la falla que reporta el cliente.', c.falla);
+
+    guardar.disabled = true;
+    guardar.textContent = 'Registrando...';
+    try {
+      const sesion = await obtenerSesionActual();
+      await inventoryService.crearOrdenServicio({
+        cliente_cedula: `${c.nac.value}-${cedula}`,
+        cliente_nombre: `${nombre} ${apellido}`,
+        cliente_telefono: telefono,
+        equipo_marca: c.marca.value,
+        equipo_modelo: c.modelo.value,
+        equipo_imei: c.imei.value,
+        accesorios_recibidos: c.accesorios.value,
+        falla_reportada: c.falla.value,
+        registrado_nombre: sesion?.nombre,
+      });
+      dialogo.close();
+      window.dispatchEvent(new Event('easystem:ordenes-cambiaron'));
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo registrar la orden.');
+    } finally {
+      guardar.disabled = false;
+      guardar.textContent = 'Registrar orden';
+    }
+  });
+</script>

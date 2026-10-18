@@ -21,9 +21,15 @@ import * as movimientosDb from './db/movimientos';
 import * as ventasDb from './db/ventas';
 import * as tasasDb from './db/tasas';
 import * as devolucionesDb from './db/devoluciones';
+import * as localesDb from './db/locales';
+import * as ordenesDb from './db/ordenes';
+import type { ProductoConInventario } from './db/productos';
+import { obtenerSesionActual } from './auth';
+import { $contextoLocal, type ContextoLocal } from '../stores/local';
+import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localesPorDefecto } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
-import { convertirABs, esStockBajo, fechaLocalISO } from '../utils/format';
+import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
@@ -32,16 +38,22 @@ import type {
   Compatibilidad,
   Devolucion,
   DineroEntregado,
+  EstadoOrdenServicio,
+  InventarioLocal,
+  Local,
   MetodoPago,
   ModeloTelefono,
   MovimientoInventario,
   Producto,
   ProductoConRelaciones,
   NuevaDevolucion,
+  NuevaOrdenServicio,
   NuevaTasa,
   NuevaVenta,
+  OrdenServicio,
   PagoVenta,
   ProductoStockBajo,
+  RepuestoOrden,
   TasaCambio,
   TipoMovimiento,
   Venta,
@@ -58,6 +70,11 @@ interface LocalDB {
   modelos: ModeloTelefono[];
   compatibilidades: Compatibilidad[];
   movimientos: MovimientoInventario[];
+  /** Los 3 locales y el stock de cada producto en cada local (los navegadores con datos anteriores se migran al leer) */
+  locales: Local[];
+  inventario: InventarioLocal[];
+  /** Órdenes de servicio técnico */
+  ordenes?: OrdenServicio[];
   /** Opcional: los navegadores con datos anteriores a las ventas con cliente no lo traen */
   ventas?: Venta[];
   /** Historial de la tasa del dólar (opcional por la misma razón que ventas) */
@@ -74,9 +91,47 @@ function construirSeedInicial(): LocalDB {
   const compatibilidades: Compatibilidad[] = productosMock.flatMap((p) =>
     p.modelos_compatibles.map((modelo) => ({ id: generarId(), producto_id: p.id, modelo_id: modelo.id }))
   );
-  const movimientos: MovimientoInventario[] = movimientosMock.map(({ producto, ...movimiento }) => movimiento);
+  // Demo: los vidrios templados en el Local Vidrios, los repuestos en el de Servicio Técnico y el resto en Accesorios
+  const localDe = (categoria: string) =>
+    categoria === 'Vidrios Templados' ? LOCAL_VIDRIOS_ID : categoria === 'Repuestos' ? LOCAL_SERVICIO_TECNICO_ID : LOCAL_ACCESORIOS_ID;
+  const localPorProducto = new Map(productos.map((p) => [p.id, localDe(p.categoria)]));
+  const inventario: InventarioLocal[] = productos.map((p) => ({
+    local_id: localPorProducto.get(p.id)!,
+    producto_id: p.id,
+    stock_actual: p.stock_actual,
+    stock_minimo: p.stock_minimo,
+  }));
+  const movimientos: MovimientoInventario[] = movimientosMock.map(({ producto, ...movimiento }) => ({
+    ...movimiento,
+    local_id: localPorProducto.get(movimiento.producto_id) ?? LOCAL_ACCESORIOS_ID,
+  }));
 
-  return { productos, modelos: modelosMock, compatibilidades, movimientos };
+  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario };
+}
+
+/**
+ * Datos guardados antes del multi-local: se agregan los 3 locales y TODO lo existente (stock, movimientos,
+ * ventas, devoluciones) pasa al Local Accesorios, igual que hace la migración 0016 en Supabase.
+ */
+function migrarAMultilocal(db: LocalDB): boolean {
+  let cambio = false;
+  if (!db.locales) {
+    db.locales = localesPorDefecto();
+    cambio = true;
+  }
+  if (!db.inventario) {
+    db.inventario = db.productos.map((p) => ({ local_id: LOCAL_ACCESORIOS_ID, producto_id: p.id, stock_actual: p.stock_actual, stock_minimo: p.stock_minimo }));
+    cambio = true;
+  }
+  for (const lista of [db.movimientos, db.ventas ?? [], db.devoluciones ?? []] as { local_id?: string }[][]) {
+    for (const fila of lista) {
+      if (!fila.local_id) {
+        fila.local_id = LOCAL_ACCESORIOS_ID;
+        cambio = true;
+      }
+    }
+  }
+  return cambio;
 }
 
 function leerDB(): LocalDB {
@@ -97,10 +152,9 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      if (faltantes.length > 0) {
-        db.modelos.push(...faltantes);
-        guardarDB(db);
-      }
+      const migrado = migrarAMultilocal(db);
+      if (faltantes.length > 0) db.modelos.push(...faltantes);
+      if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;
     }
   } catch (err) {
@@ -119,10 +173,11 @@ function guardarDB(db: LocalDB) {
   }
 }
 
-function normalizarProductoLocal(producto: Producto, db: LocalDB): ProductoConRelaciones {
+function normalizarProductoLocal(producto: Producto, db: LocalDB): ProductoConInventario {
   const modeloIds = db.compatibilidades.filter((c) => c.producto_id === producto.id).map((c) => c.modelo_id);
   const modelos_compatibles = db.modelos.filter((m) => modeloIds.includes(m.id));
-  return { ...producto, modelos_compatibles };
+  const inventario = db.inventario.filter((i) => i.producto_id === producto.id);
+  return { ...producto, modelos_compatibles, inventario };
 }
 
 /** Reinicia LocalStorage a los datos de ejemplo (útil para demos o pruebas). */
@@ -150,6 +205,8 @@ interface MovimientoPendiente {
   tipo: TipoMovimiento;
   cantidad: number;
   motivo?: string;
+  /** Local del movimiento (los pendientes guardados antes del multi-local no lo traen: eran del Local Accesorios) */
+  local_id?: string;
   encolado_en: string;
 }
 
@@ -206,17 +263,30 @@ function esErrorDeRed(err: unknown): boolean {
   return /fetch|network|conexión|conexion|timeout|NetworkError/i.test(mensaje);
 }
 
-/** Ajusta el stock en caché restando/sumando los movimientos aún no sincronizados. */
-function aplicarPendientesAProductos(productos: ProductoConRelaciones[]): ProductoConRelaciones[] {
+/** Ajusta el stock en caché (por local) restando/sumando los movimientos aún no sincronizados. */
+function aplicarPendientesAProductos(productos: ProductoConInventario[]): ProductoConInventario[] {
   const pendientes = leerColaSync();
   if (pendientes.length === 0) return productos;
 
-  const ajustePorProducto: Record<string, number> = {};
-  for (const p of pendientes) {
-    ajustePorProducto[p.producto_id] = (ajustePorProducto[p.producto_id] ?? 0) + (p.tipo === 'ENTRADA' ? p.cantidad : -p.cantidad);
-  }
+  return productos.map((p) => {
+    const propios = pendientes.filter((m) => m.producto_id === p.id);
+    if (propios.length === 0) return p;
 
-  return productos.map((p) => (ajustePorProducto[p.id] ? { ...p, stock_actual: p.stock_actual + ajustePorProducto[p.id] } : p));
+    const inventario = p.inventario.map((i) => ({ ...i }));
+    let total = p.stock_actual;
+    for (const m of propios) {
+      const delta = m.tipo === 'ENTRADA' ? m.cantidad : -m.cantidad;
+      const localId = m.local_id ?? LOCAL_ACCESORIOS_ID;
+      let fila = inventario.find((i) => i.local_id === localId);
+      if (!fila) {
+        fila = { local_id: localId, producto_id: p.id, stock_actual: 0, stock_minimo: 0 };
+        inventario.push(fila);
+      }
+      fila.stock_actual += delta;
+      total += delta;
+    }
+    return { ...p, stock_actual: total, inventario };
+  });
 }
 
 function encolarMovimientoPendiente(input: {
@@ -224,6 +294,7 @@ function encolarMovimientoPendiente(input: {
   tipo: TipoMovimiento;
   cantidad: number;
   motivo?: string;
+  local_id: string;
 }): MovimientoInventario {
   const pendiente: MovimientoPendiente = { id: `pendiente-${generarId()}`, encolado_en: new Date().toISOString(), ...input };
   const cola = leerColaSync();
@@ -237,6 +308,7 @@ function encolarMovimientoPendiente(input: {
     cantidad: pendiente.cantidad,
     motivo: pendiente.motivo ?? null,
     fecha: pendiente.encolado_en,
+    local_id: input.local_id,
   };
 }
 
@@ -259,6 +331,7 @@ export async function sincronizarPendientes(): Promise<{ sincronizados: number; 
         tipo: pendiente.tipo,
         cantidad: pendiente.cantidad,
         motivo: pendiente.motivo,
+        local_id: pendiente.local_id ?? LOCAL_ACCESORIOS_ID,
       });
       sincronizados++;
     } catch (err) {
@@ -289,7 +362,7 @@ export async function sincronizarPendientes(): Promise<{ sincronizados: number; 
   const ventasRestantes: NuevaVenta[] = [];
   for (const venta of colaVentas) {
     try {
-      await ventasDb.insertarVenta(venta);
+      await ventasDb.insertarVenta({ ...venta, local_id: venta.local_id ?? LOCAL_ACCESORIOS_ID });
       sincronizados++;
     } catch (err) {
       if (esErrorDeRed(err)) {
@@ -341,9 +414,111 @@ export function suscribirseAEstadoConexion(callback: (estado: EstadoConexion) =>
 }
 
 // ----------------------------------------------------------------------------
+// Contexto de local (multi-local)
+//
+// El administrador puede ver "Todos los locales" o uno en concreto (selector del encabezado,
+// recordado en este navegador); el resto de roles trabaja siempre con su local asignado. Casi todas
+// las funciones de este servicio se filtran solas por ese alcance, así que las pantallas no tienen
+// que pasar el local; las operaciones que ESCRIBEN (vender, mover stock...) exigen un local concreto.
+// La base de datos vuelve a imponer lo mismo con RLS.
+// ----------------------------------------------------------------------------
+const LS_LOCAL_ACTIVO = 'easystem:local-activo';
+const LS_CACHE_LOCALES = 'easystem:cache:locales';
+
+let contextoPromesa: Promise<ContextoLocal | null> | null = null;
+
+export async function listarLocales(): Promise<Local[]> {
+  if (!supabaseConfigurado) return leerDB().locales.slice();
+
+  try {
+    const locales = await localesDb.listarLocales();
+    guardarCache(LS_CACHE_LOCALES, locales);
+    return locales;
+  } catch (err) {
+    if (!esErrorDeRed(err)) throw err;
+    return leerCache<Local[]>(LS_CACHE_LOCALES) ?? [];
+  }
+}
+
+async function cargarContexto(): Promise<ContextoLocal | null> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion) return null;
+
+  const locales = await listarLocales();
+  let alcance: string | null;
+  if (sesion.rol === 'administrador') {
+    let guardado: string | null = null;
+    try {
+      guardado = localStorage.getItem(LS_LOCAL_ACTIVO);
+    } catch {
+      /* sin almacenamiento: vista "Todos" */
+    }
+    alcance = guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado)) ? guardado : ALCANCE_TODOS;
+  } else {
+    alcance = sesion.local_id && locales.some((l) => l.id === sesion.local_id) ? sesion.local_id : null;
+  }
+
+  const contexto: ContextoLocal = { sesion, locales, alcance, local: locales.find((l) => l.id === alcance) ?? null };
+  $contextoLocal.set(contexto);
+  return contexto;
+}
+
+/** Sesión + locales + local activo. Se calcula una vez por carga de página. null si no hay sesión. */
+export function obtenerContextoLocal(): Promise<ContextoLocal | null> {
+  if (!contextoPromesa) contextoPromesa = cargarContexto();
+  return contextoPromesa;
+}
+
+/**
+ * Cambia el local activo del administrador ('todos' o el id de un local) y recarga la vista para que
+ * Dashboard, POS, Inventario y Reportes se vuelvan a pedir ya filtrados. Los demás roles no pueden cambiar.
+ */
+export function cambiarLocalActivo(alcance: string): void {
+  const contexto = $contextoLocal.get();
+  if (contexto?.sesion.rol !== 'administrador') return;
+  if (alcance !== ALCANCE_TODOS && !contexto.locales.some((l) => l.id === alcance)) return;
+  try {
+    localStorage.setItem(LS_LOCAL_ACTIVO, alcance);
+  } catch {
+    /* sin almacenamiento: no se recuerda, pero se aplica */
+  }
+  window.location.reload();
+}
+
+interface Alcance {
+  /** true = vista "Todos los locales" (administrador) */
+  todos: boolean;
+  /** Local concreto (null en "todos" o si el usuario no tiene local) */
+  localId: string | null;
+}
+
+async function alcanceActual(): Promise<Alcance> {
+  const contexto = await obtenerContextoLocal();
+  if (!contexto) return { todos: true, localId: null };
+  if (contexto.alcance === ALCANCE_TODOS) return { todos: true, localId: null };
+  return { todos: false, localId: contexto.alcance };
+}
+
+/** El local concreto sobre el que se va a escribir; si no hay uno (vista "Todos" o sin local asignado) lanza un error accionable. */
+async function exigirLocal(accion: string): Promise<string> {
+  const alcance = await alcanceActual();
+  if (alcance.localId) return alcance.localId;
+  const contexto = await obtenerContextoLocal();
+  throw new Error(
+    contexto && contexto.alcance === null
+      ? 'Tu usuario no tiene un local asignado. Pídele al administrador que te asigne uno.'
+      : `Elige un local en el selector del encabezado para ${accion}.`
+  );
+}
+
+// ----------------------------------------------------------------------------
 // Productos
 // ----------------------------------------------------------------------------
-export async function listarProductos(): Promise<ProductoConRelaciones[]> {
+/**
+ * Productos del catálogo con su inventario en cada local (crudo). Las pantallas usan listarProductos(),
+ * que lo proyecta al local activo.
+ */
+async function listarProductosCrudos(): Promise<ProductoConInventario[]> {
   if (!supabaseConfigurado) {
     const db = leerDB();
     return db.productos.map((p) => normalizarProductoLocal(p, db)).sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -356,66 +531,110 @@ export async function listarProductos(): Promise<ProductoConRelaciones[]> {
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
     console.warn('[EASYSTEM] Sin conexión con Supabase; usando el catálogo guardado localmente.', err);
-    return aplicarPendientesAProductos(leerCache<ProductoConRelaciones[]>(LS_CACHE_PRODUCTOS) ?? []);
+    return aplicarPendientesAProductos(leerCache<ProductoConInventario[]>(LS_CACHE_PRODUCTOS) ?? []);
   }
+}
+
+/**
+ * Proyecta un producto al alcance activo: el stock y el mínimo son los del local elegido; en "Todos los
+ * locales" el stock es el total (con el desglose en stock_por_local) y no se juzga el mínimo (las alertas
+ * de reabastecimiento son por local: ver listarProductosStockBajo). null = ese local no maneja el producto.
+ */
+function proyectarProducto(crudo: ProductoConInventario, alcance: Alcance, catalogoCompleto: boolean): ProductoConRelaciones | null {
+  const { inventario, ...producto } = crudo;
+  if (alcance.todos) {
+    return {
+      ...producto,
+      stock_actual: inventario.reduce((suma, i) => suma + i.stock_actual, 0),
+      stock_minimo: 0,
+      stock_por_local: Object.fromEntries(inventario.map((i) => [i.local_id, i.stock_actual])),
+    };
+  }
+  const fila = alcance.localId ? inventario.find((i) => i.local_id === alcance.localId) : undefined;
+  if (!fila && !catalogoCompleto) return null;
+  return { ...producto, stock_actual: fila?.stock_actual ?? 0, stock_minimo: fila?.stock_minimo ?? 0 };
+}
+
+/**
+ * Productos del alcance activo. Con un local elegido: solo los que ese local maneja (tienen inventario ahí).
+ * `catalogoCompleto`: todo el catálogo, con stock 0 donde el local no lo maneja (para dar de alta entradas,
+ * escanear códigos o consultar compatibilidades). `localId`: proyecta a ese local en vez de al activo.
+ */
+export async function listarProductos(opciones: { catalogoCompleto?: boolean; localId?: string } = {}): Promise<ProductoConRelaciones[]> {
+  // `localId` fuerza un local concreto (p. ej. el de una venta que se está devolviendo) en vez del local activo
+  const [crudos, alcance] = await Promise.all([
+    listarProductosCrudos(),
+    opciones.localId ? Promise.resolve<Alcance>({ todos: false, localId: opciones.localId }) : alcanceActual(),
+  ]);
+  return crudos.map((p) => proyectarProducto(p, alcance, !!opciones.catalogoCompleto)).filter((p): p is ProductoConRelaciones => p !== null);
 }
 
 export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Promise<ProductoConRelaciones | null> {
+  let crudo: ProductoConInventario | null | undefined;
   if (!supabaseConfigurado) {
     const db = leerDB();
     const producto = db.productos.find((p) => p.codigo_barras === codigoBarras);
-    return producto ? normalizarProductoLocal(producto, db) : null;
+    crudo = producto ? normalizarProductoLocal(producto, db) : null;
+  } else {
+    try {
+      crudo = await productosDb.obtenerProductoPorCodigoBarras(codigoBarras);
+    } catch (err) {
+      if (!esErrorDeRed(err)) throw err;
+      const cache = aplicarPendientesAProductos(leerCache<ProductoConInventario[]>(LS_CACHE_PRODUCTOS) ?? []);
+      crudo = cache.find((p) => p.codigo_barras === codigoBarras) ?? null;
+    }
   }
-
-  try {
-    return await productosDb.obtenerProductoPorCodigoBarras(codigoBarras);
-  } catch (err) {
-    if (!esErrorDeRed(err)) throw err;
-    const cache = aplicarPendientesAProductos(leerCache<ProductoConRelaciones[]>(LS_CACHE_PRODUCTOS) ?? []);
-    return cache.find((p) => p.codigo_barras === codigoBarras) ?? null;
-  }
+  return crudo ? proyectarProducto(crudo, await alcanceActual(), true) : null;
 }
 
+/** Alertas de reabastecimiento del alcance activo: una fila por producto y local con mínimo > 0 y stock ≤ mínimo. */
 export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
-  if (!supabaseConfigurado) {
-    const db = leerDB();
-    return db.productos
-      .filter(esStockBajo)
-      .sort((a, b) => a.stock_actual - b.stock_actual)
-      .map(({ id, codigo_barras, nombre, categoria, stock_actual, stock_minimo }) => ({
-        id,
-        codigo_barras,
-        nombre,
-        categoria,
-        stock_actual,
-        stock_minimo,
-      }));
-  }
+  const alcance = await alcanceActual();
+
+  const derivar = async (): Promise<ProductoStockBajo[]> => {
+    const [crudos, locales] = await Promise.all([listarProductosCrudos(), listarLocales()]);
+    const nombres = new Map(locales.map((l) => [l.id, l.nombre]));
+    const filas: ProductoStockBajo[] = [];
+    for (const p of crudos) {
+      for (const i of p.inventario) {
+        if (!(i.stock_minimo > 0 && i.stock_actual <= i.stock_minimo)) continue;
+        if (!alcance.todos && i.local_id !== alcance.localId) continue;
+        filas.push({
+          id: p.id,
+          codigo_barras: p.codigo_barras,
+          nombre: p.nombre,
+          categoria: p.categoria,
+          stock_actual: i.stock_actual,
+          stock_minimo: i.stock_minimo,
+          local_id: i.local_id,
+          local_nombre: nombres.get(i.local_id),
+        });
+      }
+    }
+    return filas.sort((a, b) => a.stock_actual - b.stock_actual);
+  };
+
+  if (!supabaseConfigurado) return derivar();
 
   try {
-    return await productosDb.listarProductosStockBajo();
+    return await productosDb.listarProductosStockBajo(alcance.localId);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    // Sin conexión: lo derivamos del catálogo en caché en vez de fallar.
-    const productos = await listarProductos();
-    return productos
-      .filter(esStockBajo)
-      .sort((a, b) => a.stock_actual - b.stock_actual)
-      .map(({ id, codigo_barras, nombre, categoria, stock_actual, stock_minimo }) => ({
-        id,
-        codigo_barras,
-        nombre,
-        categoria,
-        stock_actual,
-        stock_minimo,
-      }));
+    return derivar(); // sin conexión: se deriva del catálogo en caché en vez de fallar
   }
 }
 
 export async function crearProducto(
   input: Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>
 ): Promise<Producto> {
-  if (supabaseConfigurado) return productosDb.crearProducto(input);
+  // El producto nace en el catálogo (compartido); si hay un local elegido, ese local empieza a manejarlo (con su mínimo)
+  const { localId } = await alcanceActual();
+
+  if (supabaseConfigurado) {
+    const creado = await productosDb.crearProducto(input);
+    if (localId) await productosDb.fijarMinimosLote(localId, [{ producto_id: creado.id, stock_minimo: input.stock_minimo ?? 0 }]);
+    return creado;
+  }
 
   const db = leerDB();
   if (db.productos.some((p) => p.codigo_barras === input.codigo_barras)) {
@@ -432,6 +651,7 @@ export async function crearProducto(
     ...input,
   };
   db.productos.push(producto);
+  if (localId) db.inventario.push({ local_id: localId, producto_id: producto.id, stock_actual: 0, stock_minimo: producto.stock_minimo });
   guardarDB(db);
   return producto;
 }
@@ -439,12 +659,26 @@ export async function crearProducto(
 export async function actualizarProducto(id: string, cambiosCrudos: Partial<Producto>): Promise<Producto> {
   // El stock solo cambia mediante movimientos (kardex); nunca por edición directa.
   const { stock_actual: _ignorado, id: _id, created_at: _creado, ...cambios } = cambiosCrudos;
-  if (supabaseConfigurado) return productosDb.actualizarProducto(id, cambios);
+  // El stock mínimo es POR LOCAL: con un local elegido se guarda en su inventario
+  const { localId } = await alcanceActual();
+
+  if (supabaseConfigurado) {
+    const actualizado = await productosDb.actualizarProducto(id, cambios);
+    if (localId && cambios.stock_minimo !== undefined) {
+      await productosDb.fijarMinimosLote(localId, [{ producto_id: id, stock_minimo: cambios.stock_minimo }]);
+    }
+    return actualizado;
+  }
 
   const db = leerDB();
   const producto = db.productos.find((p) => p.id === id);
   if (!producto) throw new Error('Producto no encontrado.');
   Object.assign(producto, cambios);
+  if (localId && cambios.stock_minimo !== undefined) {
+    const fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === id);
+    if (fila) fila.stock_minimo = cambios.stock_minimo;
+    else db.inventario.push({ local_id: localId, producto_id: id, stock_actual: 0, stock_minimo: cambios.stock_minimo });
+  }
   guardarDB(db);
   return producto;
 }
@@ -509,6 +743,7 @@ export async function eliminarProducto(id: string): Promise<void> {
   const db = leerDB();
   db.productos = db.productos.filter((p) => p.id !== id);
   db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== id);
+  db.inventario = db.inventario.filter((i) => i.producto_id !== id);
   db.movimientos = db.movimientos.filter((m) => m.producto_id !== id);
   guardarDB(db);
 }
@@ -638,51 +873,72 @@ export async function registrarTasa(tasa: number, registradoNombre?: string): Pr
 // Movimientos de inventario / Ventas
 // ----------------------------------------------------------------------------
 export async function listarMovimientos(limite = 100): Promise<MovimientoConProducto[]> {
+  const alcance = await alcanceActual();
+  const delAlcance = (m: { local_id: string }) => alcance.todos || m.local_id === alcance.localId;
+
   if (!supabaseConfigurado) {
     const db = leerDB();
     const productosPorId = Object.fromEntries(db.productos.map((p) => [p.id, p]));
+    const localesPorId = Object.fromEntries(db.locales.map((l) => [l.id, l]));
 
     return db.movimientos
-      .slice()
+      .filter(delAlcance)
       .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
       .slice(0, limite)
       .map((m) => {
         const producto = productosPorId[m.producto_id];
-        return { ...m, producto: producto ? { nombre: producto.nombre, codigo_barras: producto.codigo_barras } : null };
+        const local = localesPorId[m.local_id];
+        return {
+          ...m,
+          producto: producto ? { nombre: producto.nombre, codigo_barras: producto.codigo_barras } : null,
+          local: local ? { nombre: local.nombre } : null,
+        };
       });
   }
 
   try {
-    const movimientos = await movimientosDb.listarMovimientosRecientes(limite);
-    guardarCache(LS_CACHE_MOVIMIENTOS, movimientos);
+    const movimientos = await movimientosDb.listarMovimientosRecientes(limite, alcance.localId);
+    if (alcance.todos) guardarCache(LS_CACHE_MOVIMIENTOS, movimientos);
     return movimientos;
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
     console.warn('[EASYSTEM] Sin conexión con Supabase; usando movimientos guardados localmente.', err);
-    return (leerCache<MovimientoConProducto[]>(LS_CACHE_MOVIMIENTOS) ?? []).slice(0, limite);
+    return (leerCache<MovimientoConProducto[]>(LS_CACHE_MOVIMIENTOS) ?? []).filter(delAlcance).slice(0, limite);
   }
 }
 
+/**
+ * Mueve el stock de UN local. Si no se indica local_id se usa el local activo (en la vista "Todos los
+ * locales" hay que indicarlo o elegir uno antes).
+ */
 export async function registrarMovimiento(input: {
   producto_id: string;
   tipo: TipoMovimiento;
   cantidad: number;
   motivo?: string;
+  local_id?: string;
 }): Promise<MovimientoInventario> {
   if (input.cantidad <= 0) throw new Error('La cantidad debe ser mayor a 0.');
+  const local_id = input.local_id ?? (await exigirLocal('registrar el movimiento de stock'));
 
   if (!supabaseConfigurado) {
     const db = leerDB();
     const producto = db.productos.find((p) => p.id === input.producto_id);
     if (!producto) throw new Error('Producto no encontrado.');
 
-    if (input.tipo === 'SALIDA' && producto.stock_actual < input.cantidad) {
-      throw new Error(
-        `Stock insuficiente para "${producto.nombre}": disponible ${producto.stock_actual}, solicitado ${input.cantidad}.`
-      );
+    let fila = db.inventario.find((i) => i.local_id === local_id && i.producto_id === input.producto_id);
+    const disponible = fila?.stock_actual ?? 0;
+    if (input.tipo === 'SALIDA' && disponible < input.cantidad) {
+      throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${input.cantidad}.`);
+    }
+    if (!fila) {
+      fila = { local_id, producto_id: input.producto_id, stock_actual: 0, stock_minimo: 0 };
+      db.inventario.push(fila);
     }
 
-    producto.stock_actual += input.tipo === 'ENTRADA' ? input.cantidad : -input.cantidad;
+    const delta = input.tipo === 'ENTRADA' ? input.cantidad : -input.cantidad;
+    fila.stock_actual += delta;
+    producto.stock_actual += delta; // total entre locales
 
     const movimiento: MovimientoInventario = {
       id: generarId(),
@@ -691,29 +947,30 @@ export async function registrarMovimiento(input: {
       cantidad: input.cantidad,
       motivo: input.motivo ?? null,
       fecha: new Date().toISOString(),
+      local_id,
     };
     db.movimientos.unshift(movimiento);
     guardarDB(db);
     return movimiento;
   }
 
+  const registro = { producto_id: input.producto_id, tipo: input.tipo, cantidad: input.cantidad, motivo: input.motivo, local_id };
   try {
-    return await movimientosDb.registrarMovimiento(input);
+    return await movimientosDb.registrarMovimiento(registro);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
 
-    // Sin conexión: valida contra el último stock conocido y encola la venta
-    // para reintentarla cuando vuelva la red (ver sincronizarPendientes).
-    const cache = aplicarPendientesAProductos(leerCache<ProductoConRelaciones[]>(LS_CACHE_PRODUCTOS) ?? []);
+    // Sin conexión: valida contra el último stock conocido de ESE local y encola el movimiento
+    // para reintentarlo cuando vuelva la red (ver sincronizarPendientes).
+    const cache = aplicarPendientesAProductos(leerCache<ProductoConInventario[]>(LS_CACHE_PRODUCTOS) ?? []);
     const producto = cache.find((p) => p.id === input.producto_id);
-    if (input.tipo === 'SALIDA' && producto && producto.stock_actual < input.cantidad) {
-      throw new Error(
-        `Stock insuficiente para "${producto.nombre}": disponible ${producto.stock_actual}, solicitado ${input.cantidad}.`
-      );
+    const disponible = producto?.inventario.find((i) => i.local_id === local_id)?.stock_actual ?? 0;
+    if (input.tipo === 'SALIDA' && producto && disponible < input.cantidad) {
+      throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${input.cantidad}.`);
     }
 
     console.warn('[EASYSTEM] Sin conexión con Supabase; el movimiento se guardó localmente para sincronizar después.', err);
-    return encolarMovimientoPendiente(input);
+    return encolarMovimientoPendiente(registro);
   }
 }
 
@@ -818,6 +1075,7 @@ function ajustarPagos(
  */
 export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Promise<VentaRegistrada> {
   if (items.length === 0) throw new Error('El carrito está vacío.');
+  const local_id = await exigirLocal('vender');
 
   const cliente = {
     cedula: datos.cliente.cedula.trim(),
@@ -846,7 +1104,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   let fallo: unknown = null;
   for (const item of items) {
     try {
-      await registrarMovimiento({ producto_id: item.producto_id, tipo: 'SALIDA', cantidad: item.cantidad, motivo: 'Venta POS' });
+      await registrarMovimiento({ producto_id: item.producto_id, tipo: 'SALIDA', cantidad: item.cantidad, motivo: 'Venta POS', local_id });
       registradas.push(item);
     } catch (err) {
       fallo = err;
@@ -864,6 +1122,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   const { pagos, vuelto } = reparto;
   const registro: NuevaVenta = {
     fecha: new Date().toISOString(),
+    local_id,
     cliente_cedula: cliente.cedula,
     cliente_nombre: cliente.nombre,
     cliente_telefono: cliente.telefono,
@@ -910,6 +1169,8 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
  */
 export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite?: number } = {}): Promise<VentaRegistrada[]> {
   const limite = opciones.limite ?? 1000;
+  const alcance = await alcanceActual();
+  const delAlcance = (v: { local_id?: string }) => alcance.todos || (v.local_id ?? LOCAL_ACCESORIOS_ID) === alcance.localId;
   const enRango = (v: { fecha: string }) => {
     const t = new Date(v.fecha).getTime();
     return (!opciones.desde || t >= opciones.desde.getTime()) && (!opciones.hasta || t <= opciones.hasta.getTime());
@@ -917,22 +1178,23 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
   const masNuevasPrimero = (a: { fecha: string }, b: { fecha: string }) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
 
   if (!supabaseConfigurado) {
-    return (leerDB().ventas ?? []).filter(enRango).sort(masNuevasPrimero).slice(0, limite);
+    return (leerDB().ventas ?? []).filter(enRango).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
   }
 
   let remotas: Venta[];
   try {
-    remotas = await ventasDb.listarVentas({ desde: opciones.desde, hasta: opciones.hasta, limite });
-    guardarCache(LS_CACHE_VENTAS, remotas);
+    remotas = await ventasDb.listarVentas({ desde: opciones.desde, hasta: opciones.hasta, limite, localId: alcance.localId });
+    if (alcance.todos) guardarCache(LS_CACHE_VENTAS, remotas);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
     console.warn('[EASYSTEM] Sin conexión con Supabase; usando las ventas guardadas localmente.', err);
-    remotas = (leerCache<Venta[]>(LS_CACHE_VENTAS) ?? []).filter(enRango);
+    remotas = (leerCache<Venta[]>(LS_CACHE_VENTAS) ?? []).filter(enRango).filter(delAlcance);
   }
 
   const pendientes: VentaRegistrada[] = leerColaVentas()
     .map((v, i) => ({ ...v, id: `pendiente-${i}-${v.fecha}`, folio: 0, pendienteSincronizar: true }))
-    .filter(enRango);
+    .filter(enRango)
+    .filter(delAlcance);
   return [...pendientes, ...remotas].sort(masNuevasPrimero).slice(0, limite);
 }
 
@@ -946,15 +1208,17 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
  */
 export async function listarDevoluciones(opciones: { limite?: number; ventaId?: string } = {}): Promise<Devolucion[]> {
   const limite = opciones.limite ?? 2000;
-  const pasa = (d: Devolucion) => !opciones.ventaId || d.venta_id === opciones.ventaId;
+  // Las de UNA venta se piden completas (aunque el local activo sea otro): hace falta para no devolver de más
+  const alcance = opciones.ventaId ? { todos: true, localId: null } : await alcanceActual();
+  const pasa = (d: Devolucion) => (!opciones.ventaId || d.venta_id === opciones.ventaId) && (alcance.todos || d.local_id === alcance.localId);
   const masNuevasPrimero = (a: Devolucion, b: Devolucion) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
 
   if (!supabaseConfigurado) {
     return (leerDB().devoluciones ?? []).filter(pasa).sort(masNuevasPrimero).slice(0, limite);
   }
   try {
-    const remotas = await devolucionesDb.listarDevoluciones({ limite, ventaId: opciones.ventaId });
-    if (!opciones.ventaId) guardarCache(LS_CACHE_DEVOLUCIONES, remotas);
+    const remotas = await devolucionesDb.listarDevoluciones({ limite, ventaId: opciones.ventaId, localId: alcance.localId });
+    if (!opciones.ventaId && alcance.todos) guardarCache(LS_CACHE_DEVOLUCIONES, remotas);
     return remotas;
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
@@ -1058,18 +1322,18 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   const motivoSalida = `Cambio de producto, venta #${venta.folio}`;
   for (const n of datos.nuevos) {
     try {
-      await registrarMovimiento({ producto_id: n.producto_id, tipo: 'SALIDA', cantidad: n.cantidad, motivo: motivoSalida });
+      await registrarMovimiento({ producto_id: n.producto_id, tipo: 'SALIDA', cantidad: n.cantidad, motivo: motivoSalida, local_id: venta.local_id });
       salidas.push(n);
     } catch (err) {
       // Deshace lo que alcanzó a salir para no dejar el inventario a medias
       for (const hecha of salidas) {
-        await registrarMovimiento({ producto_id: hecha.producto_id, tipo: 'ENTRADA', cantidad: hecha.cantidad, motivo: 'Reverso: cambio de producto no completado' }).catch(() => undefined);
+        await registrarMovimiento({ producto_id: hecha.producto_id, tipo: 'ENTRADA', cantidad: hecha.cantidad, motivo: 'Reverso: cambio de producto no completado', local_id: venta.local_id }).catch(() => undefined);
       }
       throw err;
     }
   }
   for (const d of itemsDevueltos) {
-    await registrarMovimiento({ producto_id: d.producto_id, tipo: 'ENTRADA', cantidad: d.cantidad, motivo: `Devolución, venta #${venta.folio}` }).catch((err) => {
+    await registrarMovimiento({ producto_id: d.producto_id, tipo: 'ENTRADA', cantidad: d.cantidad, motivo: `Devolución, venta #${venta.folio}`, local_id: venta.local_id }).catch((err) => {
       throw new Error(`No se pudo devolver "${d.nombre}" al inventario: ${err instanceof Error ? err.message : err}`);
     });
   }
@@ -1077,6 +1341,7 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   // 4) Registro
   const registro: NuevaDevolucion = {
     fecha: new Date().toISOString(),
+    local_id: venta.local_id,
     venta_id: venta.id,
     venta_folio: venta.folio,
     motivo,
@@ -1107,6 +1372,198 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
 }
 
 // ----------------------------------------------------------------------------
+// Servicio técnico: órdenes de servicio / reparaciones
+//
+// Una orden recibe el equipo del cliente y su falla, y pasa por Pendiente → En reparación → Listo →
+// Entregado. Los repuestos salen del stock del local de servicio técnico como movimientos SALIDA
+// (quedan en Movimientos como "Repuesto, orden #N"). Solo existen en locales de tipo servicio_tecnico.
+// ----------------------------------------------------------------------------
+export const ESTADOS_ORDEN: { valor: EstadoOrdenServicio; etiqueta: string }[] = [
+  { valor: 'pendiente', etiqueta: 'Pendiente' },
+  { valor: 'en_reparacion', etiqueta: 'En reparación' },
+  { valor: 'listo', etiqueta: 'Listo' },
+  { valor: 'entregado', etiqueta: 'Entregado' },
+];
+
+const LS_CACHE_ORDENES = 'easystem:cache:ordenes';
+
+const totalDeOrden = (repuestos: RepuestoOrden[], manoDeObra: number): number =>
+  Math.round((repuestos.reduce((suma, r) => suma + r.precio_unitario * r.cantidad, 0) + manoDeObra) * 100) / 100;
+
+/** Órdenes del alcance activo (más nuevas primero). */
+export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio[]> {
+  const alcance = await alcanceActual();
+  const delAlcance = (o: OrdenServicio) => alcance.todos || o.local_id === alcance.localId;
+  const masNuevasPrimero = (a: OrdenServicio, b: OrdenServicio) => new Date(b.recibida_en).getTime() - new Date(a.recibida_en).getTime();
+
+  if (!supabaseConfigurado) return (leerDB().ordenes ?? []).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
+
+  try {
+    const ordenes = await ordenesDb.listarOrdenes({ limite, localId: alcance.localId });
+    if (alcance.todos) guardarCache(LS_CACHE_ORDENES, ordenes);
+    return ordenes;
+  } catch (err) {
+    if (!esErrorDeRed(err)) throw err;
+    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las órdenes de servicio guardadas localmente.', err);
+    return (leerCache<OrdenServicio[]>(LS_CACHE_ORDENES) ?? []).filter(delAlcance).slice(0, limite);
+  }
+}
+
+async function obtenerOrdenServicio(id: string): Promise<OrdenServicio> {
+  const orden = supabaseConfigurado
+    ? await ordenesDb.obtenerOrden(id)
+    : ((leerDB().ordenes ?? []).find((o) => o.id === id) ?? null);
+  if (!orden) throw new Error('Orden de servicio no encontrada.');
+  return orden;
+}
+
+/** Guarda cambios de una orden (en LocalStorage también pone las marcas de tiempo que en Supabase pone un trigger). */
+async function guardarCambiosOrden(orden: OrdenServicio, cambios: Partial<OrdenServicio>): Promise<OrdenServicio> {
+  const ahora = new Date().toISOString();
+  const nuevo: Partial<OrdenServicio> = { ...cambios };
+  const repuestos = cambios.repuestos ?? orden.repuestos;
+  const mano = cambios.mano_de_obra_usd ?? orden.mano_de_obra_usd;
+  nuevo.total_usd = totalDeOrden(repuestos, mano);
+
+  if (supabaseConfigurado) return ordenesDb.actualizarOrden(orden.id, nuevo);
+
+  const db = leerDB();
+  const guardada = (db.ordenes ?? []).find((o) => o.id === orden.id);
+  if (!guardada) throw new Error('Orden de servicio no encontrada.');
+  Object.assign(guardada, nuevo, { actualizada_en: ahora });
+  if (nuevo.estado === 'listo' && orden.estado !== 'listo') guardada.listo_en = ahora;
+  if (nuevo.estado === 'entregado' && orden.estado !== 'entregado') {
+    guardada.entregada_en = ahora;
+    guardada.listo_en = guardada.listo_en ?? ahora;
+  }
+  guardarDB(db);
+  return guardada;
+}
+
+export interface DatosNuevaOrden {
+  cliente_cedula: string;
+  cliente_nombre: string;
+  cliente_telefono: string;
+  equipo_marca: string;
+  equipo_modelo: string;
+  equipo_imei?: string | null;
+  accesorios_recibidos?: string | null;
+  falla_reportada: string;
+  registrado_nombre?: string | null;
+}
+
+/** Recibe un equipo: crea la orden en estado Pendiente en el local de servicio técnico activo. */
+export async function crearOrdenServicio(datos: DatosNuevaOrden): Promise<OrdenServicio> {
+  const local_id = await exigirLocal('recibir un equipo');
+  const contexto = await obtenerContextoLocal();
+  const local = contexto?.locales.find((l) => l.id === local_id);
+  if (local?.tipo !== 'servicio_tecnico') {
+    throw new Error('Las órdenes de servicio solo se registran en el Local Servicio Técnico: elígelo en el selector del encabezado.');
+  }
+
+  const texto = (v: string | null | undefined) => (v ?? '').trim().replace(/\s+/g, ' ');
+  const registro: NuevaOrdenServicio = {
+    local_id,
+    cliente_cedula: texto(datos.cliente_cedula),
+    cliente_nombre: texto(datos.cliente_nombre),
+    cliente_telefono: texto(datos.cliente_telefono),
+    equipo_marca: texto(datos.equipo_marca),
+    equipo_modelo: texto(datos.equipo_modelo),
+    equipo_imei: texto(datos.equipo_imei) || null,
+    accesorios_recibidos: texto(datos.accesorios_recibidos) || null,
+    falla_reportada: texto(datos.falla_reportada),
+    registrado_nombre: datos.registrado_nombre ?? null,
+  };
+  if (!registro.cliente_cedula || !registro.cliente_nombre || !registro.cliente_telefono) throw new Error('Faltan datos del cliente (cédula, nombre y teléfono).');
+  if (!registro.equipo_marca || !registro.equipo_modelo) throw new Error('Indica la marca y el modelo del equipo.');
+  if (registro.falla_reportada.length < 3) throw new Error('Describe la falla que reporta el cliente.');
+
+  if (supabaseConfigurado) return ordenesDb.insertarOrden(registro);
+
+  const db = leerDB();
+  const ordenes = db.ordenes ?? (db.ordenes = []);
+  const ahora = new Date().toISOString();
+  const orden: OrdenServicio = {
+    ...registro,
+    id: generarId(),
+    folio: ordenes.reduce((m, o) => Math.max(m, o.folio), 0) + 1,
+    diagnostico: null,
+    estado: 'pendiente',
+    tecnico_id: null,
+    tecnico_nombre: null,
+    repuestos: [],
+    mano_de_obra_usd: 0,
+    total_usd: 0,
+    recibida_en: ahora,
+    actualizada_en: ahora,
+    listo_en: null,
+    entregada_en: null,
+  };
+  ordenes.unshift(orden);
+  guardarDB(db);
+  return orden;
+}
+
+/** Cambia el estado, el diagnóstico, la mano de obra o el técnico de una orden. Una orden Entregada ya no se modifica. */
+export async function actualizarOrdenServicio(
+  id: string,
+  cambios: { estado?: EstadoOrdenServicio; diagnostico?: string | null; mano_de_obra_usd?: number; tecnico_id?: string | null; tecnico_nombre?: string | null }
+): Promise<OrdenServicio> {
+  const orden = await obtenerOrdenServicio(id);
+  if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
+  if (cambios.mano_de_obra_usd !== undefined && !(cambios.mano_de_obra_usd >= 0)) throw new Error('La mano de obra debe ser 0 o más.');
+  return guardarCambiosOrden(orden, cambios);
+}
+
+/** Descuenta un repuesto del stock del local de la orden y lo suma a la orden (si ya estaba, suma la cantidad). */
+export async function agregarRepuestoOrden(
+  id: string,
+  producto: { id: string; nombre: string; codigo_barras: string; precio_venta: number },
+  cantidad: number
+): Promise<OrdenServicio> {
+  if (!Number.isInteger(cantidad) || cantidad <= 0) throw new Error('La cantidad del repuesto debe ser un número entero mayor a 0.');
+  const orden = await obtenerOrdenServicio(id);
+  if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
+
+  // Primero el stock (falla si no alcanza); después se anota en la orden
+  await registrarMovimiento({
+    producto_id: producto.id,
+    tipo: 'SALIDA',
+    cantidad,
+    motivo: `Repuesto, orden de servicio #${orden.folio}`,
+    local_id: orden.local_id,
+  });
+
+  const repuestos = orden.repuestos.map((r) => ({ ...r }));
+  const existente = repuestos.find((r) => r.producto_id === producto.id);
+  if (existente) existente.cantidad += cantidad;
+  else repuestos.push({ producto_id: producto.id, nombre: producto.nombre, codigo_barras: producto.codigo_barras, cantidad, precio_unitario: producto.precio_venta });
+
+  try {
+    return await guardarCambiosOrden(orden, { repuestos });
+  } catch (err) {
+    throw new Error(`El repuesto salió del inventario, pero no se pudo anotar en la orden: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+/** Quita un repuesto de la orden y lo regresa al stock del local (es una ENTRADA: administrador o encargado). */
+export async function quitarRepuestoOrden(id: string, productoId: string): Promise<OrdenServicio> {
+  const orden = await obtenerOrdenServicio(id);
+  if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
+  const repuesto = orden.repuestos.find((r) => r.producto_id === productoId);
+  if (!repuesto) throw new Error('Ese repuesto no está en la orden.');
+
+  await registrarMovimiento({
+    producto_id: productoId,
+    tipo: 'ENTRADA',
+    cantidad: repuesto.cantidad,
+    motivo: `Repuesto devuelto al inventario, orden de servicio #${orden.folio}`,
+    local_id: orden.local_id,
+  });
+  return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r.producto_id !== productoId) });
+}
+
+// ----------------------------------------------------------------------------
 // Importación masiva (plan preparado por src/lib/importador.ts)
 // ----------------------------------------------------------------------------
 export interface ResultadoImportacion {
@@ -1129,6 +1586,8 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
   const resultado: ResultadoImportacion = { creados: 0, actualizados: 0, movimientos: 0 };
   const nuevas = filas.filter((f) => f.accion === 'crear');
   const existentes = filas.filter((f) => f.accion === 'actualizar' && f.productoId);
+  // La cantidad y el mínimo del archivo son los de UN local: el activo
+  const local_id = await exigirLocal('importar productos (el stock del archivo se carga en ese local)');
 
   if (!supabaseConfigurado) {
     const db = leerDB();
@@ -1137,9 +1596,19 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     if (repetido) throw new Error(`El código ${repetido.codigo_barras} ya existe en el inventario.`);
 
     const ahora = new Date().toISOString();
+    const filaInventario = (productoId: string) => {
+      let fila = db.inventario.find((i) => i.local_id === local_id && i.producto_id === productoId);
+      if (!fila) {
+        fila = { local_id, producto_id: productoId, stock_actual: 0, stock_minimo: 0 };
+        db.inventario.push(fila);
+      }
+      return fila;
+    };
     const mover = (producto: Producto, tipo: TipoMovimiento, cantidad: number, motivo: string) => {
-      producto.stock_actual += tipo === 'ENTRADA' ? cantidad : -cantidad;
-      db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora });
+      const delta = tipo === 'ENTRADA' ? cantidad : -cantidad;
+      filaInventario(producto.id).stock_actual += delta;
+      producto.stock_actual += delta;
+      db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora, local_id });
       resultado.movimientos++;
     };
 
@@ -1156,6 +1625,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
         created_at: ahora,
       };
       db.productos.push(producto);
+      filaInventario(producto.id).stock_minimo = f.stock_minimo ?? 0;
       for (const modelo_id of f.modeloIds ?? []) db.compatibilidades.push({ id: generarId(), producto_id: producto.id, modelo_id });
       if ((f.stock_objetivo ?? 0) > 0) mover(producto, 'ENTRADA', f.stock_objetivo!, MOTIVO_CARGA_INICIAL);
       resultado.creados++;
@@ -1168,13 +1638,18 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
       producto.categoria = f.categoria;
       producto.precio_venta = f.precio_venta;
       if (f.precio_compra !== null) producto.precio_compra = f.precio_compra;
-      if (f.stock_minimo !== null) producto.stock_minimo = f.stock_minimo;
+      if (f.stock_minimo !== null) {
+        producto.stock_minimo = f.stock_minimo;
+        filaInventario(producto.id).stock_minimo = f.stock_minimo;
+      }
       if (f.modeloIds !== null) {
         db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== producto.id);
         for (const modelo_id of f.modeloIds) db.compatibilidades.push({ id: generarId(), producto_id: producto.id, modelo_id });
       }
-      if (f.stock_objetivo !== null && f.stock_objetivo !== producto.stock_actual) {
-        const delta = f.stock_objetivo - producto.stock_actual;
+      // La cantidad del archivo se compara con el stock de ESTE local
+      const actual = db.inventario.find((i) => i.local_id === local_id && i.producto_id === producto.id)?.stock_actual ?? 0;
+      if (f.stock_objetivo !== null && f.stock_objetivo !== actual) {
+        const delta = f.stock_objetivo - actual;
         mover(producto, delta > 0 ? 'ENTRADA' : 'SALIDA', Math.abs(delta), MOTIVO_AJUSTE);
       }
       resultado.actualizados++;
@@ -1185,9 +1660,13 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
   }
 
   // --- Supabase ---
-  const stockActual = new Map((await productosDb.listarProductos()).map((p) => [p.id, p.stock_actual]));
-  const movimientos: { producto_id: string; tipo: TipoMovimiento; cantidad: number; motivo: string }[] = [];
+  const stockActual = new Map(
+    (await productosDb.listarProductos()).map((p) => [p.id, p.inventario.find((i) => i.local_id === local_id)?.stock_actual ?? 0])
+  );
+  const movimientos: { producto_id: string; tipo: TipoMovimiento; cantidad: number; motivo: string; local_id: string }[] = [];
   const pares: { producto_id: string; modelo_id: string }[] = [];
+  // Productos que el local pasa a manejar, con su mínimo (null = no se cambia)
+  const inventario: { producto_id: string; stock_minimo: number | null }[] = [];
 
   if (nuevas.length > 0) {
     const creados = await productosDb.crearProductosLote(
@@ -1205,9 +1684,10 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     for (const f of nuevas) {
       const id = idPorCodigo.get(f.codigo_barras);
       if (!id) continue;
+      inventario.push({ producto_id: id, stock_minimo: f.stock_minimo ?? 0 });
       for (const modelo_id of f.modeloIds ?? []) pares.push({ producto_id: id, modelo_id });
       if ((f.stock_objetivo ?? 0) > 0) {
-        movimientos.push({ producto_id: id, tipo: 'ENTRADA', cantidad: f.stock_objetivo!, motivo: MOTIVO_CARGA_INICIAL });
+        movimientos.push({ producto_id: id, tipo: 'ENTRADA', cantidad: f.stock_objetivo!, motivo: MOTIVO_CARGA_INICIAL, local_id });
       }
     }
     resultado.creados = creados.length;
@@ -1221,6 +1701,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
         if (f.precio_compra !== null) cambios.precio_compra = f.precio_compra;
         if (f.stock_minimo !== null) cambios.stock_minimo = f.stock_minimo;
         await productosDb.actualizarProducto(f.productoId!, cambios);
+        inventario.push({ producto_id: f.productoId!, stock_minimo: f.stock_minimo });
 
         if (f.modeloIds !== null) {
           idsConCompatibilidad.push(f.productoId!);
@@ -1234,6 +1715,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
             tipo: delta > 0 ? 'ENTRADA' : 'SALIDA',
             cantidad: Math.abs(delta),
             motivo: MOTIVO_AJUSTE,
+            local_id,
           });
         }
         resultado.actualizados++;
@@ -1244,6 +1726,11 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
   if (pares.length > 0 || idsConCompatibilidad.length > 0) {
     await productosDb.reemplazarCompatibilidadesLote(pares, idsConCompatibilidad);
   }
+  // El local pasa a manejar lo importado (con su mínimo si el archivo lo trae); el stock llega por movimientos
+  const conMinimo = inventario.filter((i) => i.stock_minimo !== null) as { producto_id: string; stock_minimo: number }[];
+  if (conMinimo.length > 0) await productosDb.fijarMinimosLote(local_id, conMinimo);
+  const sinMinimo = inventario.filter((i) => i.stock_minimo === null).map((i) => i.producto_id);
+  if (sinMinimo.length > 0) await productosDb.asegurarEnLocal(local_id, sinMinimo);
   if (movimientos.length > 0) {
     await movimientosDb.registrarMovimientosLote(movimientos);
     resultado.movimientos = movimientos.length;

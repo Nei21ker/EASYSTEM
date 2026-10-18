@@ -1,20 +1,25 @@
 import { supabase } from '../supabase';
-import type { Producto, ProductoConRelaciones, ProductoStockBajo } from '../../types/database.types';
+import type { InventarioLocal, Producto, ProductoConRelaciones, ProductoStockBajo } from '../../types/database.types';
+
+/** Producto del catálogo con su stock en cada local que lo maneja (RLS: un empleado solo recibe su local). */
+export type ProductoConInventario = ProductoConRelaciones & { inventario: InventarioLocal[] };
 
 const PRODUCTO_CON_RELACIONES_SELECT = `
   *,
-  modelos_compatibles:compatibilidades(modelo:modelos_telefono(*))
+  modelos_compatibles:compatibilidades(modelo:modelos_telefono(*)),
+  inventario:inventario_local(local_id, producto_id, stock_actual, stock_minimo)
 `;
 
 /** Aplana la respuesta anidada de Supabase (compatibilidades -> modelo) a un arreglo simple */
-function normalizarProducto(row: any): ProductoConRelaciones {
+function normalizarProducto(row: any): ProductoConInventario {
   return {
     ...row,
     modelos_compatibles: (row.modelos_compatibles ?? []).map((c: any) => c.modelo).filter(Boolean),
+    inventario: row.inventario ?? [],
   };
 }
 
-export async function listarProductos(): Promise<ProductoConRelaciones[]> {
+export async function listarProductos(): Promise<ProductoConInventario[]> {
   const { data, error } = await supabase
     .from('productos')
     .select(PRODUCTO_CON_RELACIONES_SELECT)
@@ -25,7 +30,7 @@ export async function listarProductos(): Promise<ProductoConRelaciones[]> {
   return (data ?? []).map(normalizarProducto);
 }
 
-export async function obtenerProducto(id: string): Promise<ProductoConRelaciones | null> {
+export async function obtenerProducto(id: string): Promise<ProductoConInventario | null> {
   const { data, error } = await supabase
     .from('productos')
     .select(PRODUCTO_CON_RELACIONES_SELECT)
@@ -36,7 +41,7 @@ export async function obtenerProducto(id: string): Promise<ProductoConRelaciones
   return data ? normalizarProducto(data) : null;
 }
 
-export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Promise<ProductoConRelaciones | null> {
+export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Promise<ProductoConInventario | null> {
   const { data, error } = await supabase
     .from('productos')
     .select(PRODUCTO_CON_RELACIONES_SELECT)
@@ -47,11 +52,10 @@ export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Prom
   return data ? normalizarProducto(data) : null;
 }
 
-export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
-  const { data, error } = await supabase
-    .from('vw_productos_stock_bajo')
-    .select('*')
-    .overrideTypes<ProductoStockBajo[], { merge: false }>();
+export async function listarProductosStockBajo(localId?: string | null): Promise<ProductoStockBajo[]> {
+  let consulta = supabase.from('vw_productos_stock_bajo').select('*');
+  if (localId) consulta = consulta.eq('local_id', localId);
+  const { data, error } = await consulta.overrideTypes<ProductoStockBajo[], { merge: false }>();
 
   if (error) throw error;
   return data ?? [];
@@ -152,5 +156,37 @@ export async function establecerCompatibilidades(productoId: string, modeloIds: 
 
   const filas = modeloIds.map((modelo_id) => ({ producto_id: productoId, modelo_id }));
   const { error } = await supabase.from('compatibilidades').insert(filas);
+  if (error) throw error;
+}
+
+/**
+ * Da de alta productos en el inventario de un local (fila con stock 0 y sin mínimo) para que el local
+ * los maneje aunque todavía no tengan existencias. Los que ya estaban no se tocan. Solo administrador (RLS).
+ */
+export async function asegurarEnLocal(localId: string, productoIds: string[]): Promise<void> {
+  for (let i = 0; i < productoIds.length; i += 500) {
+    const filas = productoIds.slice(i, i + 500).map((producto_id) => ({ local_id: localId, producto_id, stock_actual: 0, stock_minimo: 0 }));
+    const { error } = await supabase.from('inventario_local').upsert(filas, { onConflict: 'local_id,producto_id', ignoreDuplicates: true });
+    if (error) throw error;
+  }
+}
+
+/**
+ * Fija el stock mínimo de varios productos en un local. Si el local aún no manejaba el producto, queda dado
+ * de alta con stock 0; si ya lo manejaba, solo cambia el mínimo (el stock no se toca). Solo administrador (RLS).
+ */
+export async function fijarMinimosLote(localId: string, filas: { producto_id: string; stock_minimo: number }[]): Promise<void> {
+  for (let i = 0; i < filas.length; i += 500) {
+    const lote = filas.slice(i, i + 500).map((f) => ({ local_id: localId, producto_id: f.producto_id, stock_minimo: f.stock_minimo }));
+    const { error } = await supabase.from('inventario_local').upsert(lote, { onConflict: 'local_id,producto_id' });
+    if (error) throw error;
+  }
+}
+
+/** Cambia el stock mínimo de un producto en un local (stock_minimo = 0 → sin control de reabastecimiento). */
+export async function actualizarStockMinimo(localId: string, productoId: string, stockMinimo: number): Promise<void> {
+  const { error } = await supabase
+    .from('inventario_local')
+    .upsert({ local_id: localId, producto_id: productoId, stock_minimo: stockMinimo }, { onConflict: 'local_id,producto_id' });
   if (error) throw error;
 }

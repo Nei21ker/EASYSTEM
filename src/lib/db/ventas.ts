@@ -18,8 +18,9 @@ export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
 }
 
 /** Ventas recientes (más nuevas primero), opcionalmente dentro de un rango de fechas. */
-export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite: number }): Promise<Venta[]> {
+export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite: number; localId?: string | null }): Promise<Venta[]> {
   let consulta = supabase.from('ventas').select('*').order('fecha', { ascending: false }).limit(opciones.limite);
+  if (opciones.localId) consulta = consulta.eq('local_id', opciones.localId);
   if (opciones.desde) consulta = consulta.gte('fecha', opciones.desde.toISOString());
   if (opciones.hasta) consulta = consulta.lte('fecha', opciones.hasta.toISOString());
 

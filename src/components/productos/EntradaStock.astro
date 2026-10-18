@@ -1,5 +1,6 @@
 ---
-// Registro de ENTRADAS de mercancía (reabastecimiento), solo administrador.
+// Registro de ENTRADAS de mercancía (reabastecimiento) en el LOCAL ACTIVO, para administrador y encargado.
+// Se puede dar de alta en el local cualquier producto del catálogo, aunque todavía no lo maneje.
 // Se abre con "easystem:abrir-entrada" ({ detail: { productoId? } }). Es una
 // ventana pensada para cargar varias entradas seguidas: tras registrar una,
 // queda lista para la siguiente. El stock cambia vía movimiento ENTRADA.
@@ -14,7 +15,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 >
   <form id="es-form" class="flex max-h-[90vh] flex-col" novalidate>
     <header class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-      <h2 class="text-base font-semibold">Registrar entrada de stock</h2>
+      <div class="min-w-0">
+        <h2 class="text-base font-semibold">Registrar entrada de stock</h2>
+        <p id="es-local" class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
       <button type="button" id="es-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
     </header>
 
@@ -73,7 +77,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { obtenerSesionActual } from '../../lib/auth';
+  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
   import { reanimar } from '../../utils/animaciones';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
@@ -182,14 +186,19 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   async function abrir(productoId?: string) {
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return;
+    if (!esGerencia(sesion?.rol)) return;
 
-    productos = await inventoryService.listarProductos();
+    // Catálogo completo: el local puede empezar a manejar un producto con su primera entrada
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    const contexto = await inventoryService.obtenerContextoLocal();
+    $('es-local').textContent = contexto?.local ? `Se suma al stock de: ${contexto.local.nombre}` : '';
     error.classList.add('hidden');
     exito.classList.add('hidden');
     cantidad.value = '';
     motivo.value = 'Compra a proveedor';
     elegir(productoId ? (productos.find((p) => p.id === productoId) ?? null) : null);
+    guardar.disabled = !contexto?.local;
+    if (!contexto?.local) mostrarError('Elige un local en el selector del encabezado: las entradas se registran en un local concreto.');
     if (!dialogo.open) dialogo.showModal();
   }
 
@@ -203,7 +212,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!Number.isInteger(n) || n <= 0) return mostrarError('La cantidad debe ser un entero mayor a 0.');
 
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return mostrarError('Solo un administrador puede registrar entradas.');
+    if (!esGerencia(sesion?.rol)) return mostrarError('Solo un administrador o encargado puede registrar entradas.');
 
     guardar.disabled = true;
     try {
@@ -219,7 +228,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       window.dispatchEvent(new Event('easystem:productos-cambiaron'));
 
       // Lista para la siguiente entrada
-      productos = await inventoryService.listarProductos();
+      productos = await inventoryService.listarProductos({ catalogoCompleto: true });
       cantidad.value = '';
       elegir(null);
     } catch (err) {

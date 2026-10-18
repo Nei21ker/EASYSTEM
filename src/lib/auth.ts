@@ -9,15 +9,36 @@
 // cuando está configurado.
 import { createClient } from '@supabase/supabase-js';
 import { supabase, supabaseConfigurado, supabaseUrl, supabaseAnonKey } from './supabase';
+import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID } from './constantes-locales';
 
-export type Rol = 'administrador' | 'vendedor';
+/**
+ * administrador: acceso global (todos los locales). encargado: gerente de UN local. vendedor: cajero de un local.
+ * tecnico: servicio técnico de un local. Todos menos el administrador solo ven y modifican datos de su local.
+ */
+export type Rol = 'administrador' | 'encargado' | 'vendedor' | 'tecnico';
+
+export const ETIQUETAS_ROL: Record<Rol, string> = {
+  administrador: 'Administrador',
+  encargado: 'Encargado',
+  vendedor: 'Vendedor (cajero)',
+  tecnico: 'Técnico',
+};
+
+export const ROLES: Rol[] = ['administrador', 'encargado', 'vendedor', 'tecnico'];
 
 export interface SesionUsuario {
   id: string;
   email: string;
   nombre: string;
   rol: Rol;
+  /** Local asignado. El administrador tiene acceso a todos (su local_id es irrelevante); null = sin local asignado */
+  local_id: string | null;
 }
+
+// --- Permisos por rol (la base de datos los vuelve a exigir con RLS; esto solo gobierna la interfaz) ---
+export const esAdministrador = (rol?: Rol | null) => rol === 'administrador';
+/** Registrar entradas de mercancía y devoluciones, y ver reportes de su local */
+export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'encargado';
 
 const LS_SESION = 'easystem:sesion';
 const LS_USUARIOS = 'easystem:usuarios';
@@ -32,15 +53,39 @@ function generarId(): string {
 
 function seedUsuariosLocales(): UsuarioLocal[] {
   return [
-    { id: generarId(), email: 'admin@edwardaccesorios.com', password: 'admin123', nombre: 'Administrador', rol: 'administrador' },
-    { id: generarId(), email: 'vendedor@edwardaccesorios.com', password: 'vendedor123', nombre: 'Vendedor Mostrador', rol: 'vendedor' },
+    { id: generarId(), email: 'admin@edwardaccesorios.com', password: 'admin123', nombre: 'Administrador', rol: 'administrador', local_id: null },
+    { id: generarId(), email: 'vendedor@edwardaccesorios.com', password: 'vendedor123', nombre: 'Vendedor Mostrador', rol: 'vendedor', local_id: LOCAL_ACCESORIOS_ID },
+    { id: generarId(), email: 'encargado@edwardaccesorios.com', password: 'encargado123', nombre: 'Encargado Vidrios', rol: 'encargado', local_id: LOCAL_VIDRIOS_ID },
+    { id: generarId(), email: 'tecnico@edwardaccesorios.com', password: 'tecnico123', nombre: 'Técnico de Servicio', rol: 'tecnico', local_id: LOCAL_SERVICIO_TECNICO_ID },
   ];
+}
+
+/** Usuarios guardados antes del multi-local: sin local → Accesorios; y se agregan las cuentas demo que falten. */
+function migrarUsuariosLocales(usuarios: UsuarioLocal[]): { usuarios: UsuarioLocal[]; cambio: boolean } {
+  let cambio = false;
+  for (const u of usuarios) {
+    if (u.local_id === undefined) {
+      u.local_id = u.rol === 'administrador' ? null : LOCAL_ACCESORIOS_ID;
+      cambio = true;
+    }
+  }
+  for (const demo of seedUsuariosLocales()) {
+    if (!usuarios.some((u) => u.email.toLowerCase() === demo.email)) {
+      usuarios.push(demo);
+      cambio = true;
+    }
+  }
+  return { usuarios, cambio };
 }
 
 function leerUsuariosLocales(): UsuarioLocal[] {
   try {
     const raw = localStorage.getItem(LS_USUARIOS);
-    if (raw) return JSON.parse(raw) as UsuarioLocal[];
+    if (raw) {
+      const { usuarios, cambio } = migrarUsuariosLocales(JSON.parse(raw) as UsuarioLocal[]);
+      if (cambio) localStorage.setItem(LS_USUARIOS, JSON.stringify(usuarios));
+      return usuarios;
+    }
   } catch (err) {
     console.error('[EASYSTEM] No se pudo leer usuarios de LocalStorage.', err);
   }
@@ -97,7 +142,7 @@ export async function iniciarSesion(email: string, password: string): Promise<Se
       throw new Error('Tu cuenta no tiene un perfil asociado todavía. Contacta a un administrador.');
     }
 
-    return { id: data.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol };
+    return { id: data.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null };
   }
 
   const usuario = leerUsuariosLocales().find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
@@ -131,12 +176,16 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
     const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', data.session.user.id).maybeSingle();
     if (!perfil) return null;
 
-    return { id: data.session.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol };
+    return { id: data.session.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null };
   }
 
   try {
     const raw = localStorage.getItem(LS_SESION);
-    return raw ? (JSON.parse(raw) as SesionUsuario) : null;
+    if (!raw) return null;
+    const sesion = JSON.parse(raw) as SesionUsuario;
+    // Sesiones guardadas antes del multi-local no traen local_id: se toma del usuario
+    if (sesion.local_id === undefined) sesion.local_id = leerUsuariosLocales().find((u) => u.id === sesion.id)?.local_id ?? null;
+    return sesion;
   } catch {
     return null;
   }
@@ -158,6 +207,8 @@ export async function registrarUsuario(input: {
   password: string;
   nombre: string;
   rol?: Rol;
+  /** Local asignado (obligatorio salvo para un administrador) */
+  local_id?: string | null;
 }): Promise<{ requiereConfirmacion: boolean }> {
   const sesion = await obtenerSesionActual();
   if (sesion?.rol !== 'administrador') {
@@ -168,6 +219,8 @@ export async function registrarUsuario(input: {
   const email = input.email.trim().toLowerCase();
   const nombre = input.nombre.trim();
   if (!nombre) throw new Error('El nombre es obligatorio.');
+  const local_id = rol === 'administrador' ? null : (input.local_id ?? null);
+  if (rol !== 'administrador' && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
   if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
 
   if (supabaseConfigurado) {
@@ -201,10 +254,9 @@ export async function registrarUsuario(input: {
       throw new Error('Ya existe una cuenta con ese correo.');
     }
 
-    if (rol !== 'vendedor') {
-      const { error: errorRol } = await supabase.from('perfiles').update({ rol }).eq('id', data.user.id);
-      if (errorRol) throw new Error('La cuenta se creó, pero no se pudo asignar el rol: ' + errorRol.message);
-    }
+    // El perfil nace como 'vendedor' sin local; el administrador asigna el rol y el local
+    const { error: errorRol } = await supabase.from('perfiles').update({ rol, local_id }).eq('id', data.user.id);
+    if (errorRol) throw new Error('La cuenta se creó, pero no se pudo asignar el rol y el local: ' + errorRol.message);
 
     return { requiereConfirmacion: !data.session };
   }
@@ -213,7 +265,7 @@ export async function registrarUsuario(input: {
   if (usuarios.some((u) => u.email.toLowerCase() === email)) {
     throw new Error('Ya existe un usuario con ese correo.');
   }
-  usuarios.push({ id: generarId(), email, password: input.password, nombre, rol });
+  usuarios.push({ id: generarId(), email, password: input.password, nombre, rol, local_id });
   guardarUsuariosLocales(usuarios);
   return { requiereConfirmacion: false };
 }
@@ -222,15 +274,20 @@ export async function listarUsuarios(): Promise<SesionUsuario[]> {
   if (supabaseConfigurado) {
     const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((p: any) => ({ id: p.id, email: p.email, nombre: p.nombre, rol: p.rol }));
+    return (data ?? []).map((p: any) => ({ id: p.id, email: p.email, nombre: p.nombre, rol: p.rol, local_id: p.local_id ?? null }));
   }
 
   return leerUsuariosLocales().map(({ password: _sinUsar, ...resto }) => resto);
 }
 
-export async function actualizarRolUsuario(id: string, rol: Rol): Promise<void> {
+/** Cambia el rol y/o el local de un empleado (solo administrador; la base de datos lo exige con RLS). */
+export async function actualizarAccesoUsuario(id: string, cambios: { rol?: Rol; local_id?: string | null }): Promise<void> {
+  const rolFinal = cambios.rol;
+  const parche: { rol?: Rol; local_id?: string | null } = { ...cambios };
+  if (rolFinal === 'administrador') parche.local_id = null; // el administrador es global
+
   if (supabaseConfigurado) {
-    const { error } = await supabase.from('perfiles').update({ rol }).eq('id', id);
+    const { error } = await supabase.from('perfiles').update(parche).eq('id', id);
     if (error) throw error;
     return;
   }
@@ -238,16 +295,16 @@ export async function actualizarRolUsuario(id: string, rol: Rol): Promise<void> 
   const usuarios = leerUsuariosLocales();
   const usuario = usuarios.find((u) => u.id === id);
   if (!usuario) throw new Error('Usuario no encontrado.');
-  usuario.rol = rol;
+  Object.assign(usuario, parche);
   guardarUsuariosLocales(usuarios);
 }
 
 /**
  * Guard de ruta para páginas protegidas: llamarlo al inicio del <script> de
  * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, o a
- * "/" si la página exige un rol que el usuario no tiene.
+ * "/" si la página exige un rol (lista `roles`) que el usuario no tiene.
  */
-export async function protegerPagina(opciones?: { rolMinimo?: Rol }): Promise<SesionUsuario> {
+export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
 
   if (!sesion) {
@@ -255,7 +312,7 @@ export async function protegerPagina(opciones?: { rolMinimo?: Rol }): Promise<Se
     throw new Error('EASYSTEM_REDIRECT');
   }
 
-  if (opciones?.rolMinimo === 'administrador' && sesion.rol !== 'administrador') {
+  if (opciones?.roles && opciones.roles.length > 0 && !opciones.roles.includes(sesion.rol)) {
     window.location.href = '/';
     throw new Error('EASYSTEM_REDIRECT');
   }

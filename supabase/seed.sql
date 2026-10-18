@@ -142,8 +142,10 @@ on conflict do nothing;
 -- actualiza productos.stock_actual automáticamente. Un producto sin fila aquí
 -- (Cable USB-A a Lightning 1m) queda a propósito en 0 unidades ("sin stock").
 -- ----------------------------------------------------------------------------
-insert into public.movimientos_inventario (producto_id, tipo, cantidad, motivo)
-select p.id, 'ENTRADA', v.cantidad, 'Carga inicial de inventario'
+-- Requiere las migraciones 0015/0016 (locales): los vidrios templados van al Local Vidrios y el resto al Local
+-- Accesorios. El trigger crea la fila de inventario_local de cada producto en su local.
+insert into public.movimientos_inventario (producto_id, tipo, cantidad, motivo, local_id)
+select p.id, 'ENTRADA', v.cantidad, 'Carga inicial de inventario', case when p.categoria = 'Vidrios Templados' then '00000000-0000-4000-8000-000000000002'::uuid else '00000000-0000-4000-8000-000000000001'::uuid end
 from (values
   ('750001000101', 28), ('750001000102', 24), ('750001000103', 20),
   ('750001000104', 17), ('750001000105', 19), ('750001000106', 15),
@@ -164,8 +166,8 @@ join public.productos p on p.codigo_barras = v.codigo_barras;
 -- Movimientos recientes de ejemplo (ventas y reabastecimientos), para que el
 -- Dashboard y el historial no arranquen vacíos.
 -- ----------------------------------------------------------------------------
-insert into public.movimientos_inventario (producto_id, tipo, cantidad, motivo, fecha)
-select p.id, v.tipo, v.cantidad, v.motivo, v.fecha::timestamptz
+insert into public.movimientos_inventario (producto_id, tipo, cantidad, motivo, fecha, local_id)
+select p.id, v.tipo, v.cantidad, v.motivo, v.fecha::timestamptz, case when p.categoria = 'Vidrios Templados' then '00000000-0000-4000-8000-000000000002'::uuid else '00000000-0000-4000-8000-000000000001'::uuid end
 from (values
   ('750001000111', 'SALIDA',  3,  'Venta mostrador',       '2026-09-17T14:20:00Z'),
   ('750001000123', 'SALIDA',  2,  'Venta al por mayor',    '2026-09-17T11:05:00Z'),
@@ -177,3 +179,12 @@ from (values
   ('750001000132', 'ENTRADA', 5,  'Compra a proveedor',    '2026-09-12T15:30:00Z')
 ) as v(codigo_barras, tipo, cantidad, motivo, fecha)
 join public.productos p on p.codigo_barras = v.codigo_barras;
+
+-- ----------------------------------------------------------------------------
+-- Stock mínimo por local: se copia el mínimo de cada producto a su fila de inventario_local
+-- (el trigger crea esas filas con mínimo 0).
+-- ----------------------------------------------------------------------------
+update public.inventario_local i
+set stock_minimo = p.stock_minimo
+from public.productos p
+where p.id = i.producto_id;

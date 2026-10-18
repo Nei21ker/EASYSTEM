@@ -3,16 +3,19 @@ import type { MovimientoInventario, TipoMovimiento } from '../../types/database.
 
 export type MovimientoConProducto = MovimientoInventario & {
   producto?: { nombre: string; codigo_barras: string } | null;
+  /** Nombre del local donde se movió el stock */
+  local?: { nombre: string } | null;
 };
 
-export async function listarMovimientosRecientes(limite = 20): Promise<MovimientoConProducto[]> {
-  const { data, error } = await supabase
+export async function listarMovimientosRecientes(limite = 20, localId?: string | null): Promise<MovimientoConProducto[]> {
+  let consulta = supabase
     .from('movimientos_inventario')
-    .select('*, producto:productos(nombre, codigo_barras)')
+    .select('*, producto:productos(nombre, codigo_barras), local:locales(nombre)')
     .order('fecha', { ascending: false })
-    .limit(limite)
-    .overrideTypes<MovimientoConProducto[], { merge: false }>();
+    .limit(limite);
+  if (localId) consulta = consulta.eq('local_id', localId);
 
+  const { data, error } = await consulta.overrideTypes<MovimientoConProducto[], { merge: false }>();
   if (error) throw error;
   return data ?? [];
 }
@@ -21,9 +24,10 @@ export async function registrarMovimiento(input: {
   producto_id: string;
   tipo: TipoMovimiento;
   cantidad: number;
+  local_id: string;
   motivo?: string;
 }): Promise<MovimientoInventario> {
-  // productos.stock_actual lo actualiza el trigger aplicar_movimiento_inventario
+  // El stock del local (inventario_local) y el total (productos.stock_actual) los actualiza el trigger aplicar_movimiento_inventario
   const { data, error } = await supabase
     .from('movimientos_inventario')
     .insert(input)
@@ -37,7 +41,7 @@ export async function registrarMovimiento(input: {
 
 /** Inserta varios movimientos en lote (el trigger actualiza el stock fila por fila). */
 export async function registrarMovimientosLote(
-  filas: { producto_id: string; tipo: TipoMovimiento; cantidad: number; motivo?: string }[]
+  filas: { producto_id: string; tipo: TipoMovimiento; cantidad: number; local_id: string; motivo?: string }[]
 ): Promise<void> {
   for (let i = 0; i < filas.length; i += 200) {
     const { error } = await supabase.from('movimientos_inventario').insert(filas.slice(i, i + 200));

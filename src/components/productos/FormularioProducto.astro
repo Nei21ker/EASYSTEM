@@ -78,6 +78,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
       </div>
       <p class="-mt-2 text-xs text-slate-400">Stock mínimo 0 = el producto no genera alertas de reabastecimiento.</p>
+      <p id="fp-local-nota" class="-mt-1 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
 
       <div>
         <div class="flex items-baseline justify-between">
@@ -243,7 +244,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const sesion = await obtenerSesionActual();
     if (sesion?.rol !== 'administrador') return;
 
-    [productos, modelos] = await Promise.all([inventoryService.listarProductos(), inventoryService.listarModelos()]);
+    // Catálogo completo: el código de barras no debe repetirse en NINGÚN local
+    [productos, modelos] = await Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarModelos()]);
+    const contexto = await inventoryService.obtenerContextoLocal();
+    $('fp-local-nota').textContent = contexto?.local
+      ? `El stock inicial y el mínimo son de: ${contexto.local.nombre}.`
+      : 'Estás en la vista "Todos los locales": el producto se crea en el catálogo sin stock. Elige un local para cargarle existencias.';
     editando = productoId ? (productos.find((p) => p.id === productoId) ?? null) : null;
 
     const categorias = [...new Set([...CATEGORIAS_BASE, ...productos.map((p) => p.categoria)])].sort();
@@ -300,6 +306,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     const sesion = await obtenerSesionActual();
     if (sesion?.rol !== 'administrador') return mostrarError('Solo un administrador puede guardar productos.');
+    if (!editando && stock > 0 && !(await inventoryService.obtenerContextoLocal())?.local) {
+      return mostrarError('Para cargar stock inicial elige primero un local en el selector del encabezado.');
+    }
 
     let codigo = campos.codigo.value.trim();
     if (!codigo) codigo = generarCodigosInternos(productos.map((p) => p.codigo_barras))[0];
@@ -348,7 +357,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             // El producto ya existe: se pasa a modo edición para que reintentar la
             // foto no cree un duplicado.
             window.dispatchEvent(new Event('easystem:productos-cambiaron'));
-            productos = await inventoryService.listarProductos();
+            productos = await inventoryService.listarProductos({ catalogoCompleto: true });
             editando = productos.find((p) => p.id === creado.id) ?? null;
             titulo.textContent = 'Editar producto';
             $('fp-grupo-stock').classList.add('hidden');

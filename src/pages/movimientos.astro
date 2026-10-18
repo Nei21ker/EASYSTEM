@@ -32,6 +32,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
             <th class="px-5 py-3 font-medium">Tipo</th>
             <th class="px-5 py-3 font-medium">Cantidad</th>
             <th class="px-5 py-3 font-medium">Motivo</th>
+            <th id="mv-th-local" class="hidden px-5 py-3 font-medium">Local</th>
           </tr>
         </thead>
         <tbody id="mv-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -52,6 +53,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   let movimientos: MovimientoConProducto[] = [];
   let filtroActual = '';
+  let verLocal = false;
 
   const filas = document.getElementById('mv-filas') as HTMLTableSectionElement;
   const cargando = document.getElementById('mv-cargando') as HTMLParagraphElement;
@@ -104,6 +106,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
             </td>
             <td data-label="Cantidad" class="px-5 py-3">${mov.tipo === 'SALIDA' ? '-' : '+'}${mov.cantidad}</td>
             <td data-label="Motivo" class="px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(mov.motivo ?? '—')}</td>
+            ${verLocal ? `<td data-label="Local" class="px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(mov.local?.nombre ?? '—')}</td>` : ''}
           </tr>
         `;
       })
@@ -120,8 +123,10 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   actualizarBotonesFiltro();
 
-  inventoryService.listarMovimientos(500).then((lista) => {
+  Promise.all([inventoryService.listarMovimientos(500), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     movimientos = lista;
+    verLocal = contexto?.alcance === 'todos';
+    document.getElementById('mv-th-local')!.classList.toggle('hidden', !verLocal);
     cargando.classList.add('hidden');
     render();
   });

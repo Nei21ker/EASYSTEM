@@ -2,6 +2,7 @@
 import Sidebar from '../components/layout/Sidebar.astro';
 import Header from '../components/layout/Header.astro';
 import TasaDelDia from '../components/layout/TasaDelDia.astro';
+import ContextoLocal from '../components/layout/ContextoLocal.astro';
 import '../styles/global.css';
 import type { Rol } from '../lib/auth';
 
@@ -10,11 +11,11 @@ interface Props {
   subtitulo?: string;
   /** Texto completo de la pestaña del navegador; por defecto "<titulo> · EASYSTEM". */
   tituloPestana?: string;
-  /** Si se define, solo ese rol puede ver la página (los demás son enviados a "/"). */
-  rolMinimo?: Rol;
+  /** Si se define, solo esos roles pueden ver la página (los demás son enviados a "/"). */
+  roles?: Rol[];
 }
 
-const { titulo, subtitulo, rolMinimo, tituloPestana } = Astro.props;
+const { titulo, subtitulo, roles, tituloPestana } = Astro.props;
 ---
 
 <!doctype html>
@@ -38,7 +39,7 @@ const { titulo, subtitulo, rolMinimo, tituloPestana } = Astro.props;
   </head>
   <body class="min-h-screen bg-slate-50 dark:bg-slate-950">
     <!-- oculto hasta que el guard de auth confirme sesión (evita destello de contenido protegido) -->
-    <div id="app-shell" data-rol-minimo={rolMinimo ?? ''} class="flex min-h-screen" style="visibility:hidden">
+    <div id="app-shell" data-roles={roles?.join(',') ?? ''} class="flex min-h-screen" style="visibility:hidden">
       <Sidebar />
       <div class="flex min-w-0 flex-1 flex-col">
         <Header titulo={titulo} subtitulo={subtitulo} />
@@ -51,13 +52,16 @@ const { titulo, subtitulo, rolMinimo, tituloPestana } = Astro.props;
     <!-- Tasa del dólar: ventana obligatoria en la primera entrada de cada día -->
     <TasaDelDia />
 
+    <!-- Contexto de local (sesión, locales y local activo) y aviso si el usuario no tiene local asignado -->
+    <ContextoLocal />
+
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';
 
       const shell = document.getElementById('app-shell') as HTMLDivElement;
-      const rolMinimo = (shell.dataset.rolMinimo || undefined) as Rol | undefined;
+      const roles = (shell.dataset.roles ? shell.dataset.roles.split(',') : undefined) as Rol[] | undefined;
 
-      protegerPagina({ rolMinimo })
+      protegerPagina({ roles })
         .then(() => {
           shell.style.visibility = 'visible';
           // Dispara la entrada escalonada del contenido (ver .shell-listo en global.css)

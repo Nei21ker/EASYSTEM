@@ -4,6 +4,28 @@
 
 export type TipoMovimiento = 'ENTRADA' | 'SALIDA';
 
+/** Tipo de local: define qué módulos aplican (el de servicio técnico trabaja con órdenes de servicio). */
+export type TipoLocal = 'accesorios' | 'vidrios' | 'servicio_tecnico';
+
+/** Local (sucursal) del negocio: tiene inventario, ventas y empleados propios. */
+export interface Local {
+  id: string;
+  nombre: string;
+  tipo: TipoLocal;
+  direccion?: string | null;
+  telefono?: string | null;
+  activo: boolean;
+  created_at: string;
+}
+
+/** Stock y mínimo de un producto en un local (tabla pivote). stock_minimo = 0 → sin control de reabastecimiento. */
+export interface InventarioLocal {
+  local_id: string;
+  producto_id: string;
+  stock_actual: number;
+  stock_minimo: number;
+}
+
 export interface ModeloTelefono {
   id: string;
   marca: string;
@@ -18,7 +40,9 @@ export interface Producto {
   categoria: string;
   precio_compra: number;
   precio_venta: number;
+  /** Stock en el alcance activo: el del local elegido, o el total entre locales en la vista "Todos" */
   stock_actual: number;
+  /** Mínimo del local elegido (en la vista "Todos", la suma de los mínimos de los locales que lo controlan) */
   stock_minimo: number;
   /** URL pública (Supabase Storage) o data URL (modo LocalStorage); opcional */
   imagen_url?: string | null;
@@ -38,11 +62,15 @@ export interface MovimientoInventario {
   cantidad: number;
   fecha: string;
   motivo: string | null;
+  /** Local donde se movió el stock */
+  local_id: string;
 }
 
 /** Producto "enriquecido" con sus modelos compatibles, tal como lo consume el Dashboard */
 export interface ProductoConRelaciones extends Producto {
   modelos_compatibles: ModeloTelefono[];
+  /** Solo en la vista "Todos los locales" (administrador): stock de cada local, por id de local */
+  stock_por_local?: Record<string, number>;
 }
 
 export interface ProductoStockBajo {
@@ -52,6 +80,9 @@ export interface ProductoStockBajo {
   categoria: string;
   stock_actual: number;
   stock_minimo: number;
+  /** Local al que corresponde la alerta (cada local tiene su propio stock y mínimo) */
+  local_id?: string;
+  local_nombre?: string;
 }
 
 export type MetodoPago = 'BS_PAGO_MOVIL' | 'BS_PUNTO_VENTA' | 'BS_EFECTIVO' | 'USD_EFECTIVO' | 'BINANCE_USDT';
@@ -95,6 +126,8 @@ export interface ClienteVenta {
 /** Lo que el POS envía al registrar una venta (el folio lo asigna el sistema). */
 export interface NuevaVenta {
   fecha: string;
+  /** Local donde se hizo la venta */
+  local_id: string;
   cliente_cedula: string;
   cliente_nombre: string;
   cliente_telefono: string;
@@ -138,6 +171,8 @@ export interface NuevaTasa {
 /** Devolución o cambio de producto sobre una venta (ver migración 0014). */
 export interface NuevaDevolucion {
   fecha: string;
+  /** Local de la venta devuelta (ahí vuelve el stock) */
+  local_id: string;
   venta_id: string;
   venta_folio: number;
   motivo: string;
@@ -160,4 +195,42 @@ export interface NuevaDevolucion {
 export interface Devolucion extends NuevaDevolucion {
   id: string;
   folio: number;
+}
+
+// --- Servicio técnico -----------------------------------------------------------------------------
+export type EstadoOrdenServicio = 'pendiente' | 'en_reparacion' | 'listo' | 'entregado';
+
+/** Repuesto consumido del stock del local en una orden de servicio (con el precio del momento). */
+export type RepuestoOrden = VentaItem;
+
+export interface NuevaOrdenServicio {
+  local_id: string;
+  cliente_cedula: string;
+  cliente_nombre: string;
+  cliente_telefono: string;
+  equipo_marca: string;
+  equipo_modelo: string;
+  /** IMEI o número de serie, si se tiene */
+  equipo_imei?: string | null;
+  /** Qué se recibió junto al equipo (cargador, funda, SIM...) */
+  accesorios_recibidos?: string | null;
+  falla_reportada: string;
+  registrado_nombre?: string | null;
+}
+
+export interface OrdenServicio extends NuevaOrdenServicio {
+  id: string;
+  folio: number;
+  diagnostico: string | null;
+  estado: EstadoOrdenServicio;
+  tecnico_id?: string | null;
+  tecnico_nombre?: string | null;
+  repuestos: RepuestoOrden[];
+  mano_de_obra_usd: number;
+  /** Repuestos + mano de obra, en dólares */
+  total_usd: number;
+  recibida_en: string;
+  actualizada_en: string;
+  listo_en?: string | null;
+  entregada_en?: string | null;
 }

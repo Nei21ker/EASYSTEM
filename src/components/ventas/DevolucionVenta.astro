@@ -1,5 +1,6 @@
 ---
-// Devolución o cambio de producto sobre una venta ya registrada, solo administrador. Se abre con
+// Devolución o cambio de producto sobre una venta ya registrada, para administrador y encargado (del local
+// de la venta). Se abre con
 // "easystem:abrir-devolucion" ({ detail: { venta } }) y avisa con "easystem:ventas-cambiaron"
 // ({ detail: { folio } }) al guardar. El inventario se ajusta con movimientos (ENTRADA lo devuelto,
 // SALIDA lo entregado a cambio) dentro de inventoryService.registrarDevolucion.
@@ -87,7 +88,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { obtenerSesionActual } from '../../lib/auth';
+  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
   import { tasaActual } from '../../stores/tasa';
   import { convertirABs, formatearBolivares, formatearMoneda } from '../../utils/format';
   import { FormularioPagos } from '../../utils/formularioPagos';
@@ -284,7 +285,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
   // --- abrir / guardar ---------------------------------------------------------------------------------------
   async function abrir(v: Venta) {
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return;
+    if (!esGerencia(sesion?.rol)) return;
     venta = v;
     aDevolver = new Map();
     reemplazos = new Map();
@@ -294,7 +295,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     $('dv-subtitulo').textContent = `Venta #${String(v.folio).padStart(4, '0')} · ${v.cliente_nombre} · ${formatearMoneda(v.total)}`;
     errorEl.classList.add('hidden');
     try {
-      const [devoluciones, productos] = await Promise.all([inventoryService.listarDevoluciones({ ventaId: v.id }), inventoryService.listarProductos()]);
+      const [devoluciones, productos] = await Promise.all([inventoryService.listarDevoluciones({ ventaId: v.id }), inventoryService.listarProductos({ localId: v.local_id })]);
       yaDevuelto = new Map();
       for (const d of devoluciones) for (const i of d.items_devueltos) yaDevuelto.set(i.producto_id, (yaDevuelto.get(i.producto_id) ?? 0) + i.cantidad);
       catalogo = productos;

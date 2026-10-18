@@ -76,7 +76,8 @@
     if (e.key === 'Escape') alternarPanel(false);
   });
 
-  inventoryService.listarProductosStockBajo().then((productos) => {
+  Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]).then(([productos, contexto]) => {
+    const verLocal = contexto?.alcance === 'todos';
     if (productos.length === 0) {
       resumen.textContent = 'Sin alertas pendientes';
       vacio.classList.remove('hidden');
@@ -99,7 +100,7 @@
             <p class="text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
             <p class="text-xs ${color}">
               ${producto.stock_actual === 0 ? 'Sin stock' : `${producto.stock_actual} unidad${producto.stock_actual === 1 ? '' : 'es'} restante${producto.stock_actual === 1 ? '' : 's'}`}
-              · mínimo ${producto.stock_minimo}
+              · mínimo ${producto.stock_minimo}${verLocal && producto.local_nombre ? ` · ${escaparHtml(producto.local_nombre)}` : ''}
             </p>
           </li>
         `;

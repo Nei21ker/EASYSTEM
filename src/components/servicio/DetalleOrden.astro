@@ -1,0 +1,311 @@
+---
+// Detalle y seguimiento de una orden de servicio: diagnóstico, técnico, mano de obra, repuestos (salen del
+// stock del local de la orden) y cambio de estado Pendiente → En reparación → Listo → Entregado.
+// Se abre con "easystem:abrir-orden" ({ detail: { orden } }); cada cambio avisa con "easystem:ordenes-cambiaron".
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400';
+const claseBotonSec =
+  'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800';
+---
+
+<dialog
+  id="do-dialogo"
+  aria-labelledby="do-titulo"
+  class="anim-escalar m-auto w-[min(38rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="flex max-h-[92dvh] flex-col">
+    <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <div class="min-w-0">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 id="do-titulo" class="text-base font-semibold"></h2>
+          <span id="do-estado" class="rounded-full px-2.5 py-0.5 text-xs font-semibold"></span>
+        </div>
+        <p id="do-subtitulo" class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <button type="button" id="do-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="space-y-5 overflow-y-auto px-5 py-4">
+      <!-- Datos de recepción -->
+      <section>
+        <p class={claseTitulo}>Recepción</p>
+        <dl id="do-datos" class="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2"></dl>
+      </section>
+
+      <!-- Diagnóstico, técnico y mano de obra -->
+      <section class="space-y-3">
+        <p class={claseTitulo}>Diagnóstico y reparación</p>
+        <div>
+          <label for="do-diagnostico" class={claseEtiqueta}>Diagnóstico</label>
+          <textarea id="do-diagnostico" rows="2" maxlength="1000" placeholder="Qué se encontró y qué se va a hacer" class={claseCampo}></textarea>
+        </div>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="do-mano" class={claseEtiqueta}>Mano de obra ($)</label>
+            <input id="do-mano" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
+          </div>
+          <div>
+            <p class={claseEtiqueta}>Técnico</p>
+            <p id="do-tecnico" class="mt-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:bg-slate-800/60 dark:text-slate-200"></p>
+          </div>
+        </div>
+        <button id="do-guardar-datos" type="button" class={claseBotonSec}>Guardar diagnóstico y mano de obra</button>
+      </section>
+
+      <!-- Repuestos -->
+      <section>
+        <p class={claseTitulo}>Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span></p>
+        <ul id="do-repuestos" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm empty:hidden dark:divide-slate-800 dark:border-slate-700"></ul>
+        <p id="do-sin-repuestos" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Todavía no se han usado repuestos.</p>
+
+        <div id="do-agregar" class="mt-3">
+          <input id="do-buscar" type="search" autocomplete="off" placeholder="Buscar el repuesto en el stock del local..." class={claseCampo} />
+          <ul id="do-resultados" class="mt-2 hidden max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700"></ul>
+        </div>
+      </section>
+
+      <!-- Totales -->
+      <section class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/30">
+        <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Repuestos</span><span id="do-total-repuestos" class="tabular-nums"></span></div>
+        <div class="mt-1 flex justify-between"><span class="text-slate-500 dark:text-slate-400">Mano de obra</span><span id="do-total-mano" class="tabular-nums"></span></div>
+        <div class="mt-2 flex items-start justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
+          <span>Total del servicio</span>
+          <span id="do-total" class="text-right tabular-nums"></span>
+        </div>
+      </section>
+
+      <p id="do-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+
+    <footer class="flex flex-wrap gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="do-atras" type="button" class={claseBotonSec}></button>
+      <button id="do-avanzar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"></button>
+    </footer>
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { ESTADOS_ORDEN } from '../../lib/inventoryService';
+  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
+  import { tasaActual } from '../../stores/tasa';
+  import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../../utils/format';
+  import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
+  import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('do-dialogo');
+  const errorEl = $('do-error');
+  const buscar = $<HTMLInputElement>('do-buscar');
+  const botonAvanzar = $<HTMLButtonElement>('do-avanzar');
+  const botonAtras = $<HTMLButtonElement>('do-atras');
+
+  const ESTILO_ESTADO: Record<EstadoOrdenServicio, string> = {
+    pendiente: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    en_reparacion: 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
+    listo: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    entregado: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+  };
+  const ORDEN_ESTADOS = ESTADOS_ORDEN.map((e) => e.valor);
+  const etiqueta = (e: EstadoOrdenServicio) => ESTADOS_ORDEN.find((x) => x.valor === e)!.etiqueta;
+
+  let orden: OrdenServicio | null = null;
+  let catalogo: ProductoConRelaciones[] = [];
+  let puedeQuitar = false;
+
+  function mostrarError(mensaje: string) {
+    errorEl.textContent = mensaje;
+    errorEl.classList.remove('hidden');
+  }
+
+  function dato(titulo: string, valor: string | null | undefined, completo = false) {
+    return `<div class="${completo ? 'sm:col-span-2' : ''}"><dt class="text-[11px] uppercase text-slate-500 dark:text-slate-400">${titulo}</dt><dd class="break-words font-medium text-slate-900 dark:text-white">${escaparHtml(valor || '—')}</dd></div>`;
+  }
+
+  function pintar() {
+    const o = orden!;
+    const tasa = tasaActual.get();
+    const final = o.estado === 'entregado';
+
+    $('do-titulo').textContent = `Orden #${String(o.folio).padStart(4, '0')}`;
+    const pill = $('do-estado');
+    pill.textContent = etiqueta(o.estado);
+    pill.className = `rounded-full px-2.5 py-0.5 text-xs font-semibold ${ESTILO_ESTADO[o.estado]}`;
+    $('do-subtitulo').textContent = `${o.equipo_marca} ${o.equipo_modelo} · ${o.cliente_nombre}`;
+
+    $('do-datos').innerHTML =
+      dato('Cliente', `${o.cliente_nombre} (${o.cliente_cedula})`) +
+      dato('Teléfono', o.cliente_telefono) +
+      dato('Equipo', `${o.equipo_marca} ${o.equipo_modelo}`) +
+      dato('IMEI / serie', o.equipo_imei) +
+      dato('Recibido con el equipo', o.accesorios_recibidos, true) +
+      dato('Falla reportada', o.falla_reportada, true) +
+      dato('Recibida', formatearFecha(o.recibida_en)) +
+      dato(final ? 'Entregada' : o.listo_en ? 'Lista desde' : 'Última actualización', formatearFecha(o.entregada_en ?? o.listo_en ?? o.actualizada_en));
+
+    $<HTMLTextAreaElement>('do-diagnostico').value = o.diagnostico ?? '';
+    $<HTMLTextAreaElement>('do-diagnostico').disabled = final;
+    $<HTMLInputElement>('do-mano').value = o.mano_de_obra_usd ? String(o.mano_de_obra_usd) : '';
+    $<HTMLInputElement>('do-mano').disabled = final;
+    $<HTMLButtonElement>('do-guardar-datos').disabled = final;
+    $('do-tecnico').textContent = o.tecnico_nombre || 'Sin asignar (se asigna al iniciar la reparación)';
+
+    // Repuestos
+    $('do-repuestos').innerHTML = o.repuestos
+      .map(
+        (r) => `
+          <li class="flex items-center gap-3 px-3 py-2.5">
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-medium text-slate-900 dark:text-white">${escaparHtml(r.nombre)}</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">${r.cantidad} × ${formatearMoneda(r.precio_unitario)}</p>
+            </div>
+            <div class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(r.precio_unitario * r.cantidad, tasa)}</div>
+            ${puedeQuitar && !final ? `<button type="button" data-quitar="${r.producto_id}" aria-label="Quitar y devolver al inventario" title="Quitar y devolver al inventario" class="shrink-0 text-slate-400 hover:text-red-600">✕</button>` : ''}
+          </li>`
+      )
+      .join('');
+    $('do-sin-repuestos').classList.toggle('hidden', o.repuestos.length > 0);
+    $('do-agregar').classList.toggle('hidden', final);
+
+    // Totales
+    const totalRepuestos = o.total_usd - o.mano_de_obra_usd;
+    $('do-total-repuestos').textContent = formatearMoneda(totalRepuestos);
+    $('do-total-mano').textContent = formatearMoneda(o.mano_de_obra_usd);
+    $('do-total').innerHTML = htmlPrecioDual(o.total_usd, tasa);
+
+    // Botones de estado
+    const i = ORDEN_ESTADOS.indexOf(o.estado);
+    const siguiente = ORDEN_ESTADOS[i + 1];
+    const anterior = ORDEN_ESTADOS[i - 1];
+    botonAvanzar.classList.toggle('hidden', !siguiente);
+    botonAvanzar.textContent = siguiente ? `Pasar a: ${etiqueta(siguiente)}` : '';
+    botonAtras.classList.toggle('hidden', !anterior || final);
+    botonAtras.textContent = anterior ? `← Volver a ${etiqueta(anterior)}` : '';
+  }
+
+  // --- repuestos: buscar en el stock del local de la orden -----------------------------------------
+  function pintarResultados() {
+    const q = normalizarTexto(buscar.value.trim());
+    const lista = $('do-resultados');
+    if (!q) return lista.classList.add('hidden');
+    const yaUsados = new Set(orden!.repuestos.map((r) => r.producto_id));
+    const coincidencias = catalogo
+      .filter((p) => p.stock_actual > 0 && !yaUsados.has(p.id) && normalizarTexto(`${p.nombre} ${p.codigo_barras} ${p.categoria}`).split(/\s+/).length > 0 && q.split(/\s+/).every((t) => normalizarTexto(`${p.nombre} ${p.codigo_barras} ${p.categoria}`).includes(t)))
+      .slice(0, 8);
+    lista.classList.remove('hidden');
+    lista.innerHTML = coincidencias.length
+      ? coincidencias
+          .map(
+            (p) => `
+              <li class="flex items-center gap-2 px-3 py-2">
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</p>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_venta)} · ${p.stock_actual} disponibles</p>
+                </div>
+                <input type="number" min="1" max="${p.stock_actual}" step="1" value="1" data-cant="${p.id}" aria-label="Cantidad" class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                <button type="button" data-agregar="${p.id}" class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">+ Usar</button>
+              </li>`
+          )
+          .join('')
+      : '<li class="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">No hay repuestos con stock que coincidan en este local.</li>';
+  }
+  buscar.addEventListener('input', pintarResultados);
+
+  /** Aplica un cambio sobre la orden y repinta con lo que devuelve el servicio. */
+  async function aplicar(accion: () => Promise<OrdenServicio>, mensajeFallo: string) {
+    errorEl.classList.add('hidden');
+    try {
+      orden = await accion();
+      pintar();
+      pintarResultados();
+      window.dispatchEvent(new Event('easystem:ordenes-cambiaron'));
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : mensajeFallo);
+    }
+  }
+
+  $('do-resultados').addEventListener('click', async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
+    const producto = catalogo.find((p) => p.id === id);
+    if (!producto || !orden) return;
+    const cantidad = Math.floor(Number($<HTMLInputElement>('do-resultados').querySelector<HTMLInputElement>(`[data-cant="${producto.id}"]`)?.value) || 1);
+    await aplicar(() => inventoryService.agregarRepuestoOrden(orden!.id, producto, cantidad), 'No se pudo agregar el repuesto.');
+    buscar.value = '';
+    // El stock del local cambió: se vuelve a pedir
+    catalogo = await inventoryService.listarProductos({ localId: orden.local_id });
+    pintarResultados();
+  });
+
+  $('do-repuestos').addEventListener('click', async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar]')?.dataset.quitar;
+    if (!id || !orden) return;
+    if (!window.confirm('¿Quitar este repuesto de la orden? Volverá al inventario del local.')) return;
+    await aplicar(() => inventoryService.quitarRepuestoOrden(orden!.id, id), 'No se pudo quitar el repuesto.');
+    catalogo = await inventoryService.listarProductos({ localId: orden!.local_id });
+  });
+
+  $('do-guardar-datos').addEventListener('click', () => {
+    if (!orden) return;
+    const mano = Number($<HTMLInputElement>('do-mano').value || 0);
+    void aplicar(
+      () =>
+        inventoryService.actualizarOrdenServicio(orden!.id, {
+          diagnostico: $<HTMLTextAreaElement>('do-diagnostico').value.trim() || null,
+          mano_de_obra_usd: Math.round(mano * 100) / 100,
+        }),
+      'No se pudieron guardar los cambios.'
+    );
+  });
+
+  async function cambiarEstado(nuevo: EstadoOrdenServicio) {
+    if (!orden) return;
+    if (nuevo === 'entregado' && !window.confirm('¿Marcar la orden como ENTREGADA? Después ya no se podrá modificar.')) return;
+    const sesion = await obtenerSesionActual();
+    const cambios: Parameters<typeof inventoryService.actualizarOrdenServicio>[1] = { estado: nuevo };
+    // Al empezar la reparación, quien la inicia queda como técnico si no había uno
+    if (nuevo === 'en_reparacion' && !orden.tecnico_nombre && sesion) {
+      cambios.tecnico_id = sesion.id;
+      cambios.tecnico_nombre = sesion.nombre;
+    }
+    await aplicar(() => inventoryService.actualizarOrdenServicio(orden!.id, cambios), 'No se pudo cambiar el estado.');
+  }
+  botonAvanzar.addEventListener('click', () => {
+    const siguiente = ORDEN_ESTADOS[ORDEN_ESTADOS.indexOf(orden!.estado) + 1];
+    if (siguiente) void cambiarEstado(siguiente);
+  });
+  botonAtras.addEventListener('click', () => {
+    const anterior = ORDEN_ESTADOS[ORDEN_ESTADOS.indexOf(orden!.estado) - 1];
+    if (anterior) void cambiarEstado(anterior);
+  });
+
+  tasaActual.listen(() => {
+    if (dialogo.open && orden) pintar();
+  });
+
+  async function abrir(o: OrdenServicio) {
+    const sesion = await obtenerSesionActual();
+    puedeQuitar = esGerencia(sesion?.rol);
+    orden = o;
+    errorEl.classList.add('hidden');
+    buscar.value = '';
+    $('do-resultados').classList.add('hidden');
+    pintar();
+    dialogo.showModal();
+    // Repuestos: el stock del local de la orden
+    try {
+      catalogo = await inventoryService.listarProductos({ localId: o.local_id });
+    } catch {
+      catalogo = [];
+    }
+  }
+
+  window.addEventListener('easystem:abrir-orden', ((e: CustomEvent<{ orden: OrdenServicio }>) => {
+    void abrir(e.detail.orden);
+  }) as EventListener);
+  $('do-cerrar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+</script>

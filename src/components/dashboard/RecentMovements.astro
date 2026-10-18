@@ -40,7 +40,8 @@ const { limite = 8 } = Astro.props;
     return div.innerHTML;
   }
 
-  inventoryService.listarMovimientos(limite).then((movimientos) => {
+  Promise.all([inventoryService.listarMovimientos(limite), inventoryService.obtenerContextoLocal()]).then(([movimientos, contexto]) => {
+    const verLocal = contexto?.alcance === 'todos';
     cargando.classList.add('hidden');
 
     if (movimientos.length === 0) {
@@ -56,7 +57,7 @@ const { limite = 8 } = Astro.props;
           <li class="flex items-center justify-between gap-4 px-5 py-3">
             <div class="min-w-0">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(mov.producto?.nombre ?? 'Producto eliminado')}</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(mov.fecha))}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(mov.fecha))}${verLocal && mov.local ? ` · ${escaparHtml(mov.local.nombre)}` : ''}</p>
             </div>
             <div class="flex shrink-0 items-center gap-3">
               <span class="text-sm font-semibold text-slate-700 dark:text-slate-300">${mov.tipo === 'SALIDA' ? '-' : '+'}${Math.abs(mov.cantidad)}</span>

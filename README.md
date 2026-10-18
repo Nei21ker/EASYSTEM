@@ -22,7 +22,9 @@ Todas las páginas exigen sesión iniciada (`/login`); las rutas de administrado
 
 **Credenciales demo (modo LocalStorage, sin Supabase):**
 - Administrador: `admin@edwardaccesorios.com` / `admin123`
-- Vendedor: `vendedor@edwardaccesorios.com` / `vendedor123`
+- Vendedor (Local Accesorios): `vendedor@edwardaccesorios.com` / `vendedor123`
+- Encargado (Local Vidrios): `encargado@edwardaccesorios.com` / `encargado123`
+- Técnico (Local Servicio Técnico): `tecnico@edwardaccesorios.com` / `tecnico123`
 
 ## Estructura del proyecto
 

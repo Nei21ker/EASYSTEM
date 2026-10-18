@@ -2,7 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 ---
 
-<DashboardLayout titulo="Usuarios" subtitulo="Empleados con acceso a EASYSTEM y sus permisos" rolMinimo="administrador">
+<DashboardLayout titulo="Usuarios" subtitulo="Empleados con acceso a EASYSTEM y sus permisos" roles={['administrador']}>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
@@ -15,6 +15,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
               <th class="px-5 py-3 font-medium">Nombre</th>
               <th class="px-5 py-3 font-medium">Correo</th>
               <th class="px-5 py-3 font-medium">Rol</th>
+              <th class="px-5 py-3 font-medium">Local</th>
             </tr>
           </thead>
           <tbody id="us-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -40,9 +41,12 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         <div>
           <label for="us-rol" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Rol</label>
           <select id="us-rol" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-            <option value="vendedor">Vendedor</option>
-            <option value="administrador">Administrador</option>
           </select>
+          <p id="us-rol-ayuda" class="mt-1 text-xs text-slate-400"></p>
+        </div>
+        <div id="us-local-bloque">
+          <label for="us-local" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Local asignado</label>
+          <select id="us-local" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
         </div>
         <button type="submit" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700">
           Crear usuario
@@ -55,7 +59,9 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 </DashboardLayout>
 
 <script>
-  import { listarUsuarios, registrarUsuario, actualizarRolUsuario, obtenerSesionActual, type Rol } from '../lib/auth';
+  import { listarUsuarios, registrarUsuario, actualizarAccesoUsuario, obtenerSesionActual, ETIQUETAS_ROL, ROLES, type Rol } from '../lib/auth';
+  import { listarLocales } from '../lib/inventoryService';
+  import type { Local } from '../types/database.types';
   import { animarLista, reanimar } from '../utils/animaciones';
 
   const contador = document.getElementById('us-contador') as HTMLHeadingElement;
@@ -65,6 +71,31 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   const exito = document.getElementById('us-exito') as HTMLParagraphElement;
 
   let miId = '';
+  let locales: Local[] = [];
+
+  const AYUDA_ROL: Record<Rol, string> = {
+    administrador: 'Acceso a TODOS los locales, usuarios y catálogo.',
+    encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
+    vendedor: 'Cajero de su local: ventas y consulta de productos.',
+    tecnico: 'Servicio técnico de su local: órdenes de servicio y repuestos.',
+  };
+
+  const opcionesRol = (seleccionado?: Rol) =>
+    ROLES.map((r) => `<option value="${r}" ${r === seleccionado ? 'selected' : ''}>${ETIQUETAS_ROL[r]}</option>`).join('');
+  const opcionesLocal = (seleccionado?: string | null) =>
+    '<option value="">Sin local</option>' +
+    locales.map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${l.nombre}</option>`).join('');
+
+  const selectRolNuevo = document.getElementById('us-rol') as HTMLSelectElement;
+  const selectLocalNuevo = document.getElementById('us-local') as HTMLSelectElement;
+  const bloqueLocalNuevo = document.getElementById('us-local-bloque') as HTMLDivElement;
+
+  function actualizarFormularioNuevo() {
+    const rol = selectRolNuevo.value as Rol;
+    (document.getElementById('us-rol-ayuda') as HTMLParagraphElement).textContent = AYUDA_ROL[rol];
+    bloqueLocalNuevo.classList.toggle('hidden', rol === 'administrador');
+  }
+  selectRolNuevo.addEventListener('change', actualizarFormularioNuevo);
 
   function escaparHtml(texto: string): string {
     const div = document.createElement('div');
@@ -85,9 +116,15 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
             <td data-label="Correo" class="break-all px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(u.email || '—')}</td>
             <td data-label="Rol" class="px-5 py-3">
               <select data-usuario="${u.id}" class="us-rol-select rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" ${u.id === miId ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>
-                <option value="vendedor" ${u.rol === 'vendedor' ? 'selected' : ''}>Vendedor</option>
-                <option value="administrador" ${u.rol === 'administrador' ? 'selected' : ''}>Administrador</option>
+                ${opcionesRol(u.rol)}
               </select>
+            </td>
+            <td data-label="Local" class="px-5 py-3">
+              ${
+                u.rol === 'administrador'
+                  ? '<span class="text-xs text-slate-500 dark:text-slate-400">Todos los locales</span>'
+                  : `<select data-usuario="${u.id}" class="us-local-select rounded-lg border ${u.local_id ? 'border-slate-200' : 'border-amber-400'} bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white">${opcionesLocal(u.local_id)}</select>`
+              }
             </td>
           </tr>
         `
@@ -97,12 +134,26 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     for (const select of document.querySelectorAll<HTMLSelectElement>('.us-rol-select')) {
       select.addEventListener('change', async () => {
         const id = select.dataset.usuario!;
+        const rol = select.value as Rol;
         try {
-          await actualizarRolUsuario(id, select.value as Rol);
+          // Quien deja de ser administrador necesita un local: se le pone el primero hasta que se elija otro
+          const usuario = usuarios.find((u) => u.id === id);
+          const local_id = rol === 'administrador' ? null : (usuario?.local_id ?? locales[0]?.id ?? null);
+          await actualizarAccesoUsuario(id, { rol, local_id });
         } catch (err) {
           alert(err instanceof Error ? err.message : 'No se pudo actualizar el rol.');
-          cargarUsuarios();
         }
+        cargarUsuarios();
+      });
+    }
+    for (const select of document.querySelectorAll<HTMLSelectElement>('.us-local-select')) {
+      select.addEventListener('change', async () => {
+        try {
+          await actualizarAccesoUsuario(select.dataset.usuario!, { local_id: select.value || null });
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'No se pudo cambiar el local.');
+        }
+        cargarUsuarios();
       });
     }
   }
@@ -115,16 +166,18 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     const nombre = (document.getElementById('us-nombre') as HTMLInputElement).value.trim();
     const email = (document.getElementById('us-email') as HTMLInputElement).value.trim();
     const password = (document.getElementById('us-password') as HTMLInputElement).value;
-    const rol = (document.getElementById('us-rol') as HTMLSelectElement).value as Rol;
+    const rol = selectRolNuevo.value as Rol;
+    const local_id = rol === 'administrador' ? null : selectLocalNuevo.value || null;
 
     try {
-      const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol });
+      const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol, local_id });
       exito.textContent = requiereConfirmacion
         ? `Cuenta creada para ${nombre}. Debe confirmar su correo (enlace enviado a ${email}) antes de poder iniciar sesión.`
         : `Cuenta creada para ${nombre}.`;
       exito.classList.remove('hidden');
       reanimar(exito, 'anim-subir');
       form.reset();
+      actualizarFormularioNuevo();
       await cargarUsuarios();
     } catch (err) {
       error.textContent = err instanceof Error ? err.message : 'No se pudo crear el usuario.';
@@ -133,8 +186,12 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     }
   });
 
-  obtenerSesionActual().then((sesion) => {
+  Promise.all([obtenerSesionActual(), listarLocales()]).then(([sesion, lista]) => {
     miId = sesion?.id ?? '';
+    locales = lista;
+    selectRolNuevo.innerHTML = opcionesRol('vendedor');
+    selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${l.nombre}</option>`).join('');
+    actualizarFormularioNuevo();
     cargarUsuarios();
   });
 </script>

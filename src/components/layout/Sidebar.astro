@@ -32,10 +32,10 @@ function esActivo(href: string) {
     {enlacesNav.map((enlace) => (
       <a
         href={enlace.href}
-        data-rol-minimo={enlace.rolMinimo ?? ''}
+        data-roles={enlace.roles.join(',')}
+        data-solo-tipo={enlace.soloTipoLocal ?? ''}
         class:list={[
-          'nav-enlace group flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
-          enlace.rolMinimo ? 'hidden' : '',
+          'nav-enlace group hidden items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
           esActivo(enlace.href)
             ? 'bg-brand-50 text-brand-700 shadow-[inset_3px_0_0_0_var(--color-brand-600)] dark:bg-brand-500/10 dark:text-brand-300 dark:shadow-[inset_3px_0_0_0_var(--color-accent-400)]'
             : 'text-slate-600 hover:translate-x-0.5 hover:bg-slate-100 hover:text-brand-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-brand-300',
@@ -57,6 +57,7 @@ function esActivo(href: string) {
       <div class="min-w-0 flex-1">
         <p id="nav-usuario-nombre" class="truncate text-sm font-medium text-slate-900 dark:text-white">—</p>
         <p id="nav-usuario-rol" class="text-xs text-slate-500 dark:text-slate-400">—</p>
+        <p id="nav-usuario-local" class="truncate text-[11px] text-slate-400 dark:text-slate-500"></p>
       </div>
       <button id="nav-cerrar-sesion" type="button" aria-label="Cerrar sesión" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
@@ -69,7 +70,9 @@ function esActivo(href: string) {
 </aside>
 
 <script>
-  import { obtenerSesionActual, cerrarSesion } from '../../lib/auth';
+  import { cerrarSesion, ETIQUETAS_ROL } from '../../lib/auth';
+  import { obtenerContextoLocal } from '../../lib/inventoryService';
+  import { ALCANCE_TODOS } from '../../lib/constantes-locales';
 
   const backdrop = document.getElementById('nav-backdrop') as HTMLDivElement;
   const sidebar = document.getElementById('nav-sidebar') as HTMLDivElement;
@@ -100,21 +103,27 @@ function esActivo(href: string) {
     enlace.addEventListener('click', cerrarMenu);
   }
 
-  obtenerSesionActual().then((sesion) => {
-    if (!sesion) return;
+  obtenerContextoLocal().then((contexto) => {
+    if (!contexto) return;
+    const { sesion, local, alcance } = contexto;
 
     for (const enlace of document.querySelectorAll<HTMLAnchorElement>('.nav-enlace')) {
-      const rolMinimo = enlace.dataset.rolMinimo;
-      if (rolMinimo && rolMinimo !== sesion.rol) continue;
+      const roles = (enlace.dataset.roles ?? '').split(',');
+      if (!roles.includes(sesion.rol)) continue;
+      // Enlaces propios de un tipo de local (p. ej. Servicio técnico): solo en ese local, o en la vista "Todos" del administrador
+      const soloTipo = enlace.dataset.soloTipo;
+      if (soloTipo && alcance !== ALCANCE_TODOS && local?.tipo !== soloTipo) continue;
       enlace.classList.remove('hidden');
+      enlace.classList.add('flex');
     }
 
     const bloqueUsuario = document.getElementById('nav-usuario') as HTMLDivElement;
     bloqueUsuario.classList.remove('hidden');
     bloqueUsuario.classList.add('flex');
     (document.getElementById('nav-usuario-nombre') as HTMLParagraphElement).textContent = sesion.nombre;
-    (document.getElementById('nav-usuario-rol') as HTMLParagraphElement).textContent =
-      sesion.rol === 'administrador' ? 'Administrador' : 'Vendedor';
+    (document.getElementById('nav-usuario-rol') as HTMLParagraphElement).textContent = ETIQUETAS_ROL[sesion.rol];
+    (document.getElementById('nav-usuario-local') as HTMLParagraphElement).textContent =
+      sesion.rol === 'administrador' ? 'Acceso a todos los locales' : (local?.nombre ?? 'Sin local asignado');
     (document.getElementById('nav-usuario-iniciales') as HTMLSpanElement).textContent = sesion.nombre
       .split(' ')
       .map((palabra) => palabra[0])

@@ -54,7 +54,7 @@ const claseBotonSecundario =
       </div>
 
       <p id="hv-aviso-vendedor" class="hidden rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
-        Estás viendo solo las ventas que registraste tú. El administrador ve las de todos.
+        Estás viendo solo las ventas que registraste tú. El encargado y el administrador ven todas las de su local.
       </p>
     </div>
 
@@ -135,7 +135,7 @@ const claseBotonSecundario =
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
-  import { obtenerSesionActual } from '../lib/auth';
+  import { esGerencia, obtenerSesionActual } from '../lib/auth';
   import { formatearBolivares, formatearFecha, formatearMoneda } from '../utils/format';
   import { descargarCSV } from '../utils/csv';
   import { animarLista, contarHasta } from '../utils/animaciones';
@@ -151,7 +151,11 @@ const claseBotonSecundario =
   let ventas: VentaRegistrada[] = []; // ya filtradas por rango de fechas
   let devolucionesPorVenta = new Map<string, Devolucion[]>();
   let rangoActual: RangoPreestablecido = 'mes';
+  // Gerencia (administrador y encargado): ven las ventas de todo su alcance, devuelven productos y exportan.
+  // Vendedor y técnico: solo las ventas que registraron ellos.
   let esAdministrador = false;
+  let verLocal = false; // vista "Todos los locales": se indica el local de cada venta
+  let nombresLocales = new Map<string, string>();
   let nombreSesion = '';
   let pagina = 1;
   let primeraVez = true;
@@ -249,6 +253,7 @@ const claseBotonSecundario =
         <td class="px-5 py-3">
           <p class="font-semibold text-slate-900 dark:text-white">${folio}</p>
           <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(v.fecha))}</p>
+          ${verLocal ? `<p class="mt-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300">${escaparHtml(nombresLocales.get(v.local_id) ?? 'Local')}</p>` : ''}
         </td>
         <td data-label="Cliente" class="px-4 py-3">
           <div class="min-w-0 text-right md:text-left">
@@ -358,6 +363,7 @@ const claseBotonSecundario =
       // Con Supabase la base de datos ya entrega solo las ventas del vendedor (RLS); en el modo demo
       // local se replica esa regla aquí para que el comportamiento sea el mismo.
       const filtrarPropias = !esAdministrador && !inventoryService.obtenerEstadoConexion().usaSupabase;
+      // (en modo demo local no hay RLS: el encargado ve todo su local y el resto solo lo propio)
       ventas = filtrarPropias ? lista.filter((v) => v.vendedor_nombre === nombreSesion) : lista;
     } catch (err) {
       if (miCarga !== cargaId) return;
@@ -424,6 +430,7 @@ const claseBotonSecundario =
     descargarCSV(
       `easystem-ventas-${new Date().toISOString().slice(0, 10)}.csv`,
       filtrar().map((v) => ({
+        ...(verLocal ? { local: nombresLocales.get(v.local_id) ?? '' } : {}),
         folio: v.folio || 'pendiente',
         fecha: new Date(v.fecha).toLocaleString('es-GT'),
         cedula: v.cliente_cedula,
@@ -447,8 +454,12 @@ const claseBotonSecundario =
   });
 
   obtenerSesionActual().then((sesion) => {
-    esAdministrador = sesion?.rol === 'administrador';
+    esAdministrador = esGerencia(sesion?.rol);
     nombreSesion = sesion?.nombre ?? '';
+    void inventoryService.obtenerContextoLocal().then((contexto) => {
+      verLocal = contexto?.alcance === 'todos';
+      nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));
+    });
     for (const id of ['hv-th-vendedor', 'hv-col-vendedor', 'hv-th-acciones', 'hv-col-acciones']) $(id).classList.toggle('hidden', !esAdministrador);
     $('hv-exportar').classList.toggle('hidden', !esAdministrador);
     $('hv-aviso-vendedor').classList.toggle('hidden', esAdministrador);

@@ -47,7 +47,7 @@ const claseSelect =
           <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
           <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
           <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
-          <button id="pr-entrada" type="button" class={claseBotonAdmin}>Registrar entrada</button>
+          <button id="pr-entrada" type="button" class={`${claseBotonAdmin} disabled:cursor-not-allowed disabled:opacity-40`}>Registrar entrada</button>
           <button
             id="pr-nuevo"
             type="button"
@@ -148,7 +148,7 @@ const claseSelect =
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { obtenerSesionActual } from '../../lib/auth';
+  import { esGerencia } from '../../lib/auth';
   import { formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
@@ -174,12 +174,18 @@ const claseSelect =
   const sinResultados = $('pr-sin-resultados');
   const paginacion = $('pr-paginacion');
 
-  const COLUMNAS_ADMIN = ['pr-th-costo', 'pr-th-acciones', 'pr-col-costo', 'pr-col-acciones'];
-  const BOTONES_ADMIN = ['pr-importar', 'pr-entrada', 'pr-nuevo'];
+  // Catálogo (precio de compra, importar, crear y editar): solo administrador. Entradas de stock del local: administrador y encargado.
+  const COLUMNAS_COSTO = ['pr-th-costo', 'pr-col-costo'];
+  const COLUMNAS_ACCIONES = ['pr-th-acciones', 'pr-col-acciones'];
+  const BOTONES_ADMIN = ['pr-importar', 'pr-nuevo'];
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
   let esAdministrador = false;
+  let puedeEntradas = false;
+  /** Hay un local concreto elegido (en la vista "Todos" no se pueden registrar entradas) */
+  let hayLocal = false;
+  let nombresLocales = new Map<string, string>();
   let categoriaActiva = '';
   let pagina = 1;
   /** id -> texto normalizado (nombre + código + categoría + modelos) para buscar rápido */
@@ -237,6 +243,15 @@ const claseSelect =
       chip('', 'Todas', productos.length) + ordenadas.map((c) => chip(c, c, conteo.get(c)!)).join('');
   }
 
+  /** En la vista "Todos los locales": stock de cada local debajo del total. */
+  function desgloseStock(p: ProductoConRelaciones): string {
+    if (!p.stock_por_local) return '';
+    const partes = Object.entries(p.stock_por_local)
+      .filter(([, n]) => n > 0)
+      .map(([id, n]) => `${escapar((nombresLocales.get(id) ?? 'Local').replace(/^Local /, ''))} ${n}`);
+    return partes.length ? `<span class="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">${partes.join(' · ')}</span>` : '';
+  }
+
   function filaHtml(p: ProductoConRelaciones): string {
     return `
       <tr class="align-middle text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
@@ -259,13 +274,13 @@ const claseSelect =
             : ''
         }
         <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</td>
-        <td data-label="Stock" class="px-4 py-3">${pildoraStock(p)}</td>
+        <td data-label="Stock" class="px-4 py-3"><div class="text-left">${pildoraStock(p)}${desgloseStock(p)}</div></td>
         ${
-          esAdministrador
+          puedeEntradas
             ? `<td class="px-4 py-3">
                 <div class="acciones flex justify-end gap-1.5">
-                  <button type="button" data-entrada="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
-                  <button type="button" data-editar="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
+                  <button type="button" data-entrada="${p.id}" ${hayLocal ? '' : 'disabled title="Elige un local en el selector del encabezado para registrar entradas"'} class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
+                  ${esAdministrador ? `<button type="button" data-editar="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>` : ''}
                 </div>
               </td>`
             : ''
@@ -399,6 +414,9 @@ const claseSelect =
         precio_venta: p.precio_venta.toFixed(2),
         stock_actual: p.stock_actual,
         stock_minimo: p.stock_minimo,
+        ...(p.stock_por_local
+          ? { stock_por_local: Object.entries(p.stock_por_local).map(([id, n]) => `${nombresLocales.get(id) ?? id}: ${n}`).join('; ') }
+          : {}),
         compatible_con: p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join('; ') || 'Universal',
       }))
     );
@@ -412,11 +430,20 @@ const claseSelect =
     pintar();
   });
 
-  Promise.all([inventoryService.listarProductos(), obtenerSesionActual()]).then(([lista, sesion]) => {
+  Promise.all([inventoryService.listarProductos(), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     productos = lista;
-    esAdministrador = sesion?.rol === 'administrador';
-    for (const id of COLUMNAS_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
+    const rol = contexto?.sesion.rol;
+    esAdministrador = rol === 'administrador';
+    puedeEntradas = esGerencia(rol);
+    hayLocal = !!contexto?.local;
+    nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));
+    for (const id of COLUMNAS_COSTO) $(id).classList.toggle('hidden', !esAdministrador);
+    for (const id of COLUMNAS_ACCIONES) $(id).classList.toggle('hidden', !puedeEntradas);
     for (const id of BOTONES_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
+    const botonEntrada = $<HTMLButtonElement>('pr-entrada');
+    botonEntrada.classList.toggle('hidden', !puedeEntradas);
+    botonEntrada.disabled = !hayLocal;
+    botonEntrada.title = hayLocal ? '' : 'Elige un local en el selector del encabezado para registrar entradas';
     reconstruirIndice();
     pintarCategorias();
     animarLista(filas);

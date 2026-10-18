@@ -22,9 +22,10 @@ export async function insertarDevolucion(devolucion: NuevaDevolucion): Promise<D
   return normalizar(data as Devolucion);
 }
 
-export async function listarDevoluciones(opciones: { limite: number; ventaId?: string }): Promise<Devolucion[]> {
+export async function listarDevoluciones(opciones: { limite: number; ventaId?: string; localId?: string | null }): Promise<Devolucion[]> {
   let consulta = supabase.from('devoluciones').select('*').order('fecha', { ascending: false }).limit(opciones.limite);
   if (opciones.ventaId) consulta = consulta.eq('venta_id', opciones.ventaId);
+  if (opciones.localId) consulta = consulta.eq('local_id', opciones.localId);
 
   const { data, error } = await consulta.overrideTypes<Devolucion[], { merge: false }>();
   if (error) throw error;

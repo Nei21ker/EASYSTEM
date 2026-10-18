@@ -8,6 +8,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 ---
 
 <DashboardLayout titulo="Nueva Venta" subtitulo="Punto de venta (POS) — Edward Accesorios">
+  <!-- Vista "Todos los locales" (administrador): una venta se registra en un local concreto -->
+  <div id="pos-sin-local" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-6 text-center dark:border-amber-500/40 dark:bg-amber-500/10 print:hidden">
+    <p class="text-base font-semibold text-amber-900 dark:text-amber-200">Elige un local para vender</p>
+    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">
+      Estás viendo "Todos los locales". Cada venta descuenta el inventario de un local, así que elige uno en el selector del encabezado.
+    </p>
+  </div>
+
   <div id="pos-app" class="grid grid-cols-1 gap-6 pb-20 lg:h-[calc(100dvh-10rem)] lg:min-h-[30rem] lg:grid-cols-5 lg:grid-rows-1 lg:pb-0 print:hidden">
     <!-- Buscador + resultados -->
     <div class="min-h-0 lg:col-span-3">
@@ -744,5 +752,21 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   document.getElementById('pos-imprimir')?.addEventListener('click', () => window.print());
   document.getElementById('pos-nueva-venta')?.addEventListener('click', iniciarNuevaVenta);
 
-  cargarProductos();
+  // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
+  inventoryService.obtenerContextoLocal().then((contexto) => {
+    if (contexto?.local) {
+      cargarProductos();
+      return;
+    }
+    cargando.classList.add('hidden');
+    posApp.classList.add('hidden');
+    barraMovil.classList.add('hidden');
+    barraMovil.classList.remove('flex');
+    const aviso = document.getElementById('pos-sin-local')!;
+    aviso.classList.remove('hidden');
+    if (contexto && contexto.alcance === null) {
+      aviso.querySelector('p')!.textContent = 'Tu usuario no tiene un local asignado';
+      aviso.querySelectorAll('p')[1].textContent = 'Pídele al administrador que te asigne uno para poder vender.';
+    }
+  });
 </script>

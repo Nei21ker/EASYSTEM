@@ -37,7 +37,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
-  import { convertirABs, esStockBajo, formatearBolivares, formatearMoneda } from '../utils/format';
+  import { convertirABs, formatearBolivares, formatearMoneda } from '../utils/format';
   import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
 
@@ -53,11 +53,12 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   }
   tasaActual.listen(pintarValorEnBs);
 
-  inventoryService.listarProductos().then((productos) => {
+  // Todo viene ya filtrado por el local activo (o por todos los locales, en la vista del administrador).
+  // Las alertas se cuentan por local: un producto bajo en dos locales son dos alertas.
+  Promise.all([inventoryService.listarProductos(), inventoryService.listarProductosStockBajo()]).then(([productos, stockBajo]) => {
     const valorInventario = productos.reduce((total, p) => total + p.precio_venta * p.stock_actual, 0);
     valorInventarioUsd = valorInventario;
     pintarValorEnBs();
-    const stockBajo = productos.filter(esStockBajo);
 
     contarHasta(document.getElementById('stat-total-productos'), productos.length);
     contarHasta(document.getElementById('stat-valor-inventario'), valorInventario, formatearMoneda, 1100);

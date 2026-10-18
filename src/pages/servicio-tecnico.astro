@@ -1,0 +1,225 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import NuevaOrden from '../components/servicio/NuevaOrden.astro';
+import DetalleOrden from '../components/servicio/DetalleOrden.astro';
+---
+
+<DashboardLayout titulo="Servicio técnico" subtitulo="Recepción de equipos, reparaciones y repuestos del local">
+  <div class="space-y-4">
+    <!-- Aviso: este módulo es del local de servicio técnico -->
+    <div id="st-sin-local" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-6 text-center dark:border-amber-500/40 dark:bg-amber-500/10">
+      <p class="text-base font-semibold text-amber-900 dark:text-amber-200">Este módulo es del Local Servicio Técnico</p>
+      <p id="st-sin-local-texto" class="mt-1 text-sm text-amber-800 dark:text-amber-300">
+        Elige el Local Servicio Técnico en el selector del encabezado para recibir equipos y registrar reparaciones.
+      </p>
+    </div>
+
+    <div id="st-contenido" class="space-y-4">
+      <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div class="relative flex-1">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+            </svg>
+            <input
+              id="st-buscador"
+              type="search"
+              autocomplete="off"
+              placeholder="Buscar por folio, cliente, teléfono, equipo o IMEI..."
+              class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            />
+          </div>
+          <button
+            id="st-nueva"
+            type="button"
+            class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            + Recibir equipo
+          </button>
+        </div>
+
+        <div id="st-estados" class="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Filtrar por estado"></div>
+      </div>
+
+      <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="overflow-x-auto">
+          <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[56rem] md:table-fixed">
+            <colgroup>
+              <col class="w-32" />
+              <col class="w-[22%]" />
+              <col class="w-[24%]" />
+              <col />
+              <col class="w-36" />
+              <col class="w-32" />
+            </colgroup>
+            <thead>
+              <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+                <th class="px-5 py-3 font-semibold">Orden</th>
+                <th class="px-4 py-3 font-semibold">Cliente</th>
+                <th class="px-4 py-3 font-semibold">Equipo</th>
+                <th class="px-4 py-3 font-semibold">Falla reportada</th>
+                <th class="px-4 py-3 font-semibold">Estado</th>
+                <th class="px-4 py-3 text-right font-semibold">Total</th>
+              </tr>
+            </thead>
+            <tbody id="st-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+        <p id="st-cargando" class="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">Cargando órdenes...</p>
+        <div id="st-vacio" class="hidden px-5 py-12 text-center">
+          <p class="text-sm font-medium text-slate-700 dark:text-slate-200">No hay órdenes con esos filtros</p>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Usa "Recibir equipo" para registrar una nueva reparación.</p>
+        </div>
+        <p id="st-error" class="hidden px-5 py-8 text-sm text-red-600 dark:text-red-400"></p>
+      </div>
+    </div>
+  </div>
+
+  <NuevaOrden />
+  <DetalleOrden />
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { ESTADOS_ORDEN } from '../lib/inventoryService';
+  import { htmlPrecioDual } from '../utils/format';
+  import { formatearFecha } from '../utils/format';
+  import { animarLista } from '../utils/animaciones';
+  import { escaparHtml, normalizarTexto } from '../utils/productosUI';
+  import { tasaActual } from '../stores/tasa';
+  import type { EstadoOrdenServicio, OrdenServicio } from '../types/database.types';
+
+  let ordenes: OrdenServicio[] = [];
+  let estadoActivo: EstadoOrdenServicio | '' = '';
+  let primeraVez = true;
+  let nombresLocales = new Map<string, string>();
+  let verLocal = false;
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const filas = $<HTMLTableSectionElement>('st-filas');
+  const buscador = $<HTMLInputElement>('st-buscador');
+
+  const ESTILO_ESTADO: Record<EstadoOrdenServicio, string> = {
+    pendiente: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+    en_reparacion: 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300',
+    listo: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    entregado: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400',
+  };
+  const etiquetaEstado = (e: EstadoOrdenServicio) => ESTADOS_ORDEN.find((x) => x.valor === e)?.etiqueta ?? e;
+
+  function pintarEstados() {
+    const base = 'st-estado shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold transition';
+    const activo = 'border-brand-600 bg-brand-600 text-white shadow-sm';
+    const inactivo = 'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-brand-500 dark:hover:text-brand-300';
+    const chip = (valor: string, texto: string, n: number) =>
+      `<button type="button" data-estado="${valor}" aria-pressed="${estadoActivo === valor}" class="${base} ${estadoActivo === valor ? activo : inactivo}">${texto} <span class="ml-0.5 opacity-70">${n}</span></button>`;
+    $('st-estados').innerHTML =
+      chip('', 'Todas', ordenes.length) + ESTADOS_ORDEN.map((e) => chip(e.valor, e.etiqueta, ordenes.filter((o) => o.estado === e.valor).length)).join('');
+  }
+
+  function filtrar(): OrdenServicio[] {
+    const q = normalizarTexto(buscador.value.trim());
+    const tokens = q ? q.split(/\s+/) : [];
+    return ordenes.filter((o) => {
+      if (estadoActivo && o.estado !== estadoActivo) return false;
+      if (tokens.length === 0) return true;
+      const texto = normalizarTexto(
+        `${o.folio} ${String(o.folio).padStart(4, '0')} ${o.cliente_nombre} ${o.cliente_cedula} ${o.cliente_telefono} ${o.cliente_telefono.replace(/\D/g, '')} ${o.equipo_marca} ${o.equipo_modelo} ${o.equipo_imei ?? ''} ${o.falla_reportada}`
+      );
+      return tokens.every((t) => texto.includes(t));
+    });
+  }
+
+  function filaHtml(o: OrdenServicio): string {
+    return `
+      <tr data-orden="${o.id}" class="cursor-pointer align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
+        <td class="px-5 py-3">
+          <p class="font-semibold text-slate-900 dark:text-white">#${String(o.folio).padStart(4, '0')}</p>
+          <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(o.recibida_en))}</p>
+          ${verLocal ? `<p class="mt-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300">${escaparHtml(nombresLocales.get(o.local_id) ?? 'Local')}</p>` : ''}
+        </td>
+        <td data-label="Cliente" class="px-4 py-3">
+          <div class="min-w-0 text-right md:text-left">
+            <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(o.cliente_nombre)}</p>
+            <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(o.cliente_telefono)}</p>
+          </div>
+        </td>
+        <td data-label="Equipo" class="px-4 py-3">
+          <div class="min-w-0 text-right md:text-left">
+            <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(o.equipo_marca)} ${escaparHtml(o.equipo_modelo)}</p>
+            ${o.equipo_imei ? `<p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(o.equipo_imei)}</p>` : ''}
+          </div>
+        </td>
+        <td data-label="Falla" class="px-4 py-3"><p class="line-clamp-2 break-words text-xs text-slate-600 dark:text-slate-400">${escaparHtml(o.falla_reportada)}</p></td>
+        <td data-label="Estado" class="px-4 py-3">
+          <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${ESTILO_ESTADO[o.estado]}">${etiquetaEstado(o.estado)}</span>
+          ${o.repuestos.length ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">${o.repuestos.length} repuesto${o.repuestos.length === 1 ? '' : 's'}</p>` : ''}
+        </td>
+        <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(o.total_usd, tasaActual.get())}</td>
+      </tr>`;
+  }
+
+  function pintar() {
+    const lista = filtrar();
+    filas.innerHTML = lista.map(filaHtml).join('');
+    $('st-vacio').classList.toggle('hidden', lista.length > 0);
+    pintarEstados();
+  }
+
+  async function cargar() {
+    try {
+      ordenes = await inventoryService.listarOrdenesServicio();
+      $('st-error').classList.add('hidden');
+    } catch (err) {
+      ordenes = [];
+      $('st-error').textContent = `No se pudieron cargar las órdenes de servicio: ${err instanceof Error ? err.message : err}`;
+      $('st-error').classList.remove('hidden');
+    }
+    $('st-cargando').classList.add('hidden');
+    if (primeraVez) {
+      primeraVez = false;
+      animarLista(filas);
+    }
+    pintar();
+  }
+
+  buscador.addEventListener('input', pintar);
+  $('st-estados').addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-estado]');
+    if (!boton) return;
+    estadoActivo = (boton.dataset.estado ?? '') as EstadoOrdenServicio | '';
+    pintar();
+  });
+  filas.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-orden]')?.dataset.orden;
+    const orden = ordenes.find((o) => o.id === id);
+    if (orden) window.dispatchEvent(new CustomEvent('easystem:abrir-orden', { detail: { orden } }));
+  });
+  $('st-nueva').addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-nueva-orden')));
+  window.addEventListener('easystem:ordenes-cambiaron', () => void cargar());
+  tasaActual.listen(() => pintar());
+
+  inventoryService.obtenerContextoLocal().then((contexto) => {
+    if (!contexto) return;
+    verLocal = contexto.alcance === 'todos';
+    nombresLocales = new Map(contexto.locales.map((l) => [l.id, l.nombre]));
+    const esServicio = contexto.local?.tipo === 'servicio_tecnico';
+    const puedeVer = esServicio || verLocal;
+
+    if (!puedeVer) {
+      // Un local que no es de servicio técnico no tiene órdenes
+      $('st-contenido').classList.add('hidden');
+      $('st-sin-local').classList.remove('hidden');
+      $('st-sin-local-texto').textContent =
+        contexto.sesion.rol === 'administrador'
+          ? 'Elige el Local Servicio Técnico en el selector del encabezado para recibir equipos y registrar reparaciones.'
+          : 'Tu local no maneja órdenes de servicio técnico.';
+      return;
+    }
+    // En la vista "Todos" se consultan todas las órdenes, pero recibir un equipo exige estar en el local de servicio técnico
+    const nueva = $<HTMLButtonElement>('st-nueva');
+    nueva.disabled = !esServicio;
+    nueva.title = esServicio ? '' : 'Elige el Local Servicio Técnico en el selector del encabezado para recibir un equipo';
+    void cargar();
+  });
+</script>
