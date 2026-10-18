@@ -1,91 +1,211 @@
 ---
-// Fondo decorativo del login: auroras con los colores del logo, una malla de
-// puntos (inventario), íconos de accesorios flotando y un "láser" de lector de
-// códigos de barras que barre la pantalla. Todo es CSS (ver "Fondo animado del
-// login" en global.css) y se queda quieto con "reducir movimiento".
-
-// Cada ícono: trazos de 24x24, posición, tamaño (px), y duración/retardo de su flote.
-const iconos = [
-  { // smartphone
-    d: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z', 'M12 18h.01'],
-    x: '8%', y: '14%', t: 56, dur: 11, ret: 0
-  },
-  { // cargador / enchufe
-    d: ['M12 22v-5', 'M9 8V2', 'M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'],
-    x: '84%', y: '12%', t: 48, dur: 13, ret: -4
-  },
-  { // audífonos
-    d: ['M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3'],
-    x: '90%', y: '48%', t: 60, dur: 15, ret: -7
-  },
-  { // código de barras
-    d: ['M3 5v14', 'M7 5v14', 'M11 5v14', 'M14 5v14', 'M18 5v14', 'M21 5v14'],
-    x: '5%', y: '56%', t: 52, dur: 12, ret: -2
-  },
-  { // cable
-    d: ['M4 9a2 2 0 0 1-2-2V5h6v2a2 2 0 0 1-2 2Z', 'M3 5V3', 'M7 5V3', 'M19 15V6.5a3.5 3.5 0 0 0-7 0v11a3.5 3.5 0 0 1-7 0V9', 'M17 21v-2', 'M21 21v-2', 'M22 19h-6v-2a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2Z'],
-    x: '16%', y: '82%', t: 58, dur: 14, ret: -9
-  },
-  { // caja / inventario
-    d: ['m7.5 4.27 9 5.15', 'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z', 'm3.3 7 8.7 5 8.7-5', 'M12 22V12'],
-    x: '78%', y: '80%', t: 54, dur: 12.5, ret: -5
-  },
-  { // batería cargando
-    d: ['M15 7h1a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2', 'M6 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1', 'm11 7-3 5h4l-3 5', 'M22 11v2'],
-    x: '30%', y: '7%', t: 40, dur: 16, ret: -11
-  },
-  { // etiqueta de precio
-    d: ['M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z', 'M7.5 7.5h.01'],
-    x: '66%', y: '6%', t: 38, dur: 14.5, ret: -6
-  },
-  { // smartphone pequeño
-    d: ['M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z', 'M12 18h.01'],
-    x: '92%', y: '88%', t: 34, dur: 17, ret: -3
-  },
-  { // código de barras pequeño
-    d: ['M3 5v14', 'M7 5v14', 'M11 5v14', 'M14 5v14', 'M18 5v14', 'M21 5v14'],
-    x: '44%', y: '92%', t: 34, dur: 13.5, ret: -8
-  },
-  { // cargador pequeño
-    d: ['M12 22v-5', 'M9 8V2', 'M15 8V2', 'M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z'],
-    x: '3%', y: '30%', t: 36, dur: 15.5, ret: -1
-  }
-];
+// Fondo del login: red de nodos ("plexus") en canvas. Los puntos derivan despacio
+// y se unen con líneas cuando están cerca; el cursor (o el dedo) los atrae y se
+// conecta con ellos, y un clic/toque suelta nuevos nodos. Usa los colores del
+// logo y se adapta al tema claro/oscuro. Con "reducir movimiento" dibuja un solo
+// cuadro estático.
 ---
 
-<div class="fondo-login pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
-  <!-- Auroras -->
-  <div class="fondo-aurora fondo-aurora-1 bg-brand-500/25 dark:bg-brand-500/30"></div>
-  <div class="fondo-aurora fondo-aurora-2 bg-accent-400/25 dark:bg-accent-400/20"></div>
-  <div class="fondo-aurora fondo-aurora-3 bg-brand-700/20 dark:bg-brand-700/40"></div>
-
-  <!-- Malla de puntos -->
-  <div class="fondo-puntos absolute inset-0"></div>
-
-  <!-- Láser de lector de códigos de barras -->
-  <div class="fondo-laser absolute inset-x-0 top-0">
-    <div class="fondo-laser-estela"></div>
-    <div class="fondo-laser-linea"></div>
-  </div>
-
-  <!-- Íconos de accesorios -->
-  {
-    iconos.map((i) => (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.1"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        class="fondo-icono absolute text-brand-600/25 dark:text-brand-300/20"
-        style={`left:${i.x};top:${i.y};width:${i.t}px;height:${i.t}px;--dur:${i.dur}s;--ret:${i.ret}s`}
-      >
-        {i.d.map((trazo) => (
-          <path d={trazo} />
-        ))}
-      </svg>
-    ))
-  }
+<div class="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+  <!-- Resplandor suave detrás del formulario -->
+  <div class="absolute left-1/2 top-1/2 h-[42rem] w-[42rem] max-w-[120vw] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand-500/10 blur-3xl dark:bg-brand-500/15"></div>
+  <canvas id="fondo-red" class="absolute inset-0 h-full w-full"></canvas>
 </div>
+
+<script>
+  const canvas = document.getElementById('fondo-red') as HTMLCanvasElement | null;
+  const ctx = canvas?.getContext('2d');
+
+  if (canvas && ctx) {
+    interface Nodo {
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      r: number;
+    }
+
+    const reducirMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const MAX_NODOS_EXTRA = 40; // nodos creados con clic/toque
+    let ancho = 0;
+    let alto = 0;
+    let nodos: Nodo[] = [];
+    let extras = 0;
+    let distanciaEnlace = 150;
+    let radioCursor = 190;
+    const cursor = { x: -9999, y: -9999, activo: false };
+    let rafId = 0;
+
+    const esOscuro = () => document.documentElement.classList.contains('dark');
+
+    function nuevoNodo(x: number, y: number, rapido = false): Nodo {
+      const ang = Math.random() * Math.PI * 2;
+      const vel = (rapido ? 0.9 : 0.15) + Math.random() * 0.3;
+      return { x, y, vx: Math.cos(ang) * vel, vy: Math.sin(ang) * vel, r: 1.2 + Math.random() * 1.6 };
+    }
+
+    function ajustar() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      ancho = window.innerWidth;
+      alto = window.innerHeight;
+      canvas!.width = Math.round(ancho * dpr);
+      canvas!.height = Math.round(alto * dpr);
+      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const movil = ancho < 640;
+      distanciaEnlace = movil ? 110 : 165;
+      radioCursor = movil ? 150 : 190;
+      const objetivo = Math.min(movil ? 60 : 170, Math.round((ancho * alto) / (movil ? 8000 : 9000)));
+
+      // Conserva los nodos existentes; solo agrega o quita hasta el objetivo.
+      while (nodos.length < objetivo) nodos.push(nuevoNodo(Math.random() * ancho, Math.random() * alto));
+      if (nodos.length > objetivo) nodos.length = objetivo;
+    }
+
+    function actualizar() {
+      for (const n of nodos) {
+        // Atracción suave hacia el cursor: los nodos cercanos se agrupan a su alrededor.
+        if (cursor.activo) {
+          const dx = cursor.x - n.x;
+          const dy = cursor.y - n.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < radioCursor * radioCursor && d2 > 400) {
+            const f = 0.012 * (1 - Math.sqrt(d2) / radioCursor);
+            n.vx += dx * f * 0.05;
+            n.vy += dy * f * 0.05;
+          }
+        }
+        // Amortigua para volver a la velocidad de crucero.
+        n.vx *= 0.995;
+        n.vy *= 0.995;
+        const vel = Math.hypot(n.vx, n.vy);
+        if (vel < 0.12) {
+          n.vx += (Math.random() - 0.5) * 0.03;
+          n.vy += (Math.random() - 0.5) * 0.03;
+        }
+        n.x += n.vx;
+        n.y += n.vy;
+        if (n.x < -20) n.x = ancho + 20;
+        else if (n.x > ancho + 20) n.x = -20;
+        if (n.y < -20) n.y = alto + 20;
+        else if (n.y > alto + 20) n.y = -20;
+      }
+    }
+
+    function dibujar() {
+      const oscuro = esOscuro();
+      const nodoRGB = oscuro ? '143, 207, 251' : '24, 113, 211';
+      const lineaRGB = oscuro ? '79, 180, 243' : '24, 113, 211';
+      const cursorRGB = oscuro ? '27, 228, 238' : '15, 165, 184';
+      const alfaBase = oscuro ? 0.7 : 0.4;
+
+      ctx!.clearRect(0, 0, ancho, alto);
+      ctx!.lineWidth = 1;
+
+      // Enlaces entre nodos cercanos
+      const max2 = distanciaEnlace * distanciaEnlace;
+      for (let i = 0; i < nodos.length; i++) {
+        const a = nodos[i];
+        for (let j = i + 1; j < nodos.length; j++) {
+          const b = nodos[j];
+          const dx = a.x - b.x;
+          const dy = a.y - b.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < max2) {
+            const alfa = (1 - Math.sqrt(d2) / distanciaEnlace) * alfaBase;
+            ctx!.strokeStyle = `rgba(${lineaRGB}, ${alfa})`;
+            ctx!.beginPath();
+            ctx!.moveTo(a.x, a.y);
+            ctx!.lineTo(b.x, b.y);
+            ctx!.stroke();
+          }
+        }
+      }
+
+      // Enlaces del cursor con los nodos a su alcance (más brillantes, en cian)
+      if (cursor.activo) {
+        for (const n of nodos) {
+          const d = Math.hypot(n.x - cursor.x, n.y - cursor.y);
+          if (d < radioCursor) {
+            const alfa = (1 - d / radioCursor) * (oscuro ? 0.85 : 0.6);
+            ctx!.strokeStyle = `rgba(${cursorRGB}, ${alfa})`;
+            ctx!.beginPath();
+            ctx!.moveTo(cursor.x, cursor.y);
+            ctx!.lineTo(n.x, n.y);
+            ctx!.stroke();
+          }
+        }
+        ctx!.fillStyle = `rgba(${cursorRGB}, 0.9)`;
+        ctx!.beginPath();
+        ctx!.arc(cursor.x, cursor.y, 2.6, 0, Math.PI * 2);
+        ctx!.fill();
+      }
+
+      // Nodos
+      ctx!.fillStyle = `rgba(${nodoRGB}, ${oscuro ? 0.9 : 0.7})`;
+      for (const n of nodos) {
+        ctx!.beginPath();
+        ctx!.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx!.fill();
+      }
+    }
+
+    function cuadro() {
+      actualizar();
+      dibujar();
+      rafId = requestAnimationFrame(cuadro);
+    }
+
+    function iniciar() {
+      if (reducirMovimiento || rafId) return;
+      rafId = requestAnimationFrame(cuadro);
+    }
+    function detener() {
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    }
+
+    ajustar();
+    // Calienta la simulación para que no se vea "armarse" al cargar.
+    for (let i = 0; i < 60; i++) actualizar();
+    dibujar();
+    iniciar();
+
+    let temporizador = 0;
+    window.addEventListener('resize', () => {
+      clearTimeout(temporizador);
+      temporizador = window.setTimeout(() => {
+        ajustar();
+        if (reducirMovimiento) dibujar();
+      }, 150);
+    });
+
+    // Ahorra batería: sin animar cuando la pestaña está oculta
+    document.addEventListener('visibilitychange', () => (document.hidden ? detener() : iniciar()));
+
+    window.addEventListener('pointermove', (e) => {
+      cursor.x = e.clientX;
+      cursor.y = e.clientY;
+      cursor.activo = true;
+    });
+    // Al salir de la ventana o levantar el dedo, el cursor deja de interactuar
+    document.documentElement.addEventListener('pointerleave', () => (cursor.activo = false));
+    window.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch') cursor.activo = false;
+    });
+
+    // Clic/toque en zona libre: suelta nodos nuevos (los más viejos se retiran solos)
+    window.addEventListener('pointerdown', (e) => {
+      if (reducirMovimiento) return;
+      if (e.target instanceof Element && e.target.closest('form, a, button, input, label, dialog')) return;
+      for (let i = 0; i < 4; i++) {
+        nodos.push(nuevoNodo(e.clientX, e.clientY, true));
+        extras++;
+      }
+      while (extras > MAX_NODOS_EXTRA) {
+        nodos.splice(0, 1);
+        extras--;
+      }
+    });
+  }
+</script>
