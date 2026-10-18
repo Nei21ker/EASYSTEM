@@ -15,6 +15,11 @@ export const enlacesNav: EnlaceNav[] = [
     etiqueta: 'Nueva Venta (POS)',
     icono: 'M3 3h2l.4 2M7 13h10l4-8H5.4M7 13 5.4 5M7 13l-2.29 2.29c-.63.63-.18 1.71.71 1.71H17M9 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM20 21a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z',
   },
+  {
+    href: '/historial-ventas',
+    etiqueta: 'Ventas realizadas',
+    icono: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5h6M9 12h6M9 16h4',
+  },
   { href: '/productos', etiqueta: 'Productos', icono: 'M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4' },
   {
     href: '/modelos',

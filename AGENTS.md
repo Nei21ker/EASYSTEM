@@ -80,7 +80,8 @@ The POS asks for cédula (`V-`/`E-` + 5–9 digits), nombre, apellido, teléfono
 
 - A vendedor only sees their own `ventas` (RLS); the admin sees all; nobody can update/delete from the app. They hold personal data — never log or export them casually.
 - Not atomic: if a later line fails, or saving the record fails, the service throws `VentaIncompletaError` with `productosRegistrados`; the page removes those lines from the cart so they aren't charged twice. Offline, the record is queued in `easystem:cola-ventas` (synced with the stock queue; folio shows as "pendiente" on the ticket).
-- There is no screen yet that lists `ventas` (data is in the table / `db.ventas`).
+- **Historial** (`pages/historial-ventas.astro`, "Ventas realizadas", both roles): `inventoryService.listarVentas({ desde, hasta })` (date range filtered in the DB; offline-pending sales appear with folio 0). Search by folio/name/cédula/phone, filter by payment type, per-type summary (`utils/ventasResumen.ts`, shared with Reportes), paginated. The seller column and CSV export are **admin only** (personal data). In LocalStorage demo mode a vendedor is filtered by `vendedor_nombre` to mimic the RLS rule.
+- **Reportes** adds "Ventas por tipo de cobro" (chart + table + printable section) from the same `listarVentas`. It only covers sales saved in `ventas` (i.e. since migration 0011); the stock-movement-based revenue/cost figures are unchanged.
 
 ### Product photos and per-model product lookup
 

@@ -1,0 +1,367 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import StatCard from '../components/dashboard/StatCard.astro';
+import { METODOS_PAGO } from '../utils/pagos';
+
+const claseSelect =
+  'rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+const claseRango =
+  'hv-rango rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300';
+const claseBotonSecundario =
+  'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800';
+---
+
+<DashboardLayout titulo="Ventas realizadas" subtitulo="Historial de ventas con cliente y tipo de cobro">
+  <div class="space-y-4">
+    <!-- Filtros -->
+    <div class="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex flex-wrap items-center gap-2">
+          <button data-rango="hoy" class={claseRango}>Hoy</button>
+          <button data-rango="semana" class={claseRango}>Esta semana</button>
+          <button data-rango="mes" class={claseRango}>Este mes</button>
+          <button data-rango="personalizado" class={claseRango}>Personalizado</button>
+          <div id="hv-personalizado" class="hidden items-center gap-2">
+            <input id="hv-desde" type="date" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <span class="text-xs text-slate-400">a</span>
+            <input id="hv-hasta" type="date" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+        </div>
+        <button id="hv-exportar" type="button" class={`${claseBotonSecundario} hidden`}>Exportar CSV</button>
+      </div>
+
+      <div class="flex flex-col gap-3 sm:flex-row">
+        <div class="relative flex-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+          </svg>
+          <input
+            id="hv-buscador"
+            type="search"
+            autocomplete="off"
+            placeholder="Buscar por folio, nombre, cédula o teléfono..."
+            class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+          />
+        </div>
+        <select id="hv-metodo" class={claseSelect} aria-label="Filtrar por tipo de cobro">
+          <option value="">Todos los tipos de cobro</option>
+          {METODOS_PAGO.map((m) => <option value={m.valor}>{m.etiqueta}</option>)}
+        </select>
+      </div>
+
+      <p id="hv-aviso-vendedor" class="hidden rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 dark:bg-slate-800/50 dark:text-slate-400">
+        Estás viendo solo las ventas que registraste tú. El administrador ve las de todos.
+      </p>
+    </div>
+
+    <!-- Resumen -->
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <StatCard id="hv-stat-ventas" etiqueta="Ventas" valor="—" icono="movimientos" />
+      <StatCard id="hv-stat-total" etiqueta="Total vendido" valor="—" icono="valor" />
+      <StatCard id="hv-stat-bs" etiqueta="Cobrado en bolívares" valor="—" icono="valor" />
+    </section>
+
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Por tipo de cobro</h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full min-w-[30rem] text-left text-sm">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              <th class="px-5 py-2 font-semibold">Tipo de cobro</th>
+              <th class="px-4 py-2 text-right font-semibold">Ventas</th>
+              <th class="px-4 py-2 text-right font-semibold">Total ($)</th>
+              <th class="px-5 py-2 text-right font-semibold">Cobrado en Bs.</th>
+            </tr>
+          </thead>
+          <tbody id="hv-resumen-metodos" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Listado -->
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="overflow-x-auto">
+        <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[56rem] md:table-fixed">
+          <colgroup>
+            <col class="w-40" />
+            <col class="w-[24%]" />
+            <col class="w-48" />
+            <col />
+            <col class="w-36" />
+            <col id="hv-col-vendedor" class="hidden w-32" />
+          </colgroup>
+          <thead>
+            <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+              <th class="px-5 py-3 font-semibold">Folio</th>
+              <th class="px-4 py-3 font-semibold">Cliente</th>
+              <th class="px-4 py-3 font-semibold">Tipo de cobro</th>
+              <th class="px-4 py-3 font-semibold">Productos</th>
+              <th class="px-4 py-3 text-right font-semibold">Total</th>
+              <th id="hv-th-vendedor" class="hidden px-5 py-3 font-semibold">Vendedor</th>
+            </tr>
+          </thead>
+          <tbody id="hv-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+        </table>
+      </div>
+
+      <p id="hv-cargando" class="px-5 py-8 text-sm text-slate-500 dark:text-slate-400">Cargando ventas...</p>
+      <div id="hv-sin-resultados" class="hidden px-5 py-12 text-center">
+        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">No hay ventas con esos filtros</p>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Cambia el rango de fechas, el tipo de cobro o la búsqueda.</p>
+      </div>
+      <p id="hv-error" class="hidden px-5 py-8 text-sm text-red-600 dark:text-red-400"></p>
+
+      <div id="hv-paginacion" class="hidden flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:text-slate-400">
+        <p id="hv-rango-texto"></p>
+        <div class="flex items-center gap-1">
+          <button id="hv-anterior" type="button" class={`${claseBotonSecundario} disabled:cursor-not-allowed disabled:opacity-40`}>← Anterior</button>
+          <span id="hv-pagina" class="min-w-20 text-center font-medium text-slate-700 dark:text-slate-200"></span>
+          <button id="hv-siguiente" type="button" class={`${claseBotonSecundario} disabled:cursor-not-allowed disabled:opacity-40`}>Siguiente →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { obtenerSesionActual } from '../lib/auth';
+  import { formatearBolivares, formatearFecha, formatearMoneda } from '../utils/format';
+  import { descargarCSV } from '../utils/csv';
+  import { animarLista, contarHasta } from '../utils/animaciones';
+  import { calcularRango, type RangoPreestablecido } from '../utils/dateRange';
+  import { esMetodoBolivares, etiquetaMetodoPago } from '../utils/pagos';
+  import { resumirPorMetodo } from '../utils/ventasResumen';
+  import { escaparHtml, normalizarTexto } from '../utils/productosUI';
+  import type { VentaRegistrada } from '../lib/inventoryService';
+
+  const POR_PAGINA = 25;
+
+  let ventas: VentaRegistrada[] = []; // ya filtradas por rango de fechas
+  let rangoActual: RangoPreestablecido = 'mes';
+  let esAdministrador = false;
+  let nombreSesion = '';
+  let pagina = 1;
+  let primeraVez = true;
+  let cargaId = 0; // descarta respuestas viejas si se cambia de rango rápido
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const filas = $<HTMLTableSectionElement>('hv-filas');
+  const buscador = $<HTMLInputElement>('hv-buscador');
+  const selectMetodo = $<HTMLSelectElement>('hv-metodo');
+  const botonesRango = Array.from(document.querySelectorAll<HTMLButtonElement>('.hv-rango'));
+  const contenedorPersonalizado = $('hv-personalizado');
+  const inputDesde = $<HTMLInputElement>('hv-desde');
+  const inputHasta = $<HTMLInputElement>('hv-hasta');
+
+  function marcarBotonActivo() {
+    for (const boton of botonesRango) {
+      const activo = boton.dataset.rango === rangoActual;
+      boton.classList.toggle('bg-brand-600', activo);
+      boton.classList.toggle('text-white', activo);
+      boton.classList.toggle('border-brand-600', activo);
+      boton.classList.toggle('hover:bg-slate-50', !activo);
+      boton.classList.toggle('dark:hover:bg-slate-800', !activo);
+    }
+  }
+
+  // --- Filtros en pantalla ------------------------------------------------------
+  function filtrar(): VentaRegistrada[] {
+    const q = normalizarTexto(buscador.value.trim());
+    const tokens = q ? q.split(/\s+/) : [];
+    const metodo = selectMetodo.value;
+    return ventas.filter((v) => {
+      if (metodo && v.metodo_pago !== metodo) return false;
+      if (tokens.length === 0) return true;
+      const texto = normalizarTexto(
+        `${v.folio} ${String(v.folio).padStart(4, "0")} ${v.cliente_nombre} ${v.cliente_cedula} ${v.cliente_cedula.replace(/\D/g, '')} ${v.cliente_telefono} ${v.cliente_telefono.replace(/\D/g, '')}`
+      );
+      return tokens.every((t) => texto.includes(t));
+    });
+  }
+
+  const estiloMetodo = (metodo: string) =>
+    esMetodoBolivares(metodo)
+      ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
+      : metodo === 'BINANCE_USDT'
+        ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400'
+        : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400';
+
+  function filaHtml(v: VentaRegistrada): string {
+    const unidades = v.items.reduce((suma, i) => suma + i.cantidad, 0);
+    const detalle = v.items
+      .map(
+        (i) => `<li class="flex justify-between gap-3"><span class="min-w-0 break-words">${i.cantidad} × ${escaparHtml(i.nombre)}</span><span class="shrink-0 tabular-nums">${formatearMoneda(i.precio_unitario * i.cantidad)}</span></li>`
+      )
+      .join('');
+    const folio = v.folio
+      ? `#${String(v.folio).padStart(4, '0')}`
+      : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Pendiente de sincronizar</span>';
+
+    return `
+      <tr class="align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
+        <td class="px-5 py-3">
+          <p class="font-semibold text-slate-900 dark:text-white">${folio}</p>
+          <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(v.fecha))}</p>
+        </td>
+        <td data-label="Cliente" class="px-4 py-3">
+          <div class="min-w-0 text-right md:text-left">
+            <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(v.cliente_nombre)}</p>
+            <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(v.cliente_cedula)} · ${escaparHtml(v.cliente_telefono)}</p>
+          </div>
+        </td>
+        <td data-label="Tipo de cobro" class="px-4 py-3">
+          <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${estiloMetodo(v.metodo_pago)}">${escaparHtml(etiquetaMetodoPago(v.metodo_pago))}</span>
+        </td>
+        <td data-label="Productos" class="px-4 py-3">
+          <details class="group text-left">
+            <summary class="cursor-pointer list-none text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
+              ${v.items.length} producto${v.items.length === 1 ? '' : 's'} · ${unidades} u. <span class="text-slate-400 group-open:hidden">(ver)</span><span class="hidden text-slate-400 group-open:inline">(ocultar)</span>
+            </summary>
+            <ul class="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400">${detalle}</ul>
+          </details>
+        </td>
+        <td data-label="Total" class="px-4 py-3 text-right">
+          <span class="inline-block text-right">
+            <span class="block font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(v.total)}</span>
+            ${v.total_bs != null ? `<span class="block whitespace-nowrap text-[11px] font-medium tabular-nums text-slate-500 dark:text-slate-400">${formatearBolivares(v.total_bs)}</span>` : ''}
+            ${v.tasa_cambio ? `<span class="block whitespace-nowrap text-[11px] text-slate-400 dark:text-slate-500">Tasa ${formatearBolivares(v.tasa_cambio)}</span>` : ''}
+          </span>
+        </td>
+        ${esAdministrador ? `<td data-label="Vendedor" class="px-5 py-3 text-xs text-slate-500 dark:text-slate-400">${escaparHtml(v.vendedor_nombre ?? '—')}</td>` : ''}
+      </tr>`;
+  }
+
+  function pintarResumen(lista: VentaRegistrada[]) {
+    const totalUsd = lista.reduce((suma, v) => suma + v.total, 0);
+    const totalBs = lista.reduce((suma, v) => suma + (v.total_bs ?? 0), 0);
+    contarHasta($('hv-stat-ventas'), lista.length, undefined, 600);
+    contarHasta($('hv-stat-total'), totalUsd, formatearMoneda, 700);
+    contarHasta($('hv-stat-bs'), totalBs, formatearBolivares, 700);
+
+    $('hv-resumen-metodos').innerHTML = resumirPorMetodo(lista)
+      .map(
+        (r) => `
+          <tr class="${r.cantidad === 0 ? 'text-slate-400 dark:text-slate-600' : 'text-slate-700 dark:text-slate-300'}">
+            <td class="px-5 py-2.5 font-medium">${escaparHtml(r.etiqueta)}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">${r.cantidad}</td>
+            <td class="px-4 py-2.5 text-right tabular-nums">${formatearMoneda(r.totalUsd)}</td>
+            <td class="px-5 py-2.5 text-right tabular-nums">${esMetodoBolivares(r.metodo) ? formatearBolivares(r.totalBs) : '—'}</td>
+          </tr>`
+      )
+      .join('');
+  }
+
+  function pintar() {
+    const lista = filtrar();
+    const totalPaginas = Math.max(1, Math.ceil(lista.length / POR_PAGINA));
+    pagina = Math.min(Math.max(1, pagina), totalPaginas);
+    const inicio = (pagina - 1) * POR_PAGINA;
+
+    filas.innerHTML = lista.slice(inicio, inicio + POR_PAGINA).map(filaHtml).join('');
+    $('hv-sin-resultados').classList.toggle('hidden', lista.length > 0);
+
+    const hayPaginas = lista.length > POR_PAGINA;
+    const paginacion = $('hv-paginacion');
+    paginacion.classList.toggle('hidden', !hayPaginas);
+    paginacion.classList.toggle('flex', hayPaginas);
+    $('hv-rango-texto').textContent = `Mostrando ${inicio + 1}–${Math.min(inicio + POR_PAGINA, lista.length)} de ${lista.length}`;
+    $('hv-pagina').textContent = `Página ${pagina} de ${totalPaginas}`;
+    $<HTMLButtonElement>('hv-anterior').disabled = pagina <= 1;
+    $<HTMLButtonElement>('hv-siguiente').disabled = pagina >= totalPaginas;
+
+    pintarResumen(lista);
+  }
+
+  // --- Carga por rango de fechas -----------------------------------------------------
+  async function cargar() {
+    marcarBotonActivo();
+    const rango =
+      rangoActual === 'personalizado'
+        ? calcularRango('personalizado', { desde: inputDesde.value, hasta: inputHasta.value })
+        : calcularRango(rangoActual);
+
+    const miCarga = ++cargaId;
+    $('hv-error').classList.add('hidden');
+    try {
+      const lista = await inventoryService.listarVentas({ desde: rango.desde, hasta: rango.hasta });
+      if (miCarga !== cargaId) return;
+      // Con Supabase la base de datos ya entrega solo las ventas del vendedor (RLS); en el modo demo
+      // local se replica esa regla aquí para que el comportamiento sea el mismo.
+      const filtrarPropias = !esAdministrador && !inventoryService.obtenerEstadoConexion().usaSupabase;
+      ventas = filtrarPropias ? lista.filter((v) => v.vendedor_nombre === nombreSesion) : lista;
+    } catch (err) {
+      if (miCarga !== cargaId) return;
+      ventas = [];
+      const mensaje = err instanceof Error ? err.message : 'No se pudieron cargar las ventas.';
+      $('hv-error').textContent = `No se pudieron cargar las ventas: ${mensaje}`;
+      $('hv-error').classList.remove('hidden');
+    }
+    $('hv-cargando').classList.add('hidden');
+    pagina = 1;
+    if (primeraVez) {
+      primeraVez = false;
+      animarLista(filas);
+    }
+    pintar();
+  }
+
+  for (const boton of botonesRango) {
+    boton.addEventListener('click', () => {
+      rangoActual = boton.dataset.rango as RangoPreestablecido;
+      contenedorPersonalizado.classList.toggle('flex', rangoActual === 'personalizado');
+      contenedorPersonalizado.classList.toggle('hidden', rangoActual !== 'personalizado');
+      cargar();
+    });
+  }
+  inputDesde.addEventListener('change', () => rangoActual === 'personalizado' && cargar());
+  inputHasta.addEventListener('change', () => rangoActual === 'personalizado' && cargar());
+
+  buscador.addEventListener('input', () => {
+    pagina = 1;
+    pintar();
+  });
+  selectMetodo.addEventListener('change', () => {
+    pagina = 1;
+    pintar();
+  });
+  $('hv-anterior').addEventListener('click', () => {
+    pagina--;
+    pintar();
+  });
+  $('hv-siguiente').addEventListener('click', () => {
+    pagina++;
+    pintar();
+  });
+
+  // Exporta todo lo filtrado (no solo la página visible). Solo administrador: son datos personales de clientes.
+  $('hv-exportar').addEventListener('click', () => {
+    descargarCSV(
+      `easystem-ventas-${new Date().toISOString().slice(0, 10)}.csv`,
+      filtrar().map((v) => ({
+        folio: v.folio || 'pendiente',
+        fecha: new Date(v.fecha).toLocaleString('es-GT'),
+        cedula: v.cliente_cedula,
+        cliente: v.cliente_nombre,
+        telefono: v.cliente_telefono,
+        tipo_de_cobro: etiquetaMetodoPago(v.metodo_pago),
+        total_usd: v.total.toFixed(2),
+        tasa_bs_por_usd: v.tasa_cambio ?? '',
+        total_bs: v.total_bs != null ? v.total_bs.toFixed(2) : '',
+        vendedor: v.vendedor_nombre ?? '',
+        productos: v.items.map((i) => `${i.cantidad} x ${i.nombre}`).join('; '),
+      }))
+    );
+  });
+
+  obtenerSesionActual().then((sesion) => {
+    esAdministrador = sesion?.rol === 'administrador';
+    nombreSesion = sesion?.nombre ?? '';
+    for (const id of ['hv-th-vendedor', 'hv-col-vendedor']) $(id).classList.toggle('hidden', !esAdministrador);
+    $('hv-exportar').classList.toggle('hidden', !esAdministrador);
+    $('hv-aviso-vendedor').classList.toggle('hidden', esAdministrador);
+    cargar();
+  });
+</script>

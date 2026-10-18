@@ -62,6 +62,33 @@ import StatCard from '../components/dashboard/StatCard.astro';
         </div>
       </div>
     </div>
+
+    <!-- Ventas por tipo de cobro -->
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Ventas por tipo de cobro</h2>
+      <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+        Total vendido en dólares según cómo pagó el cliente. Incluye solo ventas registradas con datos de cliente (desde que se activó ese registro).
+      </p>
+      <p id="rp-metodos-error" class="mt-3 hidden text-xs text-red-600 dark:text-red-400"></p>
+      <div class="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div class="h-56">
+          <canvas id="chart-metodos"></canvas>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full min-w-[26rem] text-left text-sm">
+            <thead>
+              <tr class="text-[11px] uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <th class="py-2 pr-3 font-semibold">Tipo de cobro</th>
+                <th class="px-3 py-2 text-right font-semibold">Ventas</th>
+                <th class="px-3 py-2 text-right font-semibold">Total ($)</th>
+                <th class="py-2 pl-3 text-right font-semibold">En Bs.</th>
+              </tr>
+            </thead>
+            <tbody id="rp-metodos-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Reporte imprimible: oculto en pantalla, es lo único visible al imprimir -->
@@ -71,7 +98,9 @@ import StatCard from '../components/dashboard/StatCard.astro';
 <script>
   import Chart from 'chart.js/auto';
   import * as inventoryService from '../lib/inventoryService';
-  import { formatearMoneda } from '../utils/format';
+  import { formatearBolivares, formatearMoneda } from '../utils/format';
+  import { esMetodoBolivares } from '../utils/pagos';
+  import { resumirPorMetodo, type ResumenMetodo } from '../utils/ventasResumen';
   import { $tema } from '../stores/theme';
   import { contarHasta } from '../utils/animaciones';
   import {
@@ -83,9 +112,11 @@ import StatCard from '../components/dashboard/StatCard.astro';
   } from '../utils/dateRange';
   import type { ProductoConRelaciones } from '../types/database.types';
   import type { MovimientoConProducto } from '../lib/db/movimientos';
+  import type { VentaRegistrada } from '../lib/inventoryService';
 
   let productos: ProductoConRelaciones[] = [];
   let movimientos: MovimientoConProducto[] = [];
+  let ventasRegistradas: VentaRegistrada[] = [];
   let rangoActual: RangoPreestablecido = 'semana';
 
   const botonesRango = Array.from(document.querySelectorAll<HTMLButtonElement>('.rp-rango'));
@@ -155,9 +186,15 @@ import StatCard from '../components/dashboard/StatCard.astro';
     options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
   });
 
+  const chartMetodos = new Chart(document.getElementById('chart-metodos') as HTMLCanvasElement, {
+    type: 'bar',
+    data: { labels: sinDatosTexto.slice(), datasets: [{ label: 'Total vendido ($)', data: sinDatosNum.slice(), backgroundColor: '#18c8d8', borderRadius: 6 }] },
+    options: { ...opcionesBase(), indexAxis: 'y' as const, plugins: { legend: { display: false } } },
+  });
+
   function repintarCharts() {
     const { texto, grid } = coloresChart();
-    for (const chart of [chartVentas, chartCategorias, chartModelos]) {
+    for (const chart of [chartVentas, chartCategorias, chartModelos, chartMetodos]) {
       if (chart.options.plugins?.legend?.labels) chart.options.plugins.legend.labels.color = texto;
       if (chart.options.scales?.x) {
         (chart.options.scales.x as any).ticks.color = texto;
@@ -189,7 +226,8 @@ import StatCard from '../components/dashboard/StatCard.astro';
     ganancia: number,
     topCategorias: [string, number][],
     topModelos: [string, number][],
-    lineasVenta: number
+    lineasVenta: number,
+    porMetodo: ResumenMetodo[]
   ) {
     const periodo = `${rango.desde.toLocaleDateString('es-GT', { dateStyle: 'medium' })} – ${rango.hasta.toLocaleDateString('es-GT', { dateStyle: 'medium' })}`;
 
@@ -215,6 +253,17 @@ import StatCard from '../components/dashboard/StatCard.astro';
         <ol class="mt-2 list-decimal pl-5 text-sm">
           ${topModelos.length ? topModelos.map(([nombre, cant]) => `<li>${escaparHtml(nombre)} — ${cant} u.</li>`).join('') : '<li class="list-none text-slate-400">Sin datos en este periodo.</li>'}
         </ol>
+
+        <h2 class="mt-4 text-sm font-semibold">Ventas por tipo de cobro</h2>
+        <table class="mt-2 w-full text-left text-sm">
+          <thead><tr class="text-xs text-slate-500"><th class="py-1 font-medium">Tipo de cobro</th><th class="py-1 text-right font-medium">Ventas</th><th class="py-1 text-right font-medium">Total ($)</th><th class="py-1 text-right font-medium">En Bs.</th></tr></thead>
+          <tbody>
+            ${porMetodo
+              .filter((r) => r.cantidad > 0)
+              .map((r) => `<tr><td class="py-0.5">${escaparHtml(r.etiqueta)}</td><td class="py-0.5 text-right">${r.cantidad}</td><td class="py-0.5 text-right">${formatearMoneda(r.totalUsd)}</td><td class="py-0.5 text-right">${esMetodoBolivares(r.metodo) ? formatearBolivares(r.totalBs) : '—'}</td></tr>`)
+              .join('') || '<tr><td colspan="4" class="py-1 text-slate-400">Sin ventas con datos de cliente en este periodo.</td></tr>'}
+          </tbody>
+        </table>
 
         <p class="mt-6 text-xs text-slate-400">Total de líneas de venta en el periodo: ${lineasVenta}</p>
       </div>
@@ -297,7 +346,28 @@ import StatCard from '../components/dashboard/StatCard.astro';
     chartModelos.data.datasets[0].data = topModelos.map(([, cantidad]) => cantidad);
     chartModelos.update();
 
-    actualizarReportePrintable(rango, ingresosTotal, costosTotal, gananciaTotal, topCategorias, topModelos, ventas.length);
+    // Ventas por tipo de cobro (de la tabla de ventas con cliente)
+    const ventasDelPeriodo = ventasRegistradas.filter((v) => {
+      const fecha = new Date(v.fecha);
+      return fecha >= rango.desde && fecha <= rango.hasta;
+    });
+    const porMetodo = resumirPorMetodo(ventasDelPeriodo);
+    chartMetodos.data.labels = porMetodo.map((r) => r.etiqueta);
+    chartMetodos.data.datasets[0].data = porMetodo.map((r) => Number(r.totalUsd.toFixed(2)));
+    chartMetodos.update();
+    document.getElementById('rp-metodos-filas')!.innerHTML = porMetodo
+      .map(
+        (r) => `
+          <tr class="${r.cantidad === 0 ? 'text-slate-400 dark:text-slate-600' : 'text-slate-700 dark:text-slate-300'}">
+            <td class="py-2 pr-3 font-medium">${escaparHtml(r.etiqueta)}</td>
+            <td class="px-3 py-2 text-right tabular-nums">${r.cantidad}</td>
+            <td class="px-3 py-2 text-right tabular-nums">${formatearMoneda(r.totalUsd)}</td>
+            <td class="py-2 pl-3 text-right tabular-nums">${esMetodoBolivares(r.metodo) ? formatearBolivares(r.totalBs) : '—'}</td>
+          </tr>`
+      )
+      .join('');
+
+    actualizarReportePrintable(rango, ingresosTotal, costosTotal, gananciaTotal, topCategorias, topModelos, ventas.length, porMetodo);
   }
 
   for (const boton of botonesRango) {
@@ -315,10 +385,19 @@ import StatCard from '../components/dashboard/StatCard.astro';
 
   $tema.subscribe(() => repintarCharts());
 
-  Promise.all([inventoryService.listarProductos(), inventoryService.listarMovimientos(2000)]).then(
-    ([listaProductos, listaMovimientos]) => {
+  // Si la tabla de ventas no existe todavía (migración 0011 sin aplicar), el resto del reporte sigue funcionando.
+  const cargarVentas = inventoryService.listarVentas({ limite: 2000 }).catch((err) => {
+    const aviso = document.getElementById('rp-metodos-error')!;
+    aviso.textContent = `No se pudieron cargar las ventas por tipo de cobro: ${err instanceof Error ? err.message : err}`;
+    aviso.classList.remove('hidden');
+    return [] as VentaRegistrada[];
+  });
+
+  Promise.all([inventoryService.listarProductos(), inventoryService.listarMovimientos(2000), cargarVentas]).then(
+    ([listaProductos, listaMovimientos, listaVentas]) => {
       productos = listaProductos;
       movimientos = listaMovimientos;
+      ventasRegistradas = listaVentas;
       actualizarReporte();
     }
   );

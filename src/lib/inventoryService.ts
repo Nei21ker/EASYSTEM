@@ -134,6 +134,7 @@ const LS_COLA_SYNC = 'easystem:cola-sync';
 const LS_COLA_VENTAS = 'easystem:cola-ventas';
 const LS_CACHE_TASA = 'easystem:cache:tasa';
 const LS_COLA_TASAS = 'easystem:cola-tasas';
+const LS_CACHE_VENTAS = 'easystem:cache:ventas';
 const EVENTO_CONEXION = 'easystem:conexion-cambio';
 
 interface MovimientoPendiente {
@@ -826,6 +827,39 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     );
   }
   return venta;
+}
+
+/**
+ * Historial de ventas (más nuevas primero). Un vendedor recibe solo las suyas y el
+ * administrador todas (lo exige la base de datos). Las ventas hechas sin conexión
+ * y aún sin sincronizar aparecen con folio 0 y `pendienteSincronizar`.
+ */
+export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite?: number } = {}): Promise<VentaRegistrada[]> {
+  const limite = opciones.limite ?? 1000;
+  const enRango = (v: { fecha: string }) => {
+    const t = new Date(v.fecha).getTime();
+    return (!opciones.desde || t >= opciones.desde.getTime()) && (!opciones.hasta || t <= opciones.hasta.getTime());
+  };
+  const masNuevasPrimero = (a: { fecha: string }, b: { fecha: string }) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
+
+  if (!supabaseConfigurado) {
+    return (leerDB().ventas ?? []).filter(enRango).sort(masNuevasPrimero).slice(0, limite);
+  }
+
+  let remotas: Venta[];
+  try {
+    remotas = await ventasDb.listarVentas({ desde: opciones.desde, hasta: opciones.hasta, limite });
+    guardarCache(LS_CACHE_VENTAS, remotas);
+  } catch (err) {
+    if (!esErrorDeRed(err)) throw err;
+    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las ventas guardadas localmente.', err);
+    remotas = (leerCache<Venta[]>(LS_CACHE_VENTAS) ?? []).filter(enRango);
+  }
+
+  const pendientes: VentaRegistrada[] = leerColaVentas()
+    .map((v, i) => ({ ...v, id: `pendiente-${i}-${v.fecha}`, folio: 0, pendienteSincronizar: true }))
+    .filter(enRango);
+  return [...pendientes, ...remotas].sort(masNuevasPrimero).slice(0, limite);
 }
 
 // ----------------------------------------------------------------------------
