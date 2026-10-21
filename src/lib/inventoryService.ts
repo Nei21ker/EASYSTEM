@@ -24,7 +24,7 @@ import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
 import type { ProductoConInventario } from './db/productos';
-import { leerSuscripcionesLocales, obtenerSesionActual } from './auth';
+import { esGlobal, leerSuscripcionesLocales, obtenerSesionActual } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
@@ -450,17 +450,19 @@ async function cargarContexto(): Promise<ContextoLocal | null> {
 
   const locales = await listarLocales();
   let alcance: string | null;
-  if (sesion.rol === 'administrador') {
+  if (esGlobal(sesion.rol)) {
     let guardado: string | null = null;
     try {
       guardado = localStorage.getItem(LS_LOCAL_ACTIVO);
     } catch {
       /* sin almacenamiento: vista "Todos" */
     }
-    // Un local suspendido no se puede elegir (solo devolvería vacío): se vuelve a la vista "Todos"
-    alcance = guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado && localVigente(l))) ? guardado : ALCANCE_TODOS;
-  } else if (sesion.rol === 'super_admin') {
-    alcance = null; // el super_admin no opera sobre locales: administra suscripciones
+    // Al gerente un local suspendido no le devuelve nada, así que no se puede elegir: vuelve a "Todos".
+    // El administrador entra a cualquier local, aunque esté suspendido.
+    alcance =
+      guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado && (sesion.rol === 'administrador' || localVigente(l))))
+        ? guardado
+        : ALCANCE_TODOS;
   } else {
     alcance = sesion.local_id && locales.some((l) => l.id === sesion.local_id) ? sesion.local_id : null;
   }
@@ -482,7 +484,7 @@ export function obtenerContextoLocal(): Promise<ContextoLocal | null> {
  */
 export function cambiarLocalActivo(alcance: string): void {
   const contexto = $contextoLocal.get();
-  if (contexto?.sesion.rol !== 'administrador') return;
+  if (!esGlobal(contexto?.sesion.rol)) return;
   if (alcance !== ALCANCE_TODOS && !contexto.locales.some((l) => l.id === alcance)) return;
   try {
     localStorage.setItem(LS_LOCAL_ACTIVO, alcance);

@@ -172,7 +172,7 @@ const claseCampo =
 
   // Arranque: ¿ya hay tasa de hoy? Si no, ventana obligatoria.
   obtenerSesionActual().then(async (sesion) => {
-    if (!sesion || sesion.rol === 'super_admin') return; // el super_admin no opera con la tasa del negocio
+    if (!sesion) return;
     try {
       const { hoy, ultima } = await inventoryService.obtenerTasaVigente();
       referenciaActual = ultima;

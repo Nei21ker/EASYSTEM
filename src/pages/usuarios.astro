@@ -2,11 +2,12 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 ---
 
-<DashboardLayout titulo="Usuarios" subtitulo="Empleados con acceso a EASYSTEM y sus permisos" roles={['administrador']}>
+<DashboardLayout titulo="Usuarios" subtitulo="Empleados con acceso a EASYSTEM y sus permisos" roles={['administrador', 'gerente']}>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
         <h2 id="us-contador" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando...</h2>
+        <p id="us-subtitulo" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div class="overflow-x-auto">
         <table class="tabla-tarjetas w-full text-left text-sm">
@@ -17,6 +18,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
               <th class="px-5 py-3 font-medium">Rol</th>
               <th class="px-5 py-3 font-medium">Local</th>
               <th class="px-5 py-3 font-medium">Estado</th>
+              <th class="px-5 py-3 font-medium"><span class="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody id="us-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -60,7 +62,18 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 </DashboardLayout>
 
 <script>
-  import { listarUsuarios, registrarUsuario, actualizarAccesoUsuario, obtenerSesionActual, ETIQUETAS_ROL, ROLES } from '../lib/auth';
+  import {
+    listarUsuarios,
+    registrarUsuario,
+    actualizarAccesoUsuario,
+    eliminarUsuario,
+    obtenerSesionActual,
+    ETIQUETAS_ROL,
+    esGlobal,
+    puedeGestionarUsuario,
+    rolesAsignables,
+    type Rol,
+  } from '../lib/auth';
   import { listarLocales } from '../lib/inventoryService';
   import type { Local } from '../types/database.types';
   import { animarLista, reanimar } from '../utils/animaciones';
@@ -71,21 +84,22 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   const error = document.getElementById('us-error') as HTMLParagraphElement;
   const exito = document.getElementById('us-exito') as HTMLParagraphElement;
 
-  // Roles que el gerente puede asignar (el super_admin nunca aparece aquí)
-  type Rol = (typeof ROLES)[number];
-
   let miId = '';
+  let miRol: Rol | null = null;
   let locales: Local[] = [];
 
   const AYUDA_ROL: Record<Rol, string> = {
-    administrador: 'Gerente (dueño): acceso a TODOS los locales, usuarios y catálogo.',
+    administrador: 'Dueño del servicio: acceso total, suscripciones, sesiones y gestión de cualquier usuario.',
+    gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina encargados, vendedores y técnicos.',
     encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
     vendedor: 'Cajero de su local: ventas y consulta de productos.',
     tecnico: 'Servicio técnico de su local: órdenes de servicio y repuestos.',
   };
 
   const opcionesRol = (seleccionado?: Rol) =>
-    ROLES.map((r) => `<option value="${r}" ${r === seleccionado ? 'selected' : ''}>${ETIQUETAS_ROL[r]}</option>`).join('');
+    rolesAsignables(miRol)
+      .map((r) => `<option value="${r}" ${r === seleccionado ? 'selected' : ''}>${ETIQUETAS_ROL[r]}</option>`)
+      .join('');
   const opcionesLocal = (seleccionado?: string | null) =>
     '<option value="">Sin local</option>' +
     locales.map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${l.nombre}</option>`).join('');
@@ -96,8 +110,8 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   function actualizarFormularioNuevo() {
     const rol = selectRolNuevo.value as Rol;
-    (document.getElementById('us-rol-ayuda') as HTMLParagraphElement).textContent = AYUDA_ROL[rol];
-    bloqueLocalNuevo.classList.toggle('hidden', rol === 'administrador');
+    (document.getElementById('us-rol-ayuda') as HTMLParagraphElement).textContent = AYUDA_ROL[rol] ?? '';
+    bloqueLocalNuevo.classList.toggle('hidden', esGlobal(rol));
   }
   selectRolNuevo.addEventListener('change', actualizarFormularioNuevo);
 
@@ -107,39 +121,53 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     return div.innerHTML;
   }
 
+  const CLASE_SELECT =
+    'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+
   async function cargarUsuarios() {
     const usuarios = await listarUsuarios();
     contador.textContent = `${usuarios.length} usuario${usuarios.length === 1 ? '' : 's'}`;
     animarLista(filas);
 
     filas.innerHTML = usuarios
-      .map(
-        (u) => `
+      .map((u) => {
+        const yo = u.id === miId;
+        // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo encargados, vendedores y técnicos); nunca a uno mismo
+        const gestionable = !yo && puedeGestionarUsuario(miRol, u.rol);
+        const inactivo = u.status === 'inactive';
+        const nombreLocal = locales.find((l) => l.id === u.local_id)?.nombre;
+
+        const celdaRol = gestionable
+          ? `<select data-usuario="${u.id}" class="us-rol-select ${CLASE_SELECT}">${opcionesRol(u.rol)}</select>`
+          : `<span class="text-sm">${escaparHtml(ETIQUETAS_ROL[u.rol] ?? u.rol)}</span>`;
+
+        const celdaLocal = esGlobal(u.rol)
+          ? '<span class="text-xs text-slate-500 dark:text-slate-400">Todos los locales</span>'
+          : gestionable
+            ? `<select data-usuario="${u.id}" class="us-local-select ${u.local_id ? '' : 'border-amber-400'} ${CLASE_SELECT}">${opcionesLocal(u.local_id)}</select>`
+            : `<span class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(nombreLocal ?? 'Sin local')}</span>`;
+
+        const claseActivo = 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400';
+        const claseInactivo = 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400';
+        const celdaEstado = gestionable
+          ? `<button type="button" data-usuario="${u.id}" data-nuevo="${inactivo ? 'active' : 'inactive'}" class="us-estado rounded-lg border px-2.5 py-1 text-xs font-semibold ${inactivo ? claseInactivo : claseActivo}" title="${inactivo ? 'Inactivo: no puede operar. Clic para reactivarlo' : 'Activo. Clic para desactivarlo (no podrá operar)'}">${inactivo ? 'Inactivo' : 'Activo'}</button>`
+          : `<span class="rounded-full border px-2.5 py-1 text-xs font-semibold ${inactivo ? claseInactivo : claseActivo}">${inactivo ? 'Inactivo' : 'Activo'}</span>`;
+
+        const celdaAcciones = gestionable
+          ? `<button type="button" data-usuario="${u.id}" data-nombre="${escaparHtml(u.nombre)}" class="us-eliminar rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Eliminar</button>`
+          : '';
+
+        return `
           <tr class="text-slate-700 dark:text-slate-300">
-            <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(u.nombre)}${u.id === miId ? ' <span class="text-xs text-slate-400">(tú)</span>' : ''}</td>
+            <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(u.nombre)}${yo ? ' <span class="text-xs text-slate-400">(tú)</span>' : ''}</td>
             <td data-label="Correo" class="break-all px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(u.email || '—')}</td>
-            <td data-label="Rol" class="px-5 py-3">
-              <select data-usuario="${u.id}" class="us-rol-select rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" ${u.id === miId ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>
-                ${opcionesRol(u.rol as Rol)}
-              </select>
-            </td>
-            <td data-label="Local" class="px-5 py-3">
-              ${
-                u.rol === 'administrador'
-                  ? '<span class="text-xs text-slate-500 dark:text-slate-400">Todos los locales</span>'
-                  : `<select data-usuario="${u.id}" class="us-local-select rounded-lg border ${u.local_id ? 'border-slate-200' : 'border-amber-400'} bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white">${opcionesLocal(u.local_id)}</select>`
-              }
-            </td>
-            <td data-label="Estado" class="px-5 py-3">
-              ${
-                u.id === miId
-                  ? '<span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">Activo</span>'
-                  : `<button type="button" data-usuario="${u.id}" data-nuevo="${u.status === 'inactive' ? 'active' : 'inactive'}" class="us-estado rounded-lg border px-2.5 py-1 text-xs font-semibold ${u.status === 'inactive' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400'}" title="${u.status === 'inactive' ? 'Inactivo: no puede operar. Clic para reactivarlo' : 'Activo. Clic para desactivarlo (no podrá operar)'}">${u.status === 'inactive' ? 'Inactivo' : 'Activo'}</button>`
-              }
-            </td>
+            <td data-label="Rol" class="px-5 py-3">${celdaRol}</td>
+            <td data-label="Local" class="px-5 py-3">${celdaLocal}</td>
+            <td data-label="Estado" class="px-5 py-3">${celdaEstado}</td>
+            <td class="px-5 py-3 sm:text-right">${celdaAcciones}</td>
           </tr>
-        `
-      )
+        `;
+      })
       .join('');
 
     for (const boton of document.querySelectorAll<HTMLButtonElement>('.us-estado')) {
@@ -155,14 +183,28 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
       });
     }
 
+    for (const boton of document.querySelectorAll<HTMLButtonElement>('.us-eliminar')) {
+      boton.addEventListener('click', async () => {
+        const nombre = boton.dataset.nombre ?? 'este usuario';
+        if (!confirm(`¿Eliminar a ${nombre}? Se borra su cuenta y ya no podrá entrar. Las ventas que registró se conservan. Esto no se puede deshacer.`)) return;
+        boton.disabled = true;
+        try {
+          await eliminarUsuario(boton.dataset.usuario!);
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'No se pudo eliminar el usuario.');
+        }
+        cargarUsuarios();
+      });
+    }
+
     for (const select of document.querySelectorAll<HTMLSelectElement>('.us-rol-select')) {
       select.addEventListener('change', async () => {
         const id = select.dataset.usuario!;
         const rol = select.value as Rol;
         try {
-          // Quien deja de ser administrador necesita un local: se le pone el primero hasta que se elija otro
+          // Quien deja de ser global necesita un local: se le pone el primero hasta que se elija otro
           const usuario = usuarios.find((u) => u.id === id);
-          const local_id = rol === 'administrador' ? null : (usuario?.local_id ?? locales[0]?.id ?? null);
+          const local_id = esGlobal(rol) ? null : (usuario?.local_id ?? locales[0]?.id ?? null);
           await actualizarAccesoUsuario(id, { rol, local_id });
         } catch (err) {
           alert(err instanceof Error ? err.message : 'No se pudo actualizar el rol.');
@@ -191,7 +233,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     const email = (document.getElementById('us-email') as HTMLInputElement).value.trim();
     const password = (document.getElementById('us-password') as HTMLInputElement).value;
     const rol = selectRolNuevo.value as Rol;
-    const local_id = rol === 'administrador' ? null : selectLocalNuevo.value || null;
+    const local_id = esGlobal(rol) ? null : selectLocalNuevo.value || null;
 
     try {
       const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol, local_id });
@@ -201,6 +243,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
       exito.classList.remove('hidden');
       reanimar(exito, 'anim-subir');
       form.reset();
+      selectRolNuevo.value = rolesAsignables(miRol).includes('vendedor') ? 'vendedor' : (rolesAsignables(miRol)[0] ?? '');
       actualizarFormularioNuevo();
       await cargarUsuarios();
     } catch (err) {
@@ -212,9 +255,13 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   Promise.all([obtenerSesionActual(), listarLocales()]).then(([sesion, lista]) => {
     miId = sesion?.id ?? '';
+    miRol = sesion?.rol ?? null;
     locales = lista;
     selectRolNuevo.innerHTML = opcionesRol('vendedor');
     selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${l.nombre}</option>`).join('');
+    if (miRol === 'gerente') {
+      (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar encargados, vendedores y técnicos.';
+    }
     actualizarFormularioNuevo();
     cargarUsuarios();
   });

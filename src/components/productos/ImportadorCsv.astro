@@ -77,7 +77,7 @@
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { obtenerSesionActual } from '../../lib/auth';
+  import { esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { PLANTILLA_CSV, prepararImportacion, type PlanImportacion } from '../../lib/importador';
   import { decodificarArchivo } from '../../utils/csvLectura';
   import { reanimar } from '../../utils/animaciones';
@@ -183,7 +183,7 @@
   aplicar.addEventListener('click', async () => {
     if (!plan || plan.filas.length === 0) return;
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') {
+    if (!esGlobal(sesion?.rol)) {
       error.textContent = 'Solo un administrador puede importar productos.';
       error.classList.remove('hidden');
       return;
@@ -233,7 +233,7 @@
 
   window.addEventListener('easystem:abrir-importador', async () => {
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return;
+    if (!esGlobal(sesion?.rol)) return;
     reiniciar();
     // Las cantidades del archivo son las de UN local: el activo
     const contexto = await inventoryService.obtenerContextoLocal();

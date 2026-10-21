@@ -12,7 +12,7 @@ const claseBotonSecundario =
   'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800';
 ---
 
-<DashboardLayout titulo="Ventas realizadas" subtitulo="Historial de ventas con cliente y tipo de cobro">
+<DashboardLayout titulo="Ventas realizadas" subtitulo="Historial de ventas con cliente y tipo de cobro" roles={["administrador", "gerente", "encargado"]}>
   <div class="space-y-4">
     <p id="hv-aviso-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
 

@@ -41,6 +41,11 @@ const { limite = 8 } = Astro.props;
   }
 
   Promise.all([inventoryService.listarMovimientos(limite), inventoryService.obtenerContextoLocal()]).then(([movimientos, contexto]) => {
+    // El vendedor no ve el módulo de movimientos (ni este resumen)
+    if (contexto?.sesion.rol === 'vendedor') {
+      raiz.classList.add('hidden');
+      return;
+    }
     const verLocal = contexto?.alcance === 'todos';
     cargando.classList.add('hidden');
 

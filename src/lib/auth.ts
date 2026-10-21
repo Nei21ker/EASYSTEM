@@ -13,30 +13,45 @@ import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, local
 import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
 
 /**
- * super_admin: quien opera el servicio SaaS; administra suscripciones y sesiones, NO ve datos de negocio.
- * administrador (el "Gerente"): dueño del negocio cliente, acceso global (todos los locales).
+ * Jerarquía: administrador > gerente > encargado > vendedor/técnico.
+ * administrador: dueño del servicio SaaS; acceso total, crea y elimina usuarios de cualquier rol, suspende
+ *   locales y cierra sesiones. Nunca queda bloqueado por una suscripción.
+ * gerente: dueño del negocio cliente; acceso global (todos los locales vigentes); en usuarios solo crea,
+ *   edita y elimina encargados, vendedores y técnicos.
  * encargado: gerente de UN local. vendedor: cajero de un local. tecnico: servicio técnico de un local.
- * Todos menos el administrador y el super_admin solo ven y modifican datos de su local.
+ * Los tres últimos solo ven y modifican datos de su local y no gestionan usuarios.
  */
-export type Rol = 'super_admin' | 'administrador' | 'encargado' | 'vendedor' | 'tecnico';
+export type Rol = 'administrador' | 'gerente' | 'encargado' | 'vendedor' | 'tecnico';
 
 export const ETIQUETAS_ROL: Record<Rol, string> = {
-  super_admin: 'Super administrador',
-  administrador: 'Gerente',
+  administrador: 'Administrador',
+  gerente: 'Gerente',
   encargado: 'Encargado',
   vendedor: 'Vendedor (cajero)',
   tecnico: 'Técnico',
 };
 
-/** Roles que un administrador puede asignar a sus empleados (el super_admin solo se designa en la base de datos). */
-export const ROLES: Exclude<Rol, 'super_admin'>[] = ['administrador', 'encargado', 'vendedor', 'tecnico'];
+export const ROLES: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
+
+/** Roles que cada quien puede asignar al crear o editar usuarios. */
+export function rolesAsignables(rol?: Rol | null): Rol[] {
+  if (rol === 'administrador') return ROLES;
+  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico'];
+  return [];
+}
+
+/** ¿Este usuario (actor) puede editar o eliminar a otro con el rol `objetivo`? Nadie se gestiona a sí mismo. */
+export function puedeGestionarUsuario(actor?: Rol | null, objetivo?: Rol | null): boolean {
+  if (!actor || !objetivo) return false;
+  return rolesAsignables(actor).includes(objetivo);
+}
 
 export interface SesionUsuario {
   id: string;
   email: string;
   nombre: string;
   rol: Rol;
-  /** Local asignado. El administrador tiene acceso a todos (su local_id es irrelevante); null = sin local asignado */
+  /** Local asignado. Administrador y gerente tienen acceso a todos (su local_id es irrelevante); null = sin local asignado */
   local_id: string | null;
   /** inactive = el usuario no puede operar (migración 0021). Si falta se asume active */
   status?: 'active' | 'inactive';
@@ -53,7 +68,7 @@ export interface EstadoCuenta {
   subscription_expires_at?: string | null;
 }
 
-/** Fila del panel del super_admin: un local con su suscripción. */
+/** Fila del panel del administrador: un local con su suscripción. */
 export interface SuscripcionLocal {
   id: string;
   nombre: string;
@@ -64,7 +79,7 @@ export interface SuscripcionLocal {
   vigente: boolean;
 }
 
-/** Fila de la tabla de usuarios del super_admin. */
+/** Fila de la tabla de usuarios del administrador. */
 export interface UsuarioSistema {
   id: string;
   email: string;
@@ -79,9 +94,12 @@ export interface UsuarioSistema {
 }
 
 // --- Permisos por rol (la base de datos los vuelve a exigir con RLS; esto solo gobierna la interfaz) ---
+/** Solo el dueño del servicio: suscripciones, sesiones y gestión de cualquier usuario */
 export const esAdministrador = (rol?: Rol | null) => rol === 'administrador';
+/** Administrador o gerente: acceso a TODOS los locales, catálogo y usuarios (los permisos de usuarios los acota `rolesAsignables`) */
+export const esGlobal = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente';
 /** Registrar entradas de mercancía y devoluciones, y ver reportes de su local */
-export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'encargado';
+export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'encargado';
 
 const LS_SESION = 'easystem:sesion';
 const LS_USUARIOS = 'easystem:usuarios';
@@ -107,16 +125,23 @@ function seedUsuariosLocales(): UsuarioLocal[] {
     { id: generarId(), email: 'vendedor@edwardaccesorios.com', password: 'vendedor123', nombre: 'Vendedor Mostrador', rol: 'vendedor', local_id: LOCAL_ACCESORIOS_ID },
     { id: generarId(), email: 'encargado@edwardaccesorios.com', password: 'encargado123', nombre: 'Encargado Vidrios', rol: 'encargado', local_id: LOCAL_VIDRIOS_ID },
     { id: generarId(), email: 'tecnico@edwardaccesorios.com', password: 'tecnico123', nombre: 'Técnico de Servicio', rol: 'tecnico', local_id: LOCAL_SERVICIO_TECNICO_ID },
-    { id: generarId(), email: 'super@easystem.app', password: 'super123', nombre: 'Super Administrador', rol: 'super_admin', local_id: null },
+    { id: generarId(), email: 'gerente@edwardaccesorios.com', password: 'gerente123', nombre: 'Gerente', rol: 'gerente', local_id: null },
   ];
 }
 
 /** Usuarios guardados antes del multi-local: sin local → Accesorios; y se agregan las cuentas demo que falten. */
 function migrarUsuariosLocales(usuarios: UsuarioLocal[]): { usuarios: UsuarioLocal[]; cambio: boolean } {
   let cambio = false;
+  // Cuentas de un modelo anterior (rol super_admin, ya retirado): su poder pasó al administrador
+  for (const u of usuarios) {
+    if ((u.rol as string) === 'super_admin') {
+      u.rol = 'administrador';
+      cambio = true;
+    }
+  }
   for (const u of usuarios) {
     if (u.local_id === undefined) {
-      u.local_id = u.rol === 'administrador' ? null : LOCAL_ACCESORIOS_ID;
+      u.local_id = esGlobal(u.rol) ? null : LOCAL_ACCESORIOS_ID;
       cambio = true;
     }
   }
@@ -258,21 +283,24 @@ export async function registrarUsuario(input: {
   email: string;
   password: string;
   nombre: string;
-  rol?: Exclude<Rol, 'super_admin'>;
-  /** Local asignado (obligatorio salvo para un administrador) */
+  rol?: Rol;
+  /** Local asignado (obligatorio salvo para administrador y gerente, que son globales) */
   local_id?: string | null;
 }): Promise<{ requiereConfirmacion: boolean }> {
   const sesion = await obtenerSesionActual();
-  if (sesion?.rol !== 'administrador') {
-    throw new Error('Solo un administrador puede crear usuarios.');
+  if (!esGlobal(sesion?.rol)) {
+    throw new Error('Solo un administrador o gerente puede crear usuarios.');
   }
 
   const rol = input.rol ?? 'vendedor';
+  if (!rolesAsignables(sesion?.rol).includes(rol)) {
+    throw new Error(sesion?.rol === 'gerente' ? 'Un gerente solo puede crear encargados, vendedores y técnicos.' : 'No puedes crear usuarios con ese rol.');
+  }
   const email = input.email.trim().toLowerCase();
   const nombre = input.nombre.trim();
   if (!nombre) throw new Error('El nombre es obligatorio.');
-  const local_id = rol === 'administrador' ? null : (input.local_id ?? null);
-  if (rol !== 'administrador' && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
+  const local_id = esGlobal(rol) ? null : (input.local_id ?? null);
+  if (!esGlobal(rol) && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
   if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
 
   if (supabaseConfigurado) {
@@ -326,23 +354,27 @@ export async function listarUsuarios(): Promise<SesionUsuario[]> {
   if (supabaseConfigurado) {
     const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []).filter((p: any) => p.rol !== 'super_admin').map((p: any) => sesionDesdePerfil(p.id, p));
+    return (data ?? []).map((p: any) => sesionDesdePerfil(p.id, p));
   }
 
-  // El super_admin no aparece en la lista de empleados del administrador
+  // Un gerente no ve a los administradores (igual que la política de la tabla perfiles)
+  const actor = (await obtenerSesionActual())?.rol;
   return leerUsuariosLocales()
-    .filter((u) => u.rol !== 'super_admin')
+    .filter((u) => actor === 'administrador' || u.rol !== 'administrador')
     .map(({ password: _sinUsar, ...resto }) => resto);
 }
 
-/** Cambia el rol, el local y/o el estado (activo/inactivo) de un empleado (solo administrador; la base de datos lo exige con RLS). */
+/**
+ * Cambia el rol, el local y/o el estado (activo/inactivo) de un empleado. El administrador puede con cualquiera;
+ * el gerente solo con encargados, vendedores y técnicos (y solo puede dejarlos con uno de esos roles). La base de datos
+ * lo exige con RLS + el trigger proteger_perfil.
+ */
 export async function actualizarAccesoUsuario(
   id: string,
-  cambios: { rol?: Exclude<Rol, 'super_admin'>; local_id?: string | null; status?: 'active' | 'inactive' }
+  cambios: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' }
 ): Promise<void> {
-  const rolFinal = cambios.rol;
   const parche: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' } = { ...cambios };
-  if (rolFinal === 'administrador') parche.local_id = null; // el administrador es global
+  if (cambios.rol && esGlobal(cambios.rol)) parche.local_id = null; // administrador y gerente son globales
 
   if (supabaseConfigurado) {
     const { error } = await supabase.from('perfiles').update(parche).eq('id', id);
@@ -350,11 +382,36 @@ export async function actualizarAccesoUsuario(
     return;
   }
 
+  const actor = await obtenerSesionActual();
+  if (actor?.id === id && (cambios.rol || cambios.status)) throw new Error('No puedes cambiar tu propio rol ni tu propio estado.');
   const usuarios = leerUsuariosLocales();
   const usuario = usuarios.find((u) => u.id === id);
   if (!usuario) throw new Error('Usuario no encontrado.');
+  if (!puedeGestionarUsuario(actor?.rol, usuario.rol)) throw new Error('No tienes permiso para modificar a este usuario.');
+  if (cambios.rol && !rolesAsignables(actor?.rol).includes(cambios.rol)) throw new Error('No puedes asignar ese rol.');
   Object.assign(usuario, parche);
   guardarUsuariosLocales(usuarios);
+}
+
+/**
+ * Elimina un usuario (cuenta y perfil). El administrador puede con cualquiera menos consigo mismo; el gerente solo
+ * con encargados, vendedores y técnicos. Las ventas y órdenes que registró se conservan con su nombre.
+ */
+export async function eliminarUsuario(id: string): Promise<void> {
+  const actor = await obtenerSesionActual();
+  if (actor?.id === id) throw new Error('No puedes eliminar tu propio usuario.');
+
+  if (supabaseConfigurado) {
+    const { error } = await supabase.rpc('eliminar_usuario', { p_usuario: id });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const usuarios = leerUsuariosLocales();
+  const usuario = usuarios.find((u) => u.id === id);
+  if (!usuario) throw new Error('Usuario no encontrado.');
+  if (!puedeGestionarUsuario(actor?.rol, usuario.rol)) throw new Error('No tienes permiso para eliminar a este usuario.');
+  guardarUsuariosLocales(usuarios.filter((u) => u.id !== id));
 }
 
 // ----------------------------------------------------------------------------
@@ -414,8 +471,8 @@ export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
     return { acceso: false, motivo: 'sesion_cerrada', ...base };
   }
 
-  if (usuario.rol === 'super_admin') return { acceso: true, motivo: 'ok', ...base };
-  if (usuario.rol === 'administrador') {
+  if (usuario.rol === 'administrador') return { acceso: true, motivo: 'ok', ...base }; // nunca se bloquea por suscripción
+  if (usuario.rol === 'gerente') {
     return locales.some(localVigente) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
   }
   return local && localVigente(local) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
@@ -465,8 +522,7 @@ function iniciarVigilanciaCuenta() {
  * Guard de ruta para páginas protegidas: llamarlo al inicio del <script> de
  * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, a
  * /subscription-suspended si el local del usuario está suspendido, o a "/" si la
- * página exige un rol (lista `roles`) que el usuario no tiene. El super_admin solo
- * entra a las páginas que lo listan en `roles` (su panel de suscripciones).
+ * página exige un rol (lista `roles`) que el usuario no tiene.
  */
 export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
@@ -483,11 +539,6 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
   }
 
   const roles = opciones?.roles;
-  if (sesion.rol === 'super_admin' && !roles?.includes('super_admin')) {
-    window.location.href = '/admin/subscriptions';
-    throw new Error('EASYSTEM_REDIRECT');
-  }
-
   if (roles && roles.length > 0 && !roles.includes(sesion.rol)) {
     window.location.href = '/';
     throw new Error('EASYSTEM_REDIRECT');
@@ -498,17 +549,17 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
 }
 
 // ----------------------------------------------------------------------------
-// Panel del super_admin: suscripciones y sesiones
+// Panel del administrador: suscripciones y sesiones
 // ----------------------------------------------------------------------------
-async function exigirSuperAdmin(): Promise<SesionUsuario> {
+async function exigirAdministrador(): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
-  if (sesion?.rol !== 'super_admin') throw new Error('Solo el super administrador puede hacer esto.');
+  if (sesion?.rol !== 'administrador') throw new Error('Solo el administrador puede hacer esto.');
   return sesion;
 }
 
 /** Locales con el estado de su suscripción (todos). */
 export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
-  await exigirSuperAdmin();
+  await exigirAdministrador();
 
   let locales: Local[];
   if (supabaseConfigurado) {
@@ -534,7 +585,7 @@ export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
  * null = quitarla; texto ISO = fijarla.
  */
 export async function cambiarSuscripcionLocal(localId: string, estado: EstadoSuscripcion, vencimiento?: string | null): Promise<void> {
-  await exigirSuperAdmin();
+  await exigirAdministrador();
   const cambiarVencimiento = vencimiento !== undefined;
 
   if (supabaseConfigurado) {
@@ -559,7 +610,7 @@ export async function cambiarSuscripcionLocal(localId: string, estado: EstadoSus
 
 /** Todos los usuarios con su local y su última actividad. */
 export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
-  await exigirSuperAdmin();
+  await exigirAdministrador();
 
   if (supabaseConfigurado) {
     const { data, error } = await supabase.rpc('usuarios_sistema');
@@ -589,7 +640,7 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
 
 /** Cierra a la fuerza todas las sesiones de un usuario: el próximo chequeo (como máximo 1 minuto) lo saca al login. */
 export async function cerrarSesionForzada(usuarioId: string): Promise<void> {
-  await exigirSuperAdmin();
+  await exigirAdministrador();
 
   if (supabaseConfigurado) {
     const { error } = await supabase.rpc('cerrar_sesion_forzada', { p_usuario: usuarioId });
@@ -604,7 +655,7 @@ export async function cerrarSesionForzada(usuarioId: string): Promise<void> {
 
 /** Cierra a la fuerza las sesiones de todos los empleados de un local. Devuelve cuántos usuarios afectó. */
 export async function cerrarSesionesLocal(localId: string): Promise<number> {
-  await exigirSuperAdmin();
+  await exigirAdministrador();
 
   if (supabaseConfigurado) {
     const { data, error } = await supabase.rpc('cerrar_sesiones_local', { p_local: localId });
@@ -612,7 +663,7 @@ export async function cerrarSesionesLocal(localId: string): Promise<number> {
     return Number(data ?? 0);
   }
 
-  const afectados = leerUsuariosLocales().filter((u) => u.local_id === localId && u.rol !== 'super_admin');
+  const afectados = leerUsuariosLocales().filter((u) => u.local_id === localId && u.rol !== 'administrador');
   const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
   const ahora = new Date().toISOString();
   for (const u of afectados) cierres[u.id] = ahora;

@@ -148,7 +148,7 @@ const claseSelect =
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { esGerencia } from '../../lib/auth';
+  import { esGerencia, esGlobal } from '../../lib/auth';
   import { formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
@@ -433,7 +433,7 @@ const claseSelect =
   Promise.all([inventoryService.listarProductos(), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     productos = lista;
     const rol = contexto?.sesion.rol;
-    esAdministrador = rol === 'administrador';
+    esAdministrador = esGlobal(rol);
     puedeEntradas = esGerencia(rol);
     hayLocal = !!contexto?.local;
     nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));

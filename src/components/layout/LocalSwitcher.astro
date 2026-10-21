@@ -22,6 +22,7 @@
   import { $contextoLocal } from '../../stores/local';
   import { cambiarLocalActivo, obtenerContextoLocal } from '../../lib/inventoryService';
   import { ALCANCE_TODOS, localVigente } from '../../lib/constantes-locales';
+  import { esGlobal } from '../../lib/auth';
 
   const raiz = document.getElementById('ls-raiz') as HTMLElement;
   const select = document.getElementById('ls-select') as HTMLSelectElement;
@@ -35,14 +36,15 @@
   function pintar() {
     const contexto = $contextoLocal.get();
     if (!contexto) return;
-    if (contexto.sesion.rol === 'super_admin') return; // administra suscripciones, no elige local de trabajo
-    const esAdmin = contexto.sesion.rol === 'administrador';
+    const esAdmin = esGlobal(contexto.sesion.rol);
+    // El administrador entra a cualquier local (aunque esté suspendido); el gerente solo a los vigentes
+    const puedeEntrar = (l: (typeof contexto.locales)[number]) => contexto.sesion.rol === 'administrador' || localVigente(l);
 
     if (esAdmin) {
       select.innerHTML =
         `<option value="${ALCANCE_TODOS}">Todos los locales</option>` +
         contexto.locales
-          .map((l) => (localVigente(l) ? `<option value="${l.id}">${escapar(l.nombre)}</option>` : `<option value="${l.id}" disabled>${escapar(l.nombre)} (suspendido)</option>`))
+          .map((l) => `<option value="${l.id}" ${puedeEntrar(l) ? '' : 'disabled'}>${escapar(l.nombre)}${localVigente(l) ? '' : ' (suspendido)'}</option>`)
           .join('');
       select.value = contexto.alcance ?? ALCANCE_TODOS;
       select.disabled = false;
@@ -50,7 +52,7 @@
     } else {
       select.innerHTML = `<option>${escapar(contexto.local?.nombre ?? 'Sin local asignado')}</option>`;
       select.disabled = true;
-      select.title = 'Tu local asignado (solo un administrador puede cambiar de local)';
+      select.title = 'Tu local asignado (solo el administrador o el gerente pueden cambiar de local)';
     }
     raiz.classList.remove('hidden');
     raiz.classList.add('flex');

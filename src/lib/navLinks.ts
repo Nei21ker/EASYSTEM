@@ -11,9 +11,11 @@ export interface EnlaceNav {
   soloTipoLocal?: TipoLocal;
 }
 
-const TODOS: Rol[] = ['administrador', 'encargado', 'vendedor', 'tecnico'];
-const GERENCIA: Rol[] = ['administrador', 'encargado'];
-const CAJA: Rol[] = ['administrador', 'encargado', 'vendedor'];
+const TODOS: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
+/** Todo menos el vendedor (no ve Ventas realizadas ni Movimientos) */
+const SIN_VENDEDOR: Rol[] = ['administrador', 'gerente', 'encargado', 'tecnico'];
+const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
+const CAJA: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor'];
 
 export const enlacesNav: EnlaceNav[] = [
   { href: '/', etiqueta: 'Dashboard', icono: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10', roles: TODOS },
@@ -27,7 +29,7 @@ export const enlacesNav: EnlaceNav[] = [
     href: '/historial-ventas',
     etiqueta: 'Ventas realizadas',
     icono: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5h6M9 12h6M9 16h4',
-    roles: CAJA,
+    roles: GERENCIA,
   },
   {
     href: '/servicio-tecnico',
@@ -43,7 +45,7 @@ export const enlacesNav: EnlaceNav[] = [
     icono: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM12 18h.01',
     roles: TODOS,
   },
-  { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: TODOS },
+  { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: SIN_VENDEDOR },
   {
     href: '/reportes',
     etiqueta: 'Reportes & Métricas',
@@ -54,12 +56,12 @@ export const enlacesNav: EnlaceNav[] = [
     href: '/usuarios',
     etiqueta: 'Usuarios',
     icono: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
-    roles: ['administrador'],
+    roles: ['administrador', 'gerente'],
   },
   {
     href: '/admin/subscriptions',
     etiqueta: 'Suscripciones',
     icono: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3.5-10 2.5 2.5 4.5-5',
-    roles: ['super_admin'],
+    roles: ['administrador'],
   },
 ];

@@ -82,6 +82,7 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { ESTADOS_ORDEN } from '../lib/inventoryService';
+  import { esGlobal } from '../lib/auth';
   import { htmlPrecioDual } from '../utils/format';
   import { formatearFecha } from '../utils/format';
   import { animarLista } from '../utils/animaciones';
@@ -211,7 +212,7 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
       $('st-contenido').classList.add('hidden');
       $('st-sin-local').classList.remove('hidden');
       $('st-sin-local-texto').textContent =
-        contexto.sesion.rol === 'administrador'
+        esGlobal(contexto.sesion.rol)
           ? 'Elige el Local Servicio Técnico en el selector del encabezado para recibir equipos y registrar reparaciones.'
           : 'Tu local no maneja órdenes de servicio técnico.';
       return;

@@ -106,7 +106,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { obtenerSesionActual } from '../../lib/auth';
+  import { esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { generarCodigosInternos } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
@@ -242,7 +242,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   async function abrir(productoId?: string) {
     error.classList.add('hidden');
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return;
+    if (!esGlobal(sesion?.rol)) return;
 
     // Catálogo completo: el código de barras no debe repetirse en NINGÚN local
     [productos, modelos] = await Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarModelos()]);
@@ -305,7 +305,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!Number.isInteger(minimo) || minimo < 0) return mostrarError('El stock mínimo debe ser un entero mayor o igual a 0.');
 
     const sesion = await obtenerSesionActual();
-    if (sesion?.rol !== 'administrador') return mostrarError('Solo un administrador puede guardar productos.');
+    if (!esGlobal(sesion?.rol)) return mostrarError('Solo un administrador o gerente puede guardar productos.');
     if (!editando && stock > 0 && !(await inventoryService.obtenerContextoLocal())?.local) {
       return mostrarError('Para cargar stock inicial elige primero un local en el selector del encabezado.');
     }
