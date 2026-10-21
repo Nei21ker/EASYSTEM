@@ -9,6 +9,7 @@
 // cuando está configurado.
 import { createClient } from '@supabase/supabase-js';
 import { supabase, supabaseConfigurado, supabaseUrl, supabaseAnonKey } from './supabase';
+import { alCambiarDatos, iniciarTiempoReal } from './realtime';
 import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
 
@@ -553,6 +554,9 @@ function iniciarVigilanciaCuenta() {
   };
 
   setInterval(revisar, 60_000);
+  // Con la actualización en vivo, un cambio en los locales (suspensión) o en los perfiles (cierre forzado, usuario
+  // desactivado) se nota al instante en vez de esperar al siguiente chequeo
+  alCambiarDatos(['locales', 'perfiles'], revisar, 300);
   window.addEventListener('online', revisar);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') revisar();
@@ -593,6 +597,7 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
   }
 
   iniciarVigilanciaCuenta();
+  iniciarTiempoReal();
   return sesion;
 }
 

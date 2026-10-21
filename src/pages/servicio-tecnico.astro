@@ -83,6 +83,7 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
   import * as inventoryService from '../lib/inventoryService';
   import { ESTADOS_ORDEN } from '../lib/inventoryService';
   import { esGlobal } from '../lib/auth';
+  import { alCambiarDatos } from '../lib/realtime';
   import { htmlPrecioDual } from '../utils/format';
   import { formatearFecha } from '../utils/format';
   import { animarLista } from '../utils/animaciones';
@@ -198,6 +199,8 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
   });
   $('st-nueva').addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-nueva-orden')));
   window.addEventListener('easystem:ordenes-cambiaron', () => void cargar());
+  // Otro dispositivo recibió un equipo, cambió un estado o usó un repuesto: la lista se actualiza sola
+  alCambiarDatos(['ordenes_servicio'], cargar);
   tasaActual.listen(() => pintar());
 
   inventoryService.obtenerContextoLocal().then((contexto) => {

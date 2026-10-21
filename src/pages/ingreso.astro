@@ -134,6 +134,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esGerencia } from '../lib/auth';
   import { buscarFormatoEtiqueta, FORMATO_ETIQUETA_POR_DEFECTO, htmlEtiqueta, imprimirEtiquetas, paginasNecesarias, totalEtiquetas } from '../utils/etiquetas';
   import { animarLista, reanimar } from '../utils/animaciones';
+  import { alCambiarDatos } from '../lib/realtime';
   import type { ProductoConRelaciones } from '../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -484,6 +485,25 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     else pintarLote();
   }) as unknown as EventListener);
 
+  /**
+   * Actualización en vivo: otro dispositivo vendió o ingresó mercancía. Se renuevan las existencias mostradas
+   * (los campos de cantidad que se estén escribiendo no se tocan); si un producto del lote desapareció, se quita.
+   */
+  async function refrescarExistencias() {
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    if (lote.some((l) => !producto(l.id))) {
+      lote = lote.filter((l) => producto(l.id));
+      guardarLote();
+      pintarLote();
+      return;
+    }
+    for (const l of lote) {
+      const p = producto(l.id)!;
+      const celda = filas.querySelector<HTMLElement>(`[data-stock="${l.id}"]`);
+      if (celda) celda.innerHTML = `${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}`;
+    }
+  }
+
   // --- Arranque ------------------------------------------------------------------------------------
   Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     if (!esGerencia(contexto?.sesion.rol)) return;
@@ -501,6 +521,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     }
     if (!selectFormato.value) selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
 
+    alCambiarDatos(['inventario_local', 'productos', 'compatibilidades'], refrescarExistencias);
     lote = leerLote().filter((l) => lista.some((p) => p.id === l.id));
     const pedido = new URLSearchParams(window.location.search).get('producto');
     if (pedido && lista.some((p) => p.id === pedido)) {

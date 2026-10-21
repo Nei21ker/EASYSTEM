@@ -65,6 +65,7 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
   import type { EstadoSuscripcion } from '../../types/database.types';
   import { formatearFecha } from '../../utils/format';
   import { animarLista, reanimar } from '../../utils/animaciones';
+  import { alCambiarDatos } from '../../lib/realtime';
 
   const contLocales = document.getElementById('su-locales') as HTMLDivElement;
   const filasUsuarios = document.getElementById('su-usuarios') as HTMLTableSectionElement;
@@ -257,5 +258,10 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
   obtenerSesionActual().then((sesion) => {
     miId = sesion?.id ?? '';
     cargar().catch((err) => avisar(error, err instanceof Error ? err.message : 'No se pudo cargar el panel (¿aplicaste las migraciones 0020 y 0021?).'));
+    // Cambió una suscripción o un usuario desde otro dispositivo. Si se está escribiendo una fecha, no se pisa lo tecleado.
+    alCambiarDatos(['locales', 'perfiles'], async () => {
+      if (contLocales.contains(document.activeElement) && document.activeElement?.tagName === 'INPUT') return;
+      await cargar();
+    });
   });
 </script>

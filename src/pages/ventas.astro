@@ -248,6 +248,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
   import { animarLista, reanimar } from '../utils/animaciones';
+import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
   import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, VentaItem } from '../types/database.types';
 
@@ -697,7 +698,44 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       primeraCarga = false;
       animarLista(resultados);
     }
+    ajustarCarritoAlStock();
     renderResultados(buscador.value);
+  }
+
+  /**
+   * Con el stock recién traído (p. ej. otro dispositivo vendió el mismo producto), cada línea del carrito pasa a
+   * apuntar al producto actualizado y, si ya no alcanza, se baja la cantidad (o se quita) avisando al cajero.
+   */
+  function ajustarCarritoAlStock() {
+    const avisos: string[] = [];
+    for (const linea of [...carrito]) {
+      const actual = productos.find((p) => p.id === linea.producto.id);
+      if (!actual) {
+        carrito = carrito.filter((l) => l !== linea);
+        avisos.push(`"${linea.producto.nombre}" ya no está disponible y se quitó del carrito.`);
+        continue;
+      }
+      linea.producto = actual;
+      if (linea.cantidad > actual.stock_actual) {
+        if (actual.stock_actual <= 0) {
+          carrito = carrito.filter((l) => l !== linea);
+          avisos.push(`Se agotó "${actual.nombre}" (otro dispositivo lo vendió) y se quitó del carrito.`);
+        } else {
+          linea.cantidad = actual.stock_actual;
+          avisos.push(`Solo quedan ${actual.stock_actual} de "${actual.nombre}": se ajustó la cantidad del carrito.`);
+        }
+      }
+    }
+    if (avisos.length > 0) {
+      renderCarrito();
+      mostrarError(avisos.join(' '));
+    }
+  }
+
+  /** Actualización en vivo: no toca nada mientras haya una ventana abierta (confirmar venta, ticket...), para no cambiar un total a mitad del cobro. */
+  async function refrescarEnVivo() {
+    while (document.querySelector('dialog[open]')) await new Promise((r) => setTimeout(r, 1500));
+    await cargarProductos();
   }
 
   // Delegación de eventos: los botones de resultados/carrito se regeneran en cada render
@@ -756,6 +794,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   inventoryService.obtenerContextoLocal().then((contexto) => {
     if (contexto?.local) {
       cargarProductos();
+      // Otro dispositivo vendió o ingresó mercancía: el stock se actualiza solo y el carrito se ajusta
+      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades'], refrescarEnVivo);
       return;
     }
     cargando.classList.add('hidden');

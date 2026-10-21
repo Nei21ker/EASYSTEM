@@ -99,6 +99,7 @@ import StatCard from '../components/dashboard/StatCard.astro';
   import Chart from 'chart.js/auto';
   import * as inventoryService from '../lib/inventoryService';
   import { formatearBolivares, formatearMoneda } from '../utils/format';
+import { alCambiarDatos } from '../lib/realtime';
   import { esMetodoBolivares } from '../utils/pagos';
   import { resumirPorMetodo, type ResumenMetodo } from '../utils/ventasResumen';
   import { $tema } from '../stores/theme';
@@ -419,25 +420,33 @@ import StatCard from '../components/dashboard/StatCard.astro';
   $tema.subscribe(() => repintarCharts());
 
   // Si la tabla de ventas no existe todavía (migración 0011 sin aplicar), el resto del reporte sigue funcionando.
-  const cargarVentas = inventoryService.listarVentas({ limite: 2000 }).catch((err) => {
+  const pedirVentas = () => inventoryService.listarVentas({ limite: 2000 }).catch((err) => {
     const aviso = document.getElementById('rp-metodos-error')!;
     aviso.textContent = `No se pudieron cargar las ventas por tipo de cobro: ${err instanceof Error ? err.message : err}`;
     aviso.classList.remove('hidden');
     return [] as VentaRegistrada[];
   });
 
-  const cargarDevoluciones = inventoryService.listarDevoluciones().catch((err) => {
+  const pedirDevoluciones = () => inventoryService.listarDevoluciones().catch((err) => {
     console.error('[EASYSTEM] No se pudieron cargar las devoluciones.', err);
     return [] as Devolucion[];
   });
 
-  Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarMovimientos(2000), cargarVentas, cargarDevoluciones]).then(
-    ([listaProductos, listaMovimientos, listaVentas, listaDevoluciones]) => {
-      productos = listaProductos;
-      movimientos = listaMovimientos;
-      ventasRegistradas = listaVentas;
-      devoluciones = listaDevoluciones;
-      actualizarReporte();
-    }
-  );
+  async function cargarReporte() {
+    const [listaProductos, listaMovimientos, listaVentas, listaDevoluciones] = await Promise.all([
+      inventoryService.listarProductos({ catalogoCompleto: true }),
+      inventoryService.listarMovimientos(2000),
+      pedirVentas(),
+      pedirDevoluciones(),
+    ]);
+    productos = listaProductos;
+    movimientos = listaMovimientos;
+    ventasRegistradas = listaVentas;
+    devoluciones = listaDevoluciones;
+    actualizarReporte();
+  }
+
+  cargarReporte();
+  // Otro dispositivo registró una venta, una devolución o un ingreso: el reporte se actualiza solo (con más espera: es pesado)
+  alCambiarDatos(['ventas', 'devoluciones', 'movimientos_inventario', 'productos'], cargarReporte, 2000);
 </script>

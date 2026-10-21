@@ -151,6 +151,7 @@ const claseSelect =
   import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
+  import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
   import {
     alternarCompatibles,
@@ -415,12 +416,15 @@ const claseSelect =
   });
 
   // Tras guardar/importar/registrar entrada, las ventanas avisan con este evento.
-  window.addEventListener('easystem:productos-cambiaron', async () => {
+  async function recargarProductos() {
     productos = await inventoryService.listarProductos();
     reconstruirIndice();
     pintarCategorias();
     pintar();
-  });
+  }
+  window.addEventListener('easystem:productos-cambiaron', recargarProductos);
+  // Otro dispositivo vendió, ingresó mercancía o editó productos: la lista se actualiza sola (conserva filtros y página)
+  alCambiarDatos(['productos', 'inventario_local', 'compatibilidades', 'modelos_telefono'], recargarProductos);
 
   Promise.all([inventoryService.listarProductos(), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     productos = lista;

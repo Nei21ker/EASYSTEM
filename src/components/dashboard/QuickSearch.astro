@@ -71,6 +71,7 @@
   import { htmlPrecioDual } from '../../utils/format';
   import { tasaActual } from '../../stores/tasa';
   import { animarLista } from '../../utils/animaciones';
+  import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
   import { alternarCompatibles, escaparHtml, htmlCompatibles, htmlPildoraStock } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
@@ -167,5 +168,16 @@
     poblarFiltros();
     actualizar();
     animarLista(tbody);
+  });
+
+  // Actualización en vivo (otro dispositivo vendió o ingresó mercancía): se conserva lo que el usuario tenga filtrado
+  alCambiarDatos(['productos', 'inventario_local', 'compatibilidades'], async () => {
+    productos = await inventoryService.listarProductos();
+    const categoria = selectCategoria.value;
+    const modelo = selectModelo.value;
+    poblarFiltros();
+    selectCategoria.value = categoria;
+    selectModelo.value = modelo;
+    actualizar();
   });
 </script>

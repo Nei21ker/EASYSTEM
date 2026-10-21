@@ -50,6 +50,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   import * as inventoryService from '../lib/inventoryService';
   import type { MovimientoConProducto } from '../lib/db/movimientos';
   import { animarLista } from '../utils/animaciones';
+import { alCambiarDatos } from '../lib/realtime';
 
   let movimientos: MovimientoConProducto[] = [];
   let filtroActual = '';
@@ -85,12 +86,12 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     }
   }
 
-  function render() {
+  function render(animar = true) {
     const lista = filtroActual ? movimientos.filter((m) => m.tipo === filtroActual) : movimientos;
     sinResultados.classList.toggle('hidden', lista.length > 0);
     contador.textContent = `${lista.length} movimiento${lista.length === 1 ? '' : 's'}`;
 
-    animarLista(filas);
+    if (animar) animarLista(filas);
     filas.innerHTML = lista
       .map((mov) => {
         const fecha = new Date(mov.fecha);
@@ -123,11 +124,16 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   actualizarBotonesFiltro();
 
-  Promise.all([inventoryService.listarMovimientos(500), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
+  async function cargarMovimientos(primera: boolean) {
+    const [lista, contexto] = await Promise.all([inventoryService.listarMovimientos(500), inventoryService.obtenerContextoLocal()]);
     movimientos = lista;
     verLocal = contexto?.alcance === 'todos';
     document.getElementById('mv-th-local')!.classList.toggle('hidden', !verLocal);
     cargando.classList.add('hidden');
-    render();
-  });
+    render(primera);
+  }
+
+  cargarMovimientos(true);
+  // Otro dispositivo registró una venta o un ingreso: el historial se actualiza solo
+  alCambiarDatos(['movimientos_inventario'], () => cargarMovimientos(false));
 </script>

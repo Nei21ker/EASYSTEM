@@ -41,6 +41,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
   import { obtenerSesionActual } from '../lib/auth';
+  import { alCambiarDatos } from '../lib/realtime';
 
   // Vendedor y técnico no ven el resumen (total de productos, valor del inventario y alertas de stock bajo)
   obtenerSesionActual().then((sesion) => {
@@ -61,14 +62,25 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 
   // Todo viene ya filtrado por el local activo (o por todos los locales, en la vista del administrador).
   // Las alertas se cuentan por local: un producto bajo en dos locales son dos alertas.
-  Promise.all([inventoryService.listarProductos(), inventoryService.listarProductosStockBajo()]).then(([productos, stockBajo]) => {
+  // La primera carga cuenta animada; las actualizaciones en vivo escriben el valor directo (sin volver a contar desde 0)
+  async function cargar(primera: boolean) {
+    const [productos, stockBajo] = await Promise.all([inventoryService.listarProductos(), inventoryService.listarProductosStockBajo()]);
     const valorInventario = productos.reduce((total, p) => total + p.precio_venta * p.stock_actual, 0);
     valorInventarioUsd = valorInventario;
     pintarValorEnBs();
 
-    contarHasta(document.getElementById('stat-total-productos'), productos.length);
-    contarHasta(document.getElementById('stat-valor-inventario'), valorInventario, formatearMoneda, 1100);
-    contarHasta(document.getElementById('stat-stock-bajo'), stockBajo.length);
+    const mostrar = (id: string, valor: number, formato: (n: number) => string = (n) => String(Math.round(n)), duracion?: number) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (primera) contarHasta(el, valor, formato, duracion);
+      else {
+        delete el.dataset.contando;
+        el.textContent = formato(valor);
+      }
+    };
+    mostrar('stat-total-productos', productos.length);
+    mostrar('stat-valor-inventario', valorInventario, formatearMoneda, 1100);
+    mostrar('stat-stock-bajo', stockBajo.length);
 
     const tendencia = document.getElementById('stat-stock-bajo-tendencia');
     if (tendencia) {
@@ -79,5 +91,9 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
       tendencia.classList.toggle('text-red-600', requiereAtencion);
       tendencia.classList.toggle('dark:text-red-400', requiereAtencion);
     }
-  });
+  }
+
+  cargar(true);
+  // Otro dispositivo vendió, ingresó mercancía o cambió productos: las tarjetas se actualizan solas
+  alCambiarDatos(['productos', 'inventario_local', 'locales'], () => cargar(false));
 </script>

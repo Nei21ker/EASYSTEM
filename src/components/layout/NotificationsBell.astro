@@ -42,6 +42,7 @@
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { estadoStock } from '../../utils/format';
+  import { alCambiarDatos } from '../../lib/realtime';
 
   const boton = document.getElementById('notif-boton') as HTMLButtonElement;
   const panel = document.getElementById('notif-panel') as HTMLDivElement;
@@ -76,19 +77,32 @@
     if (e.key === 'Escape') alternarPanel(false);
   });
 
-  Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]).then(([productos, contexto]) => {
+  let alertasPrevias = -1;
+
+  async function cargar() {
+    const [productos, contexto] = await Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]);
     const verLocal = contexto?.alcance === 'todos';
+    vacio.classList.toggle('hidden', productos.length > 0);
+    globo.classList.toggle('hidden', productos.length === 0);
     if (productos.length === 0) {
       resumen.textContent = 'Sin alertas pendientes';
-      vacio.classList.remove('hidden');
+      lista.innerHTML = '';
+      alertasPrevias = 0;
       return;
     }
 
     globo.textContent = productos.length > 99 ? '99+' : String(productos.length);
-    globo.classList.remove('hidden');
-    // Llama la atención: el globo late y la campana se agita un par de veces.
-    globo.classList.add('anim-anillo');
-    boton.querySelector('svg')?.classList.add('anim-agitar');
+    // Llama la atención (la primera vez o cuando aparecen alertas nuevas): el globo late y la campana se agita un par de veces.
+    if (alertasPrevias === -1 || productos.length > alertasPrevias) {
+      globo.classList.remove('anim-anillo');
+      void globo.offsetWidth;
+      globo.classList.add('anim-anillo');
+      const campana = boton.querySelector('svg');
+      campana?.classList.remove('anim-agitar');
+      void campana?.getBoundingClientRect();
+      campana?.classList.add('anim-agitar');
+    }
+    alertasPrevias = productos.length;
     resumen.textContent = `${productos.length} producto${productos.length === 1 ? '' : 's'} necesita${productos.length === 1 ? '' : 'n'} reabastecimiento`;
 
     lista.innerHTML = productos
@@ -106,5 +120,8 @@
         `;
       })
       .join('');
-  });
+  }
+
+  cargar();
+  alCambiarDatos(['inventario_local', 'productos', 'locales'], cargar);
 </script>

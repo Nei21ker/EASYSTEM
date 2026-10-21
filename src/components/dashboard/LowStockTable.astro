@@ -43,6 +43,7 @@
   import { estadoStock } from '../../utils/format';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
+  import { alCambiarDatos } from '../../lib/realtime';
   import type { ProductoStockBajo } from '../../types/database.types';
 
   const cargando = document.getElementById('lst-cargando') as HTMLParagraphElement;
@@ -81,19 +82,19 @@
     return div.innerHTML;
   }
 
-  Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]).then(([productos, contexto]) => {
+  // `primera`: solo la primera carga anima la tabla; las actualizaciones en vivo la reemplazan sin parpadeos
+  async function cargar(primera: boolean) {
+    const [productos, contexto] = await Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]);
     const verLocal = contexto?.alcance === 'todos';
     cargando.classList.add('hidden');
     productosBajoStock = productos;
 
-    if (productos.length === 0) {
-      vacio.classList.remove('hidden');
-      return;
-    }
+    vacio.classList.toggle('hidden', productos.length > 0);
+    botonExportar.classList.toggle('hidden', productos.length === 0);
+    tablaWrap.classList.toggle('hidden', productos.length === 0);
+    if (productos.length === 0) return;
 
-    botonExportar.classList.remove('hidden');
-    tablaWrap.classList.remove('hidden');
-    animarLista(filas);
+    if (primera) animarLista(filas);
     filas.innerHTML = productos
       .map((producto) => {
         const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
@@ -110,5 +111,8 @@
         `;
       })
       .join('');
-  });
+  }
+
+  cargar(true);
+  alCambiarDatos(['inventario_local', 'productos', 'locales'], () => cargar(false));
 </script>

@@ -58,6 +58,7 @@ const claseCampo =
   import * as inventoryService from '../../lib/inventoryService';
   import { obtenerSesionActual } from '../../lib/auth';
   import { tasaActual } from '../../stores/tasa';
+  import { alCambiarDatos } from '../../lib/realtime';
   import { convertirABs, formatearBolivares, formatearFecha, parsearTasa } from '../../utils/format';
   import type { TasaCambio } from '../../types/database.types';
 
@@ -174,6 +175,14 @@ const claseCampo =
   obtenerSesionActual().then(async (sesion) => {
     // El contador solo trabaja en la nómina: no maneja la tasa del dólar del negocio
     if (!sesion || sesion.rol === 'contador') return;
+    // Otro dispositivo registró la tasa: se actualiza aquí; si esta ventana era obligatoria, ya no hace falta
+    alCambiarDatos(['tasas_cambio'], async () => {
+      const { hoy, ultima } = await inventoryService.obtenerTasaVigente();
+      referenciaActual = ultima;
+      if (!hoy) return;
+      tasaActual.set(hoy.tasa);
+      if (dialogo.open && obligatoria) dialogo.close();
+    });
     try {
       const { hoy, ultima } = await inventoryService.obtenerTasaVigente();
       referenciaActual = ultima;

@@ -139,6 +139,7 @@ const claseBotonSecundario =
   import { formatearBolivares, formatearFecha, formatearMoneda } from '../utils/format';
   import { descargarCSV } from '../utils/csv';
   import { animarLista, contarHasta } from '../utils/animaciones';
+import { alCambiarDatos } from '../lib/realtime';
   import { calcularRango, type RangoPreestablecido } from '../utils/dateRange';
   import { esMetodoBolivares, etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
   import { resumirPorMetodo } from '../utils/ventasResumen';
@@ -339,7 +340,7 @@ const claseBotonSecundario =
   }
 
   // --- Carga por rango de fechas -----------------------------------------------------
-  async function cargar() {
+  async function cargar(enVivo = false) {
     marcarBotonActivo();
     const rango =
       rangoActual === 'personalizado'
@@ -374,7 +375,8 @@ const claseBotonSecundario =
       $('hv-error').classList.remove('hidden');
     }
     $('hv-cargando').classList.add('hidden');
-    pagina = 1;
+    // Una actualización en vivo no devuelve a la página 1 a quien esté revisando la lista
+    if (!enVivo) pagina = 1;
     if (primeraVez) {
       primeraVez = false;
       animarLista(filas);
@@ -464,5 +466,7 @@ const claseBotonSecundario =
     $('hv-exportar').classList.toggle('hidden', !esAdministrador);
     $('hv-aviso-vendedor').classList.toggle('hidden', esAdministrador);
     cargar();
+    // Otro dispositivo registró una venta o una devolución: la lista y el resumen se actualizan solos
+    alCambiarDatos(['ventas', 'devoluciones'], () => cargar(true));
   });
 </script>

@@ -226,6 +226,7 @@ const claseDialogo =
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { puedeNomina } from '../lib/auth';
+  import { alCambiarDatos } from '../lib/realtime';
   import { reducirImagen } from '../utils/imagenes';
   import { formatearFecha, formatearMoneda } from '../utils/format';
   import { hoyISO, pagoBaseQuincenal, quincenaAnterior, quincenaDe, quincenaSiguiente, totalPago, validarAjustes, type Quincena } from '../utils/nomina';
@@ -713,6 +714,21 @@ const claseDialogo =
       empleados = await inventoryService.listarEmpleados();
       await cargarNominas();
       pintar();
+
+      // Otro dispositivo pagó una quincena, ajustó un pago o cambió un empleado: la nómina se actualiza sola
+      alCambiarDatos(['nominas', 'empleados', 'locales'], async () => {
+        empleados = await inventoryService.listarEmpleados();
+        await cargarNominas();
+        pintar();
+        // Si esta ventana de pago estaba abierta y ese pago ya se registró en otro dispositivo, no se puede seguir editando
+        if (pgDialogo.open && pagando && pagando.estado !== 'PAGADO') {
+          const actual = nominas.find((n) => n.empleado_id === pagando!.empleado.id);
+          if (actual?.estado_pago === 'PAGADO') {
+            pgDialogo.close();
+            avisar(exito, `El pago de ${pagando.empleado.nombre} ${pagando.empleado.apellido} ya se registró como pagado desde otro dispositivo.`);
+          }
+        }
+      });
     })
     .catch((err) => avisar(error, mensajeDeError(err, 'No se pudo cargar la nómina.')));
 </script>

@@ -21,6 +21,7 @@ const { limite = 8 } = Astro.props;
   import * as inventoryService from '../../lib/inventoryService';
   import { formatearFecha } from '../../utils/format';
   import { animarLista } from '../../utils/animaciones';
+  import { alCambiarDatos } from '../../lib/realtime';
 
   const raiz = document.getElementById('rm-root') as HTMLDivElement;
   const limite = Number(raiz.dataset.limite) || 8;
@@ -40,7 +41,9 @@ const { limite = 8 } = Astro.props;
     return div.innerHTML;
   }
 
-  Promise.all([inventoryService.listarMovimientos(limite), inventoryService.obtenerContextoLocal()]).then(([movimientos, contexto]) => {
+  // `primera`: solo la primera carga anima la lista; las actualizaciones en vivo la reemplazan sin parpadeos
+  async function cargar(primera: boolean) {
+    const [movimientos, contexto] = await Promise.all([inventoryService.listarMovimientos(limite), inventoryService.obtenerContextoLocal()]);
     // El vendedor no ve el módulo de movimientos (ni este resumen)
     if (contexto?.sesion.rol === 'vendedor') {
       raiz.classList.add('hidden');
@@ -49,13 +52,11 @@ const { limite = 8 } = Astro.props;
     const verLocal = contexto?.alcance === 'todos';
     cargando.classList.add('hidden');
 
-    if (movimientos.length === 0) {
-      vacio.classList.remove('hidden');
-      return;
-    }
+    vacio.classList.toggle('hidden', movimientos.length > 0);
+    lista.classList.toggle('hidden', movimientos.length === 0);
+    if (movimientos.length === 0) return;
 
-    lista.classList.remove('hidden');
-    animarLista(lista);
+    if (primera) animarLista(lista);
     lista.innerHTML = movimientos
       .map(
         (mov) => `
@@ -72,5 +73,8 @@ const { limite = 8 } = Astro.props;
         `
       )
       .join('');
-  });
+  }
+
+  cargar(true);
+  alCambiarDatos(['movimientos_inventario'], () => cargar(false));
 </script>

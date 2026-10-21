@@ -136,6 +136,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   import { listarLocales } from '../lib/inventoryService';
   import type { Local } from '../types/database.types';
   import { animarLista, reanimar } from '../utils/animaciones';
+  import { alCambiarDatos } from '../lib/realtime';
 
   const contador = document.getElementById('us-contador') as HTMLHeadingElement;
   const filas = document.getElementById('us-filas') as HTMLTableSectionElement;
@@ -144,6 +145,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   const exito = document.getElementById('us-exito') as HTMLParagraphElement;
 
   let miId = '';
+  let primeraVezUsuarios = true;
   let miRol: Rol | null = null;
   let locales: Local[] = [];
 
@@ -196,7 +198,11 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   async function cargarUsuarios() {
     const usuarios = await listarUsuarios();
     contador.textContent = `${usuarios.length} usuario${usuarios.length === 1 ? '' : 's'}`;
-    animarLista(filas);
+    // Solo la primera carga anima la lista; las actualizaciones en vivo la reemplazan sin parpadeos
+    if (primeraVezUsuarios) {
+      primeraVezUsuarios = false;
+      animarLista(filas);
+    }
 
     const ordenados = [...usuarios].sort(
       (a, b) => ORDEN_JERARQUIA.indexOf(a.rol) - ORDEN_JERARQUIA.indexOf(b.rol) || a.nombre.localeCompare(b.nombre)
@@ -431,5 +437,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     }
     actualizarFormularioNuevo();
     cargarUsuarios();
+    // Se creó, editó o eliminó un usuario desde otro dispositivo: la lista se actualiza sola
+    alCambiarDatos(['perfiles'], cargarUsuarios);
   });
 </script>
