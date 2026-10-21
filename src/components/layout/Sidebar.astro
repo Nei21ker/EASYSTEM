@@ -70,7 +70,7 @@ function esActivo(href: string) {
 </aside>
 
 <script>
-  import { cerrarSesion, esGlobal, ETIQUETAS_ROL } from '../../lib/auth';
+  import { cerrarSesion, esSinLocal, ETIQUETAS_ROL } from '../../lib/auth';
   import { obtenerContextoLocal } from '../../lib/inventoryService';
   import { ALCANCE_TODOS } from '../../lib/constantes-locales';
 
@@ -123,7 +123,7 @@ function esActivo(href: string) {
     (document.getElementById('nav-usuario-nombre') as HTMLParagraphElement).textContent = sesion.nombre;
     (document.getElementById('nav-usuario-rol') as HTMLParagraphElement).textContent = ETIQUETAS_ROL[sesion.rol];
     (document.getElementById('nav-usuario-local') as HTMLParagraphElement).textContent =
-      esGlobal(sesion.rol) ? 'Acceso a todos los locales' : (local?.nombre ?? 'Sin local asignado');
+      esSinLocal(sesion.rol) ? 'Acceso a todos los locales' : (local?.nombre ?? 'Sin local asignado');
     (document.getElementById('nav-usuario-iniciales') as HTMLSpanElement).textContent = sesion.nombre
       .split(' ')
       .map((palabra) => palabra[0])

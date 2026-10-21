@@ -2,7 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 ---
 
-<DashboardLayout titulo="Usuarios" subtitulo="Empleados con acceso a EASYSTEM y sus permisos" roles={['administrador', 'gerente']}>
+<DashboardLayout titulo="Usuarios" subtitulo="Cuentas con acceso a EASYSTEM y sus permisos" roles={['administrador', 'gerente']}>
   <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
     <div class="lg:col-span-2 rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
@@ -27,7 +27,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     </div>
 
     <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Nuevo empleado</h2>
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Nuevo usuario</h2>
       <form id="us-form" class="mt-4 space-y-3">
         <div>
           <label for="us-nombre" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nombre completo</label>
@@ -128,6 +128,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     obtenerSesionActual,
     ETIQUETAS_ROL,
     esGlobal,
+    esSinLocal,
     puedeGestionarUsuario,
     rolesAsignables,
     type Rol,
@@ -148,6 +149,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   const AYUDA_ROL: Record<Rol, string> = {
     administrador: 'Dueño del servicio: acceso total, suscripciones, sesiones y gestión de cualquier usuario.',
+    contador: 'Solo ve la Nómina, de todos los locales. Lo crea y elimina el administrador.',
     gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina encargados, vendedores y técnicos.',
     encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
     vendedor: 'Cajero de su local: ventas y consulta de productos.',
@@ -169,7 +171,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   function actualizarFormularioNuevo() {
     const rol = selectRolNuevo.value as Rol;
     (document.getElementById('us-rol-ayuda') as HTMLParagraphElement).textContent = AYUDA_ROL[rol] ?? '';
-    bloqueLocalNuevo.classList.toggle('hidden', esGlobal(rol));
+    bloqueLocalNuevo.classList.toggle('hidden', esSinLocal(rol));
   }
   selectRolNuevo.addEventListener('change', actualizarFormularioNuevo);
 
@@ -181,10 +183,11 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   // La lista se agrupa por jerarquía. Los administradores solo llegan aquí si quien mira es administrador
   // (la base de datos y listarUsuarios() se los ocultan a los demás).
-  const ORDEN_JERARQUIA: Rol[] = ['administrador', 'gerente', 'encargado', 'tecnico', 'vendedor'];
+  const ORDEN_JERARQUIA: Rol[] = ['administrador', 'gerente', 'contador', 'encargado', 'tecnico', 'vendedor'];
   const TITULO_GRUPO: Record<Rol, string> = {
     administrador: 'Administradores',
     gerente: 'Gerentes',
+    contador: 'Contadores',
     encargado: 'Encargados',
     tecnico: 'Técnicos',
     vendedor: 'Vendedores',
@@ -209,7 +212,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
         const celdaRol = `<span class="text-sm">${escaparHtml(ETIQUETAS_ROL[u.rol] ?? u.rol)}</span>`;
 
-        const celdaLocal = esGlobal(u.rol)
+        const celdaLocal = esSinLocal(u.rol)
           ? '<span class="text-xs text-slate-500 dark:text-slate-400">Todos los locales</span>'
           : `<span class="text-xs ${u.local_id ? 'text-slate-500 dark:text-slate-400' : 'font-semibold text-amber-600 dark:text-amber-400'}">${escaparHtml(nombreLocal ?? 'Sin local')}</span>`;
 
@@ -319,7 +322,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 
   function actualizarBloqueLocalEdicion() {
     const rol = (edBloqueRol.classList.contains('hidden') ? editando?.rol : (edRol.value as Rol)) ?? 'vendedor';
-    edBloqueLocal.classList.toggle('hidden', esGlobal(rol));
+    edBloqueLocal.classList.toggle('hidden', esSinLocal(rol));
   }
   edRol.addEventListener('change', actualizarBloqueLocalEdicion);
 
@@ -361,7 +364,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     try {
       if (!yo) {
         const rol = edRol.value as Rol;
-        const local_id = esGlobal(rol) ? null : edLocal.value || null;
+        const local_id = esSinLocal(rol) ? null : edLocal.value || null;
         if (rol !== editando.rol || (local_id ?? null) !== (editando.local_id ?? null)) {
           await actualizarAccesoUsuario(editando.id, { rol, local_id });
         }
@@ -397,7 +400,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     const email = (document.getElementById('us-email') as HTMLInputElement).value.trim();
     const password = (document.getElementById('us-password') as HTMLInputElement).value;
     const rol = selectRolNuevo.value as Rol;
-    const local_id = esGlobal(rol) ? null : selectLocalNuevo.value || null;
+    const local_id = esSinLocal(rol) ? null : selectLocalNuevo.value || null;
 
     try {
       const { requiereConfirmacion } = await registrarUsuario({ nombre, email, password, rol, local_id });

@@ -18,13 +18,13 @@
 
 <script>
   import { obtenerContextoLocal } from '../../lib/inventoryService';
-  import { esGlobal } from '../../lib/auth';
+  import { esSinLocal } from '../../lib/auth';
 
   obtenerContextoLocal().then((contexto) => {
     if (!contexto) return;
     document.documentElement.dataset.alcance = contexto.alcance ?? 'ninguno';
     document.documentElement.dataset.tipoLocal = contexto.local?.tipo ?? '';
-    if (!esGlobal(contexto.sesion.rol) && !contexto.alcance) {
+    if (!esSinLocal(contexto.sesion.rol) && !contexto.alcance) {
       document.getElementById('ctx-sin-local')?.classList.remove('hidden');
     }
   });

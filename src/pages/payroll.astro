@@ -1,0 +1,619 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-800/50';
+const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const botonSecundario =
+  'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800';
+const claseDialogo =
+  'anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+---
+
+<DashboardLayout
+  titulo="Nómina"
+  subtitulo="Personal y pagos quincenales de todos los locales"
+  tituloPestana="Nómina · EASYSTEM"
+  roles={['administrador', 'gerente', 'contador']}
+>
+  <!-- Título solo para la impresión -->
+  <div class="hidden print:block">
+    <h1 class="text-xl font-bold text-black">Nómina quincenal · <span id="pn-impr-periodo"></span></h1>
+    <p class="text-sm text-black"><span id="pn-impr-local"></span> · Montos en dólares</p>
+  </div>
+
+  <!-- Barra de herramientas -->
+  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm print:hidden dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex flex-col gap-3 xl:flex-row xl:items-end">
+      <div>
+        <span class={etiqueta}>Quincena</span>
+        <div class="mt-1 flex items-center gap-2">
+          <button id="pn-anterior" type="button" aria-label="Quincena anterior" class={botonSecundario}>←</button>
+          <span id="pn-periodo" class="min-w-36 text-center text-sm font-semibold text-slate-900 dark:text-white"></span>
+          <button id="pn-siguiente" type="button" aria-label="Quincena siguiente" class={botonSecundario}>→</button>
+          <button id="pn-hoy" type="button" class={botonSecundario}>Actual</button>
+        </div>
+      </div>
+
+      <div class="xl:w-60">
+        <label for="pn-local" class={etiqueta}>Local</label>
+        <select id="pn-local" class={`mt-1 ${campo}`}></select>
+      </div>
+
+      <div class="min-w-0 xl:flex-1">
+        <label for="pn-buscar" class={etiqueta}>Buscar empleado</label>
+        <input id="pn-buscar" type="search" autocomplete="off" placeholder="Nombre, cédula o cargo" class={`mt-1 ${campo}`} />
+      </div>
+    </div>
+
+    <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+      <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+        <input id="pn-inactivos" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+        Mostrar empleados inactivos
+      </label>
+      <div class="flex flex-wrap gap-2">
+        <button id="pn-generar" type="button" class={botonSecundario}>Generar quincena</button>
+        <button id="pn-imprimir" type="button" class={botonSecundario}>Imprimir reporte</button>
+        <button id="pn-nuevo" type="button" class="bg-marca rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110">+ Nuevo empleado</button>
+      </div>
+    </div>
+  </div>
+
+  <p id="pn-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+  <p id="pn-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 print:hidden dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+
+  <!-- Resumen -->
+  <section class="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Resumen de la quincena">
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-xs text-slate-500 dark:text-slate-400">Empleados activos</p>
+      <p id="pn-r-empleados" class="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">—</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-xs text-slate-500 dark:text-slate-400">Nómina de la quincena</p>
+      <p id="pn-r-total" class="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">—</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-xs text-slate-500 dark:text-slate-400">Pagado</p>
+      <p id="pn-r-pagado" class="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">—</p>
+    </div>
+    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-xs text-slate-500 dark:text-slate-400">Pendiente por pagar</p>
+      <p id="pn-r-pendiente" class="mt-1 text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">—</p>
+    </div>
+  </section>
+
+  <!-- Tabla -->
+  <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class="overflow-x-auto">
+      <table class="tabla-tarjetas w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+            <th class="px-4 py-3 font-semibold">Empleado</th>
+            <th class="px-4 py-3 text-right font-semibold">Pago base</th>
+            <th class="px-4 py-3 text-right font-semibold">Bonos</th>
+            <th class="px-4 py-3 text-right font-semibold">Deducciones</th>
+            <th class="px-4 py-3 text-right font-semibold">Total</th>
+            <th class="px-4 py-3 font-semibold">Estado</th>
+            <th class="px-4 py-3 print:hidden"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody id="pn-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+    <p id="pn-vacio" class="hidden px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400"></p>
+  </section>
+
+  <!-- Empleado -->
+  <dialog id="em-dialogo" aria-labelledby="em-titulo" class={claseDialogo}>
+    <form id="em-form" novalidate class="flex max-h-[90vh] flex-col">
+      <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+        <h2 id="em-titulo" class="text-base font-semibold">Nuevo empleado</h2>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="em-nombre" class={etiqueta}>Nombre *</label>
+            <input id="em-nombre" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="em-apellido" class={etiqueta}>Apellido *</label>
+            <input id="em-apellido" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="em-cedula" class={etiqueta}>Cédula / documento *</label>
+            <input id="em-cedula" type="text" autocomplete="off" placeholder="V-12345678" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="em-cargo" class={etiqueta}>Cargo *</label>
+            <input id="em-cargo" type="text" autocomplete="off" placeholder="Cajera, Técnico..." class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="em-local" class={etiqueta}>Local *</label>
+            <select id="em-local" class={`mt-1 ${campo}`}></select>
+          </div>
+          <div>
+            <label for="em-salario" class={etiqueta}>Salario mensual ($) *</label>
+            <input id="em-salario" type="number" inputmode="decimal" min="0" step="0.01" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="em-ingreso" class={etiqueta}>Fecha de ingreso</label>
+            <input id="em-ingreso" type="date" class={`mt-1 ${campo}`} />
+          </div>
+          <div id="em-bloque-estado" class="hidden">
+            <label for="em-estado" class={etiqueta}>Estado</label>
+            <select id="em-estado" class={`mt-1 ${campo}`}>
+              <option value="ACTIVO">Activo</option>
+              <option value="INACTIVO">Inactivo</option>
+            </select>
+          </div>
+        </div>
+        <p id="em-quincena" class="text-xs font-medium text-brand-700 dark:text-brand-300"></p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Se paga cada quincena: la mitad del salario mensual, más bonos y menos deducciones.</p>
+        <p id="em-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="em-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancelar</button>
+        <button id="em-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Pago de la quincena -->
+  <dialog id="pg-dialogo" aria-labelledby="pg-titulo" class={claseDialogo}>
+    <form id="pg-form" novalidate class="flex max-h-[90vh] flex-col">
+      <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+        <div class="min-w-0">
+          <h2 id="pg-titulo" class="text-base font-semibold">Pago de la quincena</h2>
+          <p id="pg-empleado" class="mt-0.5 truncate text-sm font-medium"></p>
+          <p id="pg-detalle" class="text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label for="pg-base" class={etiqueta}>Pago base ($)</label>
+            <input id="pg-base" type="text" readonly class={`mt-1 ${campo} tabular-nums`} />
+          </div>
+          <div>
+            <label for="pg-bonos" class={etiqueta}>Bonos ($)</label>
+            <input id="pg-bonos" type="number" inputmode="decimal" min="0" step="0.01" value="0" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="pg-deducciones" class={etiqueta}>Deducciones ($)</label>
+            <input id="pg-deducciones" type="number" inputmode="decimal" min="0" step="0.01" value="0" class={`mt-1 ${campo}`} />
+          </div>
+        </div>
+
+        <div>
+          <label for="pg-notas" class={etiqueta}>Notas (opcional)</label>
+          <textarea id="pg-notas" rows="2" maxlength="500" class={`mt-1 ${campo}`}></textarea>
+        </div>
+
+        <div class="rounded-lg bg-slate-50 px-3 py-3 dark:bg-slate-800/60">
+          <p class="text-xs text-slate-500 dark:text-slate-400">Total a pagar</p>
+          <p id="pg-total" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-white"></p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Pago base + bonos − deducciones</p>
+        </div>
+
+        <p id="pg-pagado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+        <p id="pg-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 sm:flex-row dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pg-cerrar" type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 sm:mr-auto">Cerrar</button>
+        <button id="pg-quitar" type="button" class="hidden rounded-lg border border-red-200 px-4 py-2.5 text-sm font-semibold text-red-700 hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Quitar pago</button>
+        <button id="pg-pendiente" type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Guardar pendiente</button>
+        <button id="pg-pagar" type="submit" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Marcar como pagado</button>
+      </div>
+    </form>
+  </dialog>
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { puedeNomina } from '../lib/auth';
+  import { formatearFecha, formatearMoneda } from '../utils/format';
+  import { hoyISO, pagoBaseQuincenal, quincenaAnterior, quincenaDe, quincenaSiguiente, totalPago, validarAjustes, type Quincena } from '../utils/nomina';
+  import { animarLista } from '../utils/animaciones';
+  import type { Empleado, Local, Nomina } from '../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const filas = $<HTMLTableSectionElement>('pn-filas');
+  const selectLocal = $<HTMLSelectElement>('pn-local');
+  const buscar = $<HTMLInputElement>('pn-buscar');
+  const verInactivos = $<HTMLInputElement>('pn-inactivos');
+  const error = $('pn-error');
+  const exito = $('pn-exito');
+
+  let periodo: Quincena = quincenaDe();
+  let locales: Local[] = [];
+  let empleados: Empleado[] = [];
+  let nominas: Nomina[] = [];
+  let primeraVez = true;
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+  const normalizar = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const nombreLocal = (id: string) => locales.find((l) => l.id === id)?.nombre ?? 'Local';
+  const numero = (valor: string) => {
+    const n = Number(valor);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  function avisar(el: HTMLElement, texto: string) {
+    error.classList.add('hidden');
+    exito.classList.add('hidden');
+    el.textContent = texto;
+    el.classList.remove('hidden');
+  }
+  function mensajeDeError(err: unknown, porDefecto: string): string {
+    const m = err instanceof Error ? err.message : porDefecto;
+    // Las tablas de nómina vienen de las migraciones 0026 y 0027
+    return /does not exist|schema cache|relation/i.test(m) ? 'La nómina aún no está disponible en la base de datos: aplica las migraciones 0026 y 0027 en Supabase.' : m;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Cálculo de las filas de la quincena
+  // ---------------------------------------------------------------------------------------------
+  interface Fila {
+    empleado: Empleado;
+    nomina: Nomina | null;
+    base: number;
+    bonos: number;
+    deducciones: number;
+    total: number;
+    estado: 'SIN_GENERAR' | 'PENDIENTE' | 'PAGADO';
+  }
+
+  function construirFilas(): Fila[] {
+    const porEmpleado = new Map(nominas.map((n) => [n.empleado_id, n]));
+    const q = normalizar(buscar.value.trim());
+    return empleados
+      .filter((e) => (selectLocal.value === 'todos' ? true : e.local_id === selectLocal.value))
+      // Un empleado inactivo solo aparece si se pide o si cobró en esta quincena
+      .filter((e) => e.estado === 'ACTIVO' || verInactivos.checked || porEmpleado.has(e.id))
+      .filter((e) => !q || normalizar(`${e.nombre} ${e.apellido} ${e.cedula} ${e.cargo}`).includes(q))
+      .map((empleado) => {
+        const nomina = porEmpleado.get(empleado.id) ?? null;
+        const base = nomina ? nomina.pago_base : pagoBaseQuincenal(empleado.salario_base);
+        const bonos = nomina?.bonos ?? 0;
+        const deducciones = nomina?.deducciones ?? 0;
+        return {
+          empleado,
+          nomina,
+          base,
+          bonos,
+          deducciones,
+          total: nomina ? nomina.total_pagado : totalPago(base, bonos, deducciones),
+          estado: nomina ? nomina.estado_pago : ('SIN_GENERAR' as const),
+        };
+      })
+      .sort((a, b) => nombreLocal(a.empleado.local_id).localeCompare(nombreLocal(b.empleado.local_id), 'es') || a.empleado.apellido.localeCompare(b.empleado.apellido, 'es'));
+  }
+
+  const BADGE: Record<Fila['estado'], string> = {
+    SIN_GENERAR: 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300',
+    PENDIENTE: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400',
+    PAGADO: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400',
+  };
+  const TEXTO_ESTADO: Record<Fila['estado'], string> = { SIN_GENERAR: 'Sin generar', PENDIENTE: 'Pendiente', PAGADO: 'Pagado' };
+
+  function pintar() {
+    $('pn-periodo').textContent = periodo.etiqueta;
+    $('pn-impr-periodo').textContent = periodo.etiqueta;
+    $('pn-impr-local').textContent = selectLocal.value === 'todos' ? 'Todos los locales (consolidado)' : nombreLocal(selectLocal.value);
+
+    const lista = construirFilas();
+    const activos = lista.filter((f) => f.empleado.estado === 'ACTIVO').length;
+    const total = lista.reduce((s, f) => s + f.total, 0);
+    const pagado = lista.filter((f) => f.estado === 'PAGADO').reduce((s, f) => s + f.total, 0);
+    $('pn-r-empleados').textContent = String(activos);
+    $('pn-r-total').textContent = formatearMoneda(total);
+    $('pn-r-pagado').textContent = formatearMoneda(pagado);
+    $('pn-r-pendiente').textContent = formatearMoneda(total - pagado);
+
+    const vacio = $('pn-vacio');
+    vacio.classList.toggle('hidden', lista.length > 0);
+    vacio.textContent = empleados.length === 0 ? 'Todavía no hay empleados. Registra el primero con "+ Nuevo empleado".' : 'Ningún empleado coincide con los filtros.';
+
+    const grupos = new Map<string, Fila[]>();
+    for (const f of lista) (grupos.get(f.empleado.local_id) ?? grupos.set(f.empleado.local_id, []).get(f.empleado.local_id)!).push(f);
+    const consolidado = selectLocal.value === 'todos';
+
+    let html = '';
+    for (const [localId, grupo] of grupos) {
+      const subtotal = grupo.reduce((s, f) => s + f.total, 0);
+      if (consolidado) {
+        html += `<tr class="bg-slate-50 dark:bg-slate-800/50"><td colspan="7" class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${escapar(nombreLocal(localId))} <span class="font-normal normal-case">(${grupo.length})</span></td></tr>`;
+      }
+      html += grupo.map(filaHtml).join('');
+      if (consolidado) {
+        html += `<tr class="font-semibold text-slate-900 dark:text-white"><td colspan="4" class="px-4 py-2 text-right text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subtotal ${escapar(nombreLocal(localId))}</td><td class="px-4 py-2 text-right tabular-nums">${formatearMoneda(subtotal)}</td><td colspan="2"></td></tr>`;
+      }
+    }
+    if (consolidado && lista.length > 0) {
+      html += `<tr class="bg-slate-100 font-bold text-slate-900 dark:bg-slate-800 dark:text-white"><td colspan="4" class="px-4 py-3 text-right text-xs uppercase tracking-wide">Total consolidado (todos los locales)</td><td class="px-4 py-3 text-right tabular-nums">${formatearMoneda(total)}</td><td colspan="2"></td></tr>`;
+    }
+    filas.innerHTML = html;
+
+    if (primeraVez && lista.length) {
+      animarLista(filas);
+      primeraVez = false;
+    }
+  }
+
+  function filaHtml(f: Fila): string {
+    const e = f.empleado;
+    const inactivo = e.estado === 'INACTIVO';
+    const accionPago =
+      f.estado === 'PAGADO'
+        ? `<button type="button" data-pago="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Ver</button>`
+        : `<button type="button" data-pago="${e.id}" class="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">Pagar</button>`;
+    return `
+      <tr class="text-slate-700 dark:text-slate-300 ${inactivo ? 'opacity-60' : ''}">
+        <td class="px-4 py-3">
+          <p class="font-medium text-slate-900 dark:text-white">${escapar(e.apellido)}, ${escapar(e.nombre)}${inactivo ? ' <span class="text-xs font-normal text-slate-400">(inactivo)</span>' : ''}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${escapar(e.cargo)} · ${escapar(e.cedula)}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Salario mensual: ${formatearMoneda(e.salario_base)}</p>
+        </td>
+        <td data-label="Pago base" class="px-4 py-3 text-right tabular-nums">${formatearMoneda(f.base)}</td>
+        <td data-label="Bonos" class="px-4 py-3 text-right tabular-nums">${f.bonos ? '+' + formatearMoneda(f.bonos) : '—'}</td>
+        <td data-label="Deducciones" class="px-4 py-3 text-right tabular-nums">${f.deducciones ? '−' + formatearMoneda(f.deducciones) : '—'}</td>
+        <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(f.total)}</td>
+        <td data-label="Estado" class="px-4 py-3">
+          <span class="inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${BADGE[f.estado]}">${TEXTO_ESTADO[f.estado]}</span>
+          ${f.nomina?.pagado_en ? `<span class="block text-[11px] text-slate-400">${escapar(formatearFecha(f.nomina.pagado_en))}</span>` : ''}
+        </td>
+        <td class="px-4 py-3 print:hidden sm:text-right">
+          <div class="flex flex-wrap gap-1.5 sm:justify-end">
+            ${accionPago}
+            <button type="button" data-editar="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Carga de datos
+  // ---------------------------------------------------------------------------------------------
+  async function cargarNominas() {
+    nominas = await inventoryService.listarNominas(periodo.inicio, periodo.fin);
+  }
+
+  async function recargar() {
+    try {
+      await cargarNominas();
+      error.classList.add('hidden');
+      pintar();
+    } catch (err) {
+      avisar(error, mensajeDeError(err, 'No se pudo cargar la nómina.'));
+    }
+  }
+
+  async function cambiarPeriodo(nuevo: Quincena) {
+    periodo = nuevo;
+    await recargar();
+  }
+
+  $('pn-anterior').addEventListener('click', () => cambiarPeriodo(quincenaAnterior(periodo)));
+  $('pn-siguiente').addEventListener('click', () => cambiarPeriodo(quincenaSiguiente(periodo)));
+  $('pn-hoy').addEventListener('click', () => cambiarPeriodo(quincenaDe()));
+  selectLocal.addEventListener('change', pintar);
+  buscar.addEventListener('input', pintar);
+  verInactivos.addEventListener('change', pintar);
+  $('pn-imprimir').addEventListener('click', () => window.print());
+
+  $('pn-generar').addEventListener('click', async () => {
+    const visibles = construirFilas().map((f) => f.empleado);
+    try {
+      const creados = await inventoryService.generarPagosPendientes(visibles, periodo);
+      await recargar();
+      avisar(
+        exito,
+        creados > 0
+          ? `Quincena ${periodo.etiqueta}: se generaron ${creados} pago${creados === 1 ? '' : 's'} pendiente${creados === 1 ? '' : 's'}.`
+          : 'Todos los empleados activos ya tienen su pago en esta quincena.'
+      );
+    } catch (err) {
+      avisar(error, mensajeDeError(err, 'No se pudo generar la quincena.'));
+    }
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Empleado (nuevo / editar)
+  // ---------------------------------------------------------------------------------------------
+  const emDialogo = $<HTMLDialogElement>('em-dialogo');
+  const emForm = $<HTMLFormElement>('em-form');
+  const emError = $('em-error');
+  const em = {
+    nombre: $<HTMLInputElement>('em-nombre'),
+    apellido: $<HTMLInputElement>('em-apellido'),
+    cedula: $<HTMLInputElement>('em-cedula'),
+    cargo: $<HTMLInputElement>('em-cargo'),
+    local: $<HTMLSelectElement>('em-local'),
+    salario: $<HTMLInputElement>('em-salario'),
+    ingreso: $<HTMLInputElement>('em-ingreso'),
+    estado: $<HTMLSelectElement>('em-estado'),
+  };
+  let editandoEmpleado: Empleado | null = null;
+
+  function actualizarQuincenaEmpleado() {
+    const salario = numero(em.salario.value);
+    $('em-quincena').textContent = salario > 0 ? `Pago quincenal: ${formatearMoneda(pagoBaseQuincenal(salario))}` : '';
+  }
+  em.salario.addEventListener('input', actualizarQuincenaEmpleado);
+
+  function abrirEmpleado(empleado?: Empleado) {
+    editandoEmpleado = empleado ?? null;
+    emError.classList.add('hidden');
+    $('em-titulo').textContent = empleado ? 'Editar empleado' : 'Nuevo empleado';
+    $('em-bloque-estado').classList.toggle('hidden', !empleado);
+    em.local.innerHTML = locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
+    em.nombre.value = empleado?.nombre ?? '';
+    em.apellido.value = empleado?.apellido ?? '';
+    em.cedula.value = empleado?.cedula ?? '';
+    em.cargo.value = empleado?.cargo ?? '';
+    em.local.value = empleado?.local_id ?? (selectLocal.value !== 'todos' ? selectLocal.value : (locales[0]?.id ?? ''));
+    em.salario.value = empleado ? String(empleado.salario_base) : '';
+    em.ingreso.value = empleado?.fecha_ingreso ?? hoyISO();
+    em.estado.value = empleado?.estado ?? 'ACTIVO';
+    actualizarQuincenaEmpleado();
+    emDialogo.showModal();
+    em.nombre.focus();
+  }
+
+  $('pn-nuevo').addEventListener('click', () => abrirEmpleado());
+  $('em-cancelar').addEventListener('click', () => emDialogo.close());
+
+  emForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    emError.classList.add('hidden');
+    const guardar = $<HTMLButtonElement>('em-guardar');
+    guardar.disabled = true;
+    const datos = {
+      local_id: em.local.value,
+      nombre: em.nombre.value,
+      apellido: em.apellido.value,
+      cedula: em.cedula.value,
+      cargo: em.cargo.value,
+      salario_base: numero(em.salario.value),
+      fecha_ingreso: em.ingreso.value || hoyISO(),
+    };
+    try {
+      if (editandoEmpleado) await inventoryService.actualizarEmpleado(editandoEmpleado.id, { ...datos, estado: em.estado.value as Empleado['estado'] });
+      else await inventoryService.crearEmpleado(datos);
+      empleados = await inventoryService.listarEmpleados();
+      emDialogo.close();
+      pintar();
+      avisar(exito, editandoEmpleado ? 'Empleado actualizado.' : 'Empleado registrado.');
+    } catch (err) {
+      emError.textContent = mensajeDeError(err, 'No se pudo guardar el empleado.');
+      emError.classList.remove('hidden');
+    } finally {
+      guardar.disabled = false;
+    }
+  });
+
+  // ---------------------------------------------------------------------------------------------
+  // Pago de la quincena
+  // ---------------------------------------------------------------------------------------------
+  const pgDialogo = $<HTMLDialogElement>('pg-dialogo');
+  const pgForm = $<HTMLFormElement>('pg-form');
+  const pgError = $('pg-error');
+  const pgBonos = $<HTMLInputElement>('pg-bonos');
+  const pgDeducciones = $<HTMLInputElement>('pg-deducciones');
+  const pgNotas = $<HTMLTextAreaElement>('pg-notas');
+  let pagando: Fila | null = null;
+
+  function actualizarTotalPago() {
+    if (!pagando) return;
+    $('pg-total').textContent = formatearMoneda(totalPago(pagando.base, numero(pgBonos.value), numero(pgDeducciones.value)));
+  }
+  pgBonos.addEventListener('input', actualizarTotalPago);
+  pgDeducciones.addEventListener('input', actualizarTotalPago);
+
+  function abrirPago(fila: Fila) {
+    pagando = fila;
+    const soloLectura = fila.estado === 'PAGADO';
+    pgError.classList.add('hidden');
+    $('pg-empleado').textContent = `${fila.empleado.nombre} ${fila.empleado.apellido}`;
+    $('pg-detalle').textContent = `${fila.empleado.cargo} · ${nombreLocal(fila.empleado.local_id)} · Quincena ${periodo.etiqueta}`;
+    $<HTMLInputElement>('pg-base').value = formatearMoneda(fila.base);
+    pgBonos.value = String(fila.bonos);
+    pgDeducciones.value = String(fila.deducciones);
+    pgNotas.value = fila.nomina?.notas ?? '';
+    for (const campoEl of [pgBonos, pgDeducciones, pgNotas]) campoEl.disabled = soloLectura;
+
+    const pagado = $('pg-pagado');
+    pagado.classList.toggle('hidden', !soloLectura);
+    if (soloLectura && fila.nomina?.pagado_en) pagado.textContent = `Pagado el ${formatearFecha(fila.nomina.pagado_en)} — un pago registrado ya no se puede modificar.`;
+
+    $('pg-pendiente').classList.toggle('hidden', soloLectura);
+    $('pg-pagar').classList.toggle('hidden', soloLectura);
+    $('pg-quitar').classList.toggle('hidden', soloLectura || !fila.nomina);
+    actualizarTotalPago();
+    pgDialogo.showModal();
+  }
+
+  filas.addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+    const idPago = objetivo.closest<HTMLElement>('[data-pago]')?.dataset.pago;
+    const idEditar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
+    if (idPago) {
+      const fila = construirFilas().find((f) => f.empleado.id === idPago);
+      if (fila) abrirPago(fila);
+    } else if (idEditar) {
+      abrirEmpleado(empleados.find((x) => x.id === idEditar));
+    }
+  });
+
+  $('pg-cerrar').addEventListener('click', () => pgDialogo.close());
+
+  async function guardarPago(pagar: boolean) {
+    if (!pagando) return;
+    pgError.classList.add('hidden');
+    const bonos = numero(pgBonos.value);
+    const deducciones = numero(pgDeducciones.value);
+    const mensaje = validarAjustes(pagando.base, bonos, deducciones);
+    if (mensaje) {
+      pgError.textContent = mensaje;
+      pgError.classList.remove('hidden');
+      return;
+    }
+    const total = totalPago(pagando.base, bonos, deducciones);
+    const nombre = `${pagando.empleado.nombre} ${pagando.empleado.apellido}`;
+    if (pagar && !confirm(`¿Registrar el pago de ${formatearMoneda(total)} a ${nombre}? Una vez pagado ya no se puede modificar.`)) return;
+
+    const botones = [$<HTMLButtonElement>('pg-pagar'), $<HTMLButtonElement>('pg-pendiente')];
+    botones.forEach((b) => (b.disabled = true));
+    try {
+      await inventoryService.guardarPagoQuincenal({ empleado: pagando.empleado, periodo, bonos, deducciones, notas: pgNotas.value, pagar, existente: pagando.nomina });
+      pgDialogo.close();
+      await recargar();
+      avisar(exito, pagar ? `Pago de ${formatearMoneda(total)} a ${nombre} registrado.` : `Pago de ${nombre} guardado como pendiente.`);
+    } catch (err) {
+      pgError.textContent = mensajeDeError(err, 'No se pudo guardar el pago.');
+      pgError.classList.remove('hidden');
+    } finally {
+      botones.forEach((b) => (b.disabled = false));
+    }
+  }
+
+  pgForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    guardarPago(true);
+  });
+  $('pg-pendiente').addEventListener('click', () => guardarPago(false));
+
+  $('pg-quitar').addEventListener('click', async () => {
+    if (!pagando?.nomina) return;
+    if (!confirm('¿Quitar este pago pendiente? El empleado volverá a "Sin generar" en esta quincena.')) return;
+    try {
+      await inventoryService.eliminarPagoPendiente(pagando.nomina.id);
+      pgDialogo.close();
+      await recargar();
+    } catch (err) {
+      pgError.textContent = mensajeDeError(err, 'No se pudo quitar el pago.');
+      pgError.classList.remove('hidden');
+    }
+  });
+
+  for (const dialogo of [emDialogo, pgDialogo]) {
+    dialogo.addEventListener('mousedown', (e) => {
+      if (e.target === dialogo) dialogo.close();
+    });
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Arranque
+  // ---------------------------------------------------------------------------------------------
+  Promise.all([inventoryService.obtenerContextoLocal(), inventoryService.listarLocales()])
+    .then(async ([contexto, listaLocales]) => {
+      if (!puedeNomina(contexto?.sesion.rol)) return;
+      locales = listaLocales;
+      selectLocal.innerHTML = `<option value="todos">Todos los locales (consolidado)</option>` + locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
+      empleados = await inventoryService.listarEmpleados();
+      await cargarNominas();
+      pintar();
+    })
+    .catch((err) => avisar(error, mensajeDeError(err, 'No se pudo cargar la nómina.')));
+</script>

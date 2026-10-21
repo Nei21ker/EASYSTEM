@@ -36,6 +36,7 @@
   function pintar() {
     const contexto = $contextoLocal.get();
     if (!contexto) return;
+    if (contexto.sesion.rol === 'contador') return; // la nómina tiene su propio filtro por local
     const esAdmin = esGlobal(contexto.sesion.rol);
     // El administrador entra a cualquier local (aunque esté suspendido); el gerente solo a los vigentes
     const puedeEntrar = (l: (typeof contexto.locales)[number]) => contexto.sesion.rol === 'administrador' || localVigente(l);

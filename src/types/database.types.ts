@@ -240,3 +240,47 @@ export interface OrdenServicio extends NuevaOrdenServicio {
   listo_en?: string | null;
   entregada_en?: string | null;
 }
+
+// ----------------------------------------------------------------------------
+// Nómina (migración 0027): personal que cobra sueldo en cada local y sus pagos quincenales
+// ----------------------------------------------------------------------------
+export type EstadoEmpleado = 'ACTIVO' | 'INACTIVO';
+export type EstadoPago = 'PENDIENTE' | 'PAGADO';
+
+/** Empleado de un local (no es lo mismo que una cuenta de acceso: ver `perfiles`). */
+export interface Empleado {
+  id: string;
+  local_id: string;
+  nombre: string;
+  apellido: string;
+  cedula: string;
+  cargo: string;
+  /** Salario MENSUAL en dólares; cada quincena se paga la mitad */
+  salario_base: number;
+  frecuencia_pago: 'QUINCENAL';
+  estado: EstadoEmpleado;
+  /** "aaaa-mm-dd" */
+  fecha_ingreso: string;
+  created_at: string;
+}
+
+export type NuevoEmpleado = Pick<Empleado, 'local_id' | 'nombre' | 'apellido' | 'cedula' | 'cargo' | 'salario_base'> &
+  Partial<Pick<Empleado, 'estado' | 'fecha_ingreso'>>;
+
+/** Pago quincenal de un empleado: pago_base + bonos - deducciones = total_pagado (en dólares). */
+export interface Nomina {
+  id: string;
+  empleado_id: string;
+  local_id: string;
+  /** "aaaa-mm-dd" */
+  periodo_inicio: string;
+  periodo_fin: string;
+  pago_base: number;
+  bonos: number;
+  deducciones: number;
+  total_pagado: number;
+  estado_pago: EstadoPago;
+  pagado_en: string | null;
+  notas: string | null;
+  created_at: string;
+}

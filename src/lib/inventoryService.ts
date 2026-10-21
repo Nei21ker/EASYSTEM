@@ -23,12 +23,14 @@ import * as tasasDb from './db/tasas';
 import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
+import * as nominaDb from './db/nomina';
 import type { ProductoConInventario } from './db/productos';
 import { esGlobal, leerSuscripcionesLocales, obtenerSesionActual } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
-import { productosMock, modelosMock, movimientosMock } from './mock-data';
+import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
+import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
@@ -38,6 +40,7 @@ import type {
   Compatibilidad,
   Devolucion,
   DineroEntregado,
+  Empleado,
   EstadoOrdenServicio,
   InventarioLocal,
   Local,
@@ -50,6 +53,8 @@ import type {
   NuevaOrdenServicio,
   NuevaTasa,
   NuevaVenta,
+  NuevoEmpleado,
+  Nomina,
   OrdenServicio,
   PagoVenta,
   ProductoStockBajo,
@@ -80,6 +85,9 @@ interface LocalDB {
   /** Historial de la tasa del dólar (opcional por la misma razón que ventas) */
   tasas?: TasaCambio[];
   devoluciones?: Devolucion[];
+  /** Nómina (personal y pagos quincenales); los navegadores con datos anteriores los reciben al leer */
+  empleados?: Empleado[];
+  nominas?: Nomina[];
 }
 
 function generarId(): string {
@@ -106,7 +114,7 @@ function construirSeedInicial(): LocalDB {
     local_id: localPorProducto.get(movimiento.producto_id) ?? LOCAL_ACCESORIOS_ID,
   }));
 
-  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario };
+  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [] };
 }
 
 /**
@@ -134,6 +142,20 @@ function migrarAMultilocal(db: LocalDB): boolean {
   return cambio;
 }
 
+/** Datos guardados antes de la nómina: se agrega el personal de ejemplo. */
+function migrarNomina(db: LocalDB): boolean {
+  let cambio = false;
+  if (!db.empleados) {
+    db.empleados = empleadosMock();
+    cambio = true;
+  }
+  if (!db.nominas) {
+    db.nominas = [];
+    cambio = true;
+  }
+  return cambio;
+}
+
 function leerDB(): LocalDB {
   if (typeof window === 'undefined') {
     // Node 22+ expone un `localStorage` global propio (respaldado en disco),
@@ -152,7 +174,7 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      const migrado = migrarAMultilocal(db);
+      const migrado = migrarAMultilocal(db) || migrarNomina(db);
       if (faltantes.length > 0) db.modelos.push(...faltantes);
       if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;
@@ -1746,4 +1768,204 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
   }
 
   return resultado;
+}
+
+// ----------------------------------------------------------------------------
+// Nómina y gestión de personal (administrador, gerente y contador; migración 0027)
+// ----------------------------------------------------------------------------
+// Empleados por local y un pago por empleado y quincena: pago_base (= salario / 2) + bonos - deducciones.
+// La base de datos (RLS) es quien niega el acceso a encargado, vendedor y técnico; aquí además se corta en LocalStorage.
+// Requiere conexión cuando hay Supabase (no se encola sin conexión: son pagos reales).
+
+async function exigirAccesoNomina(): Promise<void> {
+  const rol = (await obtenerSesionActual())?.rol;
+  if (rol !== 'administrador' && rol !== 'gerente' && rol !== 'contador') {
+    throw new Error('Tu rol no tiene acceso a la nómina.');
+  }
+}
+
+const textoLimpio = (v: string | null | undefined) => (v ?? '').trim().replace(/\s+/g, ' ');
+
+export async function listarEmpleados(): Promise<Empleado[]> {
+  await exigirAccesoNomina();
+  if (supabaseConfigurado) return nominaDb.listarEmpleados();
+  return [...(leerDB().empleados ?? [])].sort((a, b) => a.apellido.localeCompare(b.apellido, 'es') || a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+function validarEmpleado(d: Partial<NuevoEmpleado>, completo: boolean) {
+  if (completo || d.nombre !== undefined) if (!textoLimpio(d.nombre)) throw new Error('El nombre es obligatorio.');
+  if (completo || d.apellido !== undefined) if (!textoLimpio(d.apellido)) throw new Error('El apellido es obligatorio.');
+  if (completo || d.cedula !== undefined) if (textoLimpio(d.cedula).length < 5) throw new Error('La cédula debe tener al menos 5 caracteres.');
+  if (completo || d.cargo !== undefined) if (!textoLimpio(d.cargo)) throw new Error('El cargo es obligatorio.');
+  if (completo || d.salario_base !== undefined) if (!(Number(d.salario_base) >= 0)) throw new Error('El salario debe ser un monto mayor o igual a 0.');
+  if (completo && !d.local_id) throw new Error('Elige el local del empleado.');
+}
+
+function limpiarEmpleado<T extends Partial<NuevoEmpleado>>(d: T): T {
+  const copia: Partial<NuevoEmpleado> = { ...d };
+  if (copia.nombre !== undefined) copia.nombre = textoLimpio(copia.nombre);
+  if (copia.apellido !== undefined) copia.apellido = textoLimpio(copia.apellido);
+  if (copia.cedula !== undefined) copia.cedula = textoLimpio(copia.cedula).toUpperCase();
+  if (copia.cargo !== undefined) copia.cargo = textoLimpio(copia.cargo);
+  if (copia.salario_base !== undefined) copia.salario_base = Math.round(Number(copia.salario_base) * 100) / 100;
+  return copia as T;
+}
+
+export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
+  await exigirAccesoNomina();
+  validarEmpleado(datos, true);
+  const limpio = limpiarEmpleado(datos);
+
+  if (supabaseConfigurado) return nominaDb.crearEmpleado(limpio);
+
+  const db = leerDB();
+  const empleados = db.empleados ?? (db.empleados = []);
+  if (empleados.some((e) => e.cedula.toLowerCase() === limpio.cedula.toLowerCase())) {
+    throw new Error(`Ya existe un empleado con la cédula ${limpio.cedula}.`);
+  }
+  const empleado: Empleado = {
+    id: generarId(),
+    frecuencia_pago: 'QUINCENAL',
+    estado: 'ACTIVO',
+    fecha_ingreso: fechaLocalISO(new Date()),
+    created_at: new Date().toISOString(),
+    ...limpio,
+  };
+  empleados.push(empleado);
+  guardarDB(db);
+  return empleado;
+}
+
+export async function actualizarEmpleado(id: string, cambios: Partial<NuevoEmpleado>): Promise<Empleado> {
+  await exigirAccesoNomina();
+  validarEmpleado(cambios, false);
+  const limpio = limpiarEmpleado(cambios);
+
+  if (supabaseConfigurado) return nominaDb.actualizarEmpleado(id, limpio);
+
+  const db = leerDB();
+  const empleado = (db.empleados ?? []).find((e) => e.id === id);
+  if (!empleado) throw new Error('Empleado no encontrado.');
+  if (limpio.cedula && (db.empleados ?? []).some((e) => e.id !== id && e.cedula.toLowerCase() === limpio.cedula!.toLowerCase())) {
+    throw new Error(`Ya existe otro empleado con la cédula ${limpio.cedula}.`);
+  }
+  Object.assign(empleado, limpio);
+  guardarDB(db);
+  return empleado;
+}
+
+/** Pagos de una quincena (período "aaaa-mm-dd" a "aaaa-mm-dd") de todos los locales. */
+export async function listarNominas(periodoInicio: string, periodoFin: string): Promise<Nomina[]> {
+  await exigirAccesoNomina();
+  if (supabaseConfigurado) return nominaDb.listarNominas(periodoInicio, periodoFin);
+  return (leerDB().nominas ?? []).filter((n) => n.periodo_inicio >= periodoInicio && n.periodo_fin <= periodoFin);
+}
+
+export interface DatosPagoQuincenal {
+  empleado: Empleado;
+  periodo: { inicio: string; fin: string };
+  bonos: number;
+  deducciones: number;
+  notas?: string | null;
+  /** true = registra el pago como PAGADO; false = lo deja PENDIENTE */
+  pagar: boolean;
+  /** Pago pendiente ya generado para ese empleado y período (se actualiza en vez de crear otro) */
+  existente?: Nomina | null;
+}
+
+/** Crea o ajusta el pago de un empleado en una quincena. Un pago PAGADO ya no se modifica. */
+export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<Nomina> {
+  await exigirAccesoNomina();
+  const { empleado, periodo, existente } = datos;
+  if (existente?.estado_pago === 'PAGADO') throw new Error('Ese pago ya está registrado como PAGADO y no se puede modificar.');
+
+  const bonos = Math.round(Number(datos.bonos || 0) * 100) / 100;
+  const deducciones = Math.round(Number(datos.deducciones || 0) * 100) / 100;
+  const pago_base = pagoBaseQuincenal(empleado.salario_base);
+  const errorAjustes = validarAjustes(pago_base, bonos, deducciones);
+  if (errorAjustes) throw new Error(errorAjustes);
+
+  const campos = {
+    empleado_id: empleado.id,
+    local_id: empleado.local_id,
+    periodo_inicio: periodo.inicio,
+    periodo_fin: periodo.fin,
+    pago_base,
+    bonos,
+    deducciones,
+    total_pagado: totalPago(pago_base, bonos, deducciones),
+    estado_pago: datos.pagar ? ('PAGADO' as const) : ('PENDIENTE' as const),
+    notas: textoLimpio(datos.notas) || null,
+  };
+
+  if (supabaseConfigurado) {
+    return existente ? nominaDb.actualizarNomina(existente.id, campos) : (await nominaDb.insertarNominas([campos]))[0];
+  }
+
+  const db = leerDB();
+  const nominas = db.nominas ?? (db.nominas = []);
+  const actual = existente ? nominas.find((n) => n.id === existente.id) : nominas.find((n) => n.empleado_id === empleado.id && n.periodo_inicio === periodo.inicio && n.periodo_fin === periodo.fin);
+  if (actual?.estado_pago === 'PAGADO') throw new Error('Ese pago ya está registrado como PAGADO y no se puede modificar.');
+  const pagado_en = datos.pagar ? new Date().toISOString() : null;
+
+  if (actual) {
+    Object.assign(actual, campos, { pagado_en });
+    guardarDB(db);
+    return actual;
+  }
+  const nueva: Nomina = { id: generarId(), ...campos, pagado_en, created_at: new Date().toISOString() };
+  nominas.push(nueva);
+  guardarDB(db);
+  return nueva;
+}
+
+/** Genera el pago PENDIENTE (sin bonos ni deducciones) de los empleados activos que aún no lo tienen. Devuelve cuántos creó. */
+export async function generarPagosPendientes(empleados: Empleado[], periodo: { inicio: string; fin: string }): Promise<number> {
+  await exigirAccesoNomina();
+  const existentes = await listarNominas(periodo.inicio, periodo.fin);
+  const conPago = new Set(existentes.map((n) => n.empleado_id));
+  const faltantes = empleados.filter((e) => e.estado === 'ACTIVO' && !conPago.has(e.id));
+  if (faltantes.length === 0) return 0;
+
+  const filas = faltantes.map((e) => {
+    const pago_base = pagoBaseQuincenal(e.salario_base);
+    return {
+      empleado_id: e.id,
+      local_id: e.local_id,
+      periodo_inicio: periodo.inicio,
+      periodo_fin: periodo.fin,
+      pago_base,
+      bonos: 0,
+      deducciones: 0,
+      total_pagado: pago_base,
+      estado_pago: 'PENDIENTE' as const,
+      notas: null,
+    };
+  });
+
+  if (supabaseConfigurado) {
+    await nominaDb.insertarNominas(filas);
+    return filas.length;
+  }
+
+  const db = leerDB();
+  const nominas = db.nominas ?? (db.nominas = []);
+  const ahora = new Date().toISOString();
+  for (const f of filas) nominas.push({ id: generarId(), ...f, pagado_en: null, created_at: ahora });
+  guardarDB(db);
+  return filas.length;
+}
+
+/** Borra un pago PENDIENTE (uno PAGADO no se borra). */
+export async function eliminarPagoPendiente(id: string): Promise<void> {
+  await exigirAccesoNomina();
+  if (supabaseConfigurado) return nominaDb.eliminarNomina(id);
+
+  const db = leerDB();
+  const nominas = db.nominas ?? [];
+  const nomina = nominas.find((n) => n.id === id);
+  if (!nomina) return;
+  if (nomina.estado_pago === 'PAGADO') throw new Error('Un pago PAGADO no se puede borrar.');
+  db.nominas = nominas.filter((n) => n.id !== id);
+  guardarDB(db);
 }

@@ -6,7 +6,8 @@
 // Catálogo de referencia (mismo que supabase/seed.sql): modelos actuales de
 // Apple, Samsung, Xiaomi, Infinix y Tecno, con forros, vidrios templados,
 // cargadores y cables, y compatibilidades cruzadas entre marcas.
-import type { ModeloTelefono, MovimientoInventario, ProductoConRelaciones } from '../types/database.types';
+import type { Empleado, ModeloTelefono, MovimientoInventario, ProductoConRelaciones } from '../types/database.types';
+import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID } from './constantes-locales';
 import { catalogoModelos } from './catalogo-modelos';
 
 const modelo = (id: string, marca: string, modelo: string): ModeloTelefono => ({
@@ -512,3 +513,28 @@ export const movimientosMock: (Omit<MovimientoInventario, 'local_id'> & { produc
   { id: 'mv9', producto_id: 'p7', tipo: 'SALIDA', cantidad: 5, motivo: 'Venta al por mayor', fecha: '2026-09-13T09:00:00Z', producto: { nombre: 'Forro antigolpes Galaxy S23', codigo_barras: '750001000107' } },
   { id: 'mv10', producto_id: 'p32', tipo: 'ENTRADA', cantidad: 5, motivo: 'Compra a proveedor', fecha: '2026-09-12T15:30:00Z', producto: { nombre: 'Audífonos Bluetooth over-ear', codigo_barras: '750001000132' } },
 ];
+
+/** Personal de ejemplo del modo LocalStorage (nombres ficticios), repartido en los 3 locales. */
+export function empleadosMock(): Empleado[] {
+  const base = (id: string, local_id: string, nombre: string, apellido: string, cedula: string, cargo: string, salario_base: number, fecha_ingreso: string): Empleado => ({
+    id,
+    local_id,
+    nombre,
+    apellido,
+    cedula,
+    cargo,
+    salario_base,
+    frecuencia_pago: 'QUINCENAL',
+    estado: 'ACTIVO',
+    fecha_ingreso,
+    created_at: `${fecha_ingreso}T00:00:00Z`,
+  });
+  return [
+    base('emp1', LOCAL_ACCESORIOS_ID, 'María', 'Fernández', 'V-18234567', 'Cajera', 300, '2025-03-10'),
+    base('emp2', LOCAL_ACCESORIOS_ID, 'José', 'Pérez', 'V-20456789', 'Vendedor', 280, '2025-06-02'),
+    base('emp3', LOCAL_VIDRIOS_ID, 'Luis', 'Rondón', 'V-16789012', 'Encargado de local', 350, '2024-11-18'),
+    base('emp4', LOCAL_VIDRIOS_ID, 'Ana', 'Torres', 'V-24123456', 'Aplicadora de vidrios', 260, '2025-08-25'),
+    base('emp5', LOCAL_SERVICIO_TECNICO_ID, 'Carlos', 'Medina', 'V-15678901', 'Técnico de reparaciones', 400, '2024-09-05'),
+    base('emp6', LOCAL_SERVICIO_TECNICO_ID, 'Rosa', 'Díaz', 'V-22345678', 'Auxiliar técnico', 250, '2026-01-12'),
+  ];
+}

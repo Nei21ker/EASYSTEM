@@ -18,20 +18,22 @@ import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.type
  *   locales y cierra sesiones. Nunca queda bloqueado por una suscripción.
  * gerente: dueño del negocio cliente; acceso global (todos los locales vigentes); en usuarios solo crea,
  *   edita y elimina encargados, vendedores y técnicos.
+ * contador: solo ve el módulo de Nómina, de todos los locales; no ve ventas, stock ni catálogo. Lo gestiona el administrador.
  * encargado: gerente de UN local. vendedor: cajero de un local. tecnico: servicio técnico de un local.
  * Los tres últimos solo ven y modifican datos de su local y no gestionan usuarios.
  */
-export type Rol = 'administrador' | 'gerente' | 'encargado' | 'vendedor' | 'tecnico';
+export type Rol = 'administrador' | 'gerente' | 'contador' | 'encargado' | 'vendedor' | 'tecnico';
 
 export const ETIQUETAS_ROL: Record<Rol, string> = {
   administrador: 'Administrador',
   gerente: 'Gerente',
+  contador: 'Contador',
   encargado: 'Encargado',
   vendedor: 'Vendedor (cajero)',
   tecnico: 'Técnico',
 };
 
-export const ROLES: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
+export const ROLES: Rol[] = ['administrador', 'gerente', 'contador', 'encargado', 'vendedor', 'tecnico'];
 
 /** Roles que cada quien puede asignar al crear o editar usuarios. */
 export function rolesAsignables(rol?: Rol | null): Rol[] {
@@ -98,6 +100,10 @@ export interface UsuarioSistema {
 export const esAdministrador = (rol?: Rol | null) => rol === 'administrador';
 /** Administrador o gerente: acceso a TODOS los locales, catálogo y usuarios (los permisos de usuarios los acota `rolesAsignables`) */
 export const esGlobal = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente';
+/** Sin local asignado: ven varios locales (administrador y gerente) o ninguno de operación (contador). */
+export const esSinLocal = (rol?: Rol | null) => esGlobal(rol) || rol === 'contador';
+/** Nómina y personal: administrador, gerente y contador (de todos los locales). */
+export const puedeNomina = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'contador';
 /** Registrar entradas de mercancía y devoluciones, y ver reportes de su local */
 export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'encargado';
 
@@ -126,6 +132,7 @@ function seedUsuariosLocales(): UsuarioLocal[] {
     { id: generarId(), email: 'encargado@edwardaccesorios.com', password: 'encargado123', nombre: 'Encargado Vidrios', rol: 'encargado', local_id: LOCAL_VIDRIOS_ID },
     { id: generarId(), email: 'tecnico@edwardaccesorios.com', password: 'tecnico123', nombre: 'Técnico de Servicio', rol: 'tecnico', local_id: LOCAL_SERVICIO_TECNICO_ID },
     { id: generarId(), email: 'gerente@edwardaccesorios.com', password: 'gerente123', nombre: 'Gerente', rol: 'gerente', local_id: null },
+    { id: generarId(), email: 'contador@edwardaccesorios.com', password: 'contador123', nombre: 'Contador', rol: 'contador', local_id: null },
   ];
 }
 
@@ -141,7 +148,7 @@ function migrarUsuariosLocales(usuarios: UsuarioLocal[]): { usuarios: UsuarioLoc
   }
   for (const u of usuarios) {
     if (u.local_id === undefined) {
-      u.local_id = esGlobal(u.rol) ? null : LOCAL_ACCESORIOS_ID;
+      u.local_id = esSinLocal(u.rol) ? null : LOCAL_ACCESORIOS_ID;
       cambio = true;
     }
   }
@@ -299,8 +306,8 @@ export async function registrarUsuario(input: {
   const email = input.email.trim().toLowerCase();
   const nombre = input.nombre.trim();
   if (!nombre) throw new Error('El nombre es obligatorio.');
-  const local_id = esGlobal(rol) ? null : (input.local_id ?? null);
-  if (!esGlobal(rol) && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
+  const local_id = esSinLocal(rol) ? null : (input.local_id ?? null);
+  if (!esSinLocal(rol) && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
   if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
 
   if (supabaseConfigurado) {
@@ -377,7 +384,7 @@ export async function actualizarAccesoUsuario(
   cambios: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' }
 ): Promise<void> {
   const parche: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' } = { ...cambios };
-  if (cambios.rol && esGlobal(cambios.rol)) parche.local_id = null; // administrador y gerente son globales
+  if (cambios.rol && esSinLocal(cambios.rol)) parche.local_id = null; // administrador, gerente y contador no tienen local
 
   if (supabaseConfigurado) {
     const { error } = await supabase.from('perfiles').update(parche).eq('id', id);
@@ -506,7 +513,7 @@ export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
   }
 
   if (usuario.rol === 'administrador') return { acceso: true, motivo: 'ok', ...base }; // nunca se bloquea por suscripción
-  if (usuario.rol === 'gerente') {
+  if (usuario.rol === 'gerente' || usuario.rol === 'contador') {
     return locales.some(localVigente) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
   }
   return local && localVigente(local) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
@@ -556,7 +563,8 @@ function iniciarVigilanciaCuenta() {
  * Guard de ruta para páginas protegidas: llamarlo al inicio del <script> de
  * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, a
  * /subscription-suspended si el local del usuario está suspendido, o a "/" si la
- * página exige un rol (lista `roles`) que el usuario no tiene.
+ * página exige un rol (lista `roles`) que el usuario no tiene. El contador solo entra a las páginas que lo listan
+ * en `roles` (la nómina): al iniciar sesión cae directo en /payroll.
  */
 export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
@@ -573,6 +581,12 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
   }
 
   const roles = opciones?.roles;
+  // El contador solo trabaja en la nómina: cualquier otra página lo lleva allí
+  if (sesion.rol === 'contador' && !roles?.includes('contador')) {
+    window.location.href = '/payroll';
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
   if (roles && roles.length > 0 && !roles.includes(sesion.rol)) {
     window.location.href = '/';
     throw new Error('EASYSTEM_REDIRECT');

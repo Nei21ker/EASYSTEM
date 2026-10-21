@@ -65,6 +65,12 @@ export const enlacesNav: EnlaceNav[] = [
     roles: ['administrador', 'gerente'],
   },
   {
+    href: '/payroll',
+    etiqueta: 'Nómina',
+    icono: 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+    roles: ['administrador', 'gerente', 'contador'],
+  },
+  {
     href: '/admin/subscriptions',
     etiqueta: 'Suscripciones',
     icono: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3.5-10 2.5 2.5 4.5-5',
