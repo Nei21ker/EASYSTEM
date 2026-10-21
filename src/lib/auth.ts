@@ -414,6 +414,37 @@ export async function eliminarUsuario(id: string): Promise<void> {
   guardarUsuariosLocales(usuarios.filter((u) => u.id !== id));
 }
 
+/**
+ * Fija una contraseña nueva. El administrador puede con cualquiera (incluida la suya); el gerente con encargados,
+ * vendedores, técnicos y consigo mismo (migración 0024). La contraseña queda cifrada y NO se puede volver a leer.
+ * A otro usuario se le cierran las sesiones abiertas: tiene que entrar con la nueva.
+ */
+export async function cambiarClaveUsuario(id: string, clave: string): Promise<void> {
+  if (clave.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
+
+  if (supabaseConfigurado) {
+    const { error } = await supabase.rpc('cambiar_clave_usuario', { p_usuario: id, p_clave: clave });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const actor = await obtenerSesionActual();
+  const usuarios = leerUsuariosLocales();
+  const usuario = usuarios.find((u) => u.id === id);
+  if (!usuario) throw new Error('Usuario no encontrado.');
+  const propio = actor?.id === id && esGlobal(actor.rol);
+  if (!propio && !(actor?.rol === 'administrador' || puedeGestionarUsuario(actor?.rol, usuario.rol))) {
+    throw new Error('No tienes permiso para cambiar la contraseña de este usuario.');
+  }
+  usuario.password = clave;
+  guardarUsuariosLocales(usuarios);
+  if (actor?.id !== id) {
+    const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
+    cierres[id] = new Date().toISOString();
+    localStorage.setItem(LS_CIERRES_FORZADOS, JSON.stringify(cierres));
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Estado de cuenta (suscripción por local) y guard de rutas
 // ----------------------------------------------------------------------------

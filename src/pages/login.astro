@@ -47,10 +47,6 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
         <div class="bg-marca h-1"></div>
         <div class="p-6">
         <h1 class="text-base font-semibold text-slate-900 dark:text-white">Acceso del personal</h1>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          Uso interno de Edward Accesorios. Si no tienes cuenta, pídesela al administrador.
-        </p>
-
         <form id="form-login" class="mt-5 space-y-4">
           <div>
             <label for="login-email" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Correo electrónico</label>
@@ -58,7 +54,24 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
           </div>
           <div>
             <label for="login-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña</label>
-            <input id="login-password" type="password" required autocomplete="current-password" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <div class="relative mt-1">
+              <input id="login-password" type="password" required autocomplete="current-password" class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-11 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              <button
+                id="login-ver-password"
+                type="button"
+                aria-label="Mostrar contraseña"
+                aria-pressed="false"
+                class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
+              >
+                <svg id="login-ojo-abierto" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg id="login-ojo-cerrado" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="hidden h-5 w-5">
+                  <path d="M9.9 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a10 10 0 0 0 5.4-1.6M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            </div>
           </div>
           <button id="login-enviar" type="submit" class="bg-marca w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60">
             Iniciar sesión
@@ -86,6 +99,21 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
       const form = document.getElementById('form-login') as HTMLFormElement;
       const enviar = document.getElementById('login-enviar') as HTMLButtonElement;
       const error = document.getElementById('auth-error') as HTMLParagraphElement;
+
+      const campoPassword = document.getElementById('login-password') as HTMLInputElement;
+      const botonVer = document.getElementById('login-ver-password') as HTMLButtonElement;
+      const ojoAbierto = document.getElementById('login-ojo-abierto') as unknown as SVGElement;
+      const ojoCerrado = document.getElementById('login-ojo-cerrado') as unknown as SVGElement;
+
+      botonVer.addEventListener('click', () => {
+        const mostrar = campoPassword.type === 'password';
+        campoPassword.type = mostrar ? 'text' : 'password';
+        botonVer.setAttribute('aria-pressed', String(mostrar));
+        botonVer.setAttribute('aria-label', mostrar ? 'Ocultar contraseña' : 'Mostrar contraseña');
+        ojoAbierto.classList.toggle('hidden', mostrar);
+        ojoCerrado.classList.toggle('hidden', !mostrar);
+        campoPassword.focus();
+      });
 
       // Por qué se llegó al login sin que el usuario cerrara sesión (ver protegerPagina en lib/auth.ts)
       const AVISOS: Record<string, string> = {

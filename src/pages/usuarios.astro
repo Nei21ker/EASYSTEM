@@ -59,6 +59,63 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
       </form>
     </div>
   </div>
+
+  <dialog
+    id="ed-dialogo"
+    aria-labelledby="ed-titulo"
+    class="anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <form id="ed-form" novalidate>
+      <div class="space-y-4 px-5 pb-4 pt-5">
+        <div class="min-w-0">
+          <h2 id="ed-titulo" class="text-base font-semibold">Editar usuario</h2>
+          <p id="ed-nombre" class="mt-0.5 truncate text-sm font-medium"></p>
+          <p id="ed-correo" class="truncate text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+
+        <div id="ed-bloque-rol">
+          <label for="ed-rol" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Rol</label>
+          <select id="ed-rol" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
+        </div>
+        <div id="ed-bloque-local">
+          <label for="ed-local" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Local asignado</label>
+          <select id="ed-local" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
+        </div>
+
+        <div>
+          <label for="ed-clave" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nueva contraseña (opcional)</label>
+          <div class="mt-1 flex gap-2">
+            <input id="ed-clave" type="password" autocomplete="new-password" minlength="6" placeholder="Déjala vacía para no cambiarla" class="min-w-0 flex-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <button id="ed-ojo" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Ver</button>
+            <button id="ed-generar" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Generar</button>
+          </div>
+          <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+            La contraseña actual queda cifrada y no se puede consultar; aquí defines una nueva y puedes verla mientras la escribes. Al
+            cambiarla, el usuario debe iniciar sesión otra vez.
+          </p>
+        </div>
+
+        <div id="ed-resultado" class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+          <p class="text-xs font-medium text-emerald-800 dark:text-emerald-300">Contraseña guardada. Pásasela al usuario; esta es la única vez que se muestra:</p>
+          <div class="mt-1.5 flex items-center justify-between gap-2">
+            <code id="ed-resultado-clave" class="min-w-0 break-all text-base font-bold text-emerald-900 dark:text-emerald-200"></code>
+            <button id="ed-copiar" type="button" class="shrink-0 rounded-lg border border-emerald-300 px-2.5 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-500/40 dark:text-emerald-300 dark:hover:bg-emerald-500/10">Copiar</button>
+          </div>
+        </div>
+
+        <p id="ed-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="ed-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+          Cancelar
+        </button>
+        <button id="ed-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
+          Guardar cambios
+        </button>
+      </div>
+    </form>
+  </dialog>
 </DashboardLayout>
 
 <script>
@@ -67,6 +124,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     registrarUsuario,
     actualizarAccesoUsuario,
     eliminarUsuario,
+    cambiarClaveUsuario,
     obtenerSesionActual,
     ETIQUETAS_ROL,
     esGlobal,
@@ -132,9 +190,6 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     vendedor: 'Vendedores',
   };
 
-  const CLASE_SELECT =
-    'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white';
-
   async function cargarUsuarios() {
     const usuarios = await listarUsuarios();
     contador.textContent = `${usuarios.length} usuario${usuarios.length === 1 ? '' : 's'}`;
@@ -152,15 +207,11 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         const inactivo = u.status === 'inactive';
         const nombreLocal = locales.find((l) => l.id === u.local_id)?.nombre;
 
-        const celdaRol = gestionable
-          ? `<select data-usuario="${u.id}" class="us-rol-select ${CLASE_SELECT}">${opcionesRol(u.rol)}</select>`
-          : `<span class="text-sm">${escaparHtml(ETIQUETAS_ROL[u.rol] ?? u.rol)}</span>`;
+        const celdaRol = `<span class="text-sm">${escaparHtml(ETIQUETAS_ROL[u.rol] ?? u.rol)}</span>`;
 
         const celdaLocal = esGlobal(u.rol)
           ? '<span class="text-xs text-slate-500 dark:text-slate-400">Todos los locales</span>'
-          : gestionable
-            ? `<select data-usuario="${u.id}" class="us-local-select ${u.local_id ? '' : 'border-amber-400'} ${CLASE_SELECT}">${opcionesLocal(u.local_id)}</select>`
-            : `<span class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(nombreLocal ?? 'Sin local')}</span>`;
+          : `<span class="text-xs ${u.local_id ? 'text-slate-500 dark:text-slate-400' : 'font-semibold text-amber-600 dark:text-amber-400'}">${escaparHtml(nombreLocal ?? 'Sin local')}</span>`;
 
         const claseActivo = 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400';
         const claseInactivo = 'border-red-200 bg-red-50 text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400';
@@ -168,9 +219,10 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
           ? `<button type="button" data-usuario="${u.id}" data-nuevo="${inactivo ? 'active' : 'inactive'}" class="us-estado rounded-lg border px-2.5 py-1 text-xs font-semibold ${inactivo ? claseInactivo : claseActivo}" title="${inactivo ? 'Inactivo: no puede operar. Clic para reactivarlo' : 'Activo. Clic para desactivarlo (no podrá operar)'}">${inactivo ? 'Inactivo' : 'Activo'}</button>`
           : `<span class="rounded-full border px-2.5 py-1 text-xs font-semibold ${inactivo ? claseInactivo : claseActivo}">${inactivo ? 'Inactivo' : 'Activo'}</span>`;
 
-        const celdaAcciones = gestionable
-          ? `<button type="button" data-usuario="${u.id}" data-nombre="${escaparHtml(u.nombre)}" class="us-eliminar rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Eliminar</button>`
-          : '';
+        // Editar: rol, local y contraseña. Uno mismo solo puede cambiar su contraseña (la base de datos lo exige)
+        const botonEditar = `<button type="button" data-usuario="${u.id}" class="us-editar rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Editar</button>`;
+        const botonEliminar = `<button type="button" data-usuario="${u.id}" data-nombre="${escaparHtml(u.nombre)}" class="us-eliminar rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Eliminar</button>`;
+        const celdaAcciones = gestionable ? `<div class="flex flex-wrap gap-2 sm:justify-end">${botonEditar}${botonEliminar}</div>` : yo && esGlobal(miRol) ? botonEditar : '';
 
         const cantidadGrupo = ordenados.filter((x) => x.rol === u.rol).length;
         const cabeceraGrupo =
@@ -218,32 +270,123 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
       });
     }
 
-    for (const select of document.querySelectorAll<HTMLSelectElement>('.us-rol-select')) {
-      select.addEventListener('change', async () => {
-        const id = select.dataset.usuario!;
-        const rol = select.value as Rol;
-        try {
-          // Quien deja de ser global necesita un local: se le pone el primero hasta que se elija otro
-          const usuario = usuarios.find((u) => u.id === id);
-          const local_id = esGlobal(rol) ? null : (usuario?.local_id ?? locales[0]?.id ?? null);
-          await actualizarAccesoUsuario(id, { rol, local_id });
-        } catch (err) {
-          alert(err instanceof Error ? err.message : 'No se pudo actualizar el rol.');
-        }
-        cargarUsuarios();
-      });
-    }
-    for (const select of document.querySelectorAll<HTMLSelectElement>('.us-local-select')) {
-      select.addEventListener('change', async () => {
-        try {
-          await actualizarAccesoUsuario(select.dataset.usuario!, { local_id: select.value || null });
-        } catch (err) {
-          alert(err instanceof Error ? err.message : 'No se pudo cambiar el local.');
-        }
-        cargarUsuarios();
-      });
+    for (const boton of document.querySelectorAll<HTMLButtonElement>('.us-editar')) {
+      boton.addEventListener('click', () => abrirEdicion(usuarios.find((u) => u.id === boton.dataset.usuario)));
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Diálogo "Editar usuario": rol, local y contraseña
+  // ---------------------------------------------------------------------------
+  const dialogo = document.getElementById('ed-dialogo') as HTMLDialogElement;
+  const edForm = document.getElementById('ed-form') as HTMLFormElement;
+  const edNombre = document.getElementById('ed-nombre') as HTMLParagraphElement;
+  const edCorreo = document.getElementById('ed-correo') as HTMLParagraphElement;
+  const edRol = document.getElementById('ed-rol') as HTMLSelectElement;
+  const edLocal = document.getElementById('ed-local') as HTMLSelectElement;
+  const edBloqueRol = document.getElementById('ed-bloque-rol') as HTMLDivElement;
+  const edBloqueLocal = document.getElementById('ed-bloque-local') as HTMLDivElement;
+  const edClave = document.getElementById('ed-clave') as HTMLInputElement;
+  const edOjo = document.getElementById('ed-ojo') as HTMLButtonElement;
+  const edGenerar = document.getElementById('ed-generar') as HTMLButtonElement;
+  const edError = document.getElementById('ed-error') as HTMLParagraphElement;
+  const edResultado = document.getElementById('ed-resultado') as HTMLDivElement;
+  const edResultadoClave = document.getElementById('ed-resultado-clave') as HTMLElement;
+  const edGuardar = document.getElementById('ed-guardar') as HTMLButtonElement;
+  const edCancelar = document.getElementById('ed-cancelar') as HTMLButtonElement;
+  let editando: Awaited<ReturnType<typeof listarUsuarios>>[number] | null = null;
+
+  function abrirEdicion(usuario?: typeof editando) {
+    if (!usuario) return;
+    editando = usuario;
+    const yo = usuario.id === miId;
+    edNombre.textContent = usuario.nombre;
+    edCorreo.textContent = usuario.email || '';
+    // Rol y local: solo de quienes están por debajo (uno mismo solo cambia su contraseña)
+    edBloqueRol.classList.toggle('hidden', yo);
+    edRol.innerHTML = opcionesRol(usuario.rol);
+    edLocal.innerHTML = opcionesLocal(usuario.local_id);
+    edClave.value = '';
+    edClave.type = 'password';
+    edOjo.textContent = 'Ver';
+    edError.classList.add('hidden');
+    edResultado.classList.add('hidden');
+    edGuardar.classList.remove('hidden');
+    edCancelar.textContent = 'Cancelar';
+    actualizarBloqueLocalEdicion();
+    dialogo.showModal();
+  }
+
+  function actualizarBloqueLocalEdicion() {
+    const rol = (edBloqueRol.classList.contains('hidden') ? editando?.rol : (edRol.value as Rol)) ?? 'vendedor';
+    edBloqueLocal.classList.toggle('hidden', esGlobal(rol));
+  }
+  edRol.addEventListener('change', actualizarBloqueLocalEdicion);
+
+  // Ver / ocultar lo que se está escribiendo. La contraseña actual NO se puede consultar: queda cifrada.
+  edOjo.addEventListener('click', () => {
+    const visible = edClave.type === 'text';
+    edClave.type = visible ? 'password' : 'text';
+    edOjo.textContent = visible ? 'Ver' : 'Ocultar';
+  });
+
+  edGenerar.addEventListener('click', () => {
+    const letras = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const azar = crypto.getRandomValues(new Uint32Array(10));
+    edClave.value = Array.from(azar, (n) => letras[n % letras.length]).join('');
+    edClave.type = 'text';
+    edOjo.textContent = 'Ocultar';
+  });
+
+  document.getElementById('ed-copiar')!.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(edResultadoClave.textContent ?? '');
+      (document.getElementById('ed-copiar') as HTMLButtonElement).textContent = 'Copiada';
+    } catch {
+      /* sin portapapeles: se puede copiar a mano */
+    }
+  });
+
+  edCancelar.addEventListener('click', () => dialogo.close());
+
+  edForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!editando) return;
+    edError.classList.add('hidden');
+    edGuardar.disabled = true;
+    edGuardar.textContent = 'Guardando...';
+
+    const yo = editando.id === miId;
+    const clave = edClave.value;
+    try {
+      if (!yo) {
+        const rol = edRol.value as Rol;
+        const local_id = esGlobal(rol) ? null : edLocal.value || null;
+        if (rol !== editando.rol || (local_id ?? null) !== (editando.local_id ?? null)) {
+          await actualizarAccesoUsuario(editando.id, { rol, local_id });
+        }
+      }
+      if (clave) await cambiarClaveUsuario(editando.id, clave);
+
+      await cargarUsuarios();
+      if (clave) {
+        // Se muestra una sola vez: después ya no se puede volver a ver
+        edResultadoClave.textContent = clave;
+        (document.getElementById('ed-copiar') as HTMLButtonElement).textContent = 'Copiar';
+        edResultado.classList.remove('hidden');
+        edGuardar.classList.add('hidden');
+        edCancelar.textContent = 'Cerrar';
+      } else {
+        dialogo.close();
+      }
+    } catch (err) {
+      edError.textContent = err instanceof Error ? err.message : 'No se pudo guardar.';
+      edError.classList.remove('hidden');
+    } finally {
+      edGuardar.disabled = false;
+      edGuardar.textContent = 'Guardar cambios';
+    }
+  });
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
