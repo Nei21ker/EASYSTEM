@@ -7,8 +7,12 @@ const LADO_MAXIMO = 720;
 const CALIDAD = 0.82;
 const BYTES_MAXIMOS_ORIGINAL = 15 * 1024 * 1024;
 
-/** Reduce una imagen a JPEG de máx. 720 px por lado. Lanza un Error con mensaje para el usuario. */
-export async function reducirImagen(archivo: File): Promise<Blob> {
+/**
+ * Reduce una imagen a JPEG (por defecto de máx. 720 px por lado, suficiente para una miniatura). Para capturas de
+ * pantalla con texto se pide `ladoMaximo: 1280`. Lanza un Error con mensaje para el usuario.
+ */
+export async function reducirImagen(archivo: File, opciones: { ladoMaximo?: number } = {}): Promise<Blob> {
+  const ladoMaximo = opciones.ladoMaximo ?? LADO_MAXIMO;
   if (!TIPOS_PERMITIDOS.includes(archivo.type)) {
     throw new Error('Formato no admitido. Usa una foto JPG, PNG o WebP.');
   }
@@ -20,7 +24,7 @@ export async function reducirImagen(archivo: File): Promise<Blob> {
     throw new Error('No se pudo leer la imagen. Prueba con otra foto.');
   });
 
-  const escala = Math.min(1, LADO_MAXIMO / Math.max(bitmap.width, bitmap.height));
+  const escala = Math.min(1, ladoMaximo / Math.max(bitmap.width, bitmap.height));
   const ancho = Math.max(1, Math.round(bitmap.width * escala));
   const alto = Math.max(1, Math.round(bitmap.height * escala));
 

@@ -1869,6 +1869,10 @@ export interface DatosPagoQuincenal {
   notas?: string | null;
   /** true = registra el pago como PAGADO; false = lo deja PENDIENTE */
   pagar: boolean;
+  /** Captura del pago (opcional), ya reducida; reemplaza a la que hubiera */
+  comprobante?: Blob | null;
+  /** Quita la captura que tenía el pago pendiente */
+  quitarComprobante?: boolean;
   /** Pago pendiente ya generado para ese empleado y período (se actualiza en vez de crear otro) */
   existente?: Nomina | null;
 }
@@ -1885,7 +1889,7 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
   const errorAjustes = validarAjustes(pago_base, bonos, deducciones);
   if (errorAjustes) throw new Error(errorAjustes);
 
-  const campos = {
+  const campos: nominaDb.DatosNomina = {
     empleado_id: empleado.id,
     local_id: empleado.local_id,
     periodo_inicio: periodo.inicio,
@@ -1899,7 +1903,21 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
   };
 
   if (supabaseConfigurado) {
-    return existente ? nominaDb.actualizarNomina(existente.id, campos) : (await nominaDb.insertarNominas([campos]))[0];
+    // La captura va primero al almacenamiento privado; si luego falla el guardado del pago, se borra para no dejar huérfanos
+    let rutaNueva: string | null = null;
+    if (datos.comprobante) rutaNueva = await nominaDb.subirComprobante(empleado.local_id, empleado.id, periodo.inicio, datos.comprobante);
+    campos.comprobante_path = rutaNueva ?? (datos.quitarComprobante ? null : (existente?.comprobante_path ?? null));
+    try {
+      const guardada = existente ? await nominaDb.actualizarNomina(existente.id, campos) : (await nominaDb.insertarNominas([campos]))[0];
+      // Se reemplazó o quitó la captura anterior: se limpia (best-effort)
+      if (existente?.comprobante_path && existente.comprobante_path !== guardada.comprobante_path) {
+        nominaDb.eliminarComprobante(existente.comprobante_path).catch(() => {});
+      }
+      return guardada;
+    } catch (err) {
+      nominaDb.eliminarComprobante(rutaNueva).catch(() => {});
+      throw err;
+    }
   }
 
   const db = leerDB();
@@ -1907,16 +1925,39 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
   const actual = existente ? nominas.find((n) => n.id === existente.id) : nominas.find((n) => n.empleado_id === empleado.id && n.periodo_inicio === periodo.inicio && n.periodo_fin === periodo.fin);
   if (actual?.estado_pago === 'PAGADO') throw new Error('Ese pago ya está registrado como PAGADO y no se puede modificar.');
   const pagado_en = datos.pagar ? new Date().toISOString() : null;
+  // En LocalStorage la captura se guarda como data URL dentro del pago (el cupo del navegador es pequeño: se avisa si no cabe)
+  const comprobante_path = datos.comprobante ? await blobADataUrl(datos.comprobante) : datos.quitarComprobante ? null : (actual?.comprobante_path ?? existente?.comprobante_path ?? null);
 
   if (actual) {
-    Object.assign(actual, campos, { pagado_en });
-    guardarDB(db);
+    const anterior = { ...actual };
+    Object.assign(actual, campos, { pagado_en, comprobante_path });
+    try {
+      guardarDBEstricto(db);
+    } catch (err) {
+      Object.assign(actual, anterior);
+      throw err;
+    }
     return actual;
   }
-  const nueva: Nomina = { id: generarId(), ...campos, pagado_en, created_at: new Date().toISOString() };
+  const nueva: Nomina = { id: generarId(), ...campos, comprobante_path, pagado_en, created_at: new Date().toISOString() };
   nominas.push(nueva);
-  guardarDB(db);
+  try {
+    guardarDBEstricto(db);
+  } catch (err) {
+    nominas.pop();
+    throw err;
+  }
   return nueva;
+}
+
+/** Enlace para ver la captura de un pago: temporal si está en Supabase (bucket privado); en LocalStorage, un enlace local. */
+export async function urlComprobanteNomina(ruta: string): Promise<string> {
+  await exigirAccesoNomina();
+  if (ruta.startsWith('data:')) {
+    // Los navegadores no abren data: URLs en pestañas nuevas: se convierte en un enlace de objeto
+    return URL.createObjectURL(await (await fetch(ruta)).blob());
+  }
+  return nominaDb.urlComprobante(ruta);
 }
 
 /** Genera el pago PENDIENTE (sin bonos ni deducciones) de los empleados activos que aún no lo tienen. Devuelve cuántos creó. */
@@ -1940,6 +1981,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
       total_pagado: pago_base,
       estado_pago: 'PENDIENTE' as const,
       notas: null,
+      comprobante_path: null,
     };
   });
 
@@ -1951,7 +1993,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
   const db = leerDB();
   const nominas = db.nominas ?? (db.nominas = []);
   const ahora = new Date().toISOString();
-  for (const f of filas) nominas.push({ id: generarId(), ...f, pagado_en: null, created_at: ahora });
+  for (const f of filas) nominas.push({ id: generarId(), ...f, comprobante_path: null, pagado_en: null, created_at: ahora });
   guardarDB(db);
   return filas.length;
 }

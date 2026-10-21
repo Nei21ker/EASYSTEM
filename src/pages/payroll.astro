@@ -186,6 +186,24 @@ const claseDialogo =
           <textarea id="pg-notas" rows="2" maxlength="500" class={`mt-1 ${campo}`}></textarea>
         </div>
 
+        <div>
+          <span class={etiqueta}>Captura del pago (opcional)</span>
+          <div class="mt-1 flex items-center gap-3">
+            <a id="pg-comp-enlace" href="#" target="_blank" rel="noopener" class="hidden shrink-0" title="Abrir la captura en grande">
+              <img id="pg-comp-previa" alt="Captura del pago" class="h-16 w-16 rounded-lg border border-slate-200 bg-slate-100 object-cover dark:border-slate-700 dark:bg-slate-800" />
+            </a>
+            <div class="flex flex-wrap items-center gap-2">
+              <label id="pg-comp-subir" class="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+                <input id="pg-comp" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
+                <span id="pg-comp-etiqueta">Adjuntar captura</span>
+              </label>
+              <button id="pg-comp-quitar" type="button" class="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-500/10">Quitar</button>
+              <span id="pg-comp-sin" class="hidden text-xs text-slate-500 dark:text-slate-400">Este pago no tiene captura.</span>
+            </div>
+          </div>
+          <p id="pg-comp-ayuda" class="mt-1 text-xs text-slate-500 dark:text-slate-400">La imagen se reduce sola (máx. 1280 px). Solo la ven administrador, gerente y contador.</p>
+        </div>
+
         <div class="rounded-lg bg-slate-50 px-3 py-3 dark:bg-slate-800/60">
           <p class="text-xs text-slate-500 dark:text-slate-400">Total a pagar</p>
           <p id="pg-total" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-white"></p>
@@ -208,6 +226,7 @@ const claseDialogo =
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { puedeNomina } from '../lib/auth';
+  import { reducirImagen } from '../utils/imagenes';
   import { formatearFecha, formatearMoneda } from '../utils/format';
   import { hoyISO, pagoBaseQuincenal, quincenaAnterior, quincenaDe, quincenaSiguiente, totalPago, validarAjustes, type Quincena } from '../utils/nomina';
   import { animarLista } from '../utils/animaciones';
@@ -361,6 +380,7 @@ const claseDialogo =
         <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(f.total)}</td>
         <td data-label="Estado" class="px-4 py-3">
           <span class="inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${BADGE[f.estado]}">${TEXTO_ESTADO[f.estado]}</span>
+          ${f.nomina?.comprobante_path ? '<span class="ml-1 inline-flex align-middle text-slate-400" title="Tiene captura del pago"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5" aria-label="Tiene captura del pago"><path d="m21.4 11.6-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}
           ${f.nomina?.pagado_en ? `<span class="block text-[11px] text-slate-400">${escapar(formatearFecha(f.nomina.pagado_en))}</span>` : ''}
         </td>
         <td class="px-4 py-3 print:hidden sm:text-right">
@@ -504,6 +524,71 @@ const claseDialogo =
   const pgNotas = $<HTMLTextAreaElement>('pg-notas');
   let pagando: Fila | null = null;
 
+  // Captura del pago (opcional)
+  const pgComp = $<HTMLInputElement>('pg-comp');
+  const pgCompEnlace = $<HTMLAnchorElement>('pg-comp-enlace');
+  const pgCompPrevia = $<HTMLImageElement>('pg-comp-previa');
+  const pgCompQuitar = $<HTMLButtonElement>('pg-comp-quitar');
+  let compNueva: Blob | null = null; // elegida ahora, aún sin subir
+  let quitarComp = false; // se pidió quitar la que ya tenía
+  let urlTemporal: string | null = null; // object URL de la vista previa
+
+  function soltarUrlTemporal() {
+    if (urlTemporal) URL.revokeObjectURL(urlTemporal);
+    urlTemporal = null;
+  }
+
+  /** Muestra la captura (la nueva, o la guardada si no se quitó) o el estado vacío. */
+  async function pintarComprobante(soloLectura: boolean) {
+    soltarUrlTemporal();
+    let url: string | null = null;
+    try {
+      if (compNueva) {
+        urlTemporal = URL.createObjectURL(compNueva);
+        url = urlTemporal;
+      } else if (!quitarComp && pagando?.nomina?.comprobante_path) {
+        url = await inventoryService.urlComprobanteNomina(pagando.nomina.comprobante_path);
+        if (url.startsWith('blob:')) urlTemporal = url;
+      }
+    } catch (err) {
+      pgError.textContent = mensajeDeError(err, 'No se pudo abrir la captura del pago.');
+      pgError.classList.remove('hidden');
+    }
+    pgCompEnlace.classList.toggle('hidden', !url);
+    if (url) {
+      pgCompPrevia.src = url;
+      pgCompEnlace.href = url;
+    }
+    $('pg-comp-subir').classList.toggle('hidden', soloLectura);
+    $('pg-comp-ayuda').classList.toggle('hidden', soloLectura);
+    pgCompQuitar.classList.toggle('hidden', soloLectura || !url);
+    $('pg-comp-sin').classList.toggle('hidden', !(soloLectura && !url));
+    $('pg-comp-etiqueta').textContent = url ? 'Cambiar captura' : 'Adjuntar captura';
+  }
+
+  pgComp.addEventListener('change', async () => {
+    const archivo = pgComp.files?.[0];
+    if (!archivo) return;
+    pgError.classList.add('hidden');
+    try {
+      compNueva = await reducirImagen(archivo, { ladoMaximo: 1280 });
+      quitarComp = false;
+      await pintarComprobante(false);
+    } catch (err) {
+      compNueva = null;
+      pgError.textContent = err instanceof Error ? err.message : 'No se pudo usar esa imagen.';
+      pgError.classList.remove('hidden');
+    } finally {
+      pgComp.value = ''; // permite volver a elegir el mismo archivo
+    }
+  });
+
+  pgCompQuitar.addEventListener('click', () => {
+    compNueva = null;
+    quitarComp = true;
+    pintarComprobante(false);
+  });
+
   function actualizarTotalPago() {
     if (!pagando) return;
     $('pg-total').textContent = formatearMoneda(totalPago(pagando.base, numero(pgBonos.value), numero(pgDeducciones.value)));
@@ -522,6 +607,9 @@ const claseDialogo =
     pgDeducciones.value = String(fila.deducciones);
     pgNotas.value = fila.nomina?.notas ?? '';
     for (const campoEl of [pgBonos, pgDeducciones, pgNotas]) campoEl.disabled = soloLectura;
+    compNueva = null;
+    quitarComp = false;
+    pintarComprobante(soloLectura);
 
     const pagado = $('pg-pagado');
     pagado.classList.toggle('hidden', !soloLectura);
@@ -547,6 +635,7 @@ const claseDialogo =
   });
 
   $('pg-cerrar').addEventListener('click', () => pgDialogo.close());
+  pgDialogo.addEventListener('close', soltarUrlTemporal);
 
   async function guardarPago(pagar: boolean) {
     if (!pagando) return;
@@ -566,7 +655,17 @@ const claseDialogo =
     const botones = [$<HTMLButtonElement>('pg-pagar'), $<HTMLButtonElement>('pg-pendiente')];
     botones.forEach((b) => (b.disabled = true));
     try {
-      await inventoryService.guardarPagoQuincenal({ empleado: pagando.empleado, periodo, bonos, deducciones, notas: pgNotas.value, pagar, existente: pagando.nomina });
+      await inventoryService.guardarPagoQuincenal({
+        empleado: pagando.empleado,
+        periodo,
+        bonos,
+        deducciones,
+        notas: pgNotas.value,
+        pagar,
+        existente: pagando.nomina,
+        comprobante: compNueva,
+        quitarComprobante: quitarComp,
+      });
       pgDialogo.close();
       await recargar();
       avisar(exito, pagar ? `Pago de ${formatearMoneda(total)} a ${nombre} registrado.` : `Pago de ${nombre} guardado como pendiente.`);

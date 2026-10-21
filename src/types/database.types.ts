@@ -282,5 +282,7 @@ export interface Nomina {
   estado_pago: EstadoPago;
   pagado_en: string | null;
   notas: string | null;
+  /** Captura del pago (opcional): ruta en el bucket privado comprobantes-nomina; en LocalStorage, la imagen como data URL */
+  comprobante_path: string | null;
   created_at: string;
 }
