@@ -165,7 +165,7 @@ export async function establecerCompatibilidades(productoId: string, modeloIds: 
  */
 export async function asegurarEnLocal(localId: string, productoIds: string[]): Promise<void> {
   for (let i = 0; i < productoIds.length; i += 500) {
-    const filas = productoIds.slice(i, i + 500).map((producto_id) => ({ local_id: localId, producto_id, stock_actual: 0, stock_minimo: 0 }));
+    const filas = productoIds.slice(i, i + 500).map((producto_id) => ({ local_id: localId, producto_id, stock_minimo: 0 }));
     const { error } = await supabase.from('inventario_local').upsert(filas, { onConflict: 'local_id,producto_id', ignoreDuplicates: true });
     if (error) throw error;
   }

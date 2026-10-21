@@ -309,8 +309,11 @@ export async function registrarUsuario(input: {
     await supabase.from('usuarios_autorizados').delete().eq('email', email);
     const { error: errorAutorizar } = await supabase.from('usuarios_autorizados').insert({ email });
     if (errorAutorizar) {
+      const sinPermiso = /row-level security|permission denied/i.test(errorAutorizar.message);
       throw new Error(
-        'No se pudo autorizar el correo (¿aplicaste la migración 0004 en Supabase?): ' + errorAutorizar.message
+        sinPermiso
+          ? 'Tu cuenta no tiene permiso para crear usuarios. Revisa que tu rol sea administrador o gerente y que las migraciones 0022 y 0023 estén aplicadas en Supabase (detalle: ' + errorAutorizar.message + ')'
+          : 'No se pudo autorizar el correo (¿aplicaste la migración 0004 en Supabase?): ' + errorAutorizar.message
       );
     }
 

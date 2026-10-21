@@ -2,7 +2,6 @@
 import DashboardLayout from '../../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../../components/CamaraEscaner.astro';
 import FormularioProducto from '../../components/productos/FormularioProducto.astro';
-import EntradaStock from '../../components/productos/EntradaStock.astro';
 import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
 
 const claseBotonSecundario =
@@ -47,14 +46,14 @@ const claseSelect =
           <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
           <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
           <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
-          <button id="pr-entrada" type="button" class={`${claseBotonAdmin} disabled:cursor-not-allowed disabled:opacity-40`}>Registrar entrada</button>
-          <button
-            id="pr-nuevo"
-            type="button"
+          <!-- Ingreso de mercancía (producto nuevo, entradas de stock y etiquetas): módulo propio -->
+          <a
+            id="pr-ingreso"
+            href="/ingreso"
             class="bg-marca hidden rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110"
           >
-            + Nuevo producto
-          </button>
+            Ingresar mercancía
+          </a>
         </div>
       </div>
 
@@ -142,7 +141,6 @@ const claseSelect =
 
   <CamaraEscaner />
   <FormularioProducto />
-  <EntradaStock />
   <ImportadorCsv />
 </DashboardLayout>
 
@@ -174,17 +172,15 @@ const claseSelect =
   const sinResultados = $('pr-sin-resultados');
   const paginacion = $('pr-paginacion');
 
-  // Catálogo (precio de compra, importar, crear y editar): solo administrador. Entradas de stock del local: administrador y encargado.
+  // Precio de compra e importar CSV: administrador y gerente. Editar productos e ir al ingreso de mercancía: también el encargado.
   const COLUMNAS_COSTO = ['pr-th-costo', 'pr-col-costo'];
   const COLUMNAS_ACCIONES = ['pr-th-acciones', 'pr-col-acciones'];
-  const BOTONES_ADMIN = ['pr-importar', 'pr-nuevo'];
+  const BOTONES_ADMIN = ['pr-importar'];
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
   let esAdministrador = false;
   let puedeEntradas = false;
-  /** Hay un local concreto elegido (en la vista "Todos" no se pueden registrar entradas) */
-  let hayLocal = false;
   let nombresLocales = new Map<string, string>();
   let categoriaActiva = '';
   let pagina = 1;
@@ -279,8 +275,8 @@ const claseSelect =
           puedeEntradas
             ? `<td class="px-4 py-3">
                 <div class="acciones flex justify-end gap-1.5">
-                  <button type="button" data-entrada="${p.id}" ${hayLocal ? '' : 'disabled title="Elige un local en el selector del encabezado para registrar entradas"'} class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</button>
-                  ${esAdministrador ? `<button type="button" data-editar="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>` : ''}
+                  <a href="/ingreso?producto=${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</a>
+                  ${puedeEntradas ? `<button type="button" data-editar="${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>` : ''}
                 </div>
               </td>`
             : ''
@@ -388,18 +384,14 @@ const claseSelect =
   // escuchan estos eventos; esta página no depende de sus detalles internos).
   const abrir = (evento: string, detalle?: object) => window.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
   $('pr-importar').addEventListener('click', () => abrir('easystem:abrir-importador'));
-  $('pr-entrada').addEventListener('click', () => abrir('easystem:abrir-entrada'));
-  $('pr-nuevo').addEventListener('click', () => abrir('easystem:abrir-producto'));
 
   filas.addEventListener('click', (e) => {
     const objetivo = e.target as HTMLElement;
 
     if (alternarCompatibles(objetivo)) return;
 
-    const entrada = objetivo.closest<HTMLElement>('[data-entrada]')?.dataset.entrada;
     const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
-    if (entrada) abrir('easystem:abrir-entrada', { productoId: entrada });
-    else if (editar) abrir('easystem:abrir-producto', { productoId: editar });
+    if (editar) abrir('easystem:abrir-producto', { productoId: editar });
   });
 
   $('pr-exportar').addEventListener('click', () => {
@@ -435,15 +427,11 @@ const claseSelect =
     const rol = contexto?.sesion.rol;
     esAdministrador = esGlobal(rol);
     puedeEntradas = esGerencia(rol);
-    hayLocal = !!contexto?.local;
     nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));
     for (const id of COLUMNAS_COSTO) $(id).classList.toggle('hidden', !esAdministrador);
     for (const id of COLUMNAS_ACCIONES) $(id).classList.toggle('hidden', !puedeEntradas);
     for (const id of BOTONES_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
-    const botonEntrada = $<HTMLButtonElement>('pr-entrada');
-    botonEntrada.classList.toggle('hidden', !puedeEntradas);
-    botonEntrada.disabled = !hayLocal;
-    botonEntrada.title = hayLocal ? '' : 'Elige un local en el selector del encabezado para registrar entradas';
+    $('pr-ingreso').classList.toggle('hidden', !puedeEntradas);
     reconstruirIndice();
     pintarCategorias();
     animarLista(filas);

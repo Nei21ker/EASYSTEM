@@ -1,8 +1,10 @@
 ---
-// Formulario para crear/editar un producto (solo administrador).
-// Se abre con el evento window "easystem:abrir-producto" ({ detail: { productoId? } })
-// y avisa con "easystem:productos-cambiaron" al guardar, igual que el escáner
-// de cámara: la página que lo usa no depende de sus detalles internos.
+// Formulario para crear/editar un producto (administrador, gerente y encargado; el precio de compra solo lo
+// ven y editan administrador y gerente).
+// Se abre con el evento window "easystem:abrir-producto" ({ detail: { productoId?, sinStock? } }); con
+// `sinStock` no pide el stock inicial (lo registra el módulo de ingreso de mercancía); `codigo` precarga el código de barras.
+// Avisa con "easystem:productos-cambiaron" al guardar y con "easystem:producto-guardado" ({ productoId, nuevo }),
+// igual que el escáner de cámara: la página que lo usa no depende de sus detalles internos.
 const claseCampo =
   'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
@@ -64,7 +66,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <label for="fp-precio-venta" class={claseEtiqueta}>Precio venta ($) *</label>
           <input id="fp-precio-venta" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
         </div>
-        <div>
+        <div id="fp-grupo-compra">
           <label for="fp-precio-compra" class={claseEtiqueta}>Precio compra ($)</label>
           <input id="fp-precio-compra" type="number" inputmode="decimal" min="0" step="0.01" value="0" class={claseCampo} />
         </div>
@@ -106,7 +108,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { esGlobal, obtenerSesionActual } from '../../lib/auth';
+  import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { generarCodigosInternos } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
@@ -134,6 +136,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let productos: ProductoConRelaciones[] = [];
   let modelos: ModeloTelefono[] = [];
   let editando: ProductoConRelaciones | null = null;
+  /** Se abrió desde el ingreso de mercancía: no se pide el stock inicial */
+  let sinStockInicial = false;
+  /** El precio de compra es de administrador y gerente: el encargado no lo ve ni lo modifica */
+  let veCosto = true;
   const seleccion = new Set<string>();
 
   const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos'];
@@ -239,10 +245,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
   $('fp-generar').addEventListener('click', generarCodigo);
 
-  async function abrir(productoId?: string) {
+  async function abrir(productoId?: string, sinStock = false, codigoInicial?: string) {
     error.classList.add('hidden');
     const sesion = await obtenerSesionActual();
-    if (!esGlobal(sesion?.rol)) return;
+    if (!esGerencia(sesion?.rol)) return;
+    sinStockInicial = sinStock;
+    veCosto = esGlobal(sesion?.rol);
+    $('fp-grupo-compra').classList.toggle('hidden', !veCosto);
 
     // Catálogo completo: el código de barras no debe repetirse en NINGÚN local
     [productos, modelos] = await Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarModelos()]);
@@ -257,7 +266,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     seleccion.clear();
     buscarModelo.value = '';
-    $('fp-grupo-stock').classList.toggle('hidden', editando !== null);
+    $('fp-grupo-stock').classList.toggle('hidden', editando !== null || sinStockInicial);
     $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
 
     if (editando) {
@@ -275,6 +284,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.precioCompra.value = '0';
       campos.stock.value = '0';
       campos.minimo.value = '0';
+      if (codigoInicial) campos.codigo.value = codigoInicial;
     }
 
     fotoNueva = null;
@@ -294,7 +304,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const categoria = campos.categoria.value.trim();
     const precioVenta = Number(campos.precioVenta.value);
     const precioCompra = Number(campos.precioCompra.value || 0);
-    const stock = Number(campos.stock.value || 0);
+    const stock = sinStockInicial ? 0 : Number(campos.stock.value || 0);
     const minimo = Number(campos.minimo.value || 0);
 
     if (!nombre) return mostrarError('El nombre es obligatorio.');
@@ -305,7 +315,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!Number.isInteger(minimo) || minimo < 0) return mostrarError('El stock mínimo debe ser un entero mayor o igual a 0.');
 
     const sesion = await obtenerSesionActual();
-    if (!esGlobal(sesion?.rol)) return mostrarError('Solo un administrador o gerente puede guardar productos.');
+    if (!esGerencia(sesion?.rol)) return mostrarError('Solo un administrador, gerente o encargado puede guardar productos.');
     if (!editando && stock > 0 && !(await inventoryService.obtenerContextoLocal())?.local) {
       return mostrarError('Para cargar stock inicial elige primero un local en el selector del encabezado.');
     }
@@ -318,6 +328,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     guardar.disabled = true;
     guardar.textContent = 'Guardando...';
+    let idCreado: string | null = null;
     try {
       if (editando) {
         await inventoryService.actualizarProducto(editando.id, {
@@ -325,7 +336,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           categoria,
           codigo_barras: codigo,
           precio_venta: precioVenta,
-          precio_compra: precioCompra,
+          ...(veCosto ? { precio_compra: precioCompra } : {}),
           stock_minimo: minimo,
         });
         await inventoryService.establecerCompatibilidades(editando.id, [...seleccion]);
@@ -337,10 +348,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           nombre,
           categoria,
           precio_venta: precioVenta,
-          precio_compra: precioCompra,
+          precio_compra: veCosto ? precioCompra : 0,
           stock_actual: 0,
           stock_minimo: minimo,
         });
+        idCreado = creado.id;
         if (seleccion.size > 0) await inventoryService.establecerCompatibilidades(creado.id, [...seleccion]);
         if (stock > 0) {
           await inventoryService.registrarMovimiento({
@@ -357,6 +369,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             // El producto ya existe: se pasa a modo edición para que reintentar la
             // foto no cree un duplicado.
             window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+            window.dispatchEvent(new CustomEvent('easystem:producto-guardado', { detail: { productoId: creado.id, nuevo: true } }));
             productos = await inventoryService.listarProductos({ catalogoCompleto: true });
             editando = productos.find((p) => p.id === creado.id) ?? null;
             titulo.textContent = 'Editar producto';
@@ -368,8 +381,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           }
         }
       }
+      const productoId = editando?.id ?? idCreado;
       dialogo.close();
       window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+      if (productoId) window.dispatchEvent(new CustomEvent('easystem:producto-guardado', { detail: { productoId, nuevo: !editando } }));
     } catch (err) {
       mostrarError(err instanceof Error ? err.message : 'No se pudo guardar el producto.');
     } finally {
@@ -385,7 +400,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (e.target === dialogo) dialogo.close();
   });
 
-  window.addEventListener('easystem:abrir-producto', ((e: CustomEvent<{ productoId?: string }>) => {
-    abrir(e.detail?.productoId);
+  window.addEventListener('easystem:abrir-producto', ((e: CustomEvent<{ productoId?: string; sinStock?: boolean; codigo?: string }>) => {
+    abrir(e.detail?.productoId, e.detail?.sinStock === true, e.detail?.codigo);
   }) as EventListener);
 </script>

@@ -1,0 +1,513 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import CamaraEscaner from '../components/CamaraEscaner.astro';
+import FormularioProducto from '../components/productos/FormularioProducto.astro';
+import { FORMATOS_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
+
+const claseCampo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<style is:global set:html={estilosEtiqueta()}></style>
+
+<DashboardLayout
+  titulo="Ingreso de mercancía"
+  subtitulo="Registra lo que llega, crea productos nuevos e imprime sus etiquetas con código de barras"
+  roles={['administrador', 'gerente', 'encargado']}
+>
+  <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+    <div class="space-y-4 xl:col-span-2">
+      <!-- 1. Agregar productos al lote -->
+      <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+          <div class="relative min-w-0 flex-1">
+            <label for="ig-buscar" class={claseEtiqueta}>Agregar producto (nombre, categoría, modelo o código de barras)</label>
+            <div class="relative mt-1">
+              <input id="ig-buscar" type="search" autocomplete="off" placeholder="Escribe o escanea el código..." class={`${claseCampo} pr-11`} />
+              <button
+                type="button"
+                data-abrir-escaner
+                aria-label="Escanear código de barras con la cámara"
+                title="Escanear con la cámara"
+                class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                  <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <ul id="ig-resultados" class="absolute z-10 mt-1 hidden max-h-64 w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900"></ul>
+          </div>
+          <button id="ig-nuevo" type="button" class="bg-marca w-full shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:mt-5 sm:w-auto sm:py-2">
+            + Nuevo producto
+          </button>
+        </div>
+        <p id="ig-aviso" role="status" class="mt-2 hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+        <p id="ig-local" class="mt-2 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
+      </section>
+
+      <!-- 2. Lote -->
+      <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 id="ig-titulo-lote" class="text-sm font-semibold text-slate-900 dark:text-white">Lote de ingreso</h2>
+          <button id="ig-vaciar" type="button" class="hidden text-xs font-medium text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400">Vaciar lote</button>
+        </div>
+
+        <div id="ig-vacio" class="px-5 py-10 text-center">
+          <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Todavía no hay productos en el lote</p>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            Busca o escanea un producto para sumarle stock, o crea uno nuevo. Con cantidad 0 solo imprimes etiquetas.
+          </p>
+        </div>
+
+        <div id="ig-tabla" class="hidden overflow-x-auto">
+          <table class="tabla-tarjetas w-full text-left text-sm">
+            <thead>
+              <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+                <th class="px-4 py-3 font-semibold">Producto</th>
+                <th class="px-4 py-3 text-right font-semibold">Stock</th>
+                <th class="w-28 px-4 py-3 font-semibold">Ingresan</th>
+                <th class="w-28 px-4 py-3 font-semibold">Etiquetas</th>
+                <th class="w-20 px-4 py-3"><span class="sr-only">Quitar</span></th>
+              </tr>
+            </thead>
+            <tbody id="ig-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+          </table>
+        </div>
+
+        <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div>
+            <label for="ig-motivo" class={claseEtiqueta}>Motivo del ingreso</label>
+            <input id="ig-motivo" type="text" list="ig-motivos" value="Compra a proveedor" class={`mt-1 ${claseCampo}`} />
+            <datalist id="ig-motivos">
+              <option value="Compra a proveedor"></option>
+              <option value="Reabastecimiento"></option>
+              <option value="Devolución de cliente"></option>
+              <option value="Ajuste de inventario"></option>
+            </datalist>
+          </div>
+          <p id="ig-resumen" class="text-xs text-slate-500 dark:text-slate-400"></p>
+          <p id="ig-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+          <p id="ig-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+          <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button id="ig-imprimir" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+              Imprimir etiquetas
+            </button>
+            <button id="ig-registrar" type="button" class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
+              Registrar ingreso
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- 3. Etiquetas -->
+    <aside class="space-y-4">
+      <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Etiquetas</h2>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Código de barras y nombre del producto. Elige el tamaño de tu papel de etiquetas.</p>
+        <label for="ig-formato" class={`mt-4 ${claseEtiqueta}`}>Tamaño</label>
+        <select id="ig-formato" class={`mt-1 ${claseCampo}`}>
+          {FORMATOS_ETIQUETA.map((f) => <option value={f.id}>{f.nombre}</option>)}
+        </select>
+        <p id="ig-formato-nota" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"></p>
+
+        <p class="mt-4 text-xs font-medium text-slate-600 dark:text-slate-400">Vista previa</p>
+        <div class="mt-1 overflow-x-auto rounded-lg bg-slate-100 p-3 dark:bg-slate-800/60">
+          <div id="ig-previa" class="inline-block border border-slate-300 bg-white shadow-sm"></div>
+        </div>
+        <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
+          En el diálogo de impresión elige tu impresora y deja el tamaño de papel y los márgenes como vienen (sin escala ni encabezados).
+        </p>
+      </section>
+    </aside>
+  </div>
+
+  <CamaraEscaner />
+  <FormularioProducto />
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { esGerencia } from '../lib/auth';
+  import { buscarFormatoEtiqueta, FORMATO_ETIQUETA_POR_DEFECTO, htmlEtiqueta, imprimirEtiquetas, paginasNecesarias, totalEtiquetas } from '../utils/etiquetas';
+  import { animarLista, reanimar } from '../utils/animaciones';
+  import type { ProductoConRelaciones } from '../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const buscar = $<HTMLInputElement>('ig-buscar');
+  const resultados = $<HTMLUListElement>('ig-resultados');
+  const filas = $<HTMLTableSectionElement>('ig-filas');
+  const aviso = $('ig-aviso');
+  const error = $('ig-error');
+  const exito = $('ig-exito');
+  const resumen = $('ig-resumen');
+  const motivo = $<HTMLInputElement>('ig-motivo');
+  const botonRegistrar = $<HTMLButtonElement>('ig-registrar');
+  const selectFormato = $<HTMLSelectElement>('ig-formato');
+
+  interface Linea {
+    id: string;
+    /** Unidades que ingresan (0 = solo imprimir etiquetas) */
+    cantidad: number;
+    copias: number;
+    /** La cantidad de etiquetas se cambió a mano: ya no sigue a las unidades */
+    manual: boolean;
+  }
+
+  // El lote se recuerda por usuario (varias personas pueden compartir el mismo equipo)
+  let LS_LOTE = 'easystem:ingreso-lote';
+  const LS_FORMATO = 'easystem:formato-etiqueta';
+
+  let productos: ProductoConRelaciones[] = [];
+  let lote: Linea[] = [];
+  let hayLocal = false;
+  let primeraVez = true;
+
+  const normalizar = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+  const producto = (id: string) => productos.find((p) => p.id === id);
+  const entero = (valor: string) => {
+    const n = Math.floor(Number(valor));
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  };
+
+  function guardarLote() {
+    try {
+      localStorage.setItem(LS_LOTE, JSON.stringify(lote));
+    } catch {
+      /* sin almacenamiento: el lote solo vive en esta pestaña */
+    }
+  }
+
+  function leerLote(): Linea[] {
+    try {
+      const guardado = JSON.parse(localStorage.getItem(LS_LOTE) ?? '[]') as Linea[];
+      return Array.isArray(guardado) ? guardado.filter((l) => l && typeof l.id === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function avisar(texto: string) {
+    aviso.textContent = texto;
+    aviso.classList.remove('hidden');
+  }
+  function mostrarError(texto: string) {
+    exito.classList.add('hidden');
+    error.textContent = texto;
+    error.classList.remove('hidden');
+    reanimar(error, 'anim-sacudir');
+  }
+  function mostrarExito(texto: string) {
+    error.classList.add('hidden');
+    exito.textContent = texto;
+    exito.classList.remove('hidden');
+    reanimar(exito, 'anim-subir');
+  }
+
+  // --- Búsqueda -------------------------------------------------------------------
+  function pintarResultados() {
+    const q = normalizar(buscar.value.trim());
+    if (!q) {
+      resultados.classList.add('hidden');
+      resultados.innerHTML = '';
+      return;
+    }
+    const lista = productos
+      .filter(
+        (p) =>
+          normalizar(p.nombre).includes(q) ||
+          p.codigo_barras.includes(q) ||
+          normalizar(p.categoria).includes(q) ||
+          p.modelos_compatibles.some((m) => normalizar(`${m.marca} ${m.modelo}`).includes(q))
+      )
+      .slice(0, 8);
+
+    resultados.classList.remove('hidden');
+    resultados.innerHTML = lista.length
+      ? lista
+          .map(
+            (p) => `
+          <li>
+            <button type="button" data-agregar="${p.id}" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</span>
+                <span class="block font-mono text-xs text-slate-500">${escapar(p.codigo_barras)}</span>
+              </span>
+              <span class="shrink-0 text-xs text-slate-500">${p.stock_actual} u.</span>
+            </button>
+          </li>`
+          )
+          .join('')
+      : '<li class="px-3 py-3 text-sm text-slate-500">Sin coincidencias. Puedes crearlo con "+ Nuevo producto".</li>';
+  }
+
+  buscar.addEventListener('input', () => {
+    aviso.classList.add('hidden');
+    pintarResultados();
+    // Un lector de código de barras escribe el código completo y pulsa Enter
+    const exacto = productos.find((p) => p.codigo_barras === buscar.value.trim());
+    if (exacto) agregar(exacto.id);
+  });
+  buscar.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const q = buscar.value.trim();
+    if (!q) return;
+    const exacto = productos.find((p) => p.codigo_barras === q);
+    if (exacto) return agregar(exacto.id);
+    if (/^\d{6,}$/.test(q)) avisarCodigoNuevo(q);
+  });
+  resultados.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
+    if (id) agregar(id);
+  });
+  document.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement).closest('#ig-buscar, #ig-resultados')) resultados.classList.add('hidden');
+  });
+
+  function avisarCodigoNuevo(codigo: string) {
+    avisar(`No existe un producto con el código ${codigo}. Si es nuevo, créalo con "+ Nuevo producto".`);
+    ultimoCodigoDesconocido = codigo;
+  }
+  let ultimoCodigoDesconocido = '';
+
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    const codigo = e.detail.codigo.trim();
+    const encontrado = productos.find((p) => p.codigo_barras === codigo);
+    if (encontrado) agregar(encontrado.id);
+    else avisarCodigoNuevo(codigo);
+  }) as EventListener);
+
+  // --- Lote -------------------------------------------------------------------------
+  function agregar(id: string) {
+    if (!producto(id)) return;
+    buscar.value = '';
+    pintarResultados();
+    aviso.classList.add('hidden');
+    const existente = lote.find((l) => l.id === id);
+    if (existente) {
+      // Escanear otra vez el mismo producto = una unidad más
+      existente.cantidad += 1;
+      if (!existente.manual) existente.copias = existente.cantidad;
+    } else {
+      lote.push({ id, cantidad: 1, copias: 1, manual: false });
+    }
+    guardarLote();
+    pintarLote();
+    filas.querySelector<HTMLInputElement>(`[data-cantidad="${id}"]`)?.select();
+  }
+
+  function pintarLote() {
+    const visibles = lote.filter((l) => producto(l.id));
+    $('ig-vacio').classList.toggle('hidden', visibles.length > 0);
+    $('ig-tabla').classList.toggle('hidden', visibles.length === 0);
+    $('ig-vaciar').classList.toggle('hidden', visibles.length === 0);
+    $('ig-titulo-lote').textContent = visibles.length ? `Lote de ingreso (${visibles.length} producto${visibles.length === 1 ? '' : 's'})` : 'Lote de ingreso';
+
+    const campo =
+      'w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-base tabular-nums text-slate-900 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+
+    filas.innerHTML = visibles
+      .map((l) => {
+        const p = producto(l.id)!;
+        return `
+          <tr class="text-slate-700 dark:text-slate-300" data-fila="${l.id}">
+            <td class="px-4 py-3">
+              <p class="font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
+              <p class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+            </td>
+            <td data-label="Stock" class="px-4 py-3 text-right tabular-nums" data-stock="${l.id}">${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}</td>
+            <td data-label="Ingresan" class="px-4 py-3"><input type="number" inputmode="numeric" min="0" step="1" value="${l.cantidad}" data-cantidad="${l.id}" aria-label="Unidades que ingresan de ${escapar(p.nombre)}" class="${campo}" /></td>
+            <td data-label="Etiquetas" class="px-4 py-3"><input type="number" inputmode="numeric" min="0" step="1" value="${l.copias}" data-copias="${l.id}" aria-label="Etiquetas a imprimir de ${escapar(p.nombre)}" class="${campo}" /></td>
+            <td class="px-4 py-3 sm:text-right"><button type="button" data-quitar="${l.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar</button></td>
+          </tr>`;
+      })
+      .join('');
+
+    if (primeraVez && visibles.length) {
+      animarLista(filas);
+      primeraVez = false;
+    }
+    actualizarResumen();
+    pintarPrevia();
+  }
+
+  filas.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    const idCantidad = input.dataset.cantidad;
+    const idCopias = input.dataset.copias;
+    const id = idCantidad ?? idCopias;
+    const linea = lote.find((l) => l.id === id);
+    if (!linea) return;
+
+    if (idCantidad) {
+      linea.cantidad = entero(input.value);
+      if (!linea.manual) {
+        linea.copias = linea.cantidad;
+        const copias = filas.querySelector<HTMLInputElement>(`[data-copias="${linea.id}"]`);
+        if (copias) copias.value = String(linea.copias);
+      }
+      const p = producto(linea.id);
+      const celda = filas.querySelector<HTMLElement>(`[data-stock="${linea.id}"]`);
+      if (p && celda) celda.innerHTML = `${p.stock_actual}${linea.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + linea.cantidad}</span>` : ''}`;
+    } else {
+      linea.copias = entero(input.value);
+      linea.manual = true;
+    }
+    guardarLote();
+    actualizarResumen();
+  });
+
+  filas.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar]')?.dataset.quitar;
+    if (!id) return;
+    lote = lote.filter((l) => l.id !== id);
+    guardarLote();
+    pintarLote();
+  });
+
+  $('ig-vaciar').addEventListener('click', () => {
+    lote = [];
+    guardarLote();
+    error.classList.add('hidden');
+    exito.classList.add('hidden');
+    pintarLote();
+  });
+
+  function pedidas() {
+    return lote
+      .map((l) => ({ l, p: producto(l.id) }))
+      .filter((x): x is { l: Linea; p: ProductoConRelaciones } => !!x.p)
+      .map(({ l, p }) => ({ codigo: p.codigo_barras, nombre: p.nombre, copias: l.copias }));
+  }
+
+  function actualizarResumen() {
+    const unidades = lote.reduce((s, l) => s + l.cantidad, 0);
+    const lineasConIngreso = lote.filter((l) => l.cantidad > 0).length;
+    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const etiquetas = totalEtiquetas(pedidas());
+    const paginas = paginasNecesarias(pedidas(), formato);
+    resumen.textContent = lote.length
+      ? `Ingreso: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${lineasConIngreso} producto${lineasConIngreso === 1 ? '' : 's'}. Etiquetas: ${etiquetas}${formato.hoja ? ` (${paginas} hoja${paginas === 1 ? '' : 's'} A4)` : ''}.`
+      : '';
+  }
+
+  // --- Registrar ingreso --------------------------------------------------------------
+  botonRegistrar.addEventListener('click', async () => {
+    error.classList.add('hidden');
+    exito.classList.add('hidden');
+
+    const aRegistrar = lote.filter((l) => l.cantidad > 0 && producto(l.id));
+    if (aRegistrar.length === 0) return mostrarError('Pon al menos un producto con cantidad mayor a 0 para registrar el ingreso.');
+    if (!hayLocal) return mostrarError('Elige un local en el selector del encabezado: el ingreso se registra en un local concreto.');
+
+    botonRegistrar.disabled = true;
+    botonRegistrar.textContent = 'Registrando...';
+    const texto = motivo.value.trim() || 'Reabastecimiento';
+    let unidades = 0;
+    const fallos: string[] = [];
+
+    // Una entrada por producto, en orden. Si una falla, las demás siguen y esa se queda en el lote.
+    for (const linea of aRegistrar) {
+      const p = producto(linea.id)!;
+      try {
+        await inventoryService.registrarMovimiento({ producto_id: p.id, tipo: 'ENTRADA', cantidad: linea.cantidad, motivo: texto });
+        unidades += linea.cantidad;
+        linea.cantidad = 0; // ya está en el stock; las etiquetas se conservan para imprimirlas
+      } catch (err) {
+        fallos.push(`${p.nombre}: ${err instanceof Error ? err.message : 'no se pudo registrar'}`);
+      }
+    }
+
+    guardarLote();
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    pintarLote();
+    botonRegistrar.disabled = false;
+    botonRegistrar.textContent = 'Registrar ingreso';
+
+    const registrados = aRegistrar.length - fallos.length;
+    if (registrados > 0) {
+      mostrarExito(`Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}. Ya puedes imprimir las etiquetas.`);
+    }
+    if (fallos.length) {
+      mostrarError(`No se pudo registrar (siguen en el lote): ${fallos.join(' · ')}`);
+      if (registrados > 0) exito.classList.remove('hidden');
+    }
+    window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+  });
+
+  // --- Etiquetas -------------------------------------------------------------------------
+  $('ig-imprimir').addEventListener('click', () => {
+    error.classList.add('hidden');
+    const lista = pedidas();
+    if (totalEtiquetas(lista) === 0) return mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
+    imprimirEtiquetas(lista, buscarFormatoEtiqueta(selectFormato.value));
+  });
+
+  function pintarPrevia() {
+    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const primera = pedidas()[0] ?? { codigo: '2000000000015', nombre: 'Forro silicona iPhone 13' };
+    $('ig-previa').innerHTML = htmlEtiqueta(primera, formato);
+    $('ig-formato-nota').textContent = formato.hoja
+      ? `Hoja A4 con ${formato.hoja.columnas * formato.hoja.filas} etiquetas de ${formato.anchoMm} × ${formato.altoMm} mm, sin márgenes de página.`
+      : `Una etiqueta por página de ${formato.anchoMm} × ${formato.altoMm} mm: configura ese tamaño de papel en la impresora.`;
+  }
+
+  selectFormato.addEventListener('change', () => {
+    try {
+      localStorage.setItem(LS_FORMATO, selectFormato.value);
+    } catch {
+      /* sin almacenamiento */
+    }
+    pintarPrevia();
+    actualizarResumen();
+  });
+
+  // --- Producto nuevo / editado desde el formulario ---------------------------------------------
+  $('ig-nuevo').addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('easystem:abrir-producto', { detail: { sinStock: true, codigo: ultimoCodigoDesconocido || undefined } }));
+    ultimoCodigoDesconocido = '';
+    aviso.classList.add('hidden');
+  });
+
+  window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean }>) => {
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    if (e.detail.nuevo) agregar(e.detail.productoId);
+    else pintarLote();
+  }) as unknown as EventListener);
+
+  // --- Arranque ------------------------------------------------------------------------------------
+  Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
+    if (!esGerencia(contexto?.sesion.rol)) return;
+    LS_LOTE = `easystem:ingreso-lote:${contexto!.sesion.id}`;
+    productos = lista;
+    hayLocal = !!contexto?.local;
+    $('ig-local').textContent = hayLocal
+      ? `El ingreso se suma al stock de: ${contexto!.local!.nombre}.`
+      : 'Estás en la vista "Todos los locales": puedes preparar el lote e imprimir etiquetas, pero para registrar el ingreso elige un local en el selector del encabezado.';
+
+    try {
+      selectFormato.value = localStorage.getItem(LS_FORMATO) ?? FORMATO_ETIQUETA_POR_DEFECTO;
+    } catch {
+      selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
+    }
+    if (!selectFormato.value) selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
+
+    lote = leerLote().filter((l) => lista.some((p) => p.id === l.id));
+    const pedido = new URLSearchParams(window.location.search).get('producto');
+    if (pedido && lista.some((p) => p.id === pedido)) {
+      history.replaceState(null, '', window.location.pathname);
+      agregar(pedido);
+    } else {
+      pintarLote();
+    }
+  });
+</script>

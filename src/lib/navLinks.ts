@@ -38,6 +38,12 @@ export const enlacesNav: EnlaceNav[] = [
     roles: TODOS,
     soloTipoLocal: 'servicio_tecnico',
   },
+  {
+    href: '/ingreso',
+    etiqueta: 'Ingreso de mercancía',
+    icono: 'M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2',
+    roles: GERENCIA,
+  },
   { href: '/productos', etiqueta: 'Productos', icono: 'M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', roles: TODOS },
   {
     href: '/modelos',
