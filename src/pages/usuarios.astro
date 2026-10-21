@@ -121,6 +121,17 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     return div.innerHTML;
   }
 
+  // La lista se agrupa por jerarquía. Los administradores solo llegan aquí si quien mira es administrador
+  // (la base de datos y listarUsuarios() se los ocultan a los demás).
+  const ORDEN_JERARQUIA: Rol[] = ['administrador', 'gerente', 'encargado', 'tecnico', 'vendedor'];
+  const TITULO_GRUPO: Record<Rol, string> = {
+    administrador: 'Administradores',
+    gerente: 'Gerentes',
+    encargado: 'Encargados',
+    tecnico: 'Técnicos',
+    vendedor: 'Vendedores',
+  };
+
   const CLASE_SELECT =
     'rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 
@@ -129,8 +140,12 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
     contador.textContent = `${usuarios.length} usuario${usuarios.length === 1 ? '' : 's'}`;
     animarLista(filas);
 
-    filas.innerHTML = usuarios
-      .map((u) => {
+    const ordenados = [...usuarios].sort(
+      (a, b) => ORDEN_JERARQUIA.indexOf(a.rol) - ORDEN_JERARQUIA.indexOf(b.rol) || a.nombre.localeCompare(b.nombre)
+    );
+
+    filas.innerHTML = ordenados
+      .map((u, indice) => {
         const yo = u.id === miId;
         // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo encargados, vendedores y técnicos); nunca a uno mismo
         const gestionable = !yo && puedeGestionarUsuario(miRol, u.rol);
@@ -157,7 +172,13 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
           ? `<button type="button" data-usuario="${u.id}" data-nombre="${escaparHtml(u.nombre)}" class="us-eliminar rounded-lg border border-red-200 px-2.5 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10">Eliminar</button>`
           : '';
 
-        return `
+        const cantidadGrupo = ordenados.filter((x) => x.rol === u.rol).length;
+        const cabeceraGrupo =
+          indice === 0 || ordenados[indice - 1].rol !== u.rol
+            ? `<tr class="bg-slate-50 dark:bg-slate-800/50"><td colspan="6" class="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${TITULO_GRUPO[u.rol] ?? escaparHtml(u.rol)} <span class="font-normal normal-case">(${cantidadGrupo})</span></td></tr>`
+            : '';
+
+        return `${cabeceraGrupo}
           <tr class="text-slate-700 dark:text-slate-300">
             <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(u.nombre)}${yo ? ' <span class="text-xs text-slate-400">(tú)</span>' : ''}</td>
             <td data-label="Correo" class="break-all px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(u.email || '—')}</td>
