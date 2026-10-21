@@ -9,22 +9,27 @@
 // cuando está configurado.
 import { createClient } from '@supabase/supabase-js';
 import { supabase, supabaseConfigurado, supabaseUrl, supabaseAnonKey } from './supabase';
-import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID } from './constantes-locales';
+import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
+import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
 
 /**
- * administrador: acceso global (todos los locales). encargado: gerente de UN local. vendedor: cajero de un local.
- * tecnico: servicio técnico de un local. Todos menos el administrador solo ven y modifican datos de su local.
+ * super_admin: quien opera el servicio SaaS; administra suscripciones y sesiones, NO ve datos de negocio.
+ * administrador (el "Gerente"): dueño del negocio cliente, acceso global (todos los locales).
+ * encargado: gerente de UN local. vendedor: cajero de un local. tecnico: servicio técnico de un local.
+ * Todos menos el administrador y el super_admin solo ven y modifican datos de su local.
  */
-export type Rol = 'administrador' | 'encargado' | 'vendedor' | 'tecnico';
+export type Rol = 'super_admin' | 'administrador' | 'encargado' | 'vendedor' | 'tecnico';
 
 export const ETIQUETAS_ROL: Record<Rol, string> = {
-  administrador: 'Administrador',
+  super_admin: 'Super administrador',
+  administrador: 'Gerente',
   encargado: 'Encargado',
   vendedor: 'Vendedor (cajero)',
   tecnico: 'Técnico',
 };
 
-export const ROLES: Rol[] = ['administrador', 'encargado', 'vendedor', 'tecnico'];
+/** Roles que un administrador puede asignar a sus empleados (el super_admin solo se designa en la base de datos). */
+export const ROLES: Exclude<Rol, 'super_admin'>[] = ['administrador', 'encargado', 'vendedor', 'tecnico'];
 
 export interface SesionUsuario {
   id: string;
@@ -33,6 +38,44 @@ export interface SesionUsuario {
   rol: Rol;
   /** Local asignado. El administrador tiene acceso a todos (su local_id es irrelevante); null = sin local asignado */
   local_id: string | null;
+  /** inactive = el usuario no puede operar (migración 0021). Si falta se asume active */
+  status?: 'active' | 'inactive';
+}
+
+/** Por qué una cuenta no tiene acceso a los datos (ver estado_cuenta() en la migración 0021). */
+export type MotivoBloqueo = 'ok' | 'local_suspendido' | 'usuario_inactivo' | 'sesion_cerrada' | 'sin_perfil';
+
+export interface EstadoCuenta {
+  acceso: boolean;
+  motivo: MotivoBloqueo;
+  local_nombre?: string | null;
+  subscription_status?: EstadoSuscripcion | null;
+  subscription_expires_at?: string | null;
+}
+
+/** Fila del panel del super_admin: un local con su suscripción. */
+export interface SuscripcionLocal {
+  id: string;
+  nombre: string;
+  tipo: TipoLocal;
+  subscription_status: EstadoSuscripcion;
+  subscription_expires_at: string | null;
+  /** true = sus empleados pueden operar ahora (ACTIVE y sin vencer) */
+  vigente: boolean;
+}
+
+/** Fila de la tabla de usuarios del super_admin. */
+export interface UsuarioSistema {
+  id: string;
+  email: string;
+  nombre: string;
+  rol: Rol;
+  status: 'active' | 'inactive';
+  local_id: string | null;
+  local_nombre: string | null;
+  subscription_status: EstadoSuscripcion | null;
+  last_sign_in_at: string | null;
+  last_force_logout_at: string | null;
 }
 
 // --- Permisos por rol (la base de datos los vuelve a exigir con RLS; esto solo gobierna la interfaz) ---
@@ -42,9 +85,16 @@ export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol =
 
 const LS_SESION = 'easystem:sesion';
 const LS_USUARIOS = 'easystem:usuarios';
+// Simulador de suscripciones y cierres forzados (solo modo LocalStorage; con Supabase viven en la base de datos)
+const LS_SUSCRIPCIONES = 'easystem:suscripciones';
+const LS_CIERRES_FORZADOS = 'easystem:cierres-forzados';
 
 interface UsuarioLocal extends SesionUsuario {
   password: string;
+}
+
+function sesionDesdePerfil(id: string, perfil: any): SesionUsuario {
+  return { id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null, status: perfil.status ?? 'active' };
 }
 
 function generarId(): string {
@@ -57,6 +107,7 @@ function seedUsuariosLocales(): UsuarioLocal[] {
     { id: generarId(), email: 'vendedor@edwardaccesorios.com', password: 'vendedor123', nombre: 'Vendedor Mostrador', rol: 'vendedor', local_id: LOCAL_ACCESORIOS_ID },
     { id: generarId(), email: 'encargado@edwardaccesorios.com', password: 'encargado123', nombre: 'Encargado Vidrios', rol: 'encargado', local_id: LOCAL_VIDRIOS_ID },
     { id: generarId(), email: 'tecnico@edwardaccesorios.com', password: 'tecnico123', nombre: 'Técnico de Servicio', rol: 'tecnico', local_id: LOCAL_SERVICIO_TECNICO_ID },
+    { id: generarId(), email: 'super@easystem.app', password: 'super123', nombre: 'Super Administrador', rol: 'super_admin', local_id: null },
   ];
 }
 
@@ -142,14 +193,15 @@ export async function iniciarSesion(email: string, password: string): Promise<Se
       throw new Error('Tu cuenta no tiene un perfil asociado todavía. Contacta a un administrador.');
     }
 
-    return { id: data.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null };
+    return sesionDesdePerfil(data.user.id, perfil);
   }
 
   const usuario = leerUsuariosLocales().find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
   if (!usuario) throw new Error('Correo o contraseña incorrectos.');
 
   const { password: _sinUsar, ...sesion } = usuario;
-  localStorage.setItem(LS_SESION, JSON.stringify(sesion));
+  // emitida_en equivale al "iat" del token: un cierre forzado posterior la invalida
+  localStorage.setItem(LS_SESION, JSON.stringify({ ...sesion, emitida_en: new Date().toISOString() }));
   invalidarCacheSesion();
   return sesion;
 }
@@ -176,7 +228,7 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
     const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', data.session.user.id).maybeSingle();
     if (!perfil) return null;
 
-    return { id: data.session.user.id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null };
+    return sesionDesdePerfil(data.session.user.id, perfil);
   }
 
   try {
@@ -206,7 +258,7 @@ export async function registrarUsuario(input: {
   email: string;
   password: string;
   nombre: string;
-  rol?: Rol;
+  rol?: Exclude<Rol, 'super_admin'>;
   /** Local asignado (obligatorio salvo para un administrador) */
   local_id?: string | null;
 }): Promise<{ requiereConfirmacion: boolean }> {
@@ -274,16 +326,22 @@ export async function listarUsuarios(): Promise<SesionUsuario[]> {
   if (supabaseConfigurado) {
     const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: true });
     if (error) throw error;
-    return (data ?? []).map((p: any) => ({ id: p.id, email: p.email, nombre: p.nombre, rol: p.rol, local_id: p.local_id ?? null }));
+    return (data ?? []).filter((p: any) => p.rol !== 'super_admin').map((p: any) => sesionDesdePerfil(p.id, p));
   }
 
-  return leerUsuariosLocales().map(({ password: _sinUsar, ...resto }) => resto);
+  // El super_admin no aparece en la lista de empleados del administrador
+  return leerUsuariosLocales()
+    .filter((u) => u.rol !== 'super_admin')
+    .map(({ password: _sinUsar, ...resto }) => resto);
 }
 
-/** Cambia el rol y/o el local de un empleado (solo administrador; la base de datos lo exige con RLS). */
-export async function actualizarAccesoUsuario(id: string, cambios: { rol?: Rol; local_id?: string | null }): Promise<void> {
+/** Cambia el rol, el local y/o el estado (activo/inactivo) de un empleado (solo administrador; la base de datos lo exige con RLS). */
+export async function actualizarAccesoUsuario(
+  id: string,
+  cambios: { rol?: Exclude<Rol, 'super_admin'>; local_id?: string | null; status?: 'active' | 'inactive' }
+): Promise<void> {
   const rolFinal = cambios.rol;
-  const parche: { rol?: Rol; local_id?: string | null } = { ...cambios };
+  const parche: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' } = { ...cambios };
   if (rolFinal === 'administrador') parche.local_id = null; // el administrador es global
 
   if (supabaseConfigurado) {
@@ -299,10 +357,116 @@ export async function actualizarAccesoUsuario(id: string, cambios: { rol?: Rol; 
   guardarUsuariosLocales(usuarios);
 }
 
+// ----------------------------------------------------------------------------
+// Estado de cuenta (suscripción por local) y guard de rutas
+// ----------------------------------------------------------------------------
+// La protección REAL está en la base de datos (migración 0021): con el local suspendido/vencido, el usuario
+// inactivo o la sesión cerrada a la fuerza, las políticas RLS devuelven vacío y rechazan escrituras. Esto es
+// el "middleware" de la interfaz: el sitio es estático (sin servidor), así que el guard corre en el cliente
+// y lleva al usuario a /subscription-suspended (o al login) en vez de mostrarle pantallas vacías.
+
+function leerJsonLS<T>(clave: string, porDefecto: T): T {
+  try {
+    const raw = localStorage.getItem(clave);
+    return raw ? (JSON.parse(raw) as T) : porDefecto;
+  } catch {
+    return porDefecto;
+  }
+}
+
+type SuscripcionesLS = Record<string, { subscription_status: EstadoSuscripcion; subscription_expires_at: string | null }>;
+
+/** Suscripciones simuladas del modo LocalStorage (la lee inventoryService.listarLocales para mezclarlas con los locales). */
+export function leerSuscripcionesLocales(): SuscripcionesLS {
+  return leerJsonLS<SuscripcionesLS>(LS_SUSCRIPCIONES, {});
+}
+
+/** Estado de la cuenta del usuario con sesión: sin consultar caché (se llama al entrar a cada página y cada minuto). */
+export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion) return { acceso: false, motivo: 'sin_perfil' };
+
+  if (supabaseConfigurado) {
+    // Si la consulta falla (sin conexión, o la migración 0021 aún no se aplicó) NO se bloquea: el sistema
+    // sigue funcionando sin conexión, y la base de datos es quien realmente niega los datos.
+    try {
+      const { data, error } = await supabase.rpc('estado_cuenta');
+      if (error || !data) return { acceso: true, motivo: 'ok' };
+      return data as EstadoCuenta;
+    } catch {
+      return { acceso: true, motivo: 'ok' };
+    }
+  }
+
+  // Simulador LocalStorage: mismas reglas que estado_cuenta()
+  const usuario = leerUsuariosLocales().find((u) => u.id === sesion.id);
+  if (!usuario) return { acceso: false, motivo: 'sin_perfil' };
+
+  const locales: Local[] = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+  const local = locales.find((l) => l.id === usuario.local_id) ?? null;
+  const base = { local_nombre: local?.nombre ?? null, subscription_status: local?.subscription_status ?? null, subscription_expires_at: local?.subscription_expires_at ?? null };
+
+  if ((usuario.status ?? 'active') !== 'active') return { acceso: false, motivo: 'usuario_inactivo', ...base };
+
+  const cierre = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {})[usuario.id];
+  const emitida = leerJsonLS<{ emitida_en?: string }>(LS_SESION, {}).emitida_en;
+  if (cierre && (!emitida || new Date(emitida).getTime() < new Date(cierre).getTime())) {
+    return { acceso: false, motivo: 'sesion_cerrada', ...base };
+  }
+
+  if (usuario.rol === 'super_admin') return { acceso: true, motivo: 'ok', ...base };
+  if (usuario.rol === 'administrador') {
+    return locales.some(localVigente) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
+  }
+  return local && localVigente(local) ? { acceso: true, motivo: 'ok', ...base } : { acceso: false, motivo: 'local_suspendido', ...base };
+}
+
+/** Lleva al usuario a donde corresponde según por qué se quedó sin acceso. */
+async function redirigirPorBloqueo(motivo: MotivoBloqueo): Promise<void> {
+  if (motivo === 'local_suspendido') {
+    if (window.location.pathname !== '/subscription-suspended') window.location.href = '/subscription-suspended';
+    return;
+  }
+  try {
+    await cerrarSesion();
+  } catch {
+    // La sesión pudo haber sido cerrada ya en el servidor; da igual, se sigue al login.
+  }
+  window.location.href = `/login?motivo=${motivo}`;
+}
+
+let vigilanciaActiva = false;
+
+/** Revisa la cuenta cada minuto, al volver a la pestaña y al recuperar la conexión: un cierre forzado o una suspensión se notan sin recargar. */
+function iniciarVigilanciaCuenta() {
+  if (vigilanciaActiva) return;
+  vigilanciaActiva = true;
+
+  let revisando = false;
+  const revisar = async () => {
+    if (revisando) return;
+    revisando = true;
+    try {
+      const estado = await obtenerEstadoCuenta();
+      if (!estado.acceso) await redirigirPorBloqueo(estado.motivo);
+    } finally {
+      revisando = false;
+    }
+  };
+
+  setInterval(revisar, 60_000);
+  window.addEventListener('online', revisar);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') revisar();
+  });
+}
+
 /**
  * Guard de ruta para páginas protegidas: llamarlo al inicio del <script> de
- * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, o a
- * "/" si la página exige un rol (lista `roles`) que el usuario no tiene.
+ * cada página (vía DashboardLayout). Redirige a /login si no hay sesión, a
+ * /subscription-suspended si el local del usuario está suspendido, o a "/" si la
+ * página exige un rol (lista `roles`) que el usuario no tiene. El super_admin solo
+ * entra a las páginas que lo listan en `roles` (su panel de suscripciones).
  */
 export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
@@ -312,10 +476,146 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
     throw new Error('EASYSTEM_REDIRECT');
   }
 
-  if (opciones?.roles && opciones.roles.length > 0 && !opciones.roles.includes(sesion.rol)) {
+  const estado = await obtenerEstadoCuenta();
+  if (!estado.acceso) {
+    await redirigirPorBloqueo(estado.motivo);
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
+  const roles = opciones?.roles;
+  if (sesion.rol === 'super_admin' && !roles?.includes('super_admin')) {
+    window.location.href = '/admin/subscriptions';
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
+  if (roles && roles.length > 0 && !roles.includes(sesion.rol)) {
     window.location.href = '/';
     throw new Error('EASYSTEM_REDIRECT');
   }
 
+  iniciarVigilanciaCuenta();
   return sesion;
+}
+
+// ----------------------------------------------------------------------------
+// Panel del super_admin: suscripciones y sesiones
+// ----------------------------------------------------------------------------
+async function exigirSuperAdmin(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (sesion?.rol !== 'super_admin') throw new Error('Solo el super administrador puede hacer esto.');
+  return sesion;
+}
+
+/** Locales con el estado de su suscripción (todos). */
+export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
+  await exigirSuperAdmin();
+
+  let locales: Local[];
+  if (supabaseConfigurado) {
+    const { data, error } = await supabase.from('locales').select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    locales = (data ?? []) as Local[];
+  } else {
+    locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+  }
+
+  return locales.map((l) => ({
+    id: l.id,
+    nombre: l.nombre,
+    tipo: l.tipo,
+    subscription_status: l.subscription_status ?? 'ACTIVE',
+    subscription_expires_at: l.subscription_expires_at ?? null,
+    vigente: localVigente(l),
+  }));
+}
+
+/**
+ * Activa o suspende un local (o lo marca en mora). `vencimiento`: undefined = no tocar la fecha de vencimiento;
+ * null = quitarla; texto ISO = fijarla.
+ */
+export async function cambiarSuscripcionLocal(localId: string, estado: EstadoSuscripcion, vencimiento?: string | null): Promise<void> {
+  await exigirSuperAdmin();
+  const cambiarVencimiento = vencimiento !== undefined;
+
+  if (supabaseConfigurado) {
+    const { error } = await supabase.rpc('cambiar_suscripcion_local', {
+      p_local: localId,
+      p_estado: estado,
+      p_vence: cambiarVencimiento ? vencimiento : null,
+      p_cambiar_vencimiento: cambiarVencimiento,
+    });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const todas = leerSuscripcionesLocales();
+  const actual = todas[localId] ?? { subscription_status: 'ACTIVE' as EstadoSuscripcion, subscription_expires_at: null };
+  todas[localId] = {
+    subscription_status: estado,
+    subscription_expires_at: cambiarVencimiento ? vencimiento : actual.subscription_expires_at,
+  };
+  localStorage.setItem(LS_SUSCRIPCIONES, JSON.stringify(todas));
+}
+
+/** Todos los usuarios con su local y su última actividad. */
+export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
+  await exigirSuperAdmin();
+
+  if (supabaseConfigurado) {
+    const { data, error } = await supabase.rpc('usuarios_sistema');
+    if (error) throw new Error(error.message);
+    return (data ?? []) as UsuarioSistema[];
+  }
+
+  const locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+  const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
+  const sesionLS = leerJsonLS<{ id?: string; emitida_en?: string }>(LS_SESION, {});
+  return leerUsuariosLocales().map((u) => {
+    const local = locales.find((l) => l.id === u.local_id);
+    return {
+      id: u.id,
+      email: u.email,
+      nombre: u.nombre,
+      rol: u.rol,
+      status: u.status ?? 'active',
+      local_id: u.local_id,
+      local_nombre: local?.nombre ?? null,
+      subscription_status: local?.subscription_status ?? null,
+      last_sign_in_at: sesionLS.id === u.id ? (sesionLS.emitida_en ?? null) : null,
+      last_force_logout_at: cierres[u.id] ?? null,
+    };
+  });
+}
+
+/** Cierra a la fuerza todas las sesiones de un usuario: el próximo chequeo (como máximo 1 minuto) lo saca al login. */
+export async function cerrarSesionForzada(usuarioId: string): Promise<void> {
+  await exigirSuperAdmin();
+
+  if (supabaseConfigurado) {
+    const { error } = await supabase.rpc('cerrar_sesion_forzada', { p_usuario: usuarioId });
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
+  cierres[usuarioId] = new Date().toISOString();
+  localStorage.setItem(LS_CIERRES_FORZADOS, JSON.stringify(cierres));
+}
+
+/** Cierra a la fuerza las sesiones de todos los empleados de un local. Devuelve cuántos usuarios afectó. */
+export async function cerrarSesionesLocal(localId: string): Promise<number> {
+  await exigirSuperAdmin();
+
+  if (supabaseConfigurado) {
+    const { data, error } = await supabase.rpc('cerrar_sesiones_local', { p_local: localId });
+    if (error) throw new Error(error.message);
+    return Number(data ?? 0);
+  }
+
+  const afectados = leerUsuariosLocales().filter((u) => u.local_id === localId && u.rol !== 'super_admin');
+  const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
+  const ahora = new Date().toISOString();
+  for (const u of afectados) cierres[u.id] = ahora;
+  localStorage.setItem(LS_CIERRES_FORZADOS, JSON.stringify(cierres));
+  return afectados.length;
 }

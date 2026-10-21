@@ -72,6 +72,7 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
             <p class="font-medium text-slate-600 dark:text-slate-300">Modo demo (sin Supabase configurado):</p>
             <p class="mt-1">Administrador: admin@edwardaccesorios.com / admin123</p>
             <p>Vendedor: vendedor@edwardaccesorios.com / vendedor123</p>
+            <p>Super administrador (suscripciones): super@easystem.app / super123</p>
           </div>
         )}
         </div>
@@ -85,6 +86,18 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
       const form = document.getElementById('form-login') as HTMLFormElement;
       const enviar = document.getElementById('login-enviar') as HTMLButtonElement;
       const error = document.getElementById('auth-error') as HTMLParagraphElement;
+
+      // Por qué se llegó al login sin que el usuario cerrara sesión (ver protegerPagina en lib/auth.ts)
+      const AVISOS: Record<string, string> = {
+        sesion_cerrada: 'Tu sesión fue cerrada por el administrador del sistema. Inicia sesión de nuevo.',
+        usuario_inactivo: 'Tu cuenta está desactivada. Comunícate con el administrador de tu negocio.',
+        sin_perfil: 'Tu cuenta no tiene un perfil asociado. Comunícate con el administrador.',
+      };
+      const motivo = new URLSearchParams(window.location.search).get('motivo');
+      if (motivo && AVISOS[motivo]) {
+        error.textContent = AVISOS[motivo];
+        error.classList.remove('hidden');
+      }
 
       // Solo rutas internas: evita que /login?next=https://sitio-malo redirija fuera.
       function siguienteRuta(): string {

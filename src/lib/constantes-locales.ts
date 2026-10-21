@@ -9,6 +9,13 @@ export const LOCAL_SERVICIO_TECNICO_ID = '00000000-0000-4000-8000-000000000003';
 /** Valor del selector de local que significa "todos los locales" (solo administrador). */
 export const ALCANCE_TODOS = 'todos';
 
+/** ¿La suscripción del local está vigente? (ACTIVE y sin vencer). Es lo mismo que exige la función SQL local_vigente(). */
+export function localVigente(local: Pick<Local, 'activo' | 'subscription_status' | 'subscription_expires_at'>): boolean {
+  if (!local.activo) return false;
+  if ((local.subscription_status ?? 'ACTIVE') !== 'ACTIVE') return false;
+  return !local.subscription_expires_at || new Date(local.subscription_expires_at).getTime() > Date.now();
+}
+
 export function localesPorDefecto(): Local[] {
   const creado = '2026-01-01T00:00:00.000Z';
   return [

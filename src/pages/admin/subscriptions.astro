@@ -1,0 +1,261 @@
+---
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+---
+
+<DashboardLayout
+  titulo="Suscripciones"
+  subtitulo="Estado de cuenta de cada local y control de sesiones"
+  tituloPestana="Suscripciones · EASYSTEM"
+  roles={['super_admin']}
+>
+  <p class="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+    Un local <strong class="font-semibold text-slate-700 dark:text-slate-200">suspendido, en mora o vencido</strong> bloquea al instante a todos sus
+    empleados (la base de datos les devuelve vacío y ven el aviso de suscripción). Este panel no muestra datos de negocio: ventas, stock ni clientes.
+  </p>
+
+  <section aria-labelledby="su-titulo-locales" class="space-y-3">
+    <h2 id="su-titulo-locales" class="text-sm font-semibold text-slate-900 dark:text-white">Locales</h2>
+    <div id="su-locales" class="grid grid-cols-1 gap-4 lg:grid-cols-3"></div>
+  </section>
+
+  <section aria-labelledby="su-titulo-usuarios" class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+      <h2 id="su-titulo-usuarios" class="text-sm font-semibold text-slate-900 dark:text-white">Usuarios del sistema</h2>
+      <input
+        id="su-buscar"
+        type="search"
+        placeholder="Buscar por nombre, correo o local"
+        class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 sm:w-72 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+      />
+    </div>
+    <div class="overflow-x-auto">
+      <table class="tabla-tarjetas w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <th class="px-5 py-3 font-medium">Usuario</th>
+            <th class="px-5 py-3 font-medium">Rol</th>
+            <th class="px-5 py-3 font-medium">Local</th>
+            <th class="px-5 py-3 font-medium">Estado</th>
+            <th class="px-5 py-3 font-medium">Último acceso</th>
+            <th class="px-5 py-3 font-medium"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody id="su-usuarios" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+    <p id="su-vacio" class="hidden px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400">Ningún usuario coincide con la búsqueda.</p>
+  </section>
+
+  <p id="su-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+  <p id="su-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+</DashboardLayout>
+
+<script>
+  import {
+    cambiarSuscripcionLocal,
+    cerrarSesionForzada,
+    cerrarSesionesLocal,
+    ETIQUETAS_ROL,
+    listarSuscripciones,
+    listarUsuariosSistema,
+    obtenerSesionActual,
+    type SuscripcionLocal,
+    type UsuarioSistema,
+  } from '../../lib/auth';
+  import type { EstadoSuscripcion } from '../../types/database.types';
+  import { formatearFecha } from '../../utils/format';
+  import { animarLista, reanimar } from '../../utils/animaciones';
+
+  const contLocales = document.getElementById('su-locales') as HTMLDivElement;
+  const filasUsuarios = document.getElementById('su-usuarios') as HTMLTableSectionElement;
+  const buscar = document.getElementById('su-buscar') as HTMLInputElement;
+  const vacio = document.getElementById('su-vacio') as HTMLParagraphElement;
+  const error = document.getElementById('su-error') as HTMLParagraphElement;
+  const exito = document.getElementById('su-exito') as HTMLParagraphElement;
+
+  let miId = '';
+  let locales: SuscripcionLocal[] = [];
+  let usuarios: UsuarioSistema[] = [];
+  let primeraCarga = true;
+
+  const ETIQUETA_ESTADO: Record<EstadoSuscripcion, string> = { ACTIVE: 'Activa', SUSPENDED: 'Suspendida', PAST_DUE: 'En mora' };
+  const CLASE_ESTADO: Record<EstadoSuscripcion, string> = {
+    ACTIVE: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
+    SUSPENDED: 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400',
+    PAST_DUE: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
+  };
+
+  function escaparHtml(texto: string): string {
+    const div = document.createElement('div');
+    div.textContent = texto;
+    return div.innerHTML;
+  }
+
+  function avisar(el: HTMLElement, texto: string) {
+    error.classList.add('hidden');
+    exito.classList.add('hidden');
+    el.textContent = texto;
+    el.classList.remove('hidden');
+    reanimar(el, el === error ? 'anim-sacudir' : 'anim-subir');
+  }
+
+  const fechaCorta = (iso: string | null) => (iso ? formatearFecha(iso) : '—');
+
+  /** yyyy-mm-dd en hora local, para el <input type="date"> */
+  function aFechaInput(iso: string | null): string {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  /** El vencimiento es al final del día elegido (hora local) */
+  function deFechaInput(valor: string): string | null {
+    if (!valor) return null;
+    const [a, m, d] = valor.split('-').map(Number);
+    return new Date(a, m - 1, d, 23, 59, 59).toISOString();
+  }
+
+  function pintarLocales() {
+    contLocales.innerHTML = locales
+      .map((l) => {
+        const vencida = l.subscription_expires_at && new Date(l.subscription_expires_at).getTime() <= Date.now();
+        const efectivo = l.subscription_status === 'ACTIVE' && vencida ? 'Vencida' : ETIQUETA_ESTADO[l.subscription_status];
+        const clase = l.subscription_status === 'ACTIVE' && vencida ? CLASE_ESTADO.PAST_DUE : CLASE_ESTADO[l.subscription_status];
+        const empleados = usuarios.filter((u) => u.local_id === l.id && u.rol !== 'super_admin').length;
+        const boton = 'rounded-lg px-3 py-2 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40';
+        return `
+          <article class="space-y-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900" data-local="${l.id}">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <h3 class="truncate text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(l.nombre)}</h3>
+                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">${empleados} empleado${empleados === 1 ? '' : 's'}</p>
+              </div>
+              <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${clase}">${efectivo}</span>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+              <button type="button" data-accion="ACTIVE" class="${boton} bg-emerald-600 text-white hover:bg-emerald-700" ${l.subscription_status === 'ACTIVE' ? 'disabled' : ''}>Activar</button>
+              <button type="button" data-accion="SUSPENDED" class="${boton} bg-red-600 text-white hover:bg-red-700" ${l.subscription_status === 'SUSPENDED' ? 'disabled' : ''}>Suspender</button>
+              <button type="button" data-accion="PAST_DUE" class="${boton} border border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/10" ${l.subscription_status === 'PAST_DUE' ? 'disabled' : ''}>En mora</button>
+            </div>
+
+            <div>
+              <label class="block text-xs font-medium text-slate-600 dark:text-slate-400">Vence (vacío = sin vencimiento)</label>
+              <div class="mt-1 flex gap-2">
+                <input type="date" data-vence value="${aFechaInput(l.subscription_expires_at)}" class="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                <button type="button" data-accion="VENCE" class="${boton} border border-slate-200 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Guardar</button>
+              </div>
+            </div>
+
+            <button type="button" data-accion="CERRAR_LOCAL" class="${boton} w-full border border-slate-200 text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800" ${empleados === 0 ? 'disabled' : ''}>
+              Cerrar las sesiones de este local
+            </button>
+          </article>
+        `;
+      })
+      .join('');
+
+    if (primeraCarga) animarLista(contLocales);
+
+    for (const tarjeta of contLocales.querySelectorAll<HTMLElement>('[data-local]')) {
+      const local = locales.find((l) => l.id === tarjeta.dataset.local)!;
+      for (const boton of tarjeta.querySelectorAll<HTMLButtonElement>('[data-accion]')) {
+        boton.addEventListener('click', () => accionLocal(local, boton.dataset.accion!, tarjeta));
+      }
+    }
+  }
+
+  async function accionLocal(local: SuscripcionLocal, accion: string, tarjeta: HTMLElement) {
+    try {
+      if (accion === 'ACTIVE' || accion === 'SUSPENDED' || accion === 'PAST_DUE') {
+        if (accion !== 'ACTIVE') {
+          const texto = accion === 'SUSPENDED' ? 'Suspender' : 'Marcar en mora';
+          if (!confirm(`¿${texto} ${local.nombre}? Todos sus empleados perderán el acceso de inmediato.`)) return;
+        }
+        await cambiarSuscripcionLocal(local.id, accion);
+        avisar(exito, `${local.nombre}: suscripción ${ETIQUETA_ESTADO[accion].toLowerCase()}.`);
+      } else if (accion === 'VENCE') {
+        const valor = (tarjeta.querySelector('[data-vence]') as HTMLInputElement).value;
+        await cambiarSuscripcionLocal(local.id, local.subscription_status, deFechaInput(valor));
+        avisar(exito, valor ? `${local.nombre}: vence el ${valor}.` : `${local.nombre}: sin fecha de vencimiento.`);
+      } else if (accion === 'CERRAR_LOCAL') {
+        if (!confirm(`¿Cerrar las sesiones de todos los empleados de ${local.nombre}? Tendrán que iniciar sesión otra vez.`)) return;
+        const cantidad = await cerrarSesionesLocal(local.id);
+        avisar(exito, `Sesiones cerradas: ${cantidad} usuario${cantidad === 1 ? '' : 's'} de ${local.nombre}.`);
+      }
+      await cargar();
+    } catch (err) {
+      avisar(error, err instanceof Error ? err.message : 'No se pudo completar la acción.');
+    }
+  }
+
+  function pintarUsuarios() {
+    const q = buscar.value.trim().toLowerCase();
+    const visibles = usuarios.filter((u) => !q || `${u.nombre} ${u.email} ${u.local_nombre ?? ''} ${ETIQUETAS_ROL[u.rol] ?? u.rol}`.toLowerCase().includes(q));
+    vacio.classList.toggle('hidden', visibles.length > 0);
+
+    filasUsuarios.innerHTML = visibles
+      .map((u) => {
+        const yo = u.id === miId;
+        const inactivo = u.status === 'inactive';
+        const localSuspendido = u.subscription_status && u.subscription_status !== 'ACTIVE';
+        return `
+          <tr class="text-slate-700 dark:text-slate-300">
+            <td class="px-5 py-3">
+              <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(u.nombre)}${yo ? ' <span class="text-xs text-slate-400">(tú)</span>' : ''}</p>
+              <p class="break-all text-xs text-slate-500 dark:text-slate-400">${escaparHtml(u.email || '—')}</p>
+            </td>
+            <td data-label="Rol" class="px-5 py-3">${escaparHtml(ETIQUETAS_ROL[u.rol] ?? u.rol)}</td>
+            <td data-label="Local" class="px-5 py-3">
+              ${u.local_nombre ? escaparHtml(u.local_nombre) : '<span class="text-slate-400">Todos / ninguno</span>'}
+              ${localSuspendido ? `<span class="ml-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${CLASE_ESTADO[u.subscription_status!]}">${ETIQUETA_ESTADO[u.subscription_status!]}</span>` : ''}
+            </td>
+            <td data-label="Estado" class="px-5 py-3">
+              <span class="rounded-full px-2 py-0.5 text-xs font-semibold ${inactivo ? CLASE_ESTADO.SUSPENDED : CLASE_ESTADO.ACTIVE}">${inactivo ? 'Inactivo' : 'Activo'}</span>
+            </td>
+            <td data-label="Último acceso" class="px-5 py-3 text-xs text-slate-500 dark:text-slate-400">
+              ${fechaCorta(u.last_sign_in_at)}
+              ${u.last_force_logout_at ? `<span class="block text-[11px] text-amber-600 dark:text-amber-400">Sesión cerrada a la fuerza: ${fechaCorta(u.last_force_logout_at)}</span>` : ''}
+            </td>
+            <td class="px-5 py-3 sm:text-right">
+              <button type="button" data-cerrar="${u.id}" class="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10" ${yo ? 'disabled title="No puedes cerrar tu propia sesión desde aquí"' : ''}>
+                Cerrar sesión forzada
+              </button>
+            </td>
+          </tr>
+        `;
+      })
+      .join('');
+
+    for (const boton of filasUsuarios.querySelectorAll<HTMLButtonElement>('[data-cerrar]')) {
+      boton.addEventListener('click', async () => {
+        const usuario = usuarios.find((u) => u.id === boton.dataset.cerrar);
+        if (!usuario || !confirm(`¿Cerrar a la fuerza la sesión de ${usuario.nombre}? Saldrá al inicio de sesión en cuanto su pantalla lo verifique (máx. 1 minuto).`)) return;
+        boton.disabled = true;
+        try {
+          await cerrarSesionForzada(usuario.id);
+          avisar(exito, `Sesión de ${usuario.nombre} cerrada.`);
+          await cargar();
+        } catch (err) {
+          avisar(error, err instanceof Error ? err.message : 'No se pudo cerrar la sesión.');
+          boton.disabled = false;
+        }
+      });
+    }
+  }
+
+  async function cargar() {
+    [locales, usuarios] = await Promise.all([listarSuscripciones(), listarUsuariosSistema()]);
+    pintarLocales();
+    pintarUsuarios();
+    if (primeraCarga) animarLista(filasUsuarios);
+    primeraCarga = false;
+  }
+
+  buscar.addEventListener('input', pintarUsuarios);
+
+  obtenerSesionActual().then((sesion) => {
+    miId = sesion?.id ?? '';
+    cargar().catch((err) => avisar(error, err instanceof Error ? err.message : 'No se pudo cargar el panel (¿aplicaste las migraciones 0020 y 0021?).'));
+  });
+</script>

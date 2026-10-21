@@ -123,7 +123,7 @@ function esActivo(href: string) {
     (document.getElementById('nav-usuario-nombre') as HTMLParagraphElement).textContent = sesion.nombre;
     (document.getElementById('nav-usuario-rol') as HTMLParagraphElement).textContent = ETIQUETAS_ROL[sesion.rol];
     (document.getElementById('nav-usuario-local') as HTMLParagraphElement).textContent =
-      sesion.rol === 'administrador' ? 'Acceso a todos los locales' : (local?.nombre ?? 'Sin local asignado');
+      sesion.rol === 'super_admin' ? 'Administración del servicio' : sesion.rol === 'administrador' ? 'Acceso a todos los locales' : (local?.nombre ?? 'Sin local asignado');
     (document.getElementById('nav-usuario-iniciales') as HTMLSpanElement).textContent = sesion.nombre
       .split(' ')
       .map((palabra) => palabra[0])

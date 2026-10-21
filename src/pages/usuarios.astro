@@ -16,6 +16,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
               <th class="px-5 py-3 font-medium">Correo</th>
               <th class="px-5 py-3 font-medium">Rol</th>
               <th class="px-5 py-3 font-medium">Local</th>
+              <th class="px-5 py-3 font-medium">Estado</th>
             </tr>
           </thead>
           <tbody id="us-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -59,7 +60,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 </DashboardLayout>
 
 <script>
-  import { listarUsuarios, registrarUsuario, actualizarAccesoUsuario, obtenerSesionActual, ETIQUETAS_ROL, ROLES, type Rol } from '../lib/auth';
+  import { listarUsuarios, registrarUsuario, actualizarAccesoUsuario, obtenerSesionActual, ETIQUETAS_ROL, ROLES } from '../lib/auth';
   import { listarLocales } from '../lib/inventoryService';
   import type { Local } from '../types/database.types';
   import { animarLista, reanimar } from '../utils/animaciones';
@@ -70,11 +71,14 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   const error = document.getElementById('us-error') as HTMLParagraphElement;
   const exito = document.getElementById('us-exito') as HTMLParagraphElement;
 
+  // Roles que el gerente puede asignar (el super_admin nunca aparece aquí)
+  type Rol = (typeof ROLES)[number];
+
   let miId = '';
   let locales: Local[] = [];
 
   const AYUDA_ROL: Record<Rol, string> = {
-    administrador: 'Acceso a TODOS los locales, usuarios y catálogo.',
+    administrador: 'Gerente (dueño): acceso a TODOS los locales, usuarios y catálogo.',
     encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
     vendedor: 'Cajero de su local: ventas y consulta de productos.',
     tecnico: 'Servicio técnico de su local: órdenes de servicio y repuestos.',
@@ -116,7 +120,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
             <td data-label="Correo" class="break-all px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(u.email || '—')}</td>
             <td data-label="Rol" class="px-5 py-3">
               <select data-usuario="${u.id}" class="us-rol-select rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white" ${u.id === miId ? 'disabled title="No puedes cambiar tu propio rol"' : ''}>
-                ${opcionesRol(u.rol)}
+                ${opcionesRol(u.rol as Rol)}
               </select>
             </td>
             <td data-label="Local" class="px-5 py-3">
@@ -126,10 +130,30 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
                   : `<select data-usuario="${u.id}" class="us-local-select rounded-lg border ${u.local_id ? 'border-slate-200' : 'border-amber-400'} bg-white px-2 py-1.5 text-sm text-slate-900 sm:py-1 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white">${opcionesLocal(u.local_id)}</select>`
               }
             </td>
+            <td data-label="Estado" class="px-5 py-3">
+              ${
+                u.id === miId
+                  ? '<span class="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">Activo</span>'
+                  : `<button type="button" data-usuario="${u.id}" data-nuevo="${u.status === 'inactive' ? 'active' : 'inactive'}" class="us-estado rounded-lg border px-2.5 py-1 text-xs font-semibold ${u.status === 'inactive' ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400'}" title="${u.status === 'inactive' ? 'Inactivo: no puede operar. Clic para reactivarlo' : 'Activo. Clic para desactivarlo (no podrá operar)'}">${u.status === 'inactive' ? 'Inactivo' : 'Activo'}</button>`
+              }
+            </td>
           </tr>
         `
       )
       .join('');
+
+    for (const boton of document.querySelectorAll<HTMLButtonElement>('.us-estado')) {
+      boton.addEventListener('click', async () => {
+        const nuevo = boton.dataset.nuevo as 'active' | 'inactive';
+        if (nuevo === 'inactive' && !confirm('¿Desactivar este usuario? No podrá ver ni registrar nada hasta que lo reactives.')) return;
+        try {
+          await actualizarAccesoUsuario(boton.dataset.usuario!, { status: nuevo });
+        } catch (err) {
+          alert(err instanceof Error ? err.message : 'No se pudo cambiar el estado.');
+        }
+        cargarUsuarios();
+      });
+    }
 
     for (const select of document.querySelectorAll<HTMLSelectElement>('.us-rol-select')) {
       select.addEventListener('change', async () => {

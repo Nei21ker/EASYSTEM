@@ -1,0 +1,123 @@
+---
+import '../styles/global.css';
+---
+
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1871d3" />
+    <title>Suscripción suspendida · EASYSTEM</title>
+    <script is:inline>
+      try {
+        const tema = localStorage.getItem('easystem:tema');
+        if (tema === 'dark') document.documentElement.classList.add('dark');
+      } catch (_) {}
+    </script>
+  </head>
+  <body class="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
+    <main id="ss-raiz" class="anim-subir w-full max-w-md" style="visibility:hidden">
+      <div class="mb-6 flex flex-col items-center gap-3 text-center">
+        <img src="/logo.png" alt="Logo Edward Accesorios" width="480" height="234" class="h-16 w-auto" />
+        <p class="texto-marca text-lg font-bold tracking-wide">EASYSTEM</p>
+      </div>
+
+      <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div class="h-1 bg-amber-500"></div>
+        <div class="space-y-4 p-6 text-center">
+          <span class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-6 w-6" aria-hidden="true">
+              <path d="M12 9v4m0 4h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" stroke-linecap="round" stroke-linejoin="round"></path>
+            </svg>
+          </span>
+          <div>
+            <h1 id="ss-titulo" class="text-lg font-semibold text-slate-900 dark:text-white">Suscripción suspendida</h1>
+            <p id="ss-detalle" class="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400"></p>
+          </div>
+          <p class="text-sm text-slate-600 dark:text-slate-300">
+            El acceso a tu local está temporalmente suspendido. Por favor, comunícate con la administración para regularizar el estado de la
+            suscripción y volver a operar.
+          </p>
+          <div class="flex flex-col gap-2 pt-2 sm:flex-row sm:justify-center">
+            <button id="ss-reintentar" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60">
+              Ya regularicé, reintentar
+            </button>
+            <button id="ss-salir" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+              Cerrar sesión
+            </button>
+          </div>
+          <p id="ss-aviso" role="status" class="hidden text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+      </div>
+    </main>
+
+    <script>
+      import { cerrarSesion, obtenerEstadoCuenta, obtenerSesionActual, type EstadoCuenta } from '../lib/auth';
+      import { formatearFecha } from '../utils/format';
+
+      const raiz = document.getElementById('ss-raiz') as HTMLElement;
+      const titulo = document.getElementById('ss-titulo') as HTMLHeadingElement;
+      const detalle = document.getElementById('ss-detalle') as HTMLParagraphElement;
+      const aviso = document.getElementById('ss-aviso') as HTMLParagraphElement;
+      const reintentar = document.getElementById('ss-reintentar') as HTMLButtonElement;
+
+      function pintar(estado: EstadoCuenta) {
+        const vencida = estado.subscription_expires_at && new Date(estado.subscription_expires_at).getTime() <= Date.now();
+        if (estado.subscription_status === 'PAST_DUE') titulo.textContent = 'Pago pendiente';
+        else if (estado.subscription_status === 'ACTIVE' && vencida) titulo.textContent = 'Suscripción vencida';
+        else titulo.textContent = 'Suscripción suspendida';
+
+        const partes = [estado.local_nombre].filter(Boolean) as string[];
+        if (vencida && estado.subscription_expires_at) partes.push(`venció el ${formatearFecha(estado.subscription_expires_at)}`);
+        detalle.textContent = partes.join(' · ');
+      }
+
+      // Evalúa la cuenta: con acceso → al sistema; sin sesión o por otro motivo → login; suspendido → se queda aquí.
+      async function evaluar(): Promise<boolean> {
+        const sesion = await obtenerSesionActual();
+        if (!sesion) {
+          window.location.href = '/login';
+          return false;
+        }
+        const estado = await obtenerEstadoCuenta();
+        if (estado.acceso) {
+          window.location.href = '/';
+          return false;
+        }
+        if (estado.motivo !== 'local_suspendido') {
+          await cerrarSesion().catch(() => {});
+          window.location.href = `/login?motivo=${estado.motivo}`;
+          return false;
+        }
+        pintar(estado);
+        raiz.style.visibility = 'visible';
+        return true;
+      }
+
+      reintentar.addEventListener('click', async () => {
+        reintentar.disabled = true;
+        aviso.classList.add('hidden');
+        const sigueBloqueada = await evaluar();
+        if (sigueBloqueada) {
+          aviso.textContent = 'Tu suscripción sigue sin estar activa. Intenta de nuevo cuando la administración confirme el pago.';
+          aviso.classList.remove('hidden');
+          reintentar.disabled = false;
+        }
+      });
+
+      document.getElementById('ss-salir')!.addEventListener('click', async () => {
+        await cerrarSesion().catch(() => {});
+        window.location.href = '/login';
+      });
+
+      evaluar();
+      // Si la administración la reactiva mientras esta pantalla está abierta, entra solo
+      setInterval(evaluar, 60_000);
+    </script>
+  </body>
+</html>

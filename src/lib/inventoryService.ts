@@ -24,9 +24,9 @@ import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
 import type { ProductoConInventario } from './db/productos';
-import { obtenerSesionActual } from './auth';
+import { leerSuscripcionesLocales, obtenerSesionActual } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
-import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localesPorDefecto } from './constantes-locales';
+import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock } from './mock-data';
 import { convertirABs, fechaLocalISO } from '../utils/format';
@@ -428,7 +428,11 @@ const LS_CACHE_LOCALES = 'easystem:cache:locales';
 let contextoPromesa: Promise<ContextoLocal | null> | null = null;
 
 export async function listarLocales(): Promise<Local[]> {
-  if (!supabaseConfigurado) return leerDB().locales.slice();
+  // Modo LocalStorage: el estado de suscripción simulado (lo cambia el super_admin) se mezcla con los locales
+  if (!supabaseConfigurado) {
+    const suscripciones = leerSuscripcionesLocales();
+    return leerDB().locales.map((l) => ({ ...l, ...suscripciones[l.id] }));
+  }
 
   try {
     const locales = await localesDb.listarLocales();
@@ -453,7 +457,10 @@ async function cargarContexto(): Promise<ContextoLocal | null> {
     } catch {
       /* sin almacenamiento: vista "Todos" */
     }
-    alcance = guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado)) ? guardado : ALCANCE_TODOS;
+    // Un local suspendido no se puede elegir (solo devolvería vacío): se vuelve a la vista "Todos"
+    alcance = guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado && localVigente(l))) ? guardado : ALCANCE_TODOS;
+  } else if (sesion.rol === 'super_admin') {
+    alcance = null; // el super_admin no opera sobre locales: administra suscripciones
   } else {
     alcance = sesion.local_id && locales.some((l) => l.id === sesion.local_id) ? sesion.local_id : null;
   }

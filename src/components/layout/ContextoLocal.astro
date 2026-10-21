@@ -23,7 +23,7 @@
     if (!contexto) return;
     document.documentElement.dataset.alcance = contexto.alcance ?? 'ninguno';
     document.documentElement.dataset.tipoLocal = contexto.local?.tipo ?? '';
-    if (contexto.sesion.rol !== 'administrador' && !contexto.alcance) {
+    if (contexto.sesion.rol !== 'administrador' && contexto.sesion.rol !== 'super_admin' && !contexto.alcance) {
       document.getElementById('ctx-sin-local')?.classList.remove('hidden');
     }
   });

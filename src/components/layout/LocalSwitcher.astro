@@ -21,7 +21,7 @@
 <script>
   import { $contextoLocal } from '../../stores/local';
   import { cambiarLocalActivo, obtenerContextoLocal } from '../../lib/inventoryService';
-  import { ALCANCE_TODOS } from '../../lib/constantes-locales';
+  import { ALCANCE_TODOS, localVigente } from '../../lib/constantes-locales';
 
   const raiz = document.getElementById('ls-raiz') as HTMLElement;
   const select = document.getElementById('ls-select') as HTMLSelectElement;
@@ -35,12 +35,15 @@
   function pintar() {
     const contexto = $contextoLocal.get();
     if (!contexto) return;
+    if (contexto.sesion.rol === 'super_admin') return; // administra suscripciones, no elige local de trabajo
     const esAdmin = contexto.sesion.rol === 'administrador';
 
     if (esAdmin) {
       select.innerHTML =
         `<option value="${ALCANCE_TODOS}">Todos los locales</option>` +
-        contexto.locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
+        contexto.locales
+          .map((l) => (localVigente(l) ? `<option value="${l.id}">${escapar(l.nombre)}</option>` : `<option value="${l.id}" disabled>${escapar(l.nombre)} (suspendido)</option>`))
+          .join('');
       select.value = contexto.alcance ?? ALCANCE_TODOS;
       select.disabled = false;
       select.title = 'Filtra todo el sistema por local';

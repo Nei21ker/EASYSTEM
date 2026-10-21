@@ -7,6 +7,9 @@ export type TipoMovimiento = 'ENTRADA' | 'SALIDA';
 /** Tipo de local: define qué módulos aplican (el de servicio técnico trabaja con órdenes de servicio). */
 export type TipoLocal = 'accesorios' | 'vidrios' | 'servicio_tecnico';
 
+/** Estado de la suscripción SaaS de un local. Solo ACTIVE (y no vencida) deja operar a sus empleados. */
+export type EstadoSuscripcion = 'ACTIVE' | 'SUSPENDED' | 'PAST_DUE';
+
 /** Local (sucursal) del negocio: tiene inventario, ventas y empleados propios. */
 export interface Local {
   id: string;
@@ -16,6 +19,9 @@ export interface Local {
   telefono?: string | null;
   activo: boolean;
   created_at: string;
+  /** Suscripción (migración 0021). Si falta (datos o servidor anteriores) se asume ACTIVE */
+  subscription_status?: EstadoSuscripcion;
+  subscription_expires_at?: string | null;
 }
 
 /** Stock y mínimo de un producto en un local (tabla pivote). stock_minimo = 0 → sin control de reabastecimiento. */

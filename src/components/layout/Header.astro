@@ -52,11 +52,17 @@ const { titulo, subtitulo } = Astro.props;
 <script>
   import { tasaActual } from '../../stores/tasa';
   import { formatearBolivares } from '../../utils/format';
+  import { obtenerSesionActual } from '../../lib/auth';
 
   const texto = document.getElementById('tasa-chip-texto') as HTMLSpanElement;
   const pintar = (tasa: number | null) => (texto.textContent = tasa ? formatearBolivares(tasa) : 'Sin tasa');
 
   pintar(tasaActual.get());
   tasaActual.listen(pintar);
-  document.getElementById('tasa-chip')!.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-tasa')));
+  const chip = document.getElementById('tasa-chip')!;
+  chip.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-tasa')));
+  // El super_admin administra suscripciones, no opera con la tasa del dólar del negocio
+  obtenerSesionActual().then((sesion) => {
+    if (sesion?.rol === 'super_admin') chip.style.display = 'none';
+  });
 </script>
