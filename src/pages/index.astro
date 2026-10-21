@@ -11,7 +11,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   tituloPestana="EASYSTEM"
   subtitulo="Resumen general del inventario de Edward Accesorios"
 >
-  <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+  <section id="dash-resumen" class="grid grid-cols-1 gap-4 sm:grid-cols-3">
     <StatCard id="stat-total-productos" etiqueta="Total de productos" valor="—" icono="productos" />
     <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" tendencia=" " icono="valor" />
     <StatCard
@@ -40,6 +40,12 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   import { convertirABs, formatearBolivares, formatearMoneda } from '../utils/format';
   import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
+  import { obtenerSesionActual } from '../lib/auth';
+
+  // Vendedor y técnico no ven el resumen (total de productos, valor del inventario y alertas de stock bajo)
+  obtenerSesionActual().then((sesion) => {
+    if (sesion?.rol === 'vendedor' || sesion?.rol === 'tecnico') document.getElementById('dash-resumen')?.style.setProperty('display', 'none');
+  });
 
   // Valor del inventario en bolívares (a la tasa del día), debajo del monto en dólares
   let valorInventarioUsd = 0;

@@ -12,7 +12,7 @@ function esActivo(href: string) {
 
 <aside
   id="nav-sidebar"
-  class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 print:hidden dark:border-slate-800 dark:bg-slate-900"
+  class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col border-r border-slate-200 bg-white transition-transform duration-200 lg:sticky lg:top-0 lg:bottom-auto lg:z-auto lg:h-screen lg:shrink-0 lg:self-start lg:translate-x-0 print:hidden dark:border-slate-800 dark:bg-slate-900"
 >
   <a href="/" class="group flex items-center gap-3 px-5 py-5" aria-label="EASYSTEM — Inicio">
     <img
@@ -28,7 +28,7 @@ function esActivo(href: string) {
     </div>
   </a>
 
-  <nav class="flex-1 space-y-1 px-3">
+  <nav class="min-h-0 flex-1 space-y-1 overflow-y-auto px-3">
     {enlacesNav.map((enlace) => (
       <a
         href={enlace.href}
