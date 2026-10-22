@@ -245,6 +245,8 @@ export interface OrdenServicio extends NuevaOrdenServicio {
 // Nómina (migración 0027): personal que cobra sueldo en cada local y sus pagos quincenales
 // ----------------------------------------------------------------------------
 export type EstadoEmpleado = 'ACTIVO' | 'INACTIVO';
+/** FIJO cobra por quincena; INDEPENDIENTE cobra por día según lo que revendió (migración 0032). */
+export type TipoTrabajador = 'FIJO' | 'INDEPENDIENTE';
 export type EstadoPago = 'PENDIENTE' | 'PAGADO';
 
 /** Empleado de un local (no es lo mismo que una cuenta de acceso: ver `perfiles`). */
@@ -255,9 +257,10 @@ export interface Empleado {
   apellido: string;
   cedula: string;
   cargo: string;
-  /** Salario MENSUAL en dólares; cada quincena se paga la mitad */
+  /** Salario MENSUAL en dólares; cada quincena se paga la mitad (0 en un trabajador independiente) */
   salario_base: number;
-  frecuencia_pago: 'QUINCENAL';
+  tipo: TipoTrabajador;
+  frecuencia_pago: 'QUINCENAL' | 'DIARIO';
   estado: EstadoEmpleado;
   /** "aaaa-mm-dd" */
   fecha_ingreso: string;
@@ -265,7 +268,31 @@ export interface Empleado {
 }
 
 export type NuevoEmpleado = Pick<Empleado, 'local_id' | 'nombre' | 'apellido' | 'cedula' | 'cargo' | 'salario_base'> &
-  Partial<Pick<Empleado, 'estado' | 'fecha_ingreso'>>;
+  Partial<Pick<Empleado, 'estado' | 'fecha_ingreso' | 'tipo' | 'frecuencia_pago'>>;
+
+/**
+ * Producto que un trabajador INDEPENDIENTE revendió en el día. Su ganancia es cantidad × (precio_vendido − precio_lista);
+ * la lista NO descuenta stock (solo sirve para calcular el pago). Se guarda con los datos del producto de ese momento.
+ */
+export interface LineaReventa {
+  producto_id: string | null;
+  producto_nombre: string;
+  producto_codigo: string | null;
+  cantidad: number;
+  /** Precio de venta del catálogo al armar la lista */
+  precio_lista: number;
+  /** Precio al que el trabajador lo vendió (nunca menor al de lista) */
+  precio_vendido: number;
+}
+
+/** Producto del catálogo tal como se ofrece para armar la lista de reventa (sin costos ni existencias). */
+export interface ProductoReventa {
+  id: string;
+  codigo_barras: string;
+  nombre: string;
+  categoria: string;
+  precio_venta: number;
+}
 
 /** Pago quincenal de un empleado: pago_base + bonos - deducciones = total_pagado (en dólares). */
 export interface Nomina {

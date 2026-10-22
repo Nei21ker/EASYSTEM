@@ -54,8 +54,10 @@ import type {
   NuevaOrdenServicio,
   NuevaTasa,
   NuevaVenta,
+  LineaReventa,
   NuevoEmpleado,
   Nomina,
+  ProductoReventa,
   OrdenServicio,
   PagoVenta,
   ProductoStockBajo,
@@ -91,6 +93,8 @@ interface LocalDB {
   nominas?: Nomina[];
   /** Ya se pusieron las imágenes de prueba a los productos del Local Accesorios (una sola vez) */
   imagenesDemo?: boolean;
+  /** Lista de lo que revendió cada trabajador independiente en un día (una por pago diario) */
+  reventas?: (LineaReventa & { id: string; nomina_id: string; local_id: string })[];
 }
 
 function generarId(): string {
@@ -170,6 +174,18 @@ function migrarNomina(db: LocalDB): boolean {
   if (!db.nominas) {
     db.nominas = [];
     cambio = true;
+  }
+  if (!db.reventas) {
+    db.reventas = [];
+    cambio = true;
+  }
+  // Datos de antes de los trabajadores independientes: todos eran fijos (quincenales)
+  for (const e of db.empleados) {
+    if (!e.tipo) {
+      e.tipo = 'FIJO';
+      e.frecuencia_pago = 'QUINCENAL';
+      cambio = true;
+    }
   }
   return cambio;
 }
@@ -1820,12 +1836,19 @@ function validarEmpleado(d: Partial<NuevoEmpleado>, completo: boolean) {
 }
 
 function limpiarEmpleado<T extends Partial<NuevoEmpleado>>(d: T): T {
-  const copia: Partial<NuevoEmpleado> = { ...d };
+  const copia: Partial<NuevoEmpleado> & { frecuencia_pago?: Empleado['frecuencia_pago'] } = { ...d };
   if (copia.nombre !== undefined) copia.nombre = textoLimpio(copia.nombre);
   if (copia.apellido !== undefined) copia.apellido = textoLimpio(copia.apellido);
   if (copia.cedula !== undefined) copia.cedula = textoLimpio(copia.cedula).toUpperCase();
   if (copia.cargo !== undefined) copia.cargo = textoLimpio(copia.cargo);
   if (copia.salario_base !== undefined) copia.salario_base = Math.round(Number(copia.salario_base) * 100) / 100;
+  // Un trabajador independiente no tiene salario ni quincena: se le paga por día
+  if (copia.tipo === 'INDEPENDIENTE') {
+    copia.salario_base = 0;
+    copia.frecuencia_pago = 'DIARIO';
+  } else if (copia.tipo === 'FIJO') {
+    copia.frecuencia_pago = 'QUINCENAL';
+  }
   return copia as T;
 }
 
@@ -1843,6 +1866,7 @@ export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
   }
   const empleado: Empleado = {
     id: generarId(),
+    tipo: 'FIJO',
     frecuencia_pago: 'QUINCENAL',
     estado: 'ACTIVO',
     fecha_ingreso: fechaLocalISO(new Date()),
@@ -1854,8 +1878,10 @@ export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
   return empleado;
 }
 
-export async function actualizarEmpleado(id: string, cambios: Partial<NuevoEmpleado>): Promise<Empleado> {
+export async function actualizarEmpleado(id: string, cambiosCrudos: Partial<NuevoEmpleado>): Promise<Empleado> {
   await exigirAccesoNomina();
+  // El tipo (fijo / independiente) se elige al registrar al trabajador y no se cambia después
+  const { tipo: _tipo, ...cambios } = cambiosCrudos;
   validarEmpleado(cambios, false);
   const limpio = limpiarEmpleado(cambios);
 
@@ -1899,6 +1925,7 @@ export interface DatosPagoQuincenal {
 export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<Nomina> {
   await exigirAccesoNomina();
   const { empleado, periodo, existente } = datos;
+  if (empleado.tipo === 'INDEPENDIENTE') throw new Error('Un trabajador independiente se paga por día: usa su lista del día.');
   if (existente?.estado_pago === 'PAGADO') throw new Error('Ese pago ya está registrado como PAGADO y no se puede modificar.');
 
   const bonos = Math.round(Number(datos.bonos || 0) * 100) / 100;
@@ -1983,7 +2010,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
   await exigirAccesoNomina();
   const existentes = await listarNominas(periodo.inicio, periodo.fin);
   const conPago = new Set(existentes.map((n) => n.empleado_id));
-  const faltantes = empleados.filter((e) => e.estado === 'ACTIVO' && !conPago.has(e.id));
+  const faltantes = empleados.filter((e) => e.estado === 'ACTIVO' && e.tipo !== 'INDEPENDIENTE' && !conPago.has(e.id));
   if (faltantes.length === 0) return 0;
 
   const filas = faltantes.map((e) => {
@@ -2027,5 +2054,167 @@ export async function eliminarPagoPendiente(id: string): Promise<void> {
   if (!nomina) return;
   if (nomina.estado_pago === 'PAGADO') throw new Error('Un pago PAGADO no se puede borrar.');
   db.nominas = nominas.filter((n) => n.id !== id);
+  db.reventas = (db.reventas ?? []).filter((r) => r.nomina_id !== id);
   guardarDB(db);
+}
+
+// ----------------------------------------------------------------------------
+// Trabajadores independientes: pago diario según lo que revendieron (migración 0032)
+// ----------------------------------------------------------------------------
+// Cada día es un pago (período = ese día) con su lista de productos revendidos. El pago es la GANANCIA sobre el
+// precio de lista: Σ cantidad × (precio vendido − precio de lista), más bonos y menos deducciones. La lista no
+// toca el inventario. Las mismas reglas las exige la función SQL guardar_pago_independiente.
+
+/** Ganancia de una lista de reventa: Σ cantidad × (vendido − lista). */
+export function gananciaReventa(lineas: Pick<LineaReventa, 'cantidad' | 'precio_lista' | 'precio_vendido'>[]): number {
+  return Math.round(lineas.reduce((s, l) => s + l.cantidad * (l.precio_vendido - l.precio_lista), 0) * 100) / 100;
+}
+
+/** Errores de una lista de reventa (o null si está bien). */
+export function validarLineasReventa(lineas: LineaReventa[]): string | null {
+  for (const l of lineas) {
+    if (!textoLimpio(l.producto_nombre)) return 'Cada línea debe tener el nombre del producto.';
+    if (!Number.isInteger(l.cantidad) || l.cantidad <= 0) return `La cantidad de "${l.producto_nombre}" debe ser un entero mayor a 0.`;
+    if (!(l.precio_lista >= 0) || !Number.isFinite(l.precio_vendido)) return `Los precios de "${l.producto_nombre}" no son válidos.`;
+    if (l.precio_vendido < l.precio_lista) {
+      return `"${l.producto_nombre}" no puede venderse por debajo del precio de lista (${l.precio_vendido.toFixed(2)} < ${l.precio_lista.toFixed(2)}).`;
+    }
+  }
+  return null;
+}
+
+/** Productos del catálogo para armar la lista (nombre, código o categoría). Sin texto no devuelve nada. */
+export async function buscarProductosReventa(texto: string): Promise<ProductoReventa[]> {
+  await exigirAccesoNomina();
+  const q = texto.trim().toLowerCase();
+  if (!q) return [];
+  if (supabaseConfigurado) return nominaDb.buscarProductosReventa(texto.trim());
+
+  return leerDB()
+    .productos.filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q))
+    .sort((a, b) => Number(b.codigo_barras === texto.trim()) - Number(a.codigo_barras === texto.trim()) || a.nombre.localeCompare(b.nombre, 'es'))
+    .slice(0, 30)
+    .map((p) => ({ id: p.id, codigo_barras: p.codigo_barras, nombre: p.nombre, categoria: p.categoria, precio_venta: p.precio_venta }));
+}
+
+/** Listas de reventa de varios pagos diarios, por id de pago. */
+export async function listarReventas(nominaIds: string[]): Promise<Record<string, LineaReventa[]>> {
+  await exigirAccesoNomina();
+  if (supabaseConfigurado) return nominaDb.listarReventas(nominaIds);
+  const porNomina: Record<string, LineaReventa[]> = {};
+  for (const { id: _id, nomina_id, local_id: _local, ...linea } of leerDB().reventas ?? []) {
+    if (nominaIds.includes(nomina_id)) (porNomina[nomina_id] ??= []).push(linea);
+  }
+  return porNomina;
+}
+
+export interface DatosPagoIndependiente {
+  empleado: Empleado;
+  /** Día "aaaa-mm-dd" */
+  dia: string;
+  lineas: LineaReventa[];
+  bonos: number;
+  deducciones: number;
+  notas?: string | null;
+  /** true = registra el pago como PAGADO (la lista ya no se podrá cambiar); false = lo deja PENDIENTE */
+  pagar: boolean;
+  /** Pago pendiente de ese día, si ya existe */
+  existente?: Nomina | null;
+  comprobante?: Blob | null;
+  quitarComprobante?: boolean;
+}
+
+/** Guarda la lista y el pago de un día de un trabajador independiente (crea o actualiza; un PAGADO ya no se modifica). */
+export async function guardarPagoIndependiente(datos: DatosPagoIndependiente): Promise<Nomina> {
+  await exigirAccesoNomina();
+  const { empleado, dia, existente } = datos;
+  if (empleado.tipo !== 'INDEPENDIENTE') throw new Error('Este trabajador es fijo: su pago es quincenal.');
+  if (existente?.estado_pago === 'PAGADO') throw new Error('El pago de ese día ya está registrado como PAGADO y no se puede modificar.');
+
+  const lineas = datos.lineas.map((l) => ({
+    ...l,
+    producto_nombre: textoLimpio(l.producto_nombre),
+    precio_lista: Math.round(l.precio_lista * 100) / 100,
+    precio_vendido: Math.round(l.precio_vendido * 100) / 100,
+  }));
+  const errorLineas = validarLineasReventa(lineas);
+  if (errorLineas) throw new Error(errorLineas);
+  const bonos = Math.round(Number(datos.bonos || 0) * 100) / 100;
+  const deducciones = Math.round(Number(datos.deducciones || 0) * 100) / 100;
+  if (bonos < 0 || deducciones < 0) throw new Error('Los bonos y las deducciones no pueden ser negativos.');
+  const base = gananciaReventa(lineas);
+  if (deducciones > base + bonos) throw new Error('Las deducciones no pueden superar la ganancia más los bonos.');
+  if (datos.pagar && lineas.length === 0) throw new Error('Agrega al menos un producto a la lista antes de registrar el pago.');
+  const notas = textoLimpio(datos.notas) || null;
+
+  if (supabaseConfigurado) {
+    // La captura va primero al almacenamiento privado; si luego falla el guardado, se borra para no dejar huérfanos
+    let rutaNueva: string | null = null;
+    if (datos.comprobante) rutaNueva = await nominaDb.subirComprobante(empleado.local_id, empleado.id, dia, datos.comprobante);
+    try {
+      const id = await nominaDb.guardarPagoIndependiente({
+        empleadoId: empleado.id,
+        dia,
+        lineas,
+        bonos,
+        deducciones,
+        notas,
+        comprobante: rutaNueva,
+        quitarComprobante: !!datos.quitarComprobante,
+        pagar: datos.pagar,
+      });
+      const guardada = await nominaDb.obtenerNomina(id);
+      if (existente?.comprobante_path && existente.comprobante_path !== guardada.comprobante_path) {
+        nominaDb.eliminarComprobante(existente.comprobante_path).catch(() => {});
+      }
+      return guardada;
+    } catch (err) {
+      nominaDb.eliminarComprobante(rutaNueva).catch(() => {});
+      throw err;
+    }
+  }
+
+  const db = leerDB();
+  const nominas = db.nominas ?? (db.nominas = []);
+  const reventas = db.reventas ?? (db.reventas = []);
+  const actual = nominas.find((n) => n.empleado_id === empleado.id && n.periodo_inicio === dia && n.periodo_fin === dia);
+  if (actual?.estado_pago === 'PAGADO') throw new Error('El pago de ese día ya está registrado como PAGADO y no se puede modificar.');
+  const comprobante_path = datos.comprobante ? await blobADataUrl(datos.comprobante) : datos.quitarComprobante ? null : (actual?.comprobante_path ?? null);
+  const pagado_en = datos.pagar ? new Date().toISOString() : null;
+  const campos = {
+    empleado_id: empleado.id,
+    local_id: empleado.local_id,
+    periodo_inicio: dia,
+    periodo_fin: dia,
+    pago_base: base,
+    bonos,
+    deducciones,
+    total_pagado: Math.round((base + bonos - deducciones) * 100) / 100,
+    estado_pago: datos.pagar ? ('PAGADO' as const) : ('PENDIENTE' as const),
+    notas,
+    comprobante_path,
+    pagado_en,
+  };
+
+  const copiaNominas = JSON.stringify(nominas);
+  const copiaReventas = JSON.stringify(reventas);
+  let guardada: Nomina;
+  if (actual) {
+    Object.assign(actual, campos);
+    guardada = actual;
+  } else {
+    guardada = { id: generarId(), ...campos, created_at: new Date().toISOString() };
+    nominas.push(guardada);
+  }
+  db.reventas = reventas.filter((r) => r.nomina_id !== guardada.id);
+  for (const l of lineas) db.reventas.push({ id: generarId(), nomina_id: guardada.id, local_id: empleado.local_id, ...l });
+
+  try {
+    guardarDBEstricto(db);
+  } catch (err) {
+    db.nominas = JSON.parse(copiaNominas);
+    db.reventas = JSON.parse(copiaReventas);
+    throw err;
+  }
+  return guardada;
 }

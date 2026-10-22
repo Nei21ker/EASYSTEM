@@ -25,6 +25,7 @@ export const TABLAS_TIEMPO_REAL = [
   'tasas_cambio',
   'empleados',
   'nominas',
+  'nomina_reventas',
   'locales',
   'perfiles',
   'modelos_telefono',

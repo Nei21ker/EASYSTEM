@@ -524,10 +524,17 @@ export function empleadosMock(): Empleado[] {
     cedula,
     cargo,
     salario_base,
+    tipo: 'FIJO',
     frecuencia_pago: 'QUINCENAL',
     estado: 'ACTIVO',
     fecha_ingreso,
     created_at: `${fecha_ingreso}T00:00:00Z`,
+  });
+  // Trabajadores independientes: sin salario, se les paga por día según lo que revenden
+  const independiente = (id: string, local_id: string, nombre: string, apellido: string, cedula: string, fecha_ingreso: string): Empleado => ({
+    ...base(id, local_id, nombre, apellido, cedula, 'Revendedor independiente', 0, fecha_ingreso),
+    tipo: 'INDEPENDIENTE',
+    frecuencia_pago: 'DIARIO',
   });
   return [
     base('emp1', LOCAL_ACCESORIOS_ID, 'María', 'Fernández', 'V-18234567', 'Cajera', 300, '2025-03-10'),
@@ -536,5 +543,7 @@ export function empleadosMock(): Empleado[] {
     base('emp4', LOCAL_VIDRIOS_ID, 'Ana', 'Torres', 'V-24123456', 'Aplicadora de vidrios', 260, '2025-08-25'),
     base('emp5', LOCAL_SERVICIO_TECNICO_ID, 'Carlos', 'Medina', 'V-15678901', 'Técnico de reparaciones', 400, '2024-09-05'),
     base('emp6', LOCAL_SERVICIO_TECNICO_ID, 'Rosa', 'Díaz', 'V-22345678', 'Auxiliar técnico', 250, '2026-01-12'),
+    independiente('emp7', LOCAL_ACCESORIOS_ID, 'Pedro', 'Salas', 'V-26111222', '2026-02-03'),
+    independiente('emp8', LOCAL_VIDRIOS_ID, 'Lucía', 'Mora', 'V-27333444', '2026-03-17'),
   ];
 }

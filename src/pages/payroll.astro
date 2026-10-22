@@ -7,25 +7,36 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
 const botonSecundario =
   'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800';
 const claseDialogo =
-  'anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+  'anim-escalar m-auto w-[min(36rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
 ---
 
 <DashboardLayout
   titulo="Nómina"
-  subtitulo="Personal y pagos quincenales de todos los locales"
+  subtitulo="Empleados fijos (pago quincenal) y trabajadores independientes (pago diario) de todos los locales"
   tituloPestana="Nómina · EASYSTEM"
   roles={['administrador', 'gerente', 'contador']}
 >
   <!-- Título solo para la impresión -->
   <div class="hidden print:block">
-    <h1 class="text-xl font-bold text-black">Nómina quincenal · <span id="pn-impr-periodo"></span></h1>
+    <h1 class="text-xl font-bold text-black"><span id="pn-impr-titulo">Nómina quincenal</span> · <span id="pn-impr-periodo"></span></h1>
     <p class="text-sm text-black"><span id="pn-impr-local"></span> · Montos en dólares</p>
   </div>
 
+  <!-- Tipo de trabajador -->
+  <div class="flex flex-wrap gap-2 print:hidden" role="tablist" aria-label="Tipo de trabajador">
+    <button id="pn-tab-fijos" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Empleados fijos <span class="font-normal opacity-70">· pago quincenal</span>
+    </button>
+    <button id="pn-tab-indep" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Trabajadores independientes <span class="font-normal opacity-70">· pago diario</span>
+    </button>
+  </div>
+
   <!-- Barra de herramientas -->
-  <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm print:hidden dark:border-slate-800 dark:bg-slate-900">
+  <div class={`${claseTarjeta} print:hidden`}>
     <div class="flex flex-col gap-3 xl:flex-row xl:items-end">
-      <div>
+      <div id="pn-bloque-quincena">
         <span class={etiqueta}>Quincena</span>
         <div class="mt-1 flex items-center gap-2">
           <button id="pn-anterior" type="button" aria-label="Quincena anterior" class={botonSecundario}>←</button>
@@ -35,13 +46,23 @@ const claseDialogo =
         </div>
       </div>
 
+      <div id="pn-bloque-dia" class="hidden">
+        <label for="pn-dia" class={etiqueta}>Día</label>
+        <div class="mt-1 flex items-center gap-2">
+          <button id="pn-dia-anterior" type="button" aria-label="Día anterior" class={botonSecundario}>←</button>
+          <input id="pn-dia" type="date" class={`w-40 ${campo}`} />
+          <button id="pn-dia-siguiente" type="button" aria-label="Día siguiente" class={botonSecundario}>→</button>
+          <button id="pn-dia-hoy" type="button" class={botonSecundario}>Hoy</button>
+        </div>
+      </div>
+
       <div class="xl:w-60">
         <label for="pn-local" class={etiqueta}>Local</label>
         <select id="pn-local" class={`mt-1 ${campo}`}></select>
       </div>
 
       <div class="min-w-0 xl:flex-1">
-        <label for="pn-buscar" class={etiqueta}>Buscar empleado</label>
+        <label for="pn-buscar" class={etiqueta}>Buscar trabajador</label>
         <input id="pn-buscar" type="search" autocomplete="off" placeholder="Nombre, cédula o cargo" class={`mt-1 ${campo}`} />
       </div>
     </div>
@@ -49,12 +70,12 @@ const claseDialogo =
     <div class="mt-3 flex flex-col gap-3 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
       <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
         <input id="pn-inactivos" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-        Mostrar empleados inactivos
+        Mostrar trabajadores inactivos
       </label>
       <div class="flex flex-wrap gap-2">
         <button id="pn-generar" type="button" class={botonSecundario}>Generar quincena</button>
         <button id="pn-imprimir" type="button" class={botonSecundario}>Imprimir reporte</button>
-        <button id="pn-nuevo" type="button" class="bg-marca rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110">+ Nuevo empleado</button>
+        <button id="pn-nuevo" type="button" class="bg-marca rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110">+ Nuevo trabajador</button>
       </div>
     </div>
   </div>
@@ -63,27 +84,27 @@ const claseDialogo =
   <p id="pn-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 print:hidden dark:bg-emerald-500/10 dark:text-emerald-400"></p>
 
   <!-- Resumen -->
-  <section class="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Resumen de la quincena">
-    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <p class="text-xs text-slate-500 dark:text-slate-400">Empleados activos</p>
+  <section class="grid grid-cols-2 gap-4 lg:grid-cols-4" aria-label="Resumen">
+    <div class={claseTarjeta}>
+      <p id="pn-e-1" class="text-xs text-slate-500 dark:text-slate-400">Empleados activos</p>
       <p id="pn-r-empleados" class="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">—</p>
     </div>
-    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <p class="text-xs text-slate-500 dark:text-slate-400">Nómina de la quincena</p>
+    <div class={claseTarjeta}>
+      <p id="pn-e-2" class="text-xs text-slate-500 dark:text-slate-400">Nómina de la quincena</p>
       <p id="pn-r-total" class="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">—</p>
     </div>
-    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class={claseTarjeta}>
       <p class="text-xs text-slate-500 dark:text-slate-400">Pagado</p>
       <p id="pn-r-pagado" class="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">—</p>
     </div>
-    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class={claseTarjeta}>
       <p class="text-xs text-slate-500 dark:text-slate-400">Pendiente por pagar</p>
       <p id="pn-r-pendiente" class="mt-1 text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">—</p>
     </div>
   </section>
 
-  <!-- Tabla -->
-  <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <!-- Tabla: empleados fijos (quincenal) -->
+  <section id="pn-sec-fijos" class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
     <div class="overflow-x-auto">
       <table class="tabla-tarjetas w-full text-left text-sm">
         <thead>
@@ -103,11 +124,47 @@ const claseDialogo =
     <p id="pn-vacio" class="hidden px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400"></p>
   </section>
 
-  <!-- Empleado -->
+  <!-- Tabla: trabajadores independientes (pago diario por reventa) -->
+  <section id="pn-sec-indep" class="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <p class="border-b border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 print:hidden">
+      A cada trabajador independiente se le paga por día: durante el día se arma la lista de lo que revendió y, al finalizar, se le paga su
+      <strong class="font-semibold text-slate-700 dark:text-slate-200">ganancia</strong> (lo que vendió por encima del precio de lista).
+    </p>
+    <div class="overflow-x-auto">
+      <table class="tabla-tarjetas w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
+            <th class="px-4 py-3 font-semibold">Trabajador</th>
+            <th class="px-4 py-3 text-right font-semibold">Revendido</th>
+            <th class="px-4 py-3 text-right font-semibold">Ganancia</th>
+            <th class="px-4 py-3 text-right font-semibold">Bonos</th>
+            <th class="px-4 py-3 text-right font-semibold">Deducciones</th>
+            <th class="px-4 py-3 text-right font-semibold">Total</th>
+            <th class="px-4 py-3 font-semibold">Estado</th>
+            <th class="px-4 py-3 print:hidden"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody id="pn-filas-indep" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+    <p id="pn-vacio-indep" class="hidden px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400"></p>
+  </section>
+
+  <!-- Trabajador (nuevo / editar) -->
   <dialog id="em-dialogo" aria-labelledby="em-titulo" class={claseDialogo}>
     <form id="em-form" novalidate class="flex max-h-[90vh] flex-col">
       <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
-        <h2 id="em-titulo" class="text-base font-semibold">Nuevo empleado</h2>
+        <h2 id="em-titulo" class="text-base font-semibold">Nuevo trabajador</h2>
+
+        <div>
+          <label for="em-tipo" class={etiqueta}>Tipo de trabajador *</label>
+          <select id="em-tipo" class={`mt-1 ${campo}`}>
+            <option value="FIJO">Empleado fijo (pago quincenal)</option>
+            <option value="INDEPENDIENTE">Trabajador independiente (pago diario por reventa)</option>
+          </select>
+          <p id="em-tipo-ayuda" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label for="em-nombre" class={etiqueta}>Nombre *</label>
@@ -129,7 +186,7 @@ const claseDialogo =
             <label for="em-local" class={etiqueta}>Local *</label>
             <select id="em-local" class={`mt-1 ${campo}`}></select>
           </div>
-          <div>
+          <div id="em-bloque-salario">
             <label for="em-salario" class={etiqueta}>Salario mensual ($) *</label>
             <input id="em-salario" type="number" inputmode="decimal" min="0" step="0.01" class={`mt-1 ${campo}`} />
           </div>
@@ -146,7 +203,6 @@ const claseDialogo =
           </div>
         </div>
         <p id="em-quincena" class="text-xs font-medium text-brand-700 dark:text-brand-300"></p>
-        <p class="text-xs text-slate-500 dark:text-slate-400">Se paga cada quincena: la mitad del salario mensual, más bonos y menos deducciones.</p>
         <p id="em-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
       </div>
       <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
@@ -156,7 +212,7 @@ const claseDialogo =
     </form>
   </dialog>
 
-  <!-- Pago de la quincena -->
+  <!-- Pago (quincena de un fijo, o día de un independiente con su lista de reventa) -->
   <dialog id="pg-dialogo" aria-labelledby="pg-titulo" class={claseDialogo}>
     <form id="pg-form" novalidate class="flex max-h-[90vh] flex-col">
       <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
@@ -166,9 +222,40 @@ const claseDialogo =
           <p id="pg-detalle" class="text-xs text-slate-500 dark:text-slate-400"></p>
         </div>
 
+        <!-- Lista de lo que revendió el trabajador independiente -->
+        <div id="pg-reventa" class="hidden space-y-3">
+          <div id="pg-prod-bloque" class="relative">
+            <label for="pg-prod-buscar" class={etiqueta}>Agregar producto revendido</label>
+            <input id="pg-prod-buscar" type="search" autocomplete="off" placeholder="Busca por nombre, código o categoría..." class={`mt-1 ${campo}`} />
+            <ul id="pg-prod-resultados" class="absolute z-10 mt-1 hidden max-h-56 w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900"></ul>
+          </div>
+
+          <p id="pg-lineas-vacio" class="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            Todavía no hay productos en la lista del día.
+          </p>
+          <div id="pg-lineas-tabla" class="hidden overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
+            <table class="w-full text-left text-xs">
+              <thead>
+                <tr class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
+                  <th class="px-2 py-2 font-semibold">Producto</th>
+                  <th class="w-16 px-2 py-2 text-right font-semibold">Cant.</th>
+                  <th class="w-20 px-2 py-2 text-right font-semibold">Lista</th>
+                  <th class="w-24 px-2 py-2 text-right font-semibold">Vendido</th>
+                  <th class="w-20 px-2 py-2 text-right font-semibold">Ganancia</th>
+                  <th class="w-8 px-1 py-2"><span class="sr-only">Quitar</span></th>
+                </tr>
+              </thead>
+              <tbody id="pg-lineas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+            </table>
+          </div>
+          <p id="pg-lineas-ayuda" class="text-xs text-slate-500 dark:text-slate-400">
+            El precio de lista sale del catálogo. Cada línea se puede vender a ese precio o más; la ganancia es la diferencia por la cantidad. La lista no descuenta inventario.
+          </p>
+        </div>
+
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div>
-            <label for="pg-base" class={etiqueta}>Pago base ($)</label>
+            <label id="pg-base-etiqueta" for="pg-base" class={etiqueta}>Pago base ($)</label>
             <input id="pg-base" type="text" readonly class={`mt-1 ${campo} tabular-nums`} />
           </div>
           <div>
@@ -207,7 +294,7 @@ const claseDialogo =
         <div class="rounded-lg bg-slate-50 px-3 py-3 dark:bg-slate-800/60">
           <p class="text-xs text-slate-500 dark:text-slate-400">Total a pagar</p>
           <p id="pg-total" class="text-2xl font-bold tabular-nums text-slate-900 dark:text-white"></p>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Pago base + bonos − deducciones</p>
+          <p id="pg-total-formula" class="text-xs text-slate-500 dark:text-slate-400">Pago base + bonos − deducciones</p>
         </div>
 
         <p id="pg-pagado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
@@ -231,21 +318,29 @@ const claseDialogo =
   import { formatearFecha, formatearMoneda } from '../utils/format';
   import { hoyISO, pagoBaseQuincenal, quincenaAnterior, quincenaDe, quincenaSiguiente, totalPago, validarAjustes, type Quincena } from '../utils/nomina';
   import { animarLista } from '../utils/animaciones';
-  import type { Empleado, Local, Nomina } from '../types/database.types';
+  import type { Empleado, LineaReventa, Local, Nomina, ProductoReventa } from '../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const filas = $<HTMLTableSectionElement>('pn-filas');
+  const filasIndep = $<HTMLTableSectionElement>('pn-filas-indep');
   const selectLocal = $<HTMLSelectElement>('pn-local');
   const buscar = $<HTMLInputElement>('pn-buscar');
   const verInactivos = $<HTMLInputElement>('pn-inactivos');
+  const inputDia = $<HTMLInputElement>('pn-dia');
   const error = $('pn-error');
   const exito = $('pn-exito');
 
+  type Vista = 'fijos' | 'independientes';
+  let vista: Vista = 'fijos';
   let periodo: Quincena = quincenaDe();
+  let dia = hoyISO();
   let locales: Local[] = [];
   let empleados: Empleado[] = [];
-  let nominas: Nomina[] = [];
+  let nominas: Nomina[] = []; // pagos quincenales de la quincena elegida
+  let nominasDia: Nomina[] = []; // pagos diarios del día elegido
+  let reventasDia: Record<string, LineaReventa[]> = {}; // lista de reventa de cada pago diario, por id de pago
   let primeraVez = true;
+  let primeraVezIndep = true;
 
   const escapar = (t: string) => {
     const d = document.createElement('div');
@@ -258,6 +353,16 @@ const claseDialogo =
     const n = Number(valor);
     return Number.isFinite(n) ? n : 0;
   };
+  const redondear = (n: number) => Math.round(n * 100) / 100;
+  const esIndep = (e: Empleado) => e.tipo === 'INDEPENDIENTE';
+  const etiquetaDia = (iso: string) => {
+    const [a, m, d] = iso.split('-').map(Number);
+    return new Date(a, m - 1, d).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  };
+  const sumarDias = (iso: string, n: number) => {
+    const [a, m, d] = iso.split('-').map(Number);
+    return hoyISO(new Date(a, m - 1, d + n));
+  };
 
   function avisar(el: HTMLElement, texto: string) {
     error.classList.add('hidden');
@@ -267,12 +372,15 @@ const claseDialogo =
   }
   function mensajeDeError(err: unknown, porDefecto: string): string {
     const m = err instanceof Error ? err.message : porDefecto;
-    // Las tablas de nómina vienen de las migraciones 0026 y 0027
+    // Las tablas de nómina vienen de las migraciones 0026 y 0027; los trabajadores independientes, de la 0032
+    if (/guardar_pago_independiente|catalogo_reventa|nomina_reventas|tipo.*does not exist|column .*tipo/i.test(m)) {
+      return 'Los trabajadores independientes aún no están disponibles en la base de datos: aplica la migración 0032 en Supabase.';
+    }
     return /does not exist|schema cache|relation/i.test(m) ? 'La nómina aún no está disponible en la base de datos: aplica las migraciones 0026 y 0027 en Supabase.' : m;
   }
 
   // ---------------------------------------------------------------------------------------------
-  // Cálculo de las filas de la quincena
+  // Filas
   // ---------------------------------------------------------------------------------------------
   interface Fila {
     empleado: Empleado;
@@ -282,16 +390,28 @@ const claseDialogo =
     deducciones: number;
     total: number;
     estado: 'SIN_GENERAR' | 'PENDIENTE' | 'PAGADO';
+    /** Lista de reventa del día (solo trabajadores independientes) */
+    lineas: LineaReventa[];
   }
 
+  const filtrarEmpleados = (lista: Empleado[], conPago: Set<string>) => {
+    const q = normalizar(buscar.value.trim());
+    return lista
+      .filter((e) => (selectLocal.value === 'todos' ? true : e.local_id === selectLocal.value))
+      // Un trabajador inactivo solo aparece si se pide o si cobró en este período
+      .filter((e) => e.estado === 'ACTIVO' || verInactivos.checked || conPago.has(e.id))
+      .filter((e) => !q || normalizar(`${e.nombre} ${e.apellido} ${e.cedula} ${e.cargo}`).includes(q));
+  };
+  const ordenarFilas = (a: Fila, b: Fila) =>
+    nombreLocal(a.empleado.local_id).localeCompare(nombreLocal(b.empleado.local_id), 'es') || a.empleado.apellido.localeCompare(b.empleado.apellido, 'es');
+
+  /** Empleados FIJOS con su pago de la quincena elegida. */
   function construirFilas(): Fila[] {
     const porEmpleado = new Map(nominas.map((n) => [n.empleado_id, n]));
-    const q = normalizar(buscar.value.trim());
-    return empleados
-      .filter((e) => (selectLocal.value === 'todos' ? true : e.local_id === selectLocal.value))
-      // Un empleado inactivo solo aparece si se pide o si cobró en esta quincena
-      .filter((e) => e.estado === 'ACTIVO' || verInactivos.checked || porEmpleado.has(e.id))
-      .filter((e) => !q || normalizar(`${e.nombre} ${e.apellido} ${e.cedula} ${e.cargo}`).includes(q))
+    return filtrarEmpleados(
+      empleados.filter((e) => !esIndep(e)),
+      new Set(porEmpleado.keys())
+    )
       .map((empleado) => {
         const nomina = porEmpleado.get(empleado.id) ?? null;
         const base = nomina ? nomina.pago_base : pagoBaseQuincenal(empleado.salario_base);
@@ -305,9 +425,33 @@ const claseDialogo =
           deducciones,
           total: nomina ? nomina.total_pagado : totalPago(base, bonos, deducciones),
           estado: nomina ? nomina.estado_pago : ('SIN_GENERAR' as const),
+          lineas: [],
         };
       })
-      .sort((a, b) => nombreLocal(a.empleado.local_id).localeCompare(nombreLocal(b.empleado.local_id), 'es') || a.empleado.apellido.localeCompare(b.empleado.apellido, 'es'));
+      .sort(ordenarFilas);
+  }
+
+  /** Trabajadores INDEPENDIENTES con su pago (y lista de reventa) del día elegido. */
+  function construirFilasIndep(): Fila[] {
+    const porEmpleado = new Map(nominasDia.map((n) => [n.empleado_id, n]));
+    return filtrarEmpleados(
+      empleados.filter(esIndep),
+      new Set(porEmpleado.keys())
+    )
+      .map((empleado) => {
+        const nomina = porEmpleado.get(empleado.id) ?? null;
+        return {
+          empleado,
+          nomina,
+          base: nomina?.pago_base ?? 0,
+          bonos: nomina?.bonos ?? 0,
+          deducciones: nomina?.deducciones ?? 0,
+          total: nomina?.total_pagado ?? 0,
+          estado: nomina ? nomina.estado_pago : ('SIN_GENERAR' as const),
+          lineas: nomina ? (reventasDia[nomina.id] ?? []) : [],
+        };
+      })
+      .sort(ordenarFilas);
   }
 
   const BADGE: Record<Fila['estado'], string> = {
@@ -315,59 +459,36 @@ const claseDialogo =
     PENDIENTE: 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400',
     PAGADO: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400',
   };
-  const TEXTO_ESTADO: Record<Fila['estado'], string> = { SIN_GENERAR: 'Sin generar', PENDIENTE: 'Pendiente', PAGADO: 'Pagado' };
+  const ICONO_CLIP =
+    '<span class="ml-1 inline-flex align-middle text-slate-400" title="Tiene captura del pago"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5" aria-label="Tiene captura del pago"><path d="m21.4 11.6-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>';
 
-  function pintar() {
-    $('pn-periodo').textContent = periodo.etiqueta;
-    $('pn-impr-periodo').textContent = periodo.etiqueta;
-    $('pn-impr-local').textContent = selectLocal.value === 'todos' ? 'Todos los locales (consolidado)' : nombreLocal(selectLocal.value);
+  const textoEstado = (f: Fila) => (f.estado === 'SIN_GENERAR' ? (esIndep(f.empleado) ? 'Sin lista' : 'Sin generar') : f.estado === 'PENDIENTE' ? 'Pendiente' : 'Pagado');
 
-    const lista = construirFilas();
-    const activos = lista.filter((f) => f.empleado.estado === 'ACTIVO').length;
-    const total = lista.reduce((s, f) => s + f.total, 0);
-    const pagado = lista.filter((f) => f.estado === 'PAGADO').reduce((s, f) => s + f.total, 0);
-    $('pn-r-empleados').textContent = String(activos);
-    $('pn-r-total').textContent = formatearMoneda(total);
-    $('pn-r-pagado').textContent = formatearMoneda(pagado);
-    $('pn-r-pendiente').textContent = formatearMoneda(total - pagado);
+  function celdaEstado(f: Fila): string {
+    return `
+      <span class="inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${BADGE[f.estado]}">${textoEstado(f)}</span>
+      ${f.nomina?.comprobante_path ? ICONO_CLIP : ''}
+      ${f.nomina?.pagado_en ? `<span class="block text-[11px] text-slate-400">${escapar(formatearFecha(f.nomina.pagado_en))}</span>` : ''}`;
+  }
 
-    const vacio = $('pn-vacio');
-    vacio.classList.toggle('hidden', lista.length > 0);
-    vacio.textContent = empleados.length === 0 ? 'Todavía no hay empleados. Registra el primero con "+ Nuevo empleado".' : 'Ningún empleado coincide con los filtros.';
-
-    const grupos = new Map<string, Fila[]>();
-    for (const f of lista) (grupos.get(f.empleado.local_id) ?? grupos.set(f.empleado.local_id, []).get(f.empleado.local_id)!).push(f);
-    const consolidado = selectLocal.value === 'todos';
-
-    let html = '';
-    for (const [localId, grupo] of grupos) {
-      const subtotal = grupo.reduce((s, f) => s + f.total, 0);
-      if (consolidado) {
-        html += `<tr class="bg-slate-50 dark:bg-slate-800/50"><td colspan="7" class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${escapar(nombreLocal(localId))} <span class="font-normal normal-case">(${grupo.length})</span></td></tr>`;
-      }
-      html += grupo.map(filaHtml).join('');
-      if (consolidado) {
-        html += `<tr class="font-semibold text-slate-900 dark:text-white"><td colspan="4" class="px-4 py-2 text-right text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subtotal ${escapar(nombreLocal(localId))}</td><td class="px-4 py-2 text-right tabular-nums">${formatearMoneda(subtotal)}</td><td colspan="2"></td></tr>`;
-      }
-    }
-    if (consolidado && lista.length > 0) {
-      html += `<tr class="bg-slate-100 font-bold text-slate-900 dark:bg-slate-800 dark:text-white"><td colspan="4" class="px-4 py-3 text-right text-xs uppercase tracking-wide">Total consolidado (todos los locales)</td><td class="px-4 py-3 text-right tabular-nums">${formatearMoneda(total)}</td><td colspan="2"></td></tr>`;
-    }
-    filas.innerHTML = html;
-
-    if (primeraVez && lista.length) {
-      animarLista(filas);
-      primeraVez = false;
-    }
+  function celdaAcciones(f: Fila, etiquetaPagar: string): string {
+    const e = f.empleado;
+    const accionPago =
+      f.estado === 'PAGADO'
+        ? `<button type="button" data-pago="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Ver</button>`
+        : `<button type="button" data-pago="${e.id}" class="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">${etiquetaPagar}</button>`;
+    return `
+      <td class="px-4 py-3 print:hidden sm:text-right">
+        <div class="flex flex-wrap gap-1.5 sm:justify-end">
+          ${accionPago}
+          <button type="button" data-editar="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
+        </div>
+      </td>`;
   }
 
   function filaHtml(f: Fila): string {
     const e = f.empleado;
     const inactivo = e.estado === 'INACTIVO';
-    const accionPago =
-      f.estado === 'PAGADO'
-        ? `<button type="button" data-pago="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Ver</button>`
-        : `<button type="button" data-pago="${e.id}" class="rounded-lg border border-brand-200 bg-brand-50 px-2.5 py-1 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">Pagar</button>`;
     return `
       <tr class="text-slate-700 dark:text-slate-300 ${inactivo ? 'opacity-60' : ''}">
         <td class="px-4 py-3">
@@ -379,30 +500,158 @@ const claseDialogo =
         <td data-label="Bonos" class="px-4 py-3 text-right tabular-nums">${f.bonos ? '+' + formatearMoneda(f.bonos) : '—'}</td>
         <td data-label="Deducciones" class="px-4 py-3 text-right tabular-nums">${f.deducciones ? '−' + formatearMoneda(f.deducciones) : '—'}</td>
         <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${formatearMoneda(f.total)}</td>
-        <td data-label="Estado" class="px-4 py-3">
-          <span class="inline-flex whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold ${BADGE[f.estado]}">${TEXTO_ESTADO[f.estado]}</span>
-          ${f.nomina?.comprobante_path ? '<span class="ml-1 inline-flex align-middle text-slate-400" title="Tiene captura del pago"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5" aria-label="Tiene captura del pago"><path d="m21.4 11.6-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5" stroke-linecap="round" stroke-linejoin="round"/></svg></span>' : ''}
-          ${f.nomina?.pagado_en ? `<span class="block text-[11px] text-slate-400">${escapar(formatearFecha(f.nomina.pagado_en))}</span>` : ''}
-        </td>
-        <td class="px-4 py-3 print:hidden sm:text-right">
-          <div class="flex flex-wrap gap-1.5 sm:justify-end">
-            ${accionPago}
-            <button type="button" data-editar="${e.id}" class="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Editar</button>
-          </div>
-        </td>
+        <td data-label="Estado" class="px-4 py-3">${celdaEstado(f)}</td>
+        ${celdaAcciones(f, 'Pagar')}
       </tr>`;
   }
 
+  function filaIndepHtml(f: Fila): string {
+    const e = f.empleado;
+    const inactivo = e.estado === 'INACTIVO';
+    const unidades = f.lineas.reduce((s, l) => s + l.cantidad, 0);
+    const vendido = f.lineas.reduce((s, l) => s + l.cantidad * l.precio_vendido, 0);
+    return `
+      <tr class="text-slate-700 dark:text-slate-300 ${inactivo ? 'opacity-60' : ''}">
+        <td class="px-4 py-3">
+          <p class="font-medium text-slate-900 dark:text-white">${escapar(e.apellido)}, ${escapar(e.nombre)}${inactivo ? ' <span class="text-xs font-normal text-slate-400">(inactivo)</span>' : ''}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${escapar(e.cargo)} · ${escapar(e.cedula)}</p>
+        </td>
+        <td data-label="Revendido" class="px-4 py-3 text-right tabular-nums">${
+          f.lineas.length ? `${unidades} u. <span class="block text-[11px] text-slate-400">vendido ${formatearMoneda(vendido)}</span>` : '—'
+        }</td>
+        <td data-label="Ganancia" class="px-4 py-3 text-right tabular-nums">${f.nomina ? formatearMoneda(f.base) : '—'}</td>
+        <td data-label="Bonos" class="px-4 py-3 text-right tabular-nums">${f.bonos ? '+' + formatearMoneda(f.bonos) : '—'}</td>
+        <td data-label="Deducciones" class="px-4 py-3 text-right tabular-nums">${f.deducciones ? '−' + formatearMoneda(f.deducciones) : '—'}</td>
+        <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${f.nomina ? formatearMoneda(f.total) : '—'}</td>
+        <td data-label="Estado" class="px-4 py-3">${celdaEstado(f)}</td>
+        ${celdaAcciones(f, f.estado === 'SIN_GENERAR' ? 'Armar lista' : 'Lista y pago')}
+      </tr>`;
+  }
+
+  /** Cabeceras de local, subtotales y total consolidado alrededor de las filas. */
+  function tablaAgrupada(lista: Fila[], pintarFila: (f: Fila) => string, columnas: number, etiquetaTotal: string): string {
+    const grupos = new Map<string, Fila[]>();
+    for (const f of lista) (grupos.get(f.empleado.local_id) ?? grupos.set(f.empleado.local_id, []).get(f.empleado.local_id)!).push(f);
+    const consolidado = selectLocal.value === 'todos';
+    const total = lista.reduce((s, f) => s + f.total, 0);
+    // Las columnas de "antes del total": todas menos Total, Estado y Acciones
+    const antes = columnas - 3;
+
+    let html = '';
+    for (const [localId, grupo] of grupos) {
+      if (consolidado) {
+        html += `<tr class="bg-slate-50 dark:bg-slate-800/50"><td colspan="${columnas}" class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">${escapar(nombreLocal(localId))} <span class="font-normal normal-case">(${grupo.length})</span></td></tr>`;
+      }
+      html += grupo.map(pintarFila).join('');
+      if (consolidado) {
+        const subtotal = grupo.reduce((s, f) => s + f.total, 0);
+        html += `<tr class="font-semibold text-slate-900 dark:text-white"><td colspan="${antes}" class="px-4 py-2 text-right text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">Subtotal ${escapar(nombreLocal(localId))}</td><td class="px-4 py-2 text-right tabular-nums">${formatearMoneda(subtotal)}</td><td colspan="2"></td></tr>`;
+      }
+    }
+    if (consolidado && lista.length > 0) {
+      html += `<tr class="bg-slate-100 font-bold text-slate-900 dark:bg-slate-800 dark:text-white"><td colspan="${antes}" class="px-4 py-3 text-right text-xs uppercase tracking-wide">${etiquetaTotal}</td><td class="px-4 py-3 text-right tabular-nums">${formatearMoneda(total)}</td><td colspan="2"></td></tr>`;
+    }
+    return html;
+  }
+
+  function pintarResumen(lista: Fila[], etiquetas: [string, string]) {
+    const activos = lista.filter((f) => f.empleado.estado === 'ACTIVO').length;
+    const total = lista.reduce((s, f) => s + f.total, 0);
+    const pagado = lista.filter((f) => f.estado === 'PAGADO').reduce((s, f) => s + f.total, 0);
+    $('pn-e-1').textContent = etiquetas[0];
+    $('pn-e-2').textContent = etiquetas[1];
+    $('pn-r-empleados').textContent = String(activos);
+    $('pn-r-total').textContent = formatearMoneda(total);
+    $('pn-r-pagado').textContent = formatearMoneda(pagado);
+    $('pn-r-pendiente').textContent = formatearMoneda(total - pagado);
+  }
+
+  function pintar() {
+    $('pn-impr-local').textContent = selectLocal.value === 'todos' ? 'Todos los locales (consolidado)' : nombreLocal(selectLocal.value);
+    if (vista === 'fijos') pintarFijos();
+    else pintarIndependientes();
+  }
+
+  function pintarFijos() {
+    $('pn-periodo').textContent = periodo.etiqueta;
+    $('pn-impr-titulo').textContent = 'Nómina quincenal';
+    $('pn-impr-periodo').textContent = periodo.etiqueta;
+
+    const lista = construirFilas();
+    pintarResumen(lista, ['Empleados activos', 'Nómina de la quincena']);
+
+    const fijos = empleados.filter((e) => !esIndep(e));
+    const vacio = $('pn-vacio');
+    vacio.classList.toggle('hidden', lista.length > 0);
+    vacio.textContent = fijos.length === 0 ? 'Todavía no hay empleados fijos. Registra el primero con "+ Nuevo trabajador".' : 'Ningún empleado coincide con los filtros.';
+
+    filas.innerHTML = tablaAgrupada(lista, filaHtml, 7, 'Total consolidado (todos los locales)');
+    if (primeraVez && lista.length) {
+      animarLista(filas);
+      primeraVez = false;
+    }
+  }
+
+  function pintarIndependientes() {
+    inputDia.value = dia;
+    $('pn-impr-titulo').textContent = 'Pagos diarios de trabajadores independientes';
+    $('pn-impr-periodo').textContent = etiquetaDia(dia);
+
+    const lista = construirFilasIndep();
+    pintarResumen(lista, ['Trabajadores activos', 'Pagos del día']);
+
+    const independientes = empleados.filter(esIndep);
+    const vacio = $('pn-vacio-indep');
+    vacio.classList.toggle('hidden', lista.length > 0);
+    vacio.textContent =
+      independientes.length === 0
+        ? 'Todavía no hay trabajadores independientes. Registra el primero con "+ Nuevo trabajador" y elige el tipo "Trabajador independiente".'
+        : 'Ningún trabajador coincide con los filtros.';
+
+    filasIndep.innerHTML = tablaAgrupada(lista, filaIndepHtml, 8, 'Total consolidado del día (todos los locales)');
+    if (primeraVezIndep && lista.length) {
+      animarLista(filasIndep);
+      primeraVezIndep = false;
+    }
+  }
+
   // ---------------------------------------------------------------------------------------------
-  // Carga de datos
+  // Pestañas, período y carga de datos
   // ---------------------------------------------------------------------------------------------
+  const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
+  const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
+
+  function aplicarVista() {
+    const fijos = vista === 'fijos';
+    for (const [id, activa] of [['pn-tab-fijos', fijos], ['pn-tab-indep', !fijos]] as const) {
+      const tab = $(id);
+      tab.setAttribute('aria-selected', String(activa));
+      tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
+      tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
+    }
+    $('pn-bloque-quincena').classList.toggle('hidden', !fijos);
+    $('pn-bloque-dia').classList.toggle('hidden', fijos);
+    $('pn-generar').classList.toggle('hidden', !fijos);
+    $('pn-sec-fijos').classList.toggle('hidden', !fijos);
+    $('pn-sec-indep').classList.toggle('hidden', fijos);
+  }
+
   async function cargarNominas() {
     nominas = await inventoryService.listarNominas(periodo.inicio, periodo.fin);
+  }
+  async function cargarDia() {
+    nominasDia = await inventoryService.listarNominas(dia, dia);
+    reventasDia = await inventoryService.listarReventas(nominasDia.map((n) => n.id));
+  }
+  /** Carga lo de la pestaña visible (lo de la otra se pide al cambiar a ella). */
+  async function cargarVista() {
+    if (vista === 'fijos') await cargarNominas();
+    else await cargarDia();
   }
 
   async function recargar() {
     try {
-      await cargarNominas();
+      await cargarVista();
       error.classList.add('hidden');
       pintar();
     } catch (err) {
@@ -410,14 +659,33 @@ const claseDialogo =
     }
   }
 
+  async function cambiarVista(nueva: Vista) {
+    vista = nueva;
+    aplicarVista();
+    await recargar();
+  }
+
+  $('pn-tab-fijos').addEventListener('click', () => cambiarVista('fijos'));
+  $('pn-tab-indep').addEventListener('click', () => cambiarVista('independientes'));
+
   async function cambiarPeriodo(nuevo: Quincena) {
     periodo = nuevo;
     await recargar();
   }
-
   $('pn-anterior').addEventListener('click', () => cambiarPeriodo(quincenaAnterior(periodo)));
   $('pn-siguiente').addEventListener('click', () => cambiarPeriodo(quincenaSiguiente(periodo)));
   $('pn-hoy').addEventListener('click', () => cambiarPeriodo(quincenaDe()));
+
+  async function cambiarDia(nuevo: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(nuevo)) return;
+    dia = nuevo;
+    await recargar();
+  }
+  $('pn-dia-anterior').addEventListener('click', () => cambiarDia(sumarDias(dia, -1)));
+  $('pn-dia-siguiente').addEventListener('click', () => cambiarDia(sumarDias(dia, 1)));
+  $('pn-dia-hoy').addEventListener('click', () => cambiarDia(hoyISO()));
+  inputDia.addEventListener('change', () => cambiarDia(inputDia.value));
+
   selectLocal.addEventListener('change', pintar);
   buscar.addEventListener('input', pintar);
   verInactivos.addEventListener('change', pintar);
@@ -432,7 +700,7 @@ const claseDialogo =
         exito,
         creados > 0
           ? `Quincena ${periodo.etiqueta}: se generaron ${creados} pago${creados === 1 ? '' : 's'} pendiente${creados === 1 ? '' : 's'}.`
-          : 'Todos los empleados activos ya tienen su pago en esta quincena.'
+          : 'Todos los empleados fijos activos ya tienen su pago en esta quincena.'
       );
     } catch (err) {
       avisar(error, mensajeDeError(err, 'No se pudo generar la quincena.'));
@@ -440,12 +708,13 @@ const claseDialogo =
   });
 
   // ---------------------------------------------------------------------------------------------
-  // Empleado (nuevo / editar)
+  // Trabajador (nuevo / editar)
   // ---------------------------------------------------------------------------------------------
   const emDialogo = $<HTMLDialogElement>('em-dialogo');
   const emForm = $<HTMLFormElement>('em-form');
   const emError = $('em-error');
   const em = {
+    tipo: $<HTMLSelectElement>('em-tipo'),
     nombre: $<HTMLInputElement>('em-nombre'),
     apellido: $<HTMLInputElement>('em-apellido'),
     cedula: $<HTMLInputElement>('em-cedula'),
@@ -457,27 +726,41 @@ const claseDialogo =
   };
   let editandoEmpleado: Empleado | null = null;
 
+  /** Según el tipo: un fijo tiene salario y quincena; un independiente no (se le paga por día según lo que revende). */
+  function actualizarFormularioTipo() {
+    const independiente = em.tipo.value === 'INDEPENDIENTE';
+    $('em-bloque-salario').classList.toggle('hidden', independiente);
+    $('em-tipo-ayuda').textContent = independiente
+      ? 'No tiene salario ni quincena: se le paga cada día su ganancia por lo que revendió (lo vendido por encima del precio de lista).'
+      : 'Cobra cada quincena: la mitad del salario mensual, más bonos y menos deducciones.';
+    em.cargo.placeholder = independiente ? 'Revendedor independiente' : 'Cajera, Técnico...';
+    actualizarQuincenaEmpleado();
+  }
   function actualizarQuincenaEmpleado() {
     const salario = numero(em.salario.value);
-    $('em-quincena').textContent = salario > 0 ? `Pago quincenal: ${formatearMoneda(pagoBaseQuincenal(salario))}` : '';
+    $('em-quincena').textContent = em.tipo.value === 'FIJO' && salario > 0 ? `Pago quincenal: ${formatearMoneda(pagoBaseQuincenal(salario))}` : '';
   }
   em.salario.addEventListener('input', actualizarQuincenaEmpleado);
+  em.tipo.addEventListener('change', actualizarFormularioTipo);
 
   function abrirEmpleado(empleado?: Empleado) {
     editandoEmpleado = empleado ?? null;
     emError.classList.add('hidden');
-    $('em-titulo').textContent = empleado ? 'Editar empleado' : 'Nuevo empleado';
+    $('em-titulo').textContent = empleado ? 'Editar trabajador' : 'Nuevo trabajador';
     $('em-bloque-estado').classList.toggle('hidden', !empleado);
     em.local.innerHTML = locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
+    // El tipo se elige al registrar (por defecto, el de la pestaña visible) y no se cambia después
+    em.tipo.value = empleado?.tipo ?? (vista === 'independientes' ? 'INDEPENDIENTE' : 'FIJO');
+    em.tipo.disabled = !!empleado;
     em.nombre.value = empleado?.nombre ?? '';
     em.apellido.value = empleado?.apellido ?? '';
     em.cedula.value = empleado?.cedula ?? '';
     em.cargo.value = empleado?.cargo ?? '';
     em.local.value = empleado?.local_id ?? (selectLocal.value !== 'todos' ? selectLocal.value : (locales[0]?.id ?? ''));
-    em.salario.value = empleado ? String(empleado.salario_base) : '';
+    em.salario.value = empleado && !esIndep(empleado) ? String(empleado.salario_base) : '';
     em.ingreso.value = empleado?.fecha_ingreso ?? hoyISO();
     em.estado.value = empleado?.estado ?? 'ACTIVO';
-    actualizarQuincenaEmpleado();
+    actualizarFormularioTipo();
     emDialogo.showModal();
     em.nombre.focus();
   }
@@ -490,24 +773,26 @@ const claseDialogo =
     emError.classList.add('hidden');
     const guardar = $<HTMLButtonElement>('em-guardar');
     guardar.disabled = true;
+    const independiente = em.tipo.value === 'INDEPENDIENTE';
     const datos = {
       local_id: em.local.value,
       nombre: em.nombre.value,
       apellido: em.apellido.value,
       cedula: em.cedula.value,
-      cargo: em.cargo.value,
-      salario_base: numero(em.salario.value),
+      // Un revendedor no tiene un cargo "de nómina": si se deja vacío se le pone uno
+      cargo: em.cargo.value.trim() || (independiente ? 'Revendedor independiente' : ''),
+      salario_base: independiente ? 0 : numero(em.salario.value),
       fecha_ingreso: em.ingreso.value || hoyISO(),
     };
     try {
       if (editandoEmpleado) await inventoryService.actualizarEmpleado(editandoEmpleado.id, { ...datos, estado: em.estado.value as Empleado['estado'] });
-      else await inventoryService.crearEmpleado(datos);
+      else await inventoryService.crearEmpleado({ ...datos, tipo: independiente ? 'INDEPENDIENTE' : 'FIJO' });
       empleados = await inventoryService.listarEmpleados();
       emDialogo.close();
       pintar();
-      avisar(exito, editandoEmpleado ? 'Empleado actualizado.' : 'Empleado registrado.');
+      avisar(exito, editandoEmpleado ? 'Trabajador actualizado.' : 'Trabajador registrado.');
     } catch (err) {
-      emError.textContent = mensajeDeError(err, 'No se pudo guardar el empleado.');
+      emError.textContent = mensajeDeError(err, 'No se pudo guardar al trabajador.');
       emError.classList.remove('hidden');
     } finally {
       guardar.disabled = false;
@@ -515,7 +800,7 @@ const claseDialogo =
   });
 
   // ---------------------------------------------------------------------------------------------
-  // Pago de la quincena
+  // Pago (quincena de un fijo o día de un independiente)
   // ---------------------------------------------------------------------------------------------
   const pgDialogo = $<HTMLDialogElement>('pg-dialogo');
   const pgForm = $<HTMLFormElement>('pg-form');
@@ -524,6 +809,8 @@ const claseDialogo =
   const pgDeducciones = $<HTMLInputElement>('pg-deducciones');
   const pgNotas = $<HTMLTextAreaElement>('pg-notas');
   let pagando: Fila | null = null;
+  /** Lista de reventa que se está editando en la ventana (solo trabajadores independientes) */
+  let lineasEdicion: LineaReventa[] = [];
 
   // Captura del pago (opcional)
   const pgComp = $<HTMLInputElement>('pg-comp');
@@ -590,20 +877,175 @@ const claseDialogo =
     pintarComprobante(false);
   });
 
+  const pagandoIndependiente = () => !!pagando && esIndep(pagando.empleado);
+  /** Pago base de lo que se está editando: la mitad del salario (fijo) o la ganancia de la lista (independiente) */
+  const baseActual = () => (pagandoIndependiente() ? inventoryService.gananciaReventa(lineasEdicion) : (pagando?.base ?? 0));
+
   function actualizarTotalPago() {
     if (!pagando) return;
-    $('pg-total').textContent = formatearMoneda(totalPago(pagando.base, numero(pgBonos.value), numero(pgDeducciones.value)));
+    const base = baseActual();
+    $<HTMLInputElement>('pg-base').value = formatearMoneda(base);
+    $('pg-total').textContent = formatearMoneda(totalPago(base, numero(pgBonos.value), numero(pgDeducciones.value)));
   }
   pgBonos.addEventListener('input', actualizarTotalPago);
   pgDeducciones.addEventListener('input', actualizarTotalPago);
 
+  // --- Lista de reventa (trabajador independiente) ------------------------------------------------
+  const pgProdBuscar = $<HTMLInputElement>('pg-prod-buscar');
+  const pgProdResultados = $<HTMLUListElement>('pg-prod-resultados');
+  const pgLineas = $<HTMLTableSectionElement>('pg-lineas');
+  let busquedaId = 0;
+  let temporizadorBusqueda: number | undefined;
+  let lineasEditables = true;
+
+  function pintarLineas() {
+    $('pg-lineas-vacio').classList.toggle('hidden', lineasEdicion.length > 0);
+    $('pg-lineas-tabla').classList.toggle('hidden', lineasEdicion.length === 0);
+    const campo =
+      'w-full rounded border border-slate-200 bg-white px-1.5 py-1 text-right text-base tabular-nums text-slate-900 sm:text-xs focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-800/50';
+    pgLineas.innerHTML = lineasEdicion
+      .map((l, i) => {
+        const ganancia = redondear(l.cantidad * (l.precio_vendido - l.precio_lista));
+        const bajoLista = l.precio_vendido < l.precio_lista;
+        return `
+          <tr class="text-slate-700 dark:text-slate-300">
+            <td class="px-2 py-2"><p class="font-medium text-slate-900 dark:text-white">${escapar(l.producto_nombre)}</p>${l.producto_codigo ? `<p class="font-mono text-[10px] text-slate-400">${escapar(l.producto_codigo)}</p>` : ''}</td>
+            <td class="px-2 py-2"><input type="number" inputmode="numeric" min="1" step="1" value="${l.cantidad}" data-cant="${i}" aria-label="Cantidad de ${escapar(l.producto_nombre)}" class="${campo}" ${lineasEditables ? '' : 'disabled'} /></td>
+            <td class="px-2 py-2 text-right tabular-nums">${formatearMoneda(l.precio_lista)}</td>
+            <td class="px-2 py-2"><input type="number" inputmode="decimal" min="${l.precio_lista}" step="0.01" value="${l.precio_vendido}" data-vend="${i}" aria-label="Precio vendido de ${escapar(l.producto_nombre)}" class="${campo} ${bajoLista ? 'border-red-400' : ''}" ${lineasEditables ? '' : 'disabled'} /></td>
+            <td class="px-2 py-2 text-right font-semibold tabular-nums ${ganancia > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}" data-ganancia="${i}">${formatearMoneda(ganancia)}</td>
+            <td class="px-1 py-2 text-center">${lineasEditables ? `<button type="button" data-quitar-linea="${i}" aria-label="Quitar ${escapar(l.producto_nombre)}" class="text-slate-400 hover:text-red-600">✕</button>` : ''}</td>
+          </tr>`;
+      })
+      .join('');
+    actualizarTotalPago();
+  }
+
+  /** Cantidad y precio vendido se editan sin reconstruir los campos (así no se pierde el foco al teclear). */
+  pgLineas.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    const iCant = input.dataset.cant;
+    const iVend = input.dataset.vend;
+    const i = Number(iCant ?? iVend);
+    const linea = lineasEdicion[i];
+    if (!linea) return;
+    if (iCant !== undefined) linea.cantidad = Math.max(0, Math.floor(numero(input.value)));
+    else linea.precio_vendido = numero(input.value);
+    if (iVend !== undefined) input.classList.toggle('border-red-400', linea.precio_vendido < linea.precio_lista);
+    const celda = pgLineas.querySelector<HTMLElement>(`[data-ganancia="${i}"]`);
+    if (celda) celda.textContent = formatearMoneda(redondear(linea.cantidad * (linea.precio_vendido - linea.precio_lista)));
+    actualizarTotalPago();
+  });
+
+  pgLineas.addEventListener('click', (e) => {
+    const i = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar-linea]')?.dataset.quitarLinea;
+    if (i === undefined) return;
+    lineasEdicion.splice(Number(i), 1);
+    pintarLineas();
+  });
+
+  function agregarProducto(p: ProductoReventa) {
+    // El mismo producto otra vez suma unidades (al mismo precio de lista)
+    const existente = lineasEdicion.find((l) => l.producto_id === p.id);
+    if (existente) existente.cantidad += 1;
+    else {
+      lineasEdicion.push({
+        producto_id: p.id,
+        producto_nombre: p.nombre,
+        producto_codigo: p.codigo_barras,
+        cantidad: 1,
+        precio_lista: p.precio_venta,
+        precio_vendido: p.precio_venta,
+      });
+    }
+    pgProdBuscar.value = '';
+    pgProdResultados.classList.add('hidden');
+    pgProdResultados.innerHTML = '';
+    pintarLineas();
+    pgLineas.querySelector<HTMLInputElement>(`[data-vend="${lineasEdicion.findIndex((l) => l.producto_id === p.id)}"]`)?.select();
+  }
+
+  let ultimosResultados: ProductoReventa[] = [];
+  pgProdBuscar.addEventListener('input', () => {
+    window.clearTimeout(temporizadorBusqueda);
+    const texto = pgProdBuscar.value.trim();
+    if (!texto) {
+      pgProdResultados.classList.add('hidden');
+      return;
+    }
+    temporizadorBusqueda = window.setTimeout(async () => {
+      const miBusqueda = ++busquedaId;
+      try {
+        const lista = await inventoryService.buscarProductosReventa(texto);
+        if (miBusqueda !== busquedaId) return; // llegó una búsqueda más nueva
+        ultimosResultados = lista;
+        pgProdResultados.classList.remove('hidden');
+        pgProdResultados.innerHTML = lista.length
+          ? lista
+              .map(
+                (p, i) => `
+              <li>
+                <button type="button" data-prod="${i}" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
+                  <span class="min-w-0"><span class="block truncate text-sm font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</span><span class="block font-mono text-[11px] text-slate-500">${escapar(p.codigo_barras)} · ${escapar(p.categoria)}</span></span>
+                  <span class="shrink-0 text-xs font-semibold tabular-nums text-slate-700 dark:text-slate-200">${formatearMoneda(p.precio_venta)}</span>
+                </button>
+              </li>`
+              )
+              .join('')
+          : '<li class="px-3 py-3 text-sm text-slate-500">Sin coincidencias.</li>';
+      } catch (err) {
+        pgError.textContent = mensajeDeError(err, 'No se pudo buscar productos.');
+        pgError.classList.remove('hidden');
+      }
+    }, 250);
+  });
+  pgProdResultados.addEventListener('click', (e) => {
+    const i = (e.target as HTMLElement).closest<HTMLElement>('[data-prod]')?.dataset.prod;
+    const producto = i !== undefined ? ultimosResultados[Number(i)] : undefined;
+    if (producto) agregarProducto(producto);
+  });
+  // Un lector de código de barras escribe el código y pulsa Enter: si coincide exacto, se agrega solo
+  pgProdBuscar.addEventListener('keydown', async (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const texto = pgProdBuscar.value.trim();
+    if (!texto) return;
+    try {
+      const lista = await inventoryService.buscarProductosReventa(texto);
+      const exacto = lista.find((p) => p.codigo_barras === texto) ?? (lista.length === 1 ? lista[0] : undefined);
+      if (exacto) agregarProducto(exacto);
+    } catch {
+      /* el error se muestra al escribir */
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (!(e.target as HTMLElement).closest('#pg-prod-bloque')) pgProdResultados.classList.add('hidden');
+  });
+
   function abrirPago(fila: Fila) {
     pagando = fila;
+    const independiente = esIndep(fila.empleado);
     const soloLectura = fila.estado === 'PAGADO';
     pgError.classList.add('hidden');
+
+    $('pg-titulo').textContent = independiente ? 'Lista y pago del día' : 'Pago de la quincena';
     $('pg-empleado').textContent = `${fila.empleado.nombre} ${fila.empleado.apellido}`;
-    $('pg-detalle').textContent = `${fila.empleado.cargo} · ${nombreLocal(fila.empleado.local_id)} · Quincena ${periodo.etiqueta}`;
-    $<HTMLInputElement>('pg-base').value = formatearMoneda(fila.base);
+    $('pg-detalle').textContent = independiente
+      ? `${fila.empleado.cargo} · ${nombreLocal(fila.empleado.local_id)} · ${etiquetaDia(dia)}`
+      : `${fila.empleado.cargo} · ${nombreLocal(fila.empleado.local_id)} · Quincena ${periodo.etiqueta}`;
+    $('pg-base-etiqueta').textContent = independiente ? 'Ganancia del día ($)' : 'Pago base ($)';
+    $('pg-total-formula').textContent = independiente ? 'Ganancia + bonos − deducciones' : 'Pago base + bonos − deducciones';
+
+    // Lista de reventa
+    $('pg-reventa').classList.toggle('hidden', !independiente);
+    lineasEditables = !soloLectura;
+    lineasEdicion = independiente ? fila.lineas.map((l) => ({ ...l })) : [];
+    $('pg-prod-bloque').classList.toggle('hidden', soloLectura);
+    $('pg-lineas-ayuda').classList.toggle('hidden', soloLectura);
+    pgProdBuscar.value = '';
+    pgProdResultados.classList.add('hidden');
+    if (independiente) pintarLineas();
+
     pgBonos.value = String(fila.bonos);
     pgDeducciones.value = String(fila.deducciones);
     pgNotas.value = fila.nomina?.notas ?? '';
@@ -623,50 +1065,86 @@ const claseDialogo =
     pgDialogo.showModal();
   }
 
-  filas.addEventListener('click', (e) => {
+  const alHacerClicEnTabla = (construir: () => Fila[]) => (e: Event) => {
     const objetivo = e.target as HTMLElement;
     const idPago = objetivo.closest<HTMLElement>('[data-pago]')?.dataset.pago;
     const idEditar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
     if (idPago) {
-      const fila = construirFilas().find((f) => f.empleado.id === idPago);
+      const fila = construir().find((f) => f.empleado.id === idPago);
       if (fila) abrirPago(fila);
     } else if (idEditar) {
       abrirEmpleado(empleados.find((x) => x.id === idEditar));
     }
-  });
+  };
+  filas.addEventListener('click', alHacerClicEnTabla(construirFilas));
+  filasIndep.addEventListener('click', alHacerClicEnTabla(construirFilasIndep));
 
   $('pg-cerrar').addEventListener('click', () => pgDialogo.close());
-  pgDialogo.addEventListener('close', soltarUrlTemporal);
+  pgDialogo.addEventListener('close', () => {
+    soltarUrlTemporal();
+    window.clearTimeout(temporizadorBusqueda);
+  });
 
   async function guardarPago(pagar: boolean) {
     if (!pagando) return;
     pgError.classList.add('hidden');
+    const independiente = pagandoIndependiente();
     const bonos = numero(pgBonos.value);
     const deducciones = numero(pgDeducciones.value);
-    const mensaje = validarAjustes(pagando.base, bonos, deducciones);
+    const base = baseActual();
+
+    if (independiente) {
+      const errorLista = inventoryService.validarLineasReventa(lineasEdicion);
+      if (errorLista) {
+        pgError.textContent = errorLista;
+        pgError.classList.remove('hidden');
+        return;
+      }
+      if (pagar && lineasEdicion.length === 0) {
+        pgError.textContent = 'Agrega al menos un producto a la lista antes de registrar el pago.';
+        pgError.classList.remove('hidden');
+        return;
+      }
+    }
+    const mensaje = validarAjustes(base, bonos, deducciones);
     if (mensaje) {
       pgError.textContent = mensaje;
       pgError.classList.remove('hidden');
       return;
     }
-    const total = totalPago(pagando.base, bonos, deducciones);
+    const total = totalPago(base, bonos, deducciones);
     const nombre = `${pagando.empleado.nombre} ${pagando.empleado.apellido}`;
-    if (pagar && !confirm(`¿Registrar el pago de ${formatearMoneda(total)} a ${nombre}? Una vez pagado ya no se puede modificar.`)) return;
+    if (pagar && !confirm(`¿Registrar el pago de ${formatearMoneda(total)} a ${nombre}? Una vez pagado ya no se puede modificar${independiente ? ' (ni su lista)' : ''}.`)) return;
 
     const botones = [$<HTMLButtonElement>('pg-pagar'), $<HTMLButtonElement>('pg-pendiente')];
     botones.forEach((b) => (b.disabled = true));
     try {
-      await inventoryService.guardarPagoQuincenal({
-        empleado: pagando.empleado,
-        periodo,
-        bonos,
-        deducciones,
-        notas: pgNotas.value,
-        pagar,
-        existente: pagando.nomina,
-        comprobante: compNueva,
-        quitarComprobante: quitarComp,
-      });
+      if (independiente) {
+        await inventoryService.guardarPagoIndependiente({
+          empleado: pagando.empleado,
+          dia,
+          lineas: lineasEdicion,
+          bonos,
+          deducciones,
+          notas: pgNotas.value,
+          pagar,
+          existente: pagando.nomina,
+          comprobante: compNueva,
+          quitarComprobante: quitarComp,
+        });
+      } else {
+        await inventoryService.guardarPagoQuincenal({
+          empleado: pagando.empleado,
+          periodo,
+          bonos,
+          deducciones,
+          notas: pgNotas.value,
+          pagar,
+          existente: pagando.nomina,
+          comprobante: compNueva,
+          quitarComprobante: quitarComp,
+        });
+      }
       pgDialogo.close();
       await recargar();
       avisar(exito, pagar ? `Pago de ${formatearMoneda(total)} a ${nombre} registrado.` : `Pago de ${nombre} guardado como pendiente.`);
@@ -686,7 +1164,8 @@ const claseDialogo =
 
   $('pg-quitar').addEventListener('click', async () => {
     if (!pagando?.nomina) return;
-    if (!confirm('¿Quitar este pago pendiente? El empleado volverá a "Sin generar" en esta quincena.')) return;
+    const independiente = pagandoIndependiente();
+    if (!confirm(independiente ? '¿Quitar este pago pendiente y su lista de productos? El trabajador volverá a "Sin lista" ese día.' : '¿Quitar este pago pendiente? El empleado volverá a "Sin generar" en esta quincena.')) return;
     try {
       await inventoryService.eliminarPagoPendiente(pagando.nomina.id);
       pgDialogo.close();
@@ -712,17 +1191,19 @@ const claseDialogo =
       locales = listaLocales;
       selectLocal.innerHTML = `<option value="todos">Todos los locales (consolidado)</option>` + locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
       empleados = await inventoryService.listarEmpleados();
-      await cargarNominas();
+      aplicarVista();
+      await cargarVista();
       pintar();
 
-      // Otro dispositivo pagó una quincena, ajustó un pago o cambió un empleado: la nómina se actualiza sola
-      alCambiarDatos(['nominas', 'empleados', 'locales'], async () => {
+      // Otro dispositivo pagó, ajustó una lista o cambió un trabajador: la nómina se actualiza sola
+      alCambiarDatos(['nominas', 'nomina_reventas', 'empleados', 'locales'], async () => {
         empleados = await inventoryService.listarEmpleados();
-        await cargarNominas();
+        await cargarVista();
         pintar();
         // Si esta ventana de pago estaba abierta y ese pago ya se registró en otro dispositivo, no se puede seguir editando
         if (pgDialogo.open && pagando && pagando.estado !== 'PAGADO') {
-          const actual = nominas.find((n) => n.empleado_id === pagando!.empleado.id);
+          const delPeriodo = pagandoIndependiente() ? nominasDia : nominas;
+          const actual = delPeriodo.find((n) => n.empleado_id === pagando!.empleado.id);
           if (actual?.estado_pago === 'PAGADO') {
             pgDialogo.close();
             avisar(exito, `El pago de ${pagando.empleado.nombre} ${pagando.empleado.apellido} ya se registró como pagado desde otro dispositivo.`);
