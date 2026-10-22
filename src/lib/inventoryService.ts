@@ -25,8 +25,9 @@ import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
 import * as nominaDb from './db/nomina';
 import * as unidadesDb from './db/unidades';
+import * as cuadresDb from './db/cuadres';
 import type { ProductoConInventario } from './db/productos';
-import { esGlobal, leerSuscripcionesLocales, obtenerSesionActual } from './auth';
+import { esGerencia, esGlobal, leerSuscripcionesLocales, obtenerSesionActual, type SesionUsuario } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
@@ -34,6 +35,7 @@ import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mo
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
 import { construirCodigoUnidad } from '../utils/codigos';
+import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
@@ -41,10 +43,14 @@ import type { FilaImportacion } from './importador';
 import type {
   ClienteVenta,
   Compatibilidad,
+  ContadoCuadre,
+  CuadreCaja,
   Devolucion,
   DineroEntregado,
   Empleado,
+  EsperadoCuadre,
   EstadoOrdenServicio,
+  FotoCuadre,
   InventarioLocal,
   Local,
   MetodoPago,
@@ -65,6 +71,7 @@ import type {
   ProductoStockBajo,
   RepuestoOrden,
   TasaCambio,
+  TipoFotoCuadre,
   TipoMovimiento,
   UnidadProducto,
   Venta,
@@ -101,6 +108,8 @@ interface LocalDB {
   /** Una fila por unidad física con su código único (migración 0033 en Supabase) y el último número usado */
   unidades?: UnidadProducto[];
   unidadSeq?: number;
+  /** Cuadres de caja diarios (las fotos van como data URL dentro de cada cuadre) */
+  cuadres?: CuadreCaja[];
 }
 
 function generarId(): string {
@@ -1403,9 +1412,10 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
  * administrador todas (lo exige la base de datos). Las ventas hechas sin conexión
  * y aún sin sincronizar aparecen con folio 0 y `pendienteSincronizar`.
  */
-export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite?: number } = {}): Promise<VentaRegistrada[]> {
+export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite?: number; localId?: string } = {}): Promise<VentaRegistrada[]> {
   const limite = opciones.limite ?? 1000;
-  const alcance = await alcanceActual();
+  // `localId` fuerza un local concreto (el cuadre de caja de un local que no es el activo)
+  const alcance: Alcance = opciones.localId ? { todos: false, localId: opciones.localId } : await alcanceActual();
   const delAlcance = (v: { local_id?: string }) => alcance.todos || (v.local_id ?? LOCAL_ACCESORIOS_ID) === alcance.localId;
   const enRango = (v: { fecha: string }) => {
     const t = new Date(v.fecha).getTime();
@@ -1442,10 +1452,14 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
  * Devoluciones, más nuevas primero. El administrador ve todas; un vendedor, solo las de las ventas
  * que puede ver (lo exige la base de datos).
  */
-export async function listarDevoluciones(opciones: { limite?: number; ventaId?: string } = {}): Promise<Devolucion[]> {
+export async function listarDevoluciones(opciones: { limite?: number; ventaId?: string; localId?: string } = {}): Promise<Devolucion[]> {
   const limite = opciones.limite ?? 2000;
   // Las de UNA venta se piden completas (aunque el local activo sea otro): hace falta para no devolver de más
-  const alcance = opciones.ventaId ? { todos: true, localId: null } : await alcanceActual();
+  const alcance: Alcance = opciones.ventaId
+    ? { todos: true, localId: null }
+    : opciones.localId
+      ? { todos: false, localId: opciones.localId }
+      : await alcanceActual();
   const pasa = (d: Devolucion) => (!opciones.ventaId || d.venta_id === opciones.ventaId) && (alcance.todos || d.local_id === alcance.localId);
   const masNuevasPrimero = (a: Devolucion, b: Devolucion) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
 
@@ -2407,4 +2421,161 @@ export async function guardarPagoIndependiente(datos: DatosPagoIndependiente): P
     throw err;
   }
   return guardada;
+}
+
+// ----------------------------------------------------------------------------
+// Cuadre de caja diario (migración 0034)
+//
+// Al cerrar el día se compara lo que el sistema esperaba cobrar con cada tipo de cobro contra lo contado,
+// con fotos de respaldo (capturas de pago móvil y Binance, efectivo, cierre del punto). Un cuadre por local y
+// día; cerrado ya no se edita (solo el administrador / gerente lo reabren). Encargado: solo su local;
+// administrador y gerente: todos. Necesita conexión (no se encola: son fotos y cierres reales).
+// ----------------------------------------------------------------------------
+async function accesoCuadre(localId?: string): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no tiene acceso al cuadre de caja.');
+  if (localId && !esGlobal(sesion.rol) && sesion.local_id !== localId) throw new Error('Solo puedes hacer el cuadre de tu local.');
+  return sesion;
+}
+
+/** Lo que el sistema esperaba cobrar ese día en ese local, por tipo de cobro (ventas y devoluciones del día, netas de vuelto). */
+export async function calcularEsperadoCuadre(localId: string, fecha: string): Promise<EsperadoCuadre[]> {
+  await accesoCuadre(localId);
+  const { desde, hasta } = rangoDelDia(fecha);
+  const [ventas, devoluciones] = await Promise.all([
+    listarVentas({ desde, hasta, localId, limite: 5000 }),
+    listarDevoluciones({ localId, limite: 5000 }),
+  ]);
+  const enElDia = (iso: string) => {
+    const t = new Date(iso).getTime();
+    return t >= desde.getTime() && t <= hasta.getTime();
+  };
+  return esperadoDelDia(ventas, devoluciones.filter((d) => enElDia(d.fecha)));
+}
+
+/** Los cuadres de un día de los locales que el usuario puede ver (todos para administrador y gerente, el suyo para el encargado). */
+export async function listarCuadresDelDia(fecha: string): Promise<CuadreCaja[]> {
+  const sesion = await accesoCuadre();
+  if (!supabaseConfigurado) return (leerDB().cuadres ?? []).filter((c) => c.fecha === fecha && (esGlobal(sesion.rol) || c.local_id === sesion.local_id));
+  return cuadresDb.listarCuadresDelDia(fecha);
+}
+
+export async function obtenerCuadre(localId: string, fecha: string): Promise<CuadreCaja | null> {
+  await accesoCuadre(localId);
+  if (!supabaseConfigurado) return (leerDB().cuadres ?? []).find((c) => c.local_id === localId && c.fecha === fecha) ?? null;
+  return cuadresDb.obtenerCuadre(localId, fecha);
+}
+
+export interface DatosGuardarCuadre {
+  localId: string;
+  /** "aaaa-mm-dd" */
+  fecha: string;
+  /** Lo contado por tipo de cobro (en la moneda de cada uno); los que no se escribieron no se incluyen */
+  contado: ContadoCuadre[];
+  notas: string | null;
+  /** Fotos nuevas (ya reducidas) por subir */
+  fotosNuevas: { tipo: TipoFotoCuadre; imagen: Blob }[];
+  /** Rutas de fotos ya guardadas que se quitan */
+  fotosQuitadas: string[];
+  /** true = cerrar el cuadre (valida que esté completo); false = guardar como borrador */
+  cerrar: boolean;
+}
+
+/**
+ * Guarda el cuadre del día (borrador) o lo cierra. Recalcula lo esperado en ese momento, valida si se cierra,
+ * sube las fotos nuevas y, si algo falla, no deja fotos sueltas.
+ */
+export async function guardarCuadre(datos: DatosGuardarCuadre): Promise<CuadreCaja> {
+  const sesion = await accesoCuadre(datos.localId);
+  if (supabaseConfigurado && !obtenerEstadoConexion().online) throw new Error('El cuadre de caja necesita conexión a internet. Inténtalo de nuevo cuando vuelva.');
+
+  const existente = await obtenerCuadre(datos.localId, datos.fecha);
+  if (existente?.estado === 'CERRADO') throw new Error('Este cuadre ya está cerrado y no se puede modificar.');
+
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const contado = datos.contado.filter((c) => Number.isFinite(c.monto)).map((c) => ({ metodo: c.metodo, monto: centavos(c.monto) }));
+  if (contado.some((c) => c.monto < 0)) throw new Error('Los montos contados no pueden ser negativos.');
+  const notas = datos.notas?.trim().slice(0, 1000) || null;
+  const esperado = await calcularEsperadoCuadre(datos.localId, datos.fecha);
+
+  const quitadas = new Set(datos.fotosQuitadas);
+  const conservadas: FotoCuadre[] = (existente?.fotos ?? []).filter((f) => !quitadas.has(f.path));
+  if (datos.cerrar) {
+    // Se valida con el total de fotos (las nuevas aún sin ruta) ANTES de subir nada
+    const futuras: FotoCuadre[] = [...conservadas, ...datos.fotosNuevas.map((n) => ({ tipo: n.tipo, path: 'nueva' }))];
+    const problema = problemaParaCerrar(esperado, contado, futuras);
+    if (problema) throw new Error(problema);
+  }
+
+  const subidas: FotoCuadre[] = [];
+  try {
+    for (const nueva of datos.fotosNuevas) {
+      const path = supabaseConfigurado ? await cuadresDb.subirFoto(datos.localId, datos.fecha, nueva.tipo, nueva.imagen) : await blobADataUrl(nueva.imagen);
+      subidas.push({ tipo: nueva.tipo, path });
+    }
+    const fotos = [...conservadas, ...subidas];
+    const estado = datos.cerrar ? ('CERRADO' as const) : ('ABIERTO' as const);
+
+    let guardado: CuadreCaja;
+    if (!supabaseConfigurado) {
+      const db = leerDB();
+      const lista = db.cuadres ?? (db.cuadres = []);
+      const ahora = new Date().toISOString();
+      guardado = {
+        id: existente?.id ?? generarId(),
+        local_id: datos.localId,
+        fecha: datos.fecha,
+        estado,
+        esperado,
+        contado,
+        fotos,
+        notas,
+        registrado_nombre: existente?.registrado_nombre ?? sesion.nombre,
+        cerrado_en: datos.cerrar ? ahora : null,
+        cerrado_por: datos.cerrar ? sesion.nombre : null,
+        created_at: existente?.created_at ?? ahora,
+        updated_at: ahora,
+      };
+      const i = lista.findIndex((c) => c.local_id === datos.localId && c.fecha === datos.fecha);
+      if (i >= 0) lista[i] = guardado;
+      else lista.push(guardado);
+      guardarDBEstricto(db);
+    } else {
+      guardado = await cuadresDb.guardarCuadre(
+        datos.localId,
+        datos.fecha,
+        existente,
+        { esperado, contado, fotos, notas, estado, cerrado_por: datos.cerrar ? sesion.nombre : null },
+        sesion.nombre
+      );
+    }
+    if (supabaseConfigurado) cuadresDb.borrarFotos(datos.fotosQuitadas).catch(() => {}); // limpieza best-effort
+    return guardado;
+  } catch (err) {
+    if (supabaseConfigurado) cuadresDb.borrarFotos(subidas.map((f) => f.path)).catch(() => {});
+    throw err;
+  }
+}
+
+/** Reabre un cuadre cerrado para corregirlo (solo administrador y gerente). */
+export async function reabrirCuadre(localId: string, fecha: string): Promise<CuadreCaja> {
+  const sesion = await accesoCuadre(localId);
+  if (!esGlobal(sesion.rol)) throw new Error('Solo el administrador o el gerente pueden reabrir un cuadre cerrado.');
+  const existente = await obtenerCuadre(localId, fecha);
+  if (!existente) throw new Error('Ese cuadre no existe.');
+
+  if (!supabaseConfigurado) {
+    const db = leerDB();
+    const c = (db.cuadres ?? []).find((x) => x.local_id === localId && x.fecha === fecha)!;
+    Object.assign(c, { estado: 'ABIERTO', cerrado_en: null, cerrado_por: null, updated_at: new Date().toISOString() });
+    guardarDB(db);
+    return c;
+  }
+  return cuadresDb.reabrirCuadre(existente.id);
+}
+
+/** Dirección para mostrar una foto del cuadre (enlace firmado de 1 hora en Supabase; en LocalStorage la propia imagen). */
+export async function urlFotoCuadre(ruta: string): Promise<string> {
+  if (!supabaseConfigurado) return ruta;
+  return cuadresDb.urlFirmada(ruta);
 }

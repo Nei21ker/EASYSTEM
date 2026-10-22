@@ -1,11 +1,12 @@
 ---
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import StatCard from '../components/dashboard/StatCard.astro';
+import CuadreCaja from '../components/reportes/CuadreCaja.astro';
 ---
 
 <DashboardLayout
-  titulo="Reportes & Métricas"
-  subtitulo="Ventas, categorías y modelos de teléfono más solicitados"
+  titulo="Reportes y cuadre"
+  subtitulo="Ventas, categorías y modelos más solicitados, y el cuadre de caja del día"
   roles={['administrador', 'gerente', 'encargado']}
 >
   <div id="rp-pantalla" class="space-y-6 print:hidden">
@@ -22,9 +23,14 @@ import StatCard from '../components/dashboard/StatCard.astro';
           <input id="rp-hasta" type="date" class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
       </div>
-      <button id="rp-imprimir" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700">
-        Generar reporte (PDF / Imprimir)
-      </button>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="rp-cuadre" type="button" class="bg-marca rounded-lg px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:brightness-110">
+          Cuadre de caja del día
+        </button>
+        <button id="rp-imprimir" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700">
+          Generar reporte (PDF / Imprimir)
+        </button>
+      </div>
     </div>
 
     <p id="rp-rango-etiqueta" class="text-xs text-slate-500 dark:text-slate-400"></p>
@@ -93,6 +99,8 @@ import StatCard from '../components/dashboard/StatCard.astro';
 
   <!-- Reporte imprimible: oculto en pantalla, es lo único visible al imprimir -->
   <div id="rp-imprimible" class="hidden print:block"></div>
+
+  <CuadreCaja />
 </DashboardLayout>
 
 <script>
@@ -416,6 +424,7 @@ import { alCambiarDatos } from '../lib/realtime';
   inputDesde.addEventListener('change', () => rangoActual === 'personalizado' && actualizarReporte());
   inputHasta.addEventListener('change', () => rangoActual === 'personalizado' && actualizarReporte());
   document.getElementById('rp-imprimir')?.addEventListener('click', () => window.print());
+  document.getElementById('rp-cuadre')?.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-cuadre')));
 
   $tema.subscribe(() => repintarCharts());
 

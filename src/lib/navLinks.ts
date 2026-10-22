@@ -54,7 +54,7 @@ export const enlacesNav: EnlaceNav[] = [
   { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: SIN_VENDEDOR },
   {
     href: '/reportes',
-    etiqueta: 'Reportes & Métricas',
+    etiqueta: 'Reportes y cuadre',
     icono: 'M3 3v18h18M7 15v3M11 10v8M15 6v12M19 12v6',
     roles: GERENCIA,
   },

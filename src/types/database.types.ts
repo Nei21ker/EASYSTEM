@@ -332,3 +332,48 @@ export interface Nomina {
   comprobante_path: string | null;
   created_at: string;
 }
+
+// ----------------------------------------------------------------------------
+// Cuadre de caja diario (migración 0034)
+// ----------------------------------------------------------------------------
+export type EstadoCuadre = 'ABIERTO' | 'CERRADO';
+/** Qué muestra cada foto de respaldo del cuadre */
+export type TipoFotoCuadre = 'PAGO_MOVIL' | 'BINANCE' | 'EFECTIVO' | 'CIERRE_PUNTO';
+
+/** Lo que el sistema esperaba haber cobrado con un tipo de cobro ese día (neto de vuelto y reembolsos). */
+export interface EsperadoCuadre {
+  metodo: MetodoPago;
+  /** Ventas en las que se usó ese tipo de cobro */
+  ventas: number;
+  usd: number;
+  bs: number;
+}
+
+/** Lo que se declaró tener, en la moneda del tipo de cobro (Bs en los BS_*, $ en los demás). */
+export interface ContadoCuadre {
+  metodo: MetodoPago;
+  monto: number;
+}
+
+/** Foto de respaldo: ruta en el bucket privado cuadres-caja (en LocalStorage, la imagen como data URL). */
+export interface FotoCuadre {
+  tipo: TipoFotoCuadre;
+  path: string;
+}
+
+export interface CuadreCaja {
+  id: string;
+  local_id: string;
+  /** Día cuadrado, "aaaa-mm-dd" */
+  fecha: string;
+  estado: EstadoCuadre;
+  esperado: EsperadoCuadre[];
+  contado: ContadoCuadre[];
+  fotos: FotoCuadre[];
+  notas: string | null;
+  registrado_nombre: string | null;
+  cerrado_en: string | null;
+  cerrado_por: string | null;
+  created_at: string;
+  updated_at: string;
+}

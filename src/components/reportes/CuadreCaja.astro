@@ -1,0 +1,630 @@
+---
+// Cuadre de caja diario: ventana que abre el botón "Cuadre de caja" de Reportes y cuadre (evento easystem:abrir-cuadre).
+// Compara lo que el sistema esperaba cobrar con cada tipo de cobro contra lo contado y guarda las fotos de respaldo.
+// Encargado: solo su local. Administrador y gerente: eligen cualquier local y ven el estado del día de todos.
+import { TIPOS_FOTO_CUADRE } from '../../utils/cuadre';
+
+const claseCampo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-800/50';
+---
+
+<dialog
+  id="cq-dialogo"
+  aria-labelledby="cq-titulo"
+  class="anim-escalar m-auto w-[min(56rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="flex max-h-[94dvh] flex-col">
+    <!-- Cabecera: título, día y local -->
+    <div class="shrink-0 space-y-3 border-b border-slate-200 px-5 pb-4 pt-5 dark:border-slate-800">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h2 id="cq-titulo" class="text-base font-semibold">Cuadre de caja del día</h2>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            Compara lo que el sistema espera haber cobrado con lo que realmente hay, y adjunta las fotos de respaldo.
+          </p>
+        </div>
+        <button id="cq-cerrar-x" type="button" aria-label="Cerrar" class="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
+      </div>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label for="cq-fecha" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Día</label>
+          <input id="cq-fecha" type="date" class={`mt-1 ${claseCampo}`} />
+        </div>
+        <div>
+          <label for="cq-local" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Local</label>
+          <select id="cq-local" class={`mt-1 ${claseCampo}`}></select>
+          <p id="cq-local-fijo" class="mt-1 hidden rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-200"></p>
+        </div>
+      </div>
+
+      <!-- Administrador y gerente: estado del día en todos los locales -->
+      <div id="cq-chips" class="hidden flex-wrap gap-2"></div>
+    </div>
+
+    <!-- Contenido -->
+    <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4">
+      <p id="cq-cargando" class="py-8 text-center text-sm text-slate-500 dark:text-slate-400">Cargando el cuadre...</p>
+      <p id="cq-error-carga" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+
+      <div id="cq-contenido" class="hidden space-y-5">
+        <p id="cq-estado" class="rounded-lg px-3 py-2 text-xs font-medium"></p>
+
+        <!-- Cobros: esperado vs contado -->
+        <section>
+          <h3 class="text-sm font-semibold">Cobros del día</h3>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            "Esperado" es lo que cobró el sistema con cada tipo de cobro (neto de vuelto y reembolsos). Escribe lo que realmente hay: en bolívares los tipos en Bs. y en dólares el resto.
+          </p>
+          <div id="cq-filas" class="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200 dark:divide-slate-800 dark:border-slate-700"></div>
+          <p id="cq-resumen" class="mt-2 text-xs font-medium"></p>
+        </section>
+
+        <!-- Fotos de respaldo -->
+        <section>
+          <h3 class="text-sm font-semibold">Fotos de respaldo</h3>
+          <div id="cq-fotos" class="mt-3 space-y-4">
+            {TIPOS_FOTO_CUADRE.map((t) => (
+              <div data-seccion-foto={t.tipo} class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="text-sm font-medium">
+                      {t.titulo} <span data-obligatoria={t.tipo} class="ml-1 hidden rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-500/10 dark:text-red-400">Obligatoria</span>
+                    </p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400">{t.ayuda}</p>
+                  </div>
+                  <button type="button" data-agregar-foto={t.tipo} class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+                    + Agregar foto
+                  </button>
+                </div>
+                <div data-miniaturas={t.tipo} class="mt-3 flex flex-wrap gap-2"></div>
+              </div>
+            ))}
+          </div>
+          <input id="cq-archivo" type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden" />
+        </section>
+
+        <section>
+          <label for="cq-notas" class="text-sm font-semibold">Observaciones</label>
+          <textarea id="cq-notas" rows="2" maxlength="1000" placeholder="Opcional: explica una diferencia, un pago pendiente, etc." class={`mt-2 ${claseCampo}`}></textarea>
+        </section>
+
+        <p id="cq-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+        <p id="cq-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+      </div>
+    </div>
+
+    <!-- Acciones -->
+    <div class="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:flex-row sm:justify-end dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="cq-cerrar" type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cerrar ventana</button>
+      <button id="cq-reabrir" type="button" class="hidden rounded-lg border border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:bg-transparent dark:text-amber-300">Reabrir cuadre</button>
+      <button id="cq-guardar" type="button" class="hidden rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Guardar borrador</button>
+      <button id="cq-finalizar" type="button" class="bg-marca hidden rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">Cerrar cuadre</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGlobal } from '../../lib/auth';
+  import { alCambiarDatos } from '../../lib/realtime';
+  import { reducirImagen } from '../../utils/imagenes';
+  import { fechaLocalISO, formatearBolivares, formatearMoneda } from '../../utils/format';
+  import { filasDelCuadre, fotoObligatoria, TOLERANCIA_CUADRE, TIPOS_FOTO_CUADRE } from '../../utils/cuadre';
+  import type { ContadoCuadre, CuadreCaja, EsperadoCuadre, FotoCuadre, Local, MetodoPago, TipoFotoCuadre } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('cq-dialogo');
+  const campoFecha = $<HTMLInputElement>('cq-fecha');
+  const selectLocal = $<HTMLSelectElement>('cq-local');
+  const localFijo = $('cq-local-fijo');
+  const chips = $('cq-chips');
+  const cargando = $('cq-cargando');
+  const errorCarga = $('cq-error-carga');
+  const contenido = $('cq-contenido');
+  const estadoEl = $('cq-estado');
+  const filasEl = $('cq-filas');
+  const resumenEl = $('cq-resumen');
+  const notas = $<HTMLTextAreaElement>('cq-notas');
+  const errorEl = $('cq-error');
+  const exitoEl = $('cq-exito');
+  const archivo = $<HTMLInputElement>('cq-archivo');
+  const botonGuardar = $<HTMLButtonElement>('cq-guardar');
+  const botonFinalizar = $<HTMLButtonElement>('cq-finalizar');
+  const botonReabrir = $<HTMLButtonElement>('cq-reabrir');
+
+  let esGlobalUsuario = false;
+  let locales: Local[] = [];
+  let localId = '';
+  let fecha = fechaLocalISO();
+  let cuadre: CuadreCaja | null = null;
+  let esperado: EsperadoCuadre[] = [];
+  /** Lo que se está escribiendo en cada tipo de cobro (texto tal cual) */
+  let valores: Record<string, string> = {};
+  let guardadas: FotoCuadre[] = [];
+  let nuevas: { id: number; tipo: TipoFotoCuadre; imagen: Blob; url: string }[] = [];
+  let quitadas = new Set<string>();
+  let sucio = false;
+  let ocupado = false;
+  let cargaId = 0;
+  let idNueva = 0;
+  let tipoAgregando: TipoFotoCuadre | null = null;
+  let cierreArmado: number | undefined;
+  const urls = new Map<string, string>();
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+  const cerrado = () => cuadre?.estado === 'CERRADO';
+  const nombreLocal = (id: string) => locales.find((l) => l.id === id)?.nombre ?? 'Local';
+
+  /** Lee un monto escrito a mano ("1.234,56", "36,5", "0"); null si está vacío o no es un número. */
+  function leerMonto(texto: string): number | null {
+    const limpio = texto.trim().replace(/\s/g, '');
+    if (!limpio) return null;
+    if (!/^[\d.,]+$/.test(limpio) || !/\d/.test(limpio)) return null;
+    const ultimo = Math.max(limpio.lastIndexOf(','), limpio.lastIndexOf('.'));
+    const entero = (ultimo >= 0 ? limpio.slice(0, ultimo) : limpio).replace(/[.,]/g, '');
+    const decimales = ultimo >= 0 ? limpio.slice(ultimo + 1) : '';
+    if (decimales.length > 2) return null;
+    const valor = Number(`${entero || '0'}.${decimales || '0'}`);
+    return Number.isFinite(valor) && valor < 1_000_000_000 ? valor : null;
+  }
+
+  function leerContado(): ContadoCuadre[] {
+    const lista: ContadoCuadre[] = [];
+    for (const [metodo, texto] of Object.entries(valores)) {
+      const monto = leerMonto(texto);
+      if (monto !== null) lista.push({ metodo: metodo as MetodoPago, monto });
+    }
+    return lista;
+  }
+
+  const dinero = (n: number, enBs: boolean) => (enBs ? formatearBolivares(n) : formatearMoneda(n));
+
+  function textoDiferencia(dif: number | null, enBs: boolean): { texto: string; clases: string } {
+    if (dif === null) return { texto: '—', clases: 'text-slate-400' };
+    if (Math.abs(dif) <= TOLERANCIA_CUADRE) return { texto: 'Cuadra', clases: 'text-emerald-600 dark:text-emerald-400' };
+    return dif > 0
+      ? { texto: `Sobra ${dinero(dif, enBs)}`, clases: 'text-amber-600 dark:text-amber-400' }
+      : { texto: `Falta ${dinero(-dif, enBs)}`, clases: 'text-red-600 dark:text-red-400' };
+  }
+
+  // --- Pintado ---------------------------------------------------------------------------------------
+  function pintarFilas() {
+    const bloqueado = cerrado();
+    const filas = filasDelCuadre(esperado, leerContado());
+    filasEl.innerHTML = filas
+      .map((f) => {
+        const d = textoDiferencia(f.diferencia, f.enBs);
+        return `
+        <div data-fila="${f.metodo}" class="grid grid-cols-2 items-center gap-x-3 gap-y-1 px-4 py-3 sm:grid-cols-[1.4fr_1fr_1.2fr_1fr]">
+          <div class="col-span-2 sm:col-span-1">
+            <p class="text-sm font-medium">${escapar(f.etiqueta)}</p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">${f.ventas} venta${f.ventas === 1 ? '' : 's'}</p>
+          </div>
+          <div>
+            <p class="text-[10px] uppercase tracking-wide text-slate-400">Esperado</p>
+            <p class="text-sm font-semibold tabular-nums">${dinero(f.esperado, f.enBs)}</p>
+          </div>
+          <div>
+            <label for="cq-contado-${f.metodo}" class="text-[10px] uppercase tracking-wide text-slate-400">Contado (${f.enBs ? 'Bs.' : '$'})</label>
+            <input id="cq-contado-${f.metodo}" data-contado="${f.metodo}" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${escapar(valores[f.metodo] ?? '')}" ${bloqueado ? 'disabled' : ''}
+              class="mt-0.5 w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-right text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-800/50" />
+          </div>
+          <div>
+            <p class="text-[10px] uppercase tracking-wide text-slate-400">Diferencia</p>
+            <p data-dif="${f.metodo}" class="text-sm font-semibold ${d.clases}">${d.texto}</p>
+          </div>
+        </div>`;
+      })
+      .join('');
+    actualizarResumen();
+  }
+
+  /** Actualiza solo los textos de diferencia y el resumen (sin reconstruir los campos que se están escribiendo). */
+  function actualizarDiferencias() {
+    for (const f of filasDelCuadre(esperado, leerContado())) {
+      const celda = filasEl.querySelector<HTMLElement>(`[data-dif="${f.metodo}"]`);
+      if (!celda) continue;
+      const d = textoDiferencia(f.diferencia, f.enBs);
+      celda.textContent = d.texto;
+      celda.className = `text-sm font-semibold ${d.clases}`;
+    }
+    actualizarResumen();
+  }
+
+  function actualizarResumen() {
+    const filas = filasDelCuadre(esperado, leerContado());
+    const faltan = filas.filter((f) => f.contado === null && Math.abs(f.esperado) > TOLERANCIA_CUADRE / 2).length;
+    const conDiferencia = filas.filter((f) => f.diferencia !== null && Math.abs(f.diferencia) > TOLERANCIA_CUADRE).length;
+    let texto: string;
+    let clases: string;
+    if (faltan > 0) {
+      texto = `Falta escribir ${faltan} monto${faltan === 1 ? '' : 's'} contado${faltan === 1 ? '' : 's'}.`;
+      clases = 'text-slate-500 dark:text-slate-400';
+    } else if (conDiferencia > 0) {
+      texto = `Hay diferencia en ${conDiferencia} tipo${conDiferencia === 1 ? '' : 's'} de cobro. Puedes cerrar igual y explicarla en las observaciones.`;
+      clases = 'text-amber-600 dark:text-amber-400';
+    } else {
+      texto = 'Todo cuadra.';
+      clases = 'text-emerald-600 dark:text-emerald-400';
+    }
+    resumenEl.textContent = texto;
+    resumenEl.className = `mt-2 text-xs font-medium ${clases}`;
+  }
+
+  async function resolverUrl(path: string): Promise<string | null> {
+    if (urls.has(path)) return urls.get(path)!;
+    try {
+      const url = await inventoryService.urlFotoCuadre(path);
+      urls.set(path, url);
+      return url;
+    } catch {
+      return null;
+    }
+  }
+
+  function pintarFotos() {
+    const bloqueado = cerrado();
+    for (const t of TIPOS_FOTO_CUADRE) {
+      const cont = document.querySelector<HTMLElement>(`[data-miniaturas="${t.tipo}"]`)!;
+      const saved = guardadas.filter((f) => f.tipo === t.tipo && !quitadas.has(f.path));
+      const pend = nuevas.filter((n) => n.tipo === t.tipo);
+      const quitar = (data: string) =>
+        bloqueado ? '' : `<button type="button" ${data} aria-label="Quitar la foto" class="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] text-white shadow">✕</button>`;
+      cont.innerHTML =
+        [
+          ...saved.map(
+            (f) => `
+          <div class="relative">
+            <button type="button" data-ver-foto="${escapar(f.path)}" class="block h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800" aria-label="Ver la foto">
+              <img data-ruta="${escapar(f.path)}" alt="Foto de ${escapar(t.titulo)}" class="h-full w-full object-cover" ${urls.has(f.path) ? `src="${escapar(urls.get(f.path)!)}"` : ''} />
+            </button>
+            ${quitar(`data-quitar-guardada="${escapar(f.path)}"`)}
+          </div>`
+          ),
+          ...pend.map(
+            (n) => `
+          <div class="relative">
+            <button type="button" data-ver-foto="${escapar(n.url)}" class="block h-20 w-20 overflow-hidden rounded-lg border-2 border-dashed border-brand-400 bg-slate-100 dark:bg-slate-800" aria-label="Ver la foto">
+              <img src="${escapar(n.url)}" alt="Foto nueva" class="h-full w-full object-cover" />
+            </button>
+            <span class="absolute bottom-0.5 left-0.5 rounded bg-brand-600 px-1 text-[9px] font-semibold text-white">nueva</span>
+            ${quitar(`data-quitar-nueva="${n.id}"`)}
+          </div>`
+          ),
+        ].join('') || '<p class="text-xs text-slate-400">Sin fotos todavía.</p>';
+
+      const obligatoria = document.querySelector<HTMLElement>(`[data-obligatoria="${t.tipo}"]`)!;
+      obligatoria.classList.toggle('hidden', !fotoObligatoria(t.tipo, esperado) || bloqueado);
+      document.querySelector<HTMLButtonElement>(`[data-agregar-foto="${t.tipo}"]`)!.disabled = bloqueado || ocupado;
+    }
+    // Los enlaces firmados se piden una vez; al llegar se completan las imágenes
+    for (const img of document.querySelectorAll<HTMLImageElement>('img[data-ruta]')) {
+      if (img.getAttribute('src')) continue;
+      void resolverUrl(img.dataset.ruta!).then((url) => url && (img.src = url));
+    }
+  }
+
+  function pintarEstado() {
+    if (cerrado()) {
+      estadoEl.textContent = `Cuadre CERRADO${cuadre!.cerrado_por ? ` por ${cuadre!.cerrado_por}` : ''}${cuadre!.cerrado_en ? ` el ${new Date(cuadre!.cerrado_en).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' }).replace(/\.$/, '')}` : ''}. Ya no se puede modificar.`;
+      estadoEl.className = 'rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300';
+    } else if (cuadre) {
+      estadoEl.textContent = 'Borrador guardado: falta cerrarlo para dar el día por cuadrado.';
+      estadoEl.className = 'rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-300';
+    } else {
+      estadoEl.textContent = 'Este día todavía no tiene cuadre.';
+      estadoEl.className = 'rounded-lg bg-slate-100 px-3 py-2 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+    }
+    botonGuardar.classList.toggle('hidden', cerrado());
+    botonFinalizar.classList.toggle('hidden', cerrado());
+    botonReabrir.classList.toggle('hidden', !(cerrado() && esGlobalUsuario));
+    notas.disabled = cerrado();
+    restablecerBotonCierre();
+  }
+
+  function restablecerBotonCierre() {
+    window.clearTimeout(cierreArmado);
+    cierreArmado = undefined;
+    botonFinalizar.textContent = 'Cerrar cuadre';
+  }
+
+  function pintarTodo() {
+    pintarEstado();
+    pintarFilas();
+    pintarFotos();
+  }
+
+  // --- Carga -----------------------------------------------------------------------------------------
+  /** `silencioso`: actualización en vivo (no oculta lo que se ve ni borra los avisos). */
+  async function cargar(silencioso = false) {
+    const id = ++cargaId;
+    if (!silencioso) {
+      errorCarga.classList.add('hidden');
+      contenido.classList.add('hidden');
+      cargando.classList.remove('hidden');
+      errorEl.classList.add('hidden');
+      exitoEl.classList.add('hidden');
+    }
+    try {
+      const [existente, calculado] = await Promise.all([
+        inventoryService.obtenerCuadre(localId, fecha),
+        inventoryService.calcularEsperadoCuadre(localId, fecha),
+      ]);
+      if (id !== cargaId) return;
+      cuadre = existente;
+      // Un cuadre cerrado conserva lo que el sistema esperaba al cerrarlo; el resto, lo de ahora
+      esperado = existente?.estado === 'CERRADO' ? existente.esperado : calculado;
+      guardadas = existente?.fotos ?? [];
+    } catch (err) {
+      if (id !== cargaId || silencioso) return;
+      cargando.classList.add('hidden');
+      errorCarga.textContent = err instanceof Error ? err.message : 'No se pudo cargar el cuadre.';
+      errorCarga.classList.remove('hidden');
+      return;
+    }
+    for (const n of nuevas) URL.revokeObjectURL(n.url);
+    nuevas = [];
+    quitadas = new Set();
+    valores = {};
+    for (const c of cuadre?.contado ?? []) valores[c.metodo] = String(c.monto).replace('.', ',');
+    notas.value = cuadre?.notas ?? '';
+    sucio = false;
+    cargando.classList.add('hidden');
+    contenido.classList.remove('hidden');
+    pintarTodo();
+    void pintarChips();
+  }
+
+  /** Administrador / gerente: cómo va el día en cada local (Sin cuadre / Borrador / Cerrado, con aviso de diferencias). */
+  async function pintarChips() {
+    if (!esGlobalUsuario) return;
+    let cuadres: CuadreCaja[] = [];
+    try {
+      cuadres = await inventoryService.listarCuadresDelDia(fecha);
+    } catch {
+      /* sin conexión: se muestran sin estado */
+    }
+    chips.innerHTML = locales
+      .map((l) => {
+        const c = cuadres.find((x) => x.local_id === l.id);
+        let estado = 'Sin cuadre';
+        let clases = 'border-slate-200 text-slate-600 dark:border-slate-700 dark:text-slate-300';
+        if (c?.estado === 'ABIERTO') {
+          estado = 'Borrador';
+          clases = 'border-amber-300 text-amber-700 dark:border-amber-500/40 dark:text-amber-300';
+        } else if (c) {
+          const conDif = filasDelCuadre(c.esperado, c.contado).some((f) => f.diferencia !== null && Math.abs(f.diferencia) > TOLERANCIA_CUADRE);
+          estado = conDif ? 'Cerrado · con diferencia' : 'Cerrado · cuadra';
+          clases = conDif ? 'border-red-300 text-red-700 dark:border-red-500/40 dark:text-red-300' : 'border-emerald-300 text-emerald-700 dark:border-emerald-500/40 dark:text-emerald-300';
+        }
+        const activo = l.id === localId ? 'ring-2 ring-brand-500' : '';
+        return `<button type="button" data-chip-local="${l.id}" class="rounded-full border px-3 py-1 text-xs font-medium ${clases} ${activo}"><span class="font-semibold">${escapar(l.nombre)}</span> · ${estado}</button>`;
+      })
+      .join('');
+  }
+
+  // --- Abrir / cambiar día o local ------------------------------------------------------------------------
+  async function abrir() {
+    const contexto = await inventoryService.obtenerContextoLocal();
+    if (!contexto) return;
+    esGlobalUsuario = esGlobal(contexto.sesion.rol);
+    locales = esGlobalUsuario ? contexto.locales : contexto.locales.filter((l) => l.id === contexto.sesion.local_id);
+    if (locales.length === 0) {
+      errorCarga.textContent = 'Tu usuario no tiene un local asignado: pídele al administrador que te asigne uno.';
+      errorCarga.classList.remove('hidden');
+      cargando.classList.add('hidden');
+      dialogo.showModal();
+      return;
+    }
+    fecha = fechaLocalISO();
+    campoFecha.value = fecha;
+    campoFecha.max = fecha;
+    localId = contexto.local?.id ?? locales[0].id;
+    if (!locales.some((l) => l.id === localId)) localId = locales[0].id;
+    selectLocal.innerHTML = locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
+    selectLocal.value = localId;
+    // El encargado ve su local fijo; administrador y gerente eligen
+    selectLocal.classList.toggle('hidden', !esGlobalUsuario);
+    localFijo.classList.toggle('hidden', esGlobalUsuario);
+    localFijo.textContent = nombreLocal(localId);
+    chips.classList.toggle('hidden', !esGlobalUsuario);
+    chips.classList.toggle('flex', esGlobalUsuario);
+    dialogo.showModal();
+    await cargar();
+  }
+
+  function confirmarDescarteSiHaceFalta(): boolean {
+    return !sucio || window.confirm('Tienes cambios sin guardar en este cuadre. ¿Descartarlos?');
+  }
+
+  campoFecha.addEventListener('change', () => {
+    if (!campoFecha.value || campoFecha.value > fechaLocalISO()) {
+      campoFecha.value = fecha;
+      return;
+    }
+    if (!confirmarDescarteSiHaceFalta()) {
+      campoFecha.value = fecha;
+      return;
+    }
+    fecha = campoFecha.value;
+    void cargar();
+  });
+
+  function cambiarLocal(id: string) {
+    if (id === localId) return;
+    if (!confirmarDescarteSiHaceFalta()) {
+      selectLocal.value = localId;
+      return;
+    }
+    localId = id;
+    selectLocal.value = id;
+    void cargar();
+  }
+  selectLocal.addEventListener('change', () => cambiarLocal(selectLocal.value));
+  chips.addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-chip-local]')?.dataset.chipLocal;
+    if (id) cambiarLocal(id);
+  });
+
+  // --- Edición ----------------------------------------------------------------------------------------------
+  filasEl.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    const metodo = input.dataset.contado;
+    if (!metodo) return;
+    valores[metodo] = input.value;
+    sucio = true;
+    actualizarDiferencias();
+  });
+  notas.addEventListener('input', () => (sucio = true));
+
+  for (const boton of document.querySelectorAll<HTMLButtonElement>('[data-agregar-foto]')) {
+    boton.addEventListener('click', () => {
+      tipoAgregando = boton.dataset.agregarFoto as TipoFotoCuadre;
+      archivo.value = '';
+      archivo.click();
+    });
+  }
+
+  archivo.addEventListener('change', async () => {
+    const tipo = tipoAgregando;
+    const lista = Array.from(archivo.files ?? []);
+    if (!tipo || lista.length === 0) return;
+    errorEl.classList.add('hidden');
+    const rechazadas: string[] = [];
+    for (const f of lista) {
+      try {
+        // Capturas con texto: se conserva más resolución que en las fotos de producto
+        const imagen = await reducirImagen(f, { ladoMaximo: 1280 });
+        nuevas.push({ id: ++idNueva, tipo, imagen, url: URL.createObjectURL(imagen) });
+        sucio = true;
+      } catch (err) {
+        rechazadas.push(`${f.name}: ${err instanceof Error ? err.message : 'no se pudo leer'}`);
+      }
+    }
+    if (rechazadas.length) mostrarError(rechazadas.join(' · '));
+    pintarFotos();
+  });
+
+  $('cq-fotos').addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+    const quitarGuardada = objetivo.closest<HTMLElement>('[data-quitar-guardada]')?.dataset.quitarGuardada;
+    if (quitarGuardada) {
+      quitadas.add(quitarGuardada);
+      sucio = true;
+      return pintarFotos();
+    }
+    const quitarNueva = objetivo.closest<HTMLElement>('[data-quitar-nueva]')?.dataset.quitarNueva;
+    if (quitarNueva) {
+      const n = nuevas.find((x) => String(x.id) === quitarNueva);
+      if (n) URL.revokeObjectURL(n.url);
+      nuevas = nuevas.filter((x) => String(x.id) !== quitarNueva);
+      return pintarFotos();
+    }
+    const ver = objetivo.closest<HTMLElement>('[data-ver-foto]')?.dataset.verFoto;
+    if (ver) {
+      void (async () => {
+        const url = ver.startsWith('blob:') || ver.startsWith('data:') ? ver : await resolverUrl(ver);
+        if (url) window.open(url, '_blank', 'noopener');
+      })();
+    }
+  });
+
+  // --- Guardar / cerrar / reabrir ------------------------------------------------------------------------------
+  function mostrarError(texto: string) {
+    exitoEl.classList.add('hidden');
+    errorEl.textContent = texto;
+    errorEl.classList.remove('hidden');
+    errorEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  function mostrarExito(texto: string) {
+    errorEl.classList.add('hidden');
+    exitoEl.textContent = texto;
+    exitoEl.classList.remove('hidden');
+  }
+
+  async function guardar(cerrar: boolean) {
+    if (ocupado) return;
+    errorEl.classList.add('hidden');
+    exitoEl.classList.add('hidden');
+    ocupado = true;
+    botonGuardar.disabled = true;
+    botonFinalizar.disabled = true;
+    const textoOriginal = botonFinalizar.textContent;
+    (cerrar ? botonFinalizar : botonGuardar).textContent = 'Guardando...';
+    try {
+      await inventoryService.guardarCuadre({
+        localId,
+        fecha,
+        contado: leerContado(),
+        notas: notas.value,
+        fotosNuevas: nuevas.map((n) => ({ tipo: n.tipo, imagen: n.imagen })),
+        fotosQuitadas: [...quitadas],
+        cerrar,
+      });
+      sucio = false;
+      await cargar();
+      mostrarExito(cerrar ? 'Cuadre cerrado. Ya no se puede modificar.' : 'Borrador guardado.');
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo guardar el cuadre.');
+      botonFinalizar.textContent = textoOriginal;
+    } finally {
+      ocupado = false;
+      botonGuardar.disabled = false;
+      botonFinalizar.disabled = false;
+      botonGuardar.textContent = 'Guardar borrador';
+      if (!cerrado()) restablecerBotonCierre();
+    }
+  }
+
+  botonGuardar.addEventListener('click', () => void guardar(false));
+  // Cerrar pide una segunda pulsación: un cuadre cerrado ya no se edita
+  botonFinalizar.addEventListener('click', () => {
+    if (cierreArmado === undefined) {
+      botonFinalizar.textContent = 'Confirmar: ya no se podrá editar';
+      cierreArmado = window.setTimeout(restablecerBotonCierre, 6000);
+      return;
+    }
+    restablecerBotonCierre();
+    void guardar(true);
+  });
+
+  botonReabrir.addEventListener('click', async () => {
+    if (!window.confirm('¿Reabrir este cuadre para corregirlo? Quedará como borrador hasta que se vuelva a cerrar.')) return;
+    try {
+      await inventoryService.reabrirCuadre(localId, fecha);
+      await cargar();
+      mostrarExito('Cuadre reabierto: corrige lo necesario y vuelve a cerrarlo.');
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo reabrir el cuadre.');
+    }
+  });
+
+  function cerrarVentana() {
+    if (!confirmarDescarteSiHaceFalta()) return;
+    dialogo.close();
+  }
+  $('cq-cerrar').addEventListener('click', cerrarVentana);
+  $('cq-cerrar-x').addEventListener('click', cerrarVentana);
+  dialogo.addEventListener('cancel', (e) => {
+    if (!confirmarDescarteSiHaceFalta()) e.preventDefault();
+  });
+  dialogo.addEventListener('close', () => {
+    for (const n of nuevas) URL.revokeObjectURL(n.url);
+    nuevas = [];
+    sucio = false;
+  });
+
+  window.addEventListener('easystem:abrir-cuadre', () => void abrir());
+
+  // Actualización en vivo: otro dispositivo cambió el cuadre o hubo ventas; no se toca lo que se está escribiendo
+  alCambiarDatos(['cuadres_caja', 'ventas', 'devoluciones'], async () => {
+    if (!dialogo.open || ocupado) return;
+    await pintarChips();
+    if (!sucio && !ocupado) await cargar(true);
+  });
+</script>

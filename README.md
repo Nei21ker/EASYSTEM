@@ -15,7 +15,7 @@ Sistema de gestión de inventario y punto de venta para **Edward Accesorios** (a
 | Dashboard, Productos, Modelos, Movimientos | ✅ | ✅ |
 | Precio de compra (columna en Productos) | ✅ | ❌ oculto |
 | Nueva Venta (POS) | ✅ | ✅ |
-| Reportes & Métricas (financieros) | ✅ | ❌ sin acceso |
+| Reportes y cuadre (financieros) | ✅ | ❌ sin acceso |
 | Gestión de Usuarios | ✅ | ❌ sin acceso |
 
 Todas las páginas exigen sesión iniciada (`/login`); las rutas de administrador redirigen a "/" si un vendedor intenta entrar. Esto se aplica en el cliente (`src/lib/auth.ts` → `protegerPagina`, llamado desde `DashboardLayout.astro`), apropiado para un sitio estático — no reemplaza RLS/políticas de servidor si necesitas protección más estricta.
