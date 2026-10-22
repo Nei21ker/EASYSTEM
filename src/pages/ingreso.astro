@@ -13,7 +13,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
 <DashboardLayout
   titulo="Ingreso de mercancía"
-  subtitulo="Registra lo que llega, crea productos nuevos e imprime sus etiquetas con código de barras"
+  subtitulo="Registra lo que llega, crea productos nuevos e imprime una etiqueta con código único por cada unidad"
   roles={['administrador', 'gerente', 'encargado']}
 >
   <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -58,7 +58,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div id="ig-vacio" class="px-5 py-10 text-center">
           <p class="text-sm font-medium text-slate-700 dark:text-slate-200">Todavía no hay productos en el lote</p>
           <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Busca o escanea un producto para sumarle stock, o crea uno nuevo. Con cantidad 0 solo imprimes etiquetas.
+            Busca o escanea un producto para sumarle stock, o crea uno nuevo. Cada unidad que ingresa recibe su propio código. Con cantidad 0 solo imprimes etiquetas de unidades que aún no tienen.
           </p>
         </div>
 
@@ -107,7 +107,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <aside class="space-y-4">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Etiquetas</h2>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Código y nombre del producto. Elige el tipo de código y el tamaño de tu papel de etiquetas.</p>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Cada etiqueta lleva el código ÚNICO de una unidad y el nombre del producto: al venderla, el sistema sabe cuál unidad salió y no se puede vender dos veces. Elige el tipo de código y el tamaño de tu papel de etiquetas.
+        </p>
         <label for="ig-tipo" class={`mt-4 ${claseEtiqueta}`}>Tipo de código</label>
         <select id="ig-tipo" class={`mt-1 ${claseCampo}`}>
           {TIPOS_CODIGO_ETIQUETA.map((t) => <option value={t.id}>{t.nombre}</option>)}
@@ -137,6 +139,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia } from '../lib/auth';
+  import { esCodigoUnidad, construirCodigoUnidad } from '../utils/codigos';
   import {
     buscarFormatoEtiqueta,
     buscarTipoCodigo,
@@ -172,6 +175,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     copias: number;
     /** La cantidad de etiquetas se cambió a mano: ya no sigue a las unidades */
     manual: boolean;
+    /** Códigos de las unidades que se crearon al registrar el ingreso de esta línea (para imprimir o reimprimir sus etiquetas) */
+    unidades?: string[];
   }
 
   // El lote se recuerda por usuario (varias personas pueden compartir el mismo equipo)
@@ -183,6 +188,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let lote: Linea[] = [];
   let hayLocal = false;
   let primeraVez = true;
+  /** Unidades disponibles del local que todavía no tienen etiqueta impresa, por producto (las más antiguas primero) */
+  let sinEtiqueta = new Map<string, string[]>();
 
   const normalizar = (t: string) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
   const escapar = (t: string) => {
@@ -281,6 +288,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!q) return;
     const exacto = productos.find((p) => p.codigo_barras === q);
     if (exacto) return agregar(exacto.id);
+    if (esCodigoUnidad(q)) return void localizarPorUnidad(q);
     if (/^\d{6,}$/.test(q)) avisarCodigoNuevo(q);
   });
   resultados.addEventListener('click', (e) => {
@@ -301,8 +309,29 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const codigo = e.detail.codigo.trim();
     const encontrado = productos.find((p) => p.codigo_barras === codigo);
     if (encontrado) agregar(encontrado.id);
+    else if (esCodigoUnidad(codigo)) void localizarPorUnidad(codigo);
     else avisarCodigoNuevo(codigo);
   }) as EventListener);
+
+  /** Se escaneó la etiqueta de una unidad: se muestra su producto en el lote (sin sumar unidades, esa unidad ya existe). */
+  async function localizarPorUnidad(codigo: string) {
+    buscar.value = '';
+    pintarResultados();
+    const unidad = await inventoryService.obtenerUnidadPorCodigo(codigo).catch(() => null);
+    if (!unidad || !producto(unidad.producto_id)) {
+      avisar(`El código ${codigo} no corresponde a ninguna unidad registrada.`);
+      return;
+    }
+    aviso.classList.add('hidden');
+    if (!lote.some((l) => l.id === unidad.producto_id)) {
+      lote.push({ id: unidad.producto_id, cantidad: 0, copias: 0, manual: false });
+      guardarLote();
+      pintarLote();
+    }
+    const fila = filas.querySelector<HTMLElement>(`[data-fila="${unidad.producto_id}"]`);
+    reanimar(fila, 'anim-destello');
+    fila?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
 
   // --- Lote -------------------------------------------------------------------------
   function agregar(id: string) {
@@ -314,13 +343,38 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (existente) {
       // Escanear otra vez el mismo producto = una unidad más
       existente.cantidad += 1;
-      if (!existente.manual) existente.copias = existente.cantidad;
+      if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
     } else {
       lote.push({ id, cantidad: 1, copias: 1, manual: false });
     }
     guardarLote();
     pintarLote();
     filas.querySelector<HTMLInputElement>(`[data-cantidad="${id}"]`)?.select();
+  }
+
+  /** Qué se puede imprimir de esta línea: las unidades que acaba de ingresar y las que siguen sin etiqueta. */
+  function textoPista(l: Linea): string {
+    const nuevas = l.unidades?.length ?? 0;
+    const pendientes = (sinEtiqueta.get(l.id) ?? []).filter((c) => !l.unidades?.includes(c)).length;
+    const partes = [];
+    if (nuevas) partes.push(`${nuevas} unidad${nuevas === 1 ? '' : 'es'} nueva${nuevas === 1 ? '' : 's'} con código`);
+    partes.push(pendientes ? `${pendientes} sin etiqueta` : 'todas con etiqueta');
+    return escapar(partes.join(' · '));
+  }
+
+  async function cargarSinEtiqueta() {
+    try {
+      const unidades = await inventoryService.listarUnidades({ estado: 'DISPONIBLE', sinImprimir: true });
+      const mapa = new Map<string, string[]>();
+      for (const u of unidades) (mapa.get(u.producto_id) ?? mapa.set(u.producto_id, []).get(u.producto_id)!).push(u.codigo);
+      sinEtiqueta = mapa;
+    } catch {
+      /* sin conexión: se conserva lo último que se supo */
+    }
+    for (const l of lote) {
+      const pista = filas.querySelector<HTMLElement>(`[data-pista="${l.id}"]`);
+      if (pista) pista.innerHTML = textoPista(l);
+    }
   }
 
   function pintarLote() {
@@ -341,6 +395,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <td class="px-4 py-3">
               <p class="font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
               <p class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+              <p data-pista="${l.id}" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${textoPista(l)}</p>
             </td>
             <td data-label="Stock" class="px-4 py-3 text-right tabular-nums" data-stock="${l.id}">${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}</td>
             <td data-label="Ingresan" class="px-4 py-3"><input type="number" inputmode="numeric" min="0" step="1" value="${l.cantidad}" data-cantidad="${l.id}" aria-label="Unidades que ingresan de ${escapar(p.nombre)}" class="${campo}" /></td>
@@ -369,7 +424,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (idCantidad) {
       linea.cantidad = entero(input.value);
       if (!linea.manual) {
-        linea.copias = linea.cantidad;
+        linea.copias = (linea.unidades?.length ?? 0) + linea.cantidad;
         const copias = filas.querySelector<HTMLInputElement>(`[data-copias="${linea.id}"]`);
         if (copias) copias.value = String(linea.copias);
       }
@@ -437,9 +492,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     for (const linea of aRegistrar) {
       const p = producto(linea.id)!;
       try {
-        await inventoryService.registrarMovimiento({ producto_id: p.id, tipo: 'ENTRADA', cantidad: linea.cantidad, motivo: texto });
+        const movimiento = await inventoryService.registrarMovimiento({ producto_id: p.id, tipo: 'ENTRADA', cantidad: linea.cantidad, motivo: texto });
         unidades += linea.cantidad;
-        linea.cantidad = 0; // ya está en el stock; las etiquetas se conservan para imprimirlas
+        linea.cantidad = 0; // ya está en el stock
+        // Cada unidad nueva tiene su código: las etiquetas a imprimir son exactamente esas
+        linea.unidades = [...(linea.unidades ?? []), ...(movimiento.unidad_codigos ?? [])];
+        linea.copias = linea.unidades.length;
+        linea.manual = false;
       } catch (err) {
         fallos.push(`${p.nombre}: ${err instanceof Error ? err.message : 'no se pudo registrar'}`);
       }
@@ -447,13 +506,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     guardarLote();
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    await cargarSinEtiqueta();
     pintarLote();
     botonRegistrar.disabled = false;
     botonRegistrar.textContent = 'Registrar ingreso';
 
     const registrados = aRegistrar.length - fallos.length;
     if (registrados > 0) {
-      mostrarExito(`Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}. Ya puedes imprimir las etiquetas.`);
+      mostrarExito(`Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}, cada una con su código. Ya puedes imprimir las etiquetas.`);
     }
     if (fallos.length) {
       mostrarError(`No se pudo registrar (siguen en el lote): ${fallos.join(' · ')}`);
@@ -463,16 +523,47 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   });
 
   // --- Etiquetas -------------------------------------------------------------------------
-  $('ig-imprimir').addEventListener('click', () => {
+  $('ig-imprimir').addEventListener('click', async () => {
     error.classList.add('hidden');
-    const lista = pedidas();
-    if (totalEtiquetas(lista) === 0) return mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
-    imprimirEtiquetas(lista, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
+    if (totalEtiquetas(pedidas()) === 0) return mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
+    if (lote.some((l) => l.cantidad > 0 && producto(l.id))) {
+      return mostrarError('Primero registra el ingreso: cada unidad recibe su código al registrarse y la etiqueta lleva ese código.');
+    }
+
+    // Una etiqueta por unidad: primero las del ingreso de esta pantalla, después las más antiguas que siguen sin etiqueta
+    const etiquetas: { codigo: string; nombre: string; copias: number }[] = [];
+    const faltas: string[] = [];
+    for (const l of lote) {
+      const p = producto(l.id);
+      if (!p || l.copias <= 0) continue;
+      const codigos = (l.unidades ?? []).slice(0, l.copias);
+      if (codigos.length < l.copias) {
+        const extra = (sinEtiqueta.get(l.id) ?? []).filter((c) => !codigos.includes(c)).slice(0, l.copias - codigos.length);
+        codigos.push(...extra);
+      }
+      if (codigos.length < l.copias) faltas.push(`${p.nombre}: pides ${l.copias} y solo hay ${codigos.length} unidad${codigos.length === 1 ? '' : 'es'} sin etiqueta`);
+      for (const codigo of codigos) etiquetas.push({ codigo, nombre: p.nombre, copias: 1 });
+    }
+    if (etiquetas.length === 0) return mostrarError(faltas.length ? `No hay unidades para etiquetar. ${faltas.join(' · ')}` : 'No hay etiquetas por imprimir.');
+    if (faltas.length) avisar(`Se imprimen solo las que existen. ${faltas.join(' · ')}`);
+
+    imprimirEtiquetas(etiquetas, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
+    try {
+      await inventoryService.marcarEtiquetasImpresas(etiquetas.map((e) => e.codigo));
+      await cargarSinEtiqueta();
+    } catch {
+      /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
+    }
   });
 
   function pintarPrevia() {
     const formato = buscarFormatoEtiqueta(selectFormato.value);
-    const primera = pedidas()[0] ?? { codigo: '2000000000015', nombre: 'Forro silicona iPhone 13' };
+    const primeraLinea = lote.find((l) => producto(l.id));
+    const primerProducto = primeraLinea ? producto(primeraLinea.id) : undefined;
+    const codigoEjemplo = primeraLinea
+      ? (primeraLinea.unidades?.[0] ?? sinEtiqueta.get(primeraLinea.id)?.[0] ?? construirCodigoUnidad(1))
+      : construirCodigoUnidad(1);
+    const primera = { codigo: codigoEjemplo, nombre: primerProducto?.nombre ?? 'Forro silicona iPhone 13' };
     const tipo = buscarTipoCodigo(selectTipo.value);
     $('ig-previa').innerHTML = htmlEtiqueta(primera, formato, tipo);
     $('ig-tipo-nota').textContent = TIPOS_CODIGO_ETIQUETA.find((t) => t.id === tipo)?.ayuda ?? '';
@@ -530,6 +621,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       const celda = filas.querySelector<HTMLElement>(`[data-stock="${l.id}"]`);
       if (celda) celda.innerHTML = `${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}`;
     }
+    await cargarSinEtiqueta();
   }
 
   // --- Arranque ------------------------------------------------------------------------------------
@@ -554,8 +646,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     }
     if (!selectFormato.value) selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
 
-    alCambiarDatos(['inventario_local', 'productos', 'compatibilidades'], refrescarExistencias);
+    alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto'], refrescarExistencias);
     lote = leerLote().filter((l) => lista.some((p) => p.id === l.id));
+    cargarSinEtiqueta();
     const pedido = new URLSearchParams(window.location.search).get('producto');
     if (pedido && lista.some((p) => p.id === pedido)) {
       history.replaceState(null, '', window.location.pathname);

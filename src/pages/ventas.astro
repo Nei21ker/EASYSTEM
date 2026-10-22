@@ -20,34 +20,66 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <!-- Buscador + resultados -->
     <div class="min-h-0 lg:col-span-3">
       <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
-        <div class="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Buscar producto</h2>
-          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-            Escanea el código de barras o escribe nombre / modelo de teléfono compatible. Enter agrega una coincidencia exacta de código.
-          </p>
-          <div class="relative mt-3">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
-              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
-            </svg>
-            <input
-              id="pos-buscador"
-              type="text"
-              autocomplete="off"
-              placeholder="Código de barras, nombre o modelo..."
-              class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-            />
-            <button
-              type="button"
-              data-abrir-escaner
-              aria-label="Escanear código de barras con la cámara"
-              title="Escanear con la cámara"
-              class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
-                <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
-                <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+        <div class="shrink-0 space-y-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <!-- 1. Código de la unidad: lector, cámara del teléfono o selección manual -->
+          <div>
+            <label for="pos-codigo" class="text-sm font-semibold text-slate-900 dark:text-white">Código de la unidad</label>
+            <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              Cada unidad tiene su propia etiqueta (código de barras o QR). Escanéala con el lector o la cámara del teléfono y se agrega esa unidad exacta.
+            </p>
+            <div class="relative mt-3">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+                <path d="M4 5v14M8 5v14M12 5v14M17 5v14M20 5v14" stroke-linecap="round" />
               </svg>
+              <input
+                id="pos-codigo"
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                placeholder="Escanea o escribe el código..."
+                class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 font-mono text-base text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+              <button
+                type="button"
+                data-abrir-escaner
+                aria-label="Escanear código con la cámara"
+                title="Escanear con la cámara"
+                class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                  <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+                  <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
+            <button
+              id="pos-seleccionar-codigo"
+              type="button"
+              class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4" aria-hidden="true">
+                <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" stroke-linecap="round" />
+              </svg>
+              Seleccionar código
             </button>
+            <p class="mt-1 text-center text-[11px] text-slate-500 dark:text-slate-400">Si no puedes escanear, elige el producto y escoge la unidad de la lista.</p>
+          </div>
+
+          <!-- 2. Búsqueda por nombre o modelo -->
+          <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
+            <label for="pos-buscador" class="block text-xs font-medium text-slate-600 dark:text-slate-400">O busca por nombre o modelo de teléfono compatible</label>
+            <div class="relative mt-1">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
+              </svg>
+              <input
+                id="pos-buscador"
+                type="text"
+                autocomplete="off"
+                placeholder="Nombre, categoría o modelo..."
+                class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
           </div>
         </div>
 
@@ -236,6 +268,37 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </form>
   </dialog>
 
+  <!-- Seleccionar código: producto → lista de los códigos de sus unidades disponibles (por si no se puede escanear) -->
+  <dialog
+    id="pos-selector"
+    aria-labelledby="pos-selector-titulo"
+    class="anim-escalar m-auto w-[min(32rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <div class="flex max-h-[88dvh] flex-col">
+      <div class="shrink-0 space-y-3 border-b border-slate-200 px-5 pb-4 pt-5 dark:border-slate-800">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h2 id="pos-selector-titulo" class="text-base font-semibold">Seleccionar código</h2>
+            <p id="pos-selector-ayuda" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Busca el producto y elige la unidad que vas a vender.</p>
+          </div>
+          <button id="pos-selector-cerrar" type="button" aria-label="Cerrar" class="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
+        </div>
+        <button id="pos-selector-volver" type="button" class="hidden text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">← Elegir otro producto</button>
+        <input
+          id="pos-selector-buscar"
+          type="search"
+          autocomplete="off"
+          placeholder="Nombre, categoría o modelo..."
+          class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+        />
+      </div>
+      <ul id="pos-selector-lista" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+      <div class="shrink-0 border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pos-selector-listo" type="button" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700">Listo</button>
+      </div>
+    </div>
+  </dialog>
+
   <CamaraEscaner />
 </DashboardLayout>
 
@@ -250,17 +313,22 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
-  import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, VentaItem } from '../types/database.types';
+  import { esCodigoUnidad } from '../utils/codigos';
+  import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
     producto: ProductoConRelaciones;
     cantidad: number;
+    /** Unidades concretas escaneadas o elegidas (cada una con su código); el resto de la cantidad sale por orden de llegada */
+    unidades: string[];
   }
 
   let productos: ProductoConRelaciones[] = [];
   let carrito: LineaCarrito[] = [];
+  let localActivoId = '';
 
   const buscador = document.getElementById('pos-buscador') as HTMLInputElement;
+  const campoCodigo = document.getElementById('pos-codigo') as HTMLInputElement;
   const resultados = document.getElementById('pos-resultados') as HTMLUListElement;
   const cargando = document.getElementById('pos-cargando') as HTMLParagraphElement;
   const sinResultados = document.getElementById('pos-sin-resultados') as HTMLParagraphElement;
@@ -377,15 +445,24 @@ import { alCambiarDatos } from '../lib/realtime';
     botonProcesar.disabled = carrito.length === 0;
 
     listaCarrito.innerHTML = carrito
-      .map(({ producto, cantidad }) => {
+      .map(({ producto, cantidad, unidades }) => {
         const subtotal = producto.precio_venta * cantidad;
         const alMaximo = cantidad >= producto.stock_actual;
+        const codigos = unidades.length
+          ? `<div class="mt-1 flex flex-wrap gap-1">${unidades
+              .map(
+                (c) =>
+                  `<span class="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">${escaparHtml(c)}<button type="button" data-quitar-unidad="${producto.id}" data-codigo="${escaparHtml(c)}" aria-label="Quitar la unidad ${escaparHtml(c)}" class="text-slate-400 hover:text-red-600">✕</button></span>`
+              )
+              .join('')}</div>`
+          : '';
         return `
           <li data-linea="${producto.id}" class="flex items-center justify-between gap-3 px-5 py-3">
             ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-10 w-10')}
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)} c/u</p>
+              ${codigos}
             </div>
             <div class="flex shrink-0 items-center gap-2">
               <button type="button" data-restar="${producto.id}" class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
@@ -425,11 +502,47 @@ import { alCambiarDatos } from '../lib/realtime';
     }
 
     if (linea) linea.cantidad += 1;
-    else carrito.push({ producto, cantidad: 1 });
+    else carrito.push({ producto, cantidad: 1, unidades: [] });
 
     renderCarrito();
     renderResultados(buscador.value);
     destacarLinea(productoId);
+  }
+
+  /** Agrega al carrito ESA unidad (la del código escaneado o elegido en la lista). Devuelve false si no se pudo. */
+  function agregarUnidad(producto: ProductoConRelaciones, codigo: string): boolean {
+    limpiarError();
+    if (carrito.some((l) => l.unidades.includes(codigo))) {
+      mostrarError(`La unidad ${codigo} ya está en el carrito.`);
+      return false;
+    }
+    const linea = carrito.find((l) => l.producto.id === producto.id);
+    if ((linea?.cantidad ?? 0) + 1 > producto.stock_actual) {
+      mostrarError(`No hay más stock disponible de "${producto.nombre}".`);
+      return false;
+    }
+    if (linea) {
+      linea.cantidad += 1;
+      linea.unidades.push(codigo);
+    } else {
+      carrito.push({ producto, cantidad: 1, unidades: [codigo] });
+    }
+    renderCarrito();
+    renderResultados(buscador.value);
+    destacarLinea(producto.id);
+    return true;
+  }
+
+  /** Quita del carrito una unidad concreta (la ✕ junto a su código). */
+  function quitarUnidad(productoId: string, codigo: string) {
+    limpiarError();
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    if (!linea || !linea.unidades.includes(codigo)) return;
+    linea.unidades = linea.unidades.filter((c) => c !== codigo);
+    linea.cantidad -= 1;
+    if (linea.cantidad <= 0) carrito = carrito.filter((l) => l !== linea);
+    renderCarrito();
+    renderResultados(buscador.value);
   }
 
   // Feedback visual: la línea tocada destella y el total "late".
@@ -445,6 +558,8 @@ import { alCambiarDatos } from '../lib/realtime';
     if (!linea) return;
 
     const nuevaCantidad = linea.cantidad + delta;
+    // Al restar, primero salen las unidades escaneadas (la última que se agregó)
+    if (delta < 0 && linea.unidades.length >= linea.cantidad) linea.unidades.pop();
     if (nuevaCantidad <= 0) {
       carrito = carrito.filter((l) => l.producto.id !== productoId);
     } else if (nuevaCantidad > linea.producto.stock_actual) {
@@ -646,6 +761,7 @@ import { alCambiarDatos } from '../lib/realtime';
         codigo_barras: l.producto.codigo_barras,
         cantidad: l.cantidad,
         precio_unitario: l.producto.precio_venta,
+        unidades: l.unidades.length ? [...l.unidades] : undefined,
       }));
       const sesion = await obtenerSesionActual();
       const venta = await inventoryService.registrarVenta(items, { ...datos, tasa_cambio: tasa, vendedor_nombre: sesion?.nombre });
@@ -663,6 +779,8 @@ import { alCambiarDatos } from '../lib/realtime';
         renderCarrito();
       }
       mostrarError(err instanceof Error ? err.message : 'No se pudo procesar la venta.');
+      // Si el rechazo fue por una unidad que otro dispositivo ya vendió, se identifica y se quita del carrito
+      if (!(err instanceof inventoryService.VentaIncompletaError)) await revalidarUnidadesCarrito();
     } finally {
       botonProcesar.textContent = 'Procesar venta';
       botonProcesar.disabled = carrito.length === 0;
@@ -686,7 +804,12 @@ import { alCambiarDatos } from '../lib/realtime';
     barraMovil.classList.add('flex');
     renderCarrito();
     renderResultados(buscador.value);
-    buscador.focus();
+    enfocarCodigo();
+  }
+
+  /** En el computador el cursor queda listo para el lector; en el teléfono no se abre el teclado solo. */
+  function enfocarCodigo() {
+    if (window.matchMedia('(pointer: fine)').matches) campoCodigo.focus();
   }
 
   let primeraCarga = true;
@@ -699,7 +822,35 @@ import { alCambiarDatos } from '../lib/realtime';
       animarLista(resultados);
     }
     ajustarCarritoAlStock();
+    await revalidarUnidadesCarrito();
     renderResultados(buscador.value);
+  }
+
+  /**
+   * Las unidades escaneadas siguen siendo suyas solo mientras estén DISPONIBLES: si otro dispositivo ya vendió alguna,
+   * se quita del carrito con un aviso (así la venta no se rechaza al cobrar). Sin conexión no se puede comprobar.
+   */
+  async function revalidarUnidadesCarrito() {
+    const codigos = carrito.flatMap((l) => l.unidades);
+    if (codigos.length === 0) return;
+    let disponibles: UnidadProducto[];
+    try {
+      disponibles = await inventoryService.listarUnidades({ estado: 'DISPONIBLE', codigos });
+    } catch {
+      return;
+    }
+    const vigentes = new Set(disponibles.map((u) => u.codigo));
+    const perdidas = codigos.filter((c) => !vigentes.has(c));
+    if (perdidas.length === 0) return;
+    for (const linea of [...carrito]) {
+      const sueltas = linea.unidades.filter((c) => perdidas.includes(c));
+      if (sueltas.length === 0) continue;
+      linea.unidades = linea.unidades.filter((c) => !perdidas.includes(c));
+      linea.cantidad -= sueltas.length;
+      if (linea.cantidad <= 0) carrito = carrito.filter((l) => l !== linea);
+    }
+    renderCarrito();
+    mostrarError(`La unidad ${perdidas.join(', ')} ya no está disponible (otro dispositivo la vendió) y se quitó del carrito.`);
   }
 
   /**
@@ -722,6 +873,7 @@ import { alCambiarDatos } from '../lib/realtime';
           avisos.push(`Se agotó "${actual.nombre}" (otro dispositivo lo vendió) y se quitó del carrito.`);
         } else {
           linea.cantidad = actual.stock_actual;
+          linea.unidades = linea.unidades.slice(0, linea.cantidad);
           avisos.push(`Solo quedan ${actual.stock_actual} de "${actual.nombre}": se ajustó la cantidad del carrito.`);
         }
       }
@@ -746,6 +898,8 @@ import { alCambiarDatos } from '../lib/realtime';
 
   listaCarrito.addEventListener('click', (e) => {
     const objetivo = e.target as HTMLElement;
+    const quitar = objetivo.closest<HTMLButtonElement>('[data-quitar-unidad]');
+    if (quitar?.dataset.quitarUnidad && quitar.dataset.codigo) return quitarUnidad(quitar.dataset.quitarUnidad, quitar.dataset.codigo);
     const sumar = objetivo.closest<HTMLButtonElement>('[data-sumar]');
     const restar = objetivo.closest<HTMLButtonElement>('[data-restar]');
     const eliminar = objetivo.closest<HTMLButtonElement>('[data-eliminar]');
@@ -777,13 +931,170 @@ import { alCambiarDatos } from '../lib/realtime';
   buscador.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     const codigo = buscador.value.trim();
-    if (codigo) void buscarYAgregarPorCodigo(codigo);
+    if (codigo) void agregarPorCodigo(codigo).then((agregado) => agregado && (buscador.value = ''));
+  });
+
+  /**
+   * Agrega lo que identifica un código: el de UNA unidad (etiqueta propia: se agrega esa unidad exacta) o, como
+   * respaldo, el código del producto (empaque de fábrica: se agrega una unidad cualquiera). Devuelve si se agregó.
+   */
+  async function agregarPorCodigo(codigoCrudo: string): Promise<boolean> {
+    limpiarError();
+    const codigo = codigoCrudo.trim();
+    if (!codigo) return false;
+    if (!esCodigoUnidad(codigo)) {
+      const antes = carrito.reduce((suma, l) => suma + l.cantidad, 0);
+      await buscarYAgregarPorCodigo(codigo);
+      return carrito.reduce((suma, l) => suma + l.cantidad, 0) > antes;
+    }
+
+    let unidad: UnidadProducto | null;
+    try {
+      unidad = await inventoryService.obtenerUnidadPorCodigo(codigo);
+    } catch {
+      mostrarError('No se pudo consultar ese código (¿sin conexión?). Busca el producto por nombre o modelo.');
+      return false;
+    }
+    if (!unidad) {
+      mostrarError(`El código ${codigo} no corresponde a ninguna unidad registrada.`);
+      return false;
+    }
+    if (localActivoId && unidad.local_id !== localActivoId) {
+      mostrarError(`La unidad ${codigo} pertenece a otro local: no se puede vender desde este.`);
+      return false;
+    }
+    if (unidad.estado === 'VENDIDA') {
+      mostrarError(`La unidad ${codigo} ya fue vendida.`);
+      return false;
+    }
+    const producto = productos.find((p) => p.id === unidad!.producto_id);
+    if (!producto) {
+      mostrarError('Esa unidad pertenece a un producto que este local no maneja.');
+      return false;
+    }
+    return agregarUnidad(producto, codigo);
+  }
+
+  campoCodigo.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const codigo = campoCodigo.value;
+    if (!codigo.trim()) return;
+    void agregarPorCodigo(codigo).then((agregado) => {
+      if (agregado) campoCodigo.value = '';
+      campoCodigo.select();
+    });
   });
 
   // Escaneo con cámara (ver src/components/CamaraEscaner.astro): agrega directo al carrito.
   window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
-    void buscarYAgregarPorCodigo(e.detail.codigo);
+    void agregarPorCodigo(e.detail.codigo);
   }) as EventListener);
+
+  // --- Seleccionar código: producto → unidades disponibles ------------------------------------------------
+  const dialogoSelector = document.getElementById('pos-selector') as HTMLDialogElement;
+  const selBuscar = document.getElementById('pos-selector-buscar') as HTMLInputElement;
+  const selLista = document.getElementById('pos-selector-lista') as HTMLUListElement;
+  const selAyuda = document.getElementById('pos-selector-ayuda') as HTMLParagraphElement;
+  const selVolver = document.getElementById('pos-selector-volver') as HTMLButtonElement;
+  let selProducto: ProductoConRelaciones | null = null;
+  let selUnidades: UnidadProducto[] = [];
+
+  function pintarSelectorProductos() {
+    const lista = filtrarProductos(selBuscar.value).filter((p) => p.stock_actual > 0);
+    selLista.innerHTML = lista.length
+      ? lista
+          .slice(0, 40)
+          .map(
+            (p) => `
+          <li>
+            <button type="button" data-sel-producto="${p.id}" class="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
+              ${htmlMiniatura(p.imagen_url, p.nombre, 'h-10 w-10')}
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</span>
+                <span class="block truncate text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.categoria)} · ${precioEnLinea(p.precio_venta)}</span>
+              </span>
+              <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${p.stock_actual} u.</span>
+            </button>
+          </li>`
+          )
+          .join('')
+      : '<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">No hay productos con stock que coincidan.</li>';
+  }
+
+  function pintarSelectorUnidades() {
+    if (!selProducto) return;
+    const q = selBuscar.value.trim();
+    const enCarrito = new Set(carrito.flatMap((l) => l.unidades));
+    const lista = selUnidades.filter((u) => !q || u.codigo.includes(q));
+    selLista.innerHTML = lista.length
+      ? lista
+          .map((u) => {
+            const tomada = enCarrito.has(u.codigo);
+            return `
+          <li class="flex items-center justify-between gap-3 px-5 py-2.5">
+            <span class="min-w-0">
+              <span class="block font-mono text-sm text-slate-900 dark:text-white">${escaparHtml(u.codigo)}</span>
+              ${u.impresa_en ? '' : '<span class="block text-[11px] text-amber-600 dark:text-amber-400">Aún sin etiqueta impresa</span>'}
+            </span>
+            <button type="button" data-sel-unidad="${escaparHtml(u.codigo)}" ${tomada ? 'disabled' : ''} class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:dark:bg-slate-700">${tomada ? 'En el carrito' : '+ Agregar'}</button>
+          </li>`;
+          })
+          .join('')
+      : `<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">${selUnidades.length ? 'Ningún código coincide.' : 'Este producto no tiene unidades disponibles.'}</li>`;
+  }
+
+  async function elegirProductoDelSelector(id: string) {
+    const producto = productos.find((p) => p.id === id);
+    if (!producto) return;
+    selProducto = producto;
+    selBuscar.value = '';
+    selBuscar.placeholder = 'Filtrar por código (ej. los últimos dígitos)...';
+    selBuscar.inputMode = 'numeric';
+    selVolver.classList.remove('hidden');
+    selAyuda.textContent = `${producto.nombre}: elige la unidad que vas a vender.`;
+    selLista.innerHTML = '<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando unidades...</li>';
+    try {
+      selUnidades = await inventoryService.listarUnidades({ productoId: id, estado: 'DISPONIBLE' });
+    } catch {
+      selUnidades = [];
+      selLista.innerHTML = '<li class="px-5 py-6 text-sm text-red-600 dark:text-red-400">No se pudieron cargar las unidades (¿sin conexión?).</li>';
+      return;
+    }
+    pintarSelectorUnidades();
+  }
+
+  function volverAProductos() {
+    selProducto = null;
+    selBuscar.value = '';
+    selBuscar.placeholder = 'Nombre, categoría o modelo...';
+    selBuscar.inputMode = 'text';
+    selVolver.classList.add('hidden');
+    selAyuda.textContent = 'Busca el producto y elige la unidad que vas a vender.';
+    pintarSelectorProductos();
+    selBuscar.focus();
+  }
+
+  document.getElementById('pos-seleccionar-codigo')!.addEventListener('click', () => {
+    limpiarError();
+    volverAProductos();
+    dialogoSelector.showModal();
+  });
+  document.getElementById('pos-selector-cerrar')!.addEventListener('click', () => dialogoSelector.close());
+  document.getElementById('pos-selector-listo')!.addEventListener('click', () => dialogoSelector.close());
+  dialogoSelector.addEventListener('click', (e) => {
+    if (e.target === dialogoSelector) dialogoSelector.close();
+  });
+  dialogoSelector.addEventListener('close', enfocarCodigo);
+  selVolver.addEventListener('click', volverAProductos);
+  selBuscar.addEventListener('input', () => (selProducto ? pintarSelectorUnidades() : pintarSelectorProductos()));
+  selLista.addEventListener('click', (e) => {
+    const objetivo = e.target as HTMLElement;
+    const producto = objetivo.closest<HTMLElement>('[data-sel-producto]')?.dataset.selProducto;
+    if (producto) return void elegirProductoDelSelector(producto);
+    const codigo = objetivo.closest<HTMLElement>('[data-sel-unidad]')?.dataset.selUnidad;
+    if (codigo && selProducto && agregarUnidad(selProducto, codigo)) pintarSelectorUnidades();
+  });
 
   botonProcesar.addEventListener('click', pedirConfirmacion);
   barraCobrar.addEventListener('click', pedirConfirmacion);
@@ -793,9 +1104,11 @@ import { alCambiarDatos } from '../lib/realtime';
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
     if (contexto?.local) {
+      localActivoId = contexto.local.id;
       cargarProductos();
+      enfocarCodigo();
       // Otro dispositivo vendió o ingresó mercancía: el stock se actualiza solo y el carrito se ajusta
-      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades'], refrescarEnVivo);
+      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto'], refrescarEnVivo);
       return;
     }
     cargando.classList.add('hidden');

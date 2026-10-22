@@ -24,6 +24,7 @@ import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
 import * as nominaDb from './db/nomina';
+import * as unidadesDb from './db/unidades';
 import type { ProductoConInventario } from './db/productos';
 import { esGlobal, leerSuscripcionesLocales, obtenerSesionActual } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
@@ -32,6 +33,7 @@ import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
+import { construirCodigoUnidad } from '../utils/codigos';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
@@ -64,6 +66,7 @@ import type {
   RepuestoOrden,
   TasaCambio,
   TipoMovimiento,
+  UnidadProducto,
   Venta,
   VentaItem,
 } from '../types/database.types';
@@ -95,6 +98,9 @@ interface LocalDB {
   imagenesDemo?: boolean;
   /** Lista de lo que revendió cada trabajador independiente en un día (una por pago diario) */
   reventas?: (LineaReventa & { id: string; nomina_id: string; local_id: string })[];
+  /** Una fila por unidad física con su código único (migración 0033 en Supabase) y el último número usado */
+  unidades?: UnidadProducto[];
+  unidadSeq?: number;
 }
 
 function generarId(): string {
@@ -125,7 +131,88 @@ function construirSeedInicial(): LocalDB {
     local_id: localPorProducto.get(movimiento.producto_id) ?? LOCAL_ACCESORIOS_ID,
   }));
 
-  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [], imagenesDemo: true };
+  const db: LocalDB = { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [], imagenesDemo: true };
+  migrarUnidades(db);
+  return db;
+}
+
+// ----------------------------------------------------------------------------
+// Unidades con código único (modo LocalStorage). En Supabase lo hace el trigger de la migración 0033;
+// aquí se replica la misma regla: una entrada crea una unidad por cada una, una salida marca VENDIDA las
+// unidades indicadas (y, si faltan, las más antiguas del local), una entrada con códigos reactiva esas.
+// ----------------------------------------------------------------------------
+function nuevaUnidadLocal(db: LocalDB, producto_id: string, local_id: string): UnidadProducto {
+  db.unidadSeq = (db.unidadSeq ?? 0) + 1;
+  return {
+    id: generarId(),
+    producto_id,
+    local_id,
+    codigo: construirCodigoUnidad(db.unidadSeq),
+    estado: 'DISPONIBLE',
+    created_at: new Date().toISOString(),
+    vendida_en: null,
+    impresa_en: null,
+  };
+}
+
+/** Navegadores con datos anteriores: cada unidad que ya hay en stock recibe su código (una sola vez). */
+function migrarUnidades(db: LocalDB): boolean {
+  if (db.unidades) return false;
+  db.unidades = [];
+  for (const i of db.inventario ?? []) {
+    for (let n = 0; n < i.stock_actual; n++) db.unidades.push(nuevaUnidadLocal(db, i.producto_id, i.local_id));
+  }
+  return true;
+}
+
+/** Mueve las unidades de un movimiento y devuelve TODOS los códigos que movió (los indicados + los demás). Lanza si algo no cuadra. */
+function moverUnidadesLocal(
+  db: LocalDB,
+  m: { producto_id: string; local_id: string; tipo: TipoMovimiento; cantidad: number },
+  codigos: string[] = []
+): string[] {
+  const unidades = db.unidades ?? (db.unidades = []);
+  if (codigos.length > m.cantidad) throw new Error(`Se indicaron ${codigos.length} códigos de unidad para un movimiento de ${m.cantidad} unidades.`);
+  if (new Set(codigos).size !== codigos.length) throw new Error('Hay códigos de unidad repetidos en el movimiento.');
+
+  const indicadas = codigos.map((c) => unidades.find((u) => u.codigo === c));
+  const resultado = [...codigos];
+  if (m.tipo === 'ENTRADA') {
+    if (indicadas.some((u) => !u || u.estado !== 'VENDIDA' || u.producto_id !== m.producto_id)) {
+      throw new Error('Alguna de las unidades indicadas no está vendida o no pertenece a este producto.');
+    }
+    for (const u of indicadas as UnidadProducto[]) {
+      u.estado = 'DISPONIBLE';
+      u.local_id = m.local_id;
+      u.vendida_en = null;
+    }
+    for (let i = codigos.length; i < m.cantidad; i++) {
+      const nueva = nuevaUnidadLocal(db, m.producto_id, m.local_id);
+      unidades.push(nueva);
+      resultado.push(nueva.codigo);
+    }
+    return resultado;
+  }
+
+  if (indicadas.some((u) => !u || u.estado !== 'DISPONIBLE' || u.producto_id !== m.producto_id || u.local_id !== m.local_id)) {
+    throw new Error('Alguna de las unidades escaneadas ya no está disponible (se vendió, es de otro local o de otro producto).');
+  }
+  const ahora = new Date().toISOString();
+  for (const u of indicadas as UnidadProducto[]) {
+    u.estado = 'VENDIDA';
+    u.vendida_en = ahora;
+  }
+  let faltan = m.cantidad - codigos.length;
+  for (const u of unidades) {
+    if (faltan <= 0) break;
+    if (u.producto_id === m.producto_id && u.local_id === m.local_id && u.estado === 'DISPONIBLE') {
+      u.estado = 'VENDIDA';
+      u.vendida_en = ahora;
+      resultado.push(u.codigo);
+      faltan--;
+    }
+  }
+  return resultado;
 }
 
 /**
@@ -208,7 +295,7 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db)].some(Boolean);
+      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db), migrarUnidades(db)].some(Boolean);
       if (faltantes.length > 0) db.modelos.push(...faltantes);
       if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;
@@ -263,6 +350,8 @@ interface MovimientoPendiente {
   motivo?: string;
   /** Local del movimiento (los pendientes guardados antes del multi-local no lo traen: eran del Local Accesorios) */
   local_id?: string;
+  /** Unidades concretas del movimiento, si se indicaron */
+  unidad_codigos?: string[];
   encolado_en: string;
 }
 
@@ -351,6 +440,7 @@ function encolarMovimientoPendiente(input: {
   cantidad: number;
   motivo?: string;
   local_id: string;
+  unidad_codigos?: string[];
 }): MovimientoInventario {
   const pendiente: MovimientoPendiente = { id: `pendiente-${generarId()}`, encolado_en: new Date().toISOString(), ...input };
   const cola = leerColaSync();
@@ -365,6 +455,8 @@ function encolarMovimientoPendiente(input: {
     motivo: pendiente.motivo ?? null,
     fecha: pendiente.encolado_en,
     local_id: input.local_id,
+    // Los códigos de unidad los asigna la base de datos al sincronizar
+    unidad_codigos: input.unidad_codigos ?? null,
   };
 }
 
@@ -388,6 +480,7 @@ export async function sincronizarPendientes(): Promise<{ sincronizados: number; 
         cantidad: pendiente.cantidad,
         motivo: pendiente.motivo,
         local_id: pendiente.local_id ?? LOCAL_ACCESORIOS_ID,
+        unidad_codigos: pendiente.unidad_codigos,
       });
       sincronizados++;
     } catch (err) {
@@ -652,6 +745,58 @@ export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Prom
   return crudo ? proyectarProducto(crudo, await alcanceActual(), true) : null;
 }
 
+// ----------------------------------------------------------------------------
+// Unidades con código único (migración 0033)
+// ----------------------------------------------------------------------------
+/**
+ * Unidades del alcance activo (de un local, o de todos en la vista "Todos"), más antiguas primero.
+ * Con Supabase necesita conexión: no hay copia local de las unidades.
+ */
+export async function listarUnidades(
+  opciones: { productoId?: string; estado?: UnidadProducto['estado']; sinImprimir?: boolean; codigos?: string[] } = {}
+): Promise<UnidadProducto[]> {
+  const alcance = await alcanceActual();
+  if (!supabaseConfigurado) {
+    const codigos = opciones.codigos ? new Set(opciones.codigos) : null;
+    return (leerDB().unidades ?? []).filter(
+      (u) =>
+        (alcance.todos || u.local_id === alcance.localId) &&
+        (!opciones.productoId || u.producto_id === opciones.productoId) &&
+        (!opciones.estado || u.estado === opciones.estado) &&
+        (!opciones.sinImprimir || !u.impresa_en) &&
+        (!codigos || codigos.has(u.codigo))
+    );
+  }
+  const { codigos, ...resto } = opciones;
+  if (!codigos) return unidadesDb.listarUnidades({ ...resto, localId: alcance.localId });
+  // Los códigos viajan en la dirección de la consulta: se piden en tandas
+  const encontradas: UnidadProducto[] = [];
+  for (let i = 0; i < codigos.length; i += 100) {
+    encontradas.push(...(await unidadesDb.listarUnidades({ ...resto, localId: alcance.localId, codigos: codigos.slice(i, i + 100) })));
+  }
+  return encontradas;
+}
+
+/** La unidad con ese código (de cualquier local que el usuario pueda ver), o null si no existe. */
+export async function obtenerUnidadPorCodigo(codigo: string): Promise<UnidadProducto | null> {
+  if (!supabaseConfigurado) return (leerDB().unidades ?? []).find((u) => u.codigo === codigo) ?? null;
+  return unidadesDb.obtenerUnidadPorCodigo(codigo);
+}
+
+/** Anota que ya se imprimieron las etiquetas de esas unidades (así "etiquetas pendientes" no vuelve a ofrecerlas). */
+export async function marcarEtiquetasImpresas(codigos: string[]): Promise<void> {
+  if (codigos.length === 0) return;
+  if (!supabaseConfigurado) {
+    const db = leerDB();
+    const lista = new Set(codigos);
+    const ahora = new Date().toISOString();
+    for (const u of db.unidades ?? []) if (lista.has(u.codigo)) u.impresa_en = ahora;
+    guardarDB(db);
+    return;
+  }
+  await unidadesDb.marcarImpresas(codigos);
+}
+
 /** Alertas de reabastecimiento del alcance activo: una fila por producto y local con mínimo > 0 y stock ≤ mínimo. */
 export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
   const alcance = await alcanceActual();
@@ -810,6 +955,7 @@ export async function eliminarProducto(id: string): Promise<void> {
   db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== id);
   db.inventario = db.inventario.filter((i) => i.producto_id !== id);
   db.movimientos = db.movimientos.filter((m) => m.producto_id !== id);
+  db.unidades = (db.unidades ?? []).filter((u) => u.producto_id !== id);
   guardarDB(db);
 }
 
@@ -982,6 +1128,12 @@ export async function registrarMovimiento(input: {
   cantidad: number;
   motivo?: string;
   local_id?: string;
+  /**
+   * Unidades concretas que se mueven: las escaneadas en una venta o las devueltas en una entrada. El resto de la
+   * cantidad lo completa el sistema (las más antiguas en una salida, unidades nuevas en una entrada). El movimiento
+   * devuelto trae en `unidad_codigos` TODOS los códigos que movió.
+   */
+  unidad_codigos?: string[];
 }): Promise<MovimientoInventario> {
   if (input.cantidad <= 0) throw new Error('La cantidad debe ser mayor a 0.');
   const local_id = input.local_id ?? (await exigirLocal('registrar el movimiento de stock'));
@@ -1001,6 +1153,8 @@ export async function registrarMovimiento(input: {
       db.inventario.push(fila);
     }
 
+    // Primero las unidades (lanza si alguna no está disponible: no se ha guardado nada todavía)
+    const unidad_codigos = moverUnidadesLocal(db, { producto_id: input.producto_id, local_id, tipo: input.tipo, cantidad: input.cantidad }, input.unidad_codigos);
     const delta = input.tipo === 'ENTRADA' ? input.cantidad : -input.cantidad;
     fila.stock_actual += delta;
     producto.stock_actual += delta; // total entre locales
@@ -1013,13 +1167,21 @@ export async function registrarMovimiento(input: {
       motivo: input.motivo ?? null,
       fecha: new Date().toISOString(),
       local_id,
+      unidad_codigos,
     };
     db.movimientos.unshift(movimiento);
     guardarDB(db);
     return movimiento;
   }
 
-  const registro = { producto_id: input.producto_id, tipo: input.tipo, cantidad: input.cantidad, motivo: input.motivo, local_id };
+  const registro = {
+    producto_id: input.producto_id,
+    tipo: input.tipo,
+    cantidad: input.cantidad,
+    motivo: input.motivo,
+    local_id,
+    unidad_codigos: input.unidad_codigos?.length ? input.unidad_codigos : undefined,
+  };
   try {
     return await movimientosDb.registrarMovimiento(registro);
   } catch (err) {
@@ -1169,8 +1331,17 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   let fallo: unknown = null;
   for (const item of items) {
     try {
-      await registrarMovimiento({ producto_id: item.producto_id, tipo: 'SALIDA', cantidad: item.cantidad, motivo: 'Venta POS', local_id });
-      registradas.push(item);
+      const movimiento = await registrarMovimiento({
+        producto_id: item.producto_id,
+        tipo: 'SALIDA',
+        cantidad: item.cantidad,
+        motivo: 'Venta POS',
+        local_id,
+        unidad_codigos: item.unidades,
+      });
+      // El ticket y la devolución necesitan saber QUÉ unidades salieron (las escaneadas + las que completó el sistema)
+      const salieron = movimiento.unidad_codigos?.length ? movimiento.unidad_codigos : item.unidades;
+      registradas.push(salieron?.length ? { ...item, unidades: salieron } : item);
     } catch (err) {
       fallo = err;
       break;
@@ -1339,7 +1510,10 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   if (datos.devueltos.length === 0) throw new Error('Indica qué producto se devuelve.');
 
   // 1) Cantidades: no se puede devolver más de lo vendido (descontando devoluciones anteriores)
-  const ya = cantidadesYaDevueltas(await listarDevoluciones({ ventaId: venta.id }));
+  const previas = await listarDevoluciones({ ventaId: venta.id });
+  const ya = cantidadesYaDevueltas(previas);
+  // Las unidades concretas que ya volvieron en devoluciones anteriores no se pueden devolver otra vez
+  const codigosYaDevueltos = new Set(previas.flatMap((d) => d.items_devueltos.flatMap((i) => i.unidades ?? [])));
   const itemsDevueltos: VentaItem[] = [];
   for (const d of datos.devueltos) {
     const original = venta.items.find((i) => i.producto_id === d.producto_id);
@@ -1349,7 +1523,9 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
     if (d.cantidad > disponible) {
       throw new Error(`De "${original.nombre}" solo se pueden devolver ${disponible} unidad(es) (vendidas ${original.cantidad}, ya devueltas ${original.cantidad - disponible}).`);
     }
-    itemsDevueltos.push({ ...original, cantidad: d.cantidad });
+    // Vuelven las MISMAS unidades vendidas (con su etiqueta); si la venta no las registró, entran unidades nuevas
+    const unidades = (original.unidades ?? []).filter((c) => !codigosYaDevueltos.has(c)).slice(0, d.cantidad);
+    itemsDevueltos.push({ ...original, cantidad: d.cantidad, unidades: unidades.length ? unidades : undefined });
   }
   if (datos.nuevos.some((n) => !Number.isInteger(n.cantidad) || n.cantidad <= 0 || !(n.precio_unitario >= 0))) {
     throw new Error('Revisa los productos de reemplazo: cantidad entera mayor a 0.');
@@ -1387,18 +1563,18 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   const motivoSalida = `Cambio de producto, venta #${venta.folio}`;
   for (const n of datos.nuevos) {
     try {
-      await registrarMovimiento({ producto_id: n.producto_id, tipo: 'SALIDA', cantidad: n.cantidad, motivo: motivoSalida, local_id: venta.local_id });
-      salidas.push(n);
+      const movimiento = await registrarMovimiento({ producto_id: n.producto_id, tipo: 'SALIDA', cantidad: n.cantidad, motivo: motivoSalida, local_id: venta.local_id, unidad_codigos: n.unidades });
+      salidas.push(movimiento.unidad_codigos?.length ? { ...n, unidades: movimiento.unidad_codigos } : n);
     } catch (err) {
-      // Deshace lo que alcanzó a salir para no dejar el inventario a medias
+      // Deshace lo que alcanzó a salir para no dejar el inventario a medias (las mismas unidades vuelven a estar disponibles)
       for (const hecha of salidas) {
-        await registrarMovimiento({ producto_id: hecha.producto_id, tipo: 'ENTRADA', cantidad: hecha.cantidad, motivo: 'Reverso: cambio de producto no completado', local_id: venta.local_id }).catch(() => undefined);
+        await registrarMovimiento({ producto_id: hecha.producto_id, tipo: 'ENTRADA', cantidad: hecha.cantidad, motivo: 'Reverso: cambio de producto no completado', local_id: venta.local_id, unidad_codigos: hecha.unidades }).catch(() => undefined);
       }
       throw err;
     }
   }
   for (const d of itemsDevueltos) {
-    await registrarMovimiento({ producto_id: d.producto_id, tipo: 'ENTRADA', cantidad: d.cantidad, motivo: `Devolución, venta #${venta.folio}`, local_id: venta.local_id }).catch((err) => {
+    await registrarMovimiento({ producto_id: d.producto_id, tipo: 'ENTRADA', cantidad: d.cantidad, motivo: `Devolución, venta #${venta.folio}`, local_id: venta.local_id, unidad_codigos: d.unidades }).catch((err) => {
       throw new Error(`No se pudo devolver "${d.nombre}" al inventario: ${err instanceof Error ? err.message : err}`);
     });
   }
@@ -1411,7 +1587,7 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
     venta_folio: venta.folio,
     motivo,
     items_devueltos: itemsDevueltos,
-    items_nuevos: datos.nuevos,
+    items_nuevos: salidas,
     total_devuelto: totalDevuelto,
     total_nuevo: totalNuevo,
     diferencia,
@@ -1591,18 +1767,30 @@ export async function agregarRepuestoOrden(
   if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
 
   // Primero el stock (falla si no alcanza); después se anota en la orden
-  await registrarMovimiento({
+  const movimiento = await registrarMovimiento({
     producto_id: producto.id,
     tipo: 'SALIDA',
     cantidad,
     motivo: `Repuesto, orden de servicio #${orden.folio}`,
     local_id: orden.local_id,
   });
+  const salieron = movimiento.unidad_codigos ?? [];
 
   const repuestos = orden.repuestos.map((r) => ({ ...r }));
   const existente = repuestos.find((r) => r.producto_id === producto.id);
-  if (existente) existente.cantidad += cantidad;
-  else repuestos.push({ producto_id: producto.id, nombre: producto.nombre, codigo_barras: producto.codigo_barras, cantidad, precio_unitario: producto.precio_venta });
+  if (existente) {
+    existente.cantidad += cantidad;
+    if (salieron.length) existente.unidades = [...(existente.unidades ?? []), ...salieron];
+  } else {
+    repuestos.push({
+      producto_id: producto.id,
+      nombre: producto.nombre,
+      codigo_barras: producto.codigo_barras,
+      cantidad,
+      precio_unitario: producto.precio_venta,
+      ...(salieron.length ? { unidades: salieron } : {}),
+    });
+  }
 
   try {
     return await guardarCambiosOrden(orden, { repuestos });
@@ -1624,6 +1812,7 @@ export async function quitarRepuestoOrden(id: string, productoId: string): Promi
     cantidad: repuesto.cantidad,
     motivo: `Repuesto devuelto al inventario, orden de servicio #${orden.folio}`,
     local_id: orden.local_id,
+    unidad_codigos: repuesto.unidades?.slice(0, repuesto.cantidad),
   });
   return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r.producto_id !== productoId) });
 }
@@ -1671,9 +1860,10 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     };
     const mover = (producto: Producto, tipo: TipoMovimiento, cantidad: number, motivo: string) => {
       const delta = tipo === 'ENTRADA' ? cantidad : -cantidad;
+      const unidad_codigos = moverUnidadesLocal(db, { producto_id: producto.id, local_id, tipo, cantidad });
       filaInventario(producto.id).stock_actual += delta;
       producto.stock_actual += delta;
-      db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora, local_id });
+      db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora, local_id, unidad_codigos });
       resultado.movimientos++;
     };
 

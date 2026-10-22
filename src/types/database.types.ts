@@ -70,6 +70,23 @@ export interface MovimientoInventario {
   motivo: string | null;
   /** Local donde se movió el stock */
   local_id: string;
+  /** Códigos de las unidades que se movieron (migración 0033): las creadas en una entrada, las vendidas en una salida */
+  unidad_codigos?: string[] | null;
+}
+
+/** Cada unidad física tiene su propio código único (EAN-13, prefijo 21). Disponible = cuenta en el stock del local. */
+export type EstadoUnidad = 'DISPONIBLE' | 'VENDIDA';
+
+export interface UnidadProducto {
+  id: string;
+  producto_id: string;
+  local_id: string;
+  codigo: string;
+  estado: EstadoUnidad;
+  created_at: string;
+  vendida_en?: string | null;
+  /** Cuándo se imprimió su etiqueta; null = todavía no tiene etiqueta pegada */
+  impresa_en?: string | null;
 }
 
 /** Producto "enriquecido" con sus modelos compatibles, tal como lo consume el Dashboard */
@@ -120,6 +137,8 @@ export interface VentaItem {
   cantidad: number;
   /** Precio de venta vigente al momento de la venta */
   precio_unitario: number;
+  /** Códigos de las unidades concretas que salieron (migración 0033); las ventas anteriores no lo traen */
+  unidades?: string[];
 }
 
 export interface ClienteVenta {

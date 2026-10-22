@@ -26,6 +26,8 @@ export async function registrarMovimiento(input: {
   cantidad: number;
   local_id: string;
   motivo?: string;
+  /** Unidades concretas que se mueven (las escaneadas en una venta, las devueltas); el resto lo decide la base de datos */
+  unidad_codigos?: string[];
 }): Promise<MovimientoInventario> {
   // El stock del local (inventario_local) y el total (productos.stock_actual) los actualiza el trigger aplicar_movimiento_inventario
   const { data, error } = await supabase

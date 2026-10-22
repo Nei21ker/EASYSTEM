@@ -30,6 +30,7 @@ export const TABLAS_TIEMPO_REAL = [
   'perfiles',
   'modelos_telefono',
   'compatibilidades',
+  'unidades_producto',
 ] as const;
 
 export const EVENTO_DATOS = 'easystem:datos-cambiaron';

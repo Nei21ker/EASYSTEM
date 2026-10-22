@@ -29,6 +29,21 @@ export function esCodigoInterno(codigo: string): boolean {
   return PATRON_INTERNO.test(codigo) && digitoVerificadorEAN13(codigo.slice(0, 12)) === Number(codigo[12]);
 }
 
+// --- Códigos de UNIDAD (migración 0033) -----------------------------------------------------
+// Cada unidad física lleva su propio EAN-13 con prefijo 21 (los productos usan 20): así cualquier lector y la
+// cámara lo leen, y no se confunde con el código del producto. Misma regla que la función SQL ean13_unidad.
+const PATRON_UNIDAD = /^21\d{11}$/;
+
+export function construirCodigoUnidad(secuencia: number): string {
+  const base = `21${String(secuencia).padStart(10, '0')}`;
+  return `${base}${digitoVerificadorEAN13(base)}`;
+}
+
+/** ¿Tiene forma de código de unidad (prefijo 21, 13 dígitos, verificador correcto)? */
+export function esCodigoUnidad(codigo: string): boolean {
+  return PATRON_UNIDAD.test(codigo) && digitoVerificadorEAN13(codigo.slice(0, 12)) === Number(codigo[12]);
+}
+
 function secuenciaMaxima(existentes: Iterable<string>): number {
   let max = 0;
   for (const codigo of existentes) {
