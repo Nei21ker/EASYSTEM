@@ -1,19 +1,24 @@
 ---
-// Cuadre de caja diario: ventana que abre el botón "Cuadre de caja" de Reportes y cuadre (evento easystem:abrir-cuadre).
+// Cuadre de caja diario. Dos formas (prop `modo`): "ventana" = <dialog> que abre el botón "Cuadre de caja del día" de
+// Reportes y cuadre (evento easystem:abrir-cuadre); "pagina" = el mismo cuadre incrustado en la página /cuadre, que es
+// lo único que ve el encargado (sin reportes).
 // Compara lo que el sistema esperaba cobrar con cada tipo de cobro contra lo contado y guarda las fotos de respaldo.
 // Encargado: solo su local. Administrador y gerente: eligen cualquier local y ven el estado del día de todos.
 import { TIPOS_FOTO_CUADRE } from '../../utils/cuadre';
+
+const { modo = 'ventana' } = Astro.props as { modo?: 'ventana' | 'pagina' };
+const pagina = modo === 'pagina';
+const Envoltura = pagina ? 'div' : 'dialog';
+const claseEnvoltura = pagina
+  ? 'overflow-hidden rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100'
+  : 'anim-escalar m-auto w-[min(56rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
 
 const claseCampo =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white dark:disabled:bg-slate-800/50';
 ---
 
-<dialog
-  id="cq-dialogo"
-  aria-labelledby="cq-titulo"
-  class="anim-escalar m-auto w-[min(56rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
->
-  <div class="flex max-h-[94dvh] flex-col">
+<Envoltura id="cq-dialogo" aria-labelledby="cq-titulo" data-modo={modo} class={claseEnvoltura}>
+  <div class:list={['flex flex-col', !pagina && 'max-h-[94dvh]']}>
     <!-- Cabecera: título, día y local -->
     <div class="shrink-0 space-y-3 border-b border-slate-200 px-5 pb-4 pt-5 dark:border-slate-800">
       <div class="flex items-start justify-between gap-3">
@@ -23,7 +28,7 @@ const claseCampo =
             Compara lo que el sistema espera haber cobrado con lo que realmente hay, y adjunta las fotos de respaldo.
           </p>
         </div>
-        <button id="cq-cerrar-x" type="button" aria-label="Cerrar" class="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
+        <button id="cq-cerrar-x" type="button" aria-label="Cerrar" class:list={['shrink-0 rounded-md p-1', pagina && 'hidden']} class=" text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
       </div>
 
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -96,13 +101,14 @@ const claseCampo =
 
     <!-- Acciones -->
     <div class="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3 sm:flex-row sm:justify-end dark:border-slate-800 dark:bg-slate-800/40">
-      <button id="cq-cerrar" type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cerrar ventana</button>
+      <button id="cq-cerrar" type="button" class:list={[pagina && 'hidden']} class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cerrar ventana</button>
+      <button id="cq-imprimir" type="button" class="hidden rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Imprimir / PDF</button>
       <button id="cq-reabrir" type="button" class="hidden rounded-lg border border-amber-300 bg-white px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:bg-transparent dark:text-amber-300">Reabrir cuadre</button>
       <button id="cq-guardar" type="button" class="hidden rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Guardar borrador</button>
       <button id="cq-finalizar" type="button" class="bg-marca hidden rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">Cerrar cuadre</button>
     </div>
   </div>
-</dialog>
+</Envoltura>
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
@@ -115,6 +121,12 @@ const claseCampo =
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('cq-dialogo');
+  /** En la página /cuadre el cuadre está siempre a la vista (no es un <dialog>) */
+  const esPagina = dialogo.dataset.modo === 'pagina';
+  const visible = () => esPagina || dialogo.open;
+  const mostrarVentana = () => {
+    if (!esPagina) dialogo.showModal();
+  };
   const campoFecha = $<HTMLInputElement>('cq-fecha');
   const selectLocal = $<HTMLSelectElement>('cq-local');
   const localFijo = $('cq-local-fijo');
@@ -334,6 +346,7 @@ const claseCampo =
   }
 
   function pintarTodo() {
+    $('cq-imprimir').classList.remove('hidden');
     pintarEstado();
     pintarFilas();
     pintarFotos();
@@ -418,7 +431,7 @@ const claseCampo =
       errorCarga.textContent = 'Tu usuario no tiene un local asignado: pídele al administrador que te asigne uno.';
       errorCarga.classList.remove('hidden');
       cargando.classList.add('hidden');
-      dialogo.showModal();
+      mostrarVentana();
       return;
     }
     fecha = fechaLocalISO();
@@ -434,7 +447,7 @@ const claseCampo =
     localFijo.textContent = nombreLocal(localId);
     chips.classList.toggle('hidden', !esGlobalUsuario);
     chips.classList.toggle('flex', esGlobalUsuario);
-    dialogo.showModal();
+    mostrarVentana();
     await cargar();
   }
 
@@ -604,9 +617,131 @@ const claseCampo =
     }
   });
 
+  // --- Imprimir / PDF ------------------------------------------------------------------------------------------
+  const ID_IMPRESION = 'cuadre-impresion';
+  const ID_ESTILO_IMPRESION = 'cuadre-impresion-estilo';
+  const ESTILO_IMPRESION = `
+#${ID_IMPRESION}{display:none}
+@page{size:A4;margin:12mm}
+@media print{
+  html,body{margin:0!important;padding:0!important;background:#fff!important}
+  body>*:not(#${ID_IMPRESION}){display:none!important}
+  dialog{display:none!important}
+  #${ID_IMPRESION}{display:block!important;color:#000;background:#fff;font-family:Arial,Helvetica,sans-serif;font-size:10.5pt;line-height:1.35}
+  #${ID_IMPRESION} h1{font-size:16pt;margin:0}
+  #${ID_IMPRESION} h2{font-size:11.5pt;margin:14px 0 6px;border-bottom:1px solid #000;padding-bottom:2px}
+  #${ID_IMPRESION} .cp-cab{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:8px}
+  #${ID_IMPRESION} .cp-sello{border:2px solid #000;padding:3px 10px;font-weight:700;letter-spacing:.05em}
+  #${ID_IMPRESION} table{width:100%;border-collapse:collapse}
+  #${ID_IMPRESION} th,#${ID_IMPRESION} td{border:1px solid #444;padding:4px 6px;text-align:left;vertical-align:top}
+  #${ID_IMPRESION} th{background:#e8e8e8;font-size:9pt}
+  #${ID_IMPRESION} .cp-der{text-align:right;white-space:nowrap}
+  #${ID_IMPRESION} .cp-meta td{border:none;padding:1px 6px 1px 0}
+  #${ID_IMPRESION} .cp-fotos{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  #${ID_IMPRESION} .cp-foto{width:56mm;height:56mm;object-fit:contain;border:1px solid #888}
+  #${ID_IMPRESION} .cp-grupo{break-inside:avoid;margin-bottom:8px}
+  #${ID_IMPRESION} .cp-pie{margin-top:16px;font-size:8.5pt;color:#333}
+  #${ID_IMPRESION} .cp-firmas{display:flex;gap:40px;margin-top:36px}
+  #${ID_IMPRESION} .cp-firma{flex:1;border-top:1px solid #000;padding-top:3px;text-align:center;font-size:9pt}
+}`;
+
+  function limpiarImpresion() {
+    document.getElementById(ID_IMPRESION)?.remove();
+    document.getElementById(ID_ESTILO_IMPRESION)?.remove();
+  }
+
+  /** Imprime (o guarda como PDF) el cuadre tal como está en pantalla: cobros, diferencias, observaciones y fotos. */
+  async function imprimir() {
+    errorEl.classList.add('hidden');
+    const boton = $<HTMLButtonElement>('cq-imprimir');
+    boton.disabled = true;
+    const textoOriginal = boton.textContent;
+    boton.textContent = 'Preparando...';
+    try {
+      const sesion = (await inventoryService.obtenerContextoLocal())?.sesion;
+      const filas = filasDelCuadre(esperado, leerContado());
+      const fecha_larga = new Date(`${fecha}T12:00:00`).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      const fmt = (iso: string) => new Date(iso).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' });
+      const textoDif = (dif: number | null, enBs: boolean) => {
+        if (dif === null) return '—';
+        if (Math.abs(dif) <= TOLERANCIA_CUADRE) return 'Cuadra';
+        return dif > 0 ? `Sobra ${dinero(dif, enBs)}` : `Falta ${dinero(-dif, enBs)}`;
+      };
+
+      // Fotos: las guardadas (enlace firmado) y las nuevas que aún no se han subido
+      const grupos: string[] = [];
+      for (const t of TIPOS_FOTO_CUADRE) {
+        const saved = guardadas.filter((f) => f.tipo === t.tipo && !quitadas.has(f.path));
+        const urlsGuardadas = (await Promise.all(saved.map((f) => resolverUrl(f.path)))).filter((u): u is string => !!u);
+        const urlsNuevas = nuevas.filter((n) => n.tipo === t.tipo).map((n) => n.url);
+        const todas = [...urlsGuardadas, ...urlsNuevas];
+        grupos.push(
+          `<div class="cp-grupo"><strong>${escapar(t.titulo)}</strong> (${todas.length} foto${todas.length === 1 ? '' : 's'})${
+            todas.length ? `<div class="cp-fotos">${todas.map((u) => `<img class="cp-foto" src="${escapar(u)}" alt="" />`).join('')}</div>` : ''
+          }</div>`
+        );
+      }
+
+      const estadoTexto = cerrado() ? 'CERRADO' : 'BORRADOR';
+      const meta = [
+        ['Local', nombreLocal(localId)],
+        ['Día', fecha_larga],
+        ['Registrado por', cuadre?.registrado_nombre ?? sesion?.nombre ?? '—'],
+        ...(cerrado() && cuadre?.cerrado_en ? [['Cerrado', `${fmt(cuadre.cerrado_en)}${cuadre.cerrado_por ? ` por ${cuadre.cerrado_por}` : ''}`]] : []),
+      ];
+      const contenido = `
+<div class="cp-cab">
+  <div><h1>Edward Accesorios</h1><div>Cuadre de caja diario</div></div>
+  <div class="cp-sello">${estadoTexto}</div>
+</div>
+<table class="cp-meta"><tbody>${meta.map(([k, v]) => `<tr><td><strong>${escapar(k)}:</strong></td><td>${escapar(v)}</td></tr>`).join('')}</tbody></table>
+<h2>Cobros del día</h2>
+<table>
+  <thead><tr><th>Tipo de cobro</th><th class="cp-der">Ventas</th><th class="cp-der">Esperado</th><th class="cp-der">Contado</th><th class="cp-der">Diferencia</th></tr></thead>
+  <tbody>${filas
+    .map(
+      (f) => `<tr><td>${escapar(f.etiqueta)}</td><td class="cp-der">${f.ventas}</td><td class="cp-der">${dinero(f.esperado, f.enBs)}</td><td class="cp-der">${f.contado === null ? '—' : dinero(f.contado, f.enBs)}</td><td class="cp-der"><strong>${escapar(textoDif(f.diferencia, f.enBs))}</strong></td></tr>`
+    )
+    .join('')}</tbody>
+</table>
+<h2>Observaciones</h2>
+<div>${notas.value.trim() ? escapar(notas.value.trim()).replace(/\n/g, '<br />') : 'Sin observaciones.'}</div>
+<h2>Fotos de respaldo</h2>
+${grupos.join('')}
+<div class="cp-firmas"><div class="cp-firma">Encargado / quien cuadra</div><div class="cp-firma">Revisado por</div></div>
+<p class="cp-pie">Impreso el ${escapar(fmt(new Date().toISOString()))}${sesion ? ` por ${escapar(sesion.nombre)}` : ''}.${cerrado() ? '' : ' Este cuadre es un borrador: todavía no está cerrado.'}</p>`;
+
+      limpiarImpresion();
+      const estilo = document.createElement('style');
+      estilo.id = ID_ESTILO_IMPRESION;
+      estilo.textContent = ESTILO_IMPRESION;
+      const cont = document.createElement('div');
+      cont.id = ID_IMPRESION;
+      cont.innerHTML = contenido;
+      document.head.appendChild(estilo);
+      document.body.appendChild(cont);
+
+      // Se espera a que carguen las fotos para que salgan en la hoja
+      const imagenes = Array.from(cont.querySelectorAll<HTMLImageElement>('img'));
+      await Promise.race([
+        Promise.all(imagenes.map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = () => r(null); })))),
+        new Promise((r) => setTimeout(r, 8000)),
+      ]);
+      window.addEventListener('afterprint', limpiarImpresion, { once: true });
+      window.setTimeout(limpiarImpresion, 120_000);
+      window.print();
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo preparar la impresión.');
+    } finally {
+      boton.disabled = false;
+      boton.textContent = textoOriginal;
+    }
+  }
+  $('cq-imprimir').addEventListener('click', () => void imprimir());
+
   function cerrarVentana() {
     if (!confirmarDescarteSiHaceFalta()) return;
-    dialogo.close();
+    if (!esPagina) dialogo.close();
   }
   $('cq-cerrar').addEventListener('click', cerrarVentana);
   $('cq-cerrar-x').addEventListener('click', cerrarVentana);
@@ -620,10 +755,12 @@ const claseCampo =
   });
 
   window.addEventListener('easystem:abrir-cuadre', () => void abrir());
+  // En la página /cuadre no hay botón que lo abra: se carga el cuadre de hoy al entrar
+  if (esPagina) void abrir();
 
   // Actualización en vivo: otro dispositivo cambió el cuadre o hubo ventas; no se toca lo que se está escribiendo
   alCambiarDatos(['cuadres_caja', 'ventas', 'devoluciones'], async () => {
-    if (!dialogo.open || ocupado) return;
+    if (!visible() || ocupado) return;
     await pintarChips();
     if (!sucio && !ocupado) await cargar(true);
   });

@@ -56,7 +56,14 @@ export const enlacesNav: EnlaceNav[] = [
     href: '/reportes',
     etiqueta: 'Reportes y cuadre',
     icono: 'M3 3v18h18M7 15v3M11 10v8M15 6v12M19 12v6',
-    roles: GERENCIA,
+    roles: ['administrador', 'gerente'],
+  },
+  {
+    // El encargado solo ve el cuadre de su local (sin reportes); administrador y gerente lo tienen dentro de Reportes y cuadre
+    href: '/cuadre',
+    etiqueta: 'Cuadre de caja',
+    icono: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM8 7h8M8 11h2m4 0h2M8 15h2m4 0h2',
+    roles: ['encargado'],
   },
   {
     href: '/usuarios',

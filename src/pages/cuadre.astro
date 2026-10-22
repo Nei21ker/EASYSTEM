@@ -1,0 +1,16 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import CuadreCaja from '../components/reportes/CuadreCaja.astro';
+---
+
+<!-- Cuadre de caja del día de un local. Es lo único que ve el encargado (sin reportes); el administrador y el gerente
+     lo tienen también como botón dentro de "Reportes y cuadre". -->
+<DashboardLayout
+  titulo="Cuadre de caja"
+  subtitulo="Cierra el día de tu local: compara lo cobrado con lo contado y adjunta las fotos de respaldo"
+  roles={['administrador', 'gerente', 'encargado']}
+>
+  <div class="mx-auto max-w-4xl">
+    <CuadreCaja modo="pagina" />
+  </div>
+</DashboardLayout>
