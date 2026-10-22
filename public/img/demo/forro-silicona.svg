@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Forro de silicona">
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde4ec"/>
+      <stop offset="1" stop-color="#f9c5d8"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="72" fill="url(#fondo)"/>
+  <ellipse cx="256" cy="448" rx="120" ry="14" fill="#000" opacity=".12"/>
+  <rect x="156" y="62" width="200" height="380" rx="44" fill="#ec6a9c"/>
+  <rect x="170" y="76" width="172" height="352" rx="34" fill="#f48fb5"/>
+  <rect x="186" y="92" width="86" height="86" rx="22" fill="#d94f84"/>
+  <circle cx="214" cy="118" r="15" fill="#2b2b36"/><circle cx="214" cy="118" r="7" fill="#5b5b72"/>
+  <circle cx="246" cy="150" r="15" fill="#2b2b36"/><circle cx="246" cy="150" r="7" fill="#5b5b72"/>
+  <path d="M210 360q46 24 92 0" stroke="#fff" stroke-opacity=".5" stroke-width="8" fill="none" stroke-linecap="round"/>
+</svg>

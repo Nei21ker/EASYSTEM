@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cable de carga">
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#efe3ff"/>
+      <stop offset="1" stop-color="#d6bdfa"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="72" fill="url(#fondo)"/>
+  <ellipse cx="256" cy="448" rx="120" ry="14" fill="#000" opacity=".12"/>
+  <path d="M150 150h120a70 70 0 0 1 0 140H200a40 40 0 0 0 0 80h160" fill="none" stroke="#6d3fd1" stroke-width="22" stroke-linecap="round"/>
+  <rect x="96" y="124" width="60" height="52" rx="10" fill="#8a97ad"/><rect x="82" y="138" width="20" height="24" rx="4" fill="#5c667a"/>
+  <rect x="356" y="346" width="64" height="48" rx="10" fill="#8a97ad"/><rect x="418" y="356" width="18" height="28" rx="4" fill="#5c667a"/>
+</svg>

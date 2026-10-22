@@ -31,6 +31,7 @@ import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VI
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
+import { imagenDemoParaProducto } from './imagenes-demo';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
@@ -88,6 +89,8 @@ interface LocalDB {
   /** Nómina (personal y pagos quincenales); los navegadores con datos anteriores los reciben al leer */
   empleados?: Empleado[];
   nominas?: Nomina[];
+  /** Ya se pusieron las imágenes de prueba a los productos del Local Accesorios (una sola vez) */
+  imagenesDemo?: boolean;
 }
 
 function generarId(): string {
@@ -103,6 +106,10 @@ function construirSeedInicial(): LocalDB {
   const localDe = (categoria: string) =>
     categoria === 'Vidrios Templados' ? LOCAL_VIDRIOS_ID : categoria === 'Repuestos' ? LOCAL_SERVICIO_TECNICO_ID : LOCAL_ACCESORIOS_ID;
   const localPorProducto = new Map(productos.map((p) => [p.id, localDe(p.categoria)]));
+  // Imágenes de prueba para los productos del Local Accesorios (hasta cargar las fotos reales)
+  for (const p of productos) {
+    if (localPorProducto.get(p.id) === LOCAL_ACCESORIOS_ID && !p.imagen_url) p.imagen_url = imagenDemoParaProducto(p.nombre, p.categoria);
+  }
   const inventario: InventarioLocal[] = productos.map((p) => ({
     local_id: localPorProducto.get(p.id)!,
     producto_id: p.id,
@@ -114,7 +121,7 @@ function construirSeedInicial(): LocalDB {
     local_id: localPorProducto.get(movimiento.producto_id) ?? LOCAL_ACCESORIOS_ID,
   }));
 
-  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [] };
+  return { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [], imagenesDemo: true };
 }
 
 /**
@@ -140,6 +147,17 @@ function migrarAMultilocal(db: LocalDB): boolean {
     }
   }
   return cambio;
+}
+
+/** Datos guardados antes de las imágenes de prueba: se les pone una (sin pisar fotos) a los productos del Local Accesorios, una sola vez. */
+function migrarImagenesDemo(db: LocalDB): boolean {
+  if (db.imagenesDemo) return false;
+  const enAccesorios = new Set(db.inventario.filter((i) => i.local_id === LOCAL_ACCESORIOS_ID).map((i) => i.producto_id));
+  for (const p of db.productos) {
+    if (enAccesorios.has(p.id) && !p.imagen_url) p.imagen_url = imagenDemoParaProducto(p.nombre, p.categoria);
+  }
+  db.imagenesDemo = true;
+  return true;
 }
 
 /** Datos guardados antes de la nómina: se agrega el personal de ejemplo. */
@@ -174,7 +192,7 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      const migrado = migrarAMultilocal(db) || migrarNomina(db);
+      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db)].some(Boolean);
       if (faltantes.length > 0) db.modelos.push(...faltantes);
       if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;

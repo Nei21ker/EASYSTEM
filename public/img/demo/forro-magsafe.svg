@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Forro con soporte MagSafe">
+  <defs>
+    <linearGradient id="fondo" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ede7f6"/>
+      <stop offset="1" stop-color="#d1c4e9"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="72" fill="url(#fondo)"/>
+  <ellipse cx="256" cy="448" rx="120" ry="14" fill="#000" opacity=".12"/>
+  <rect x="156" y="62" width="200" height="380" rx="44" fill="#5b4bb5"/>
+  <rect x="170" y="76" width="172" height="352" rx="34" fill="#7a6bd1"/>
+  <rect x="186" y="92" width="80" height="80" rx="20" fill="#4a3ca0"/>
+  <circle cx="212" cy="116" r="13" fill="#1d1640"/><circle cx="242" cy="146" r="13" fill="#1d1640"/>
+  <circle cx="256" cy="290" r="62" fill="none" stroke="#fff" stroke-width="12"/>
+  <circle cx="256" cy="290" r="26" fill="#fff" fill-opacity=".35"/>
+</svg>
