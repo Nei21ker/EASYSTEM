@@ -128,7 +128,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   <section id="pn-sec-indep" class="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
     <p class="border-b border-slate-100 px-4 py-3 text-xs text-slate-500 dark:border-slate-800 dark:text-slate-400 print:hidden">
       A cada trabajador independiente se le paga por día: durante el día se arma la lista de lo que revendió y, al finalizar, se le paga su
-      <strong class="font-semibold text-slate-700 dark:text-slate-200">ganancia</strong> (lo que vendió por encima del precio de lista).
+      <strong class="font-semibold text-slate-700 dark:text-slate-200">ganancia</strong> (lo que vendió por encima del precio).
     </p>
     <div class="overflow-x-auto">
       <table class="tabla-tarjetas w-full text-left text-sm">
@@ -239,7 +239,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
                 <tr class="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500 dark:bg-slate-800/60 dark:text-slate-400">
                   <th class="px-2 py-2 font-semibold">Producto</th>
                   <th class="w-16 px-2 py-2 text-right font-semibold">Cant.</th>
-                  <th class="w-20 px-2 py-2 text-right font-semibold">Lista</th>
+                  <th class="w-20 px-2 py-2 text-right font-semibold">Precio</th>
                   <th class="w-24 px-2 py-2 text-right font-semibold">Vendido</th>
                   <th class="w-20 px-2 py-2 text-right font-semibold">Ganancia</th>
                   <th class="w-8 px-1 py-2"><span class="sr-only">Quitar</span></th>
@@ -249,7 +249,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
             </table>
           </div>
           <p id="pg-lineas-ayuda" class="text-xs text-slate-500 dark:text-slate-400">
-            El precio de lista sale del catálogo. Cada línea se puede vender a ese precio o más; la ganancia es la diferencia por la cantidad. La lista no descuenta inventario.
+            El precio sale del catálogo. Cada línea se puede vender a ese precio o más; la ganancia es la diferencia por la cantidad. La lista no descuenta inventario.
           </p>
         </div>
 
@@ -731,7 +731,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     const independiente = em.tipo.value === 'INDEPENDIENTE';
     $('em-bloque-salario').classList.toggle('hidden', independiente);
     $('em-tipo-ayuda').textContent = independiente
-      ? 'No tiene salario ni quincena: se le paga cada día su ganancia por lo que revendió (lo vendido por encima del precio de lista).'
+      ? 'No tiene salario ni quincena: se le paga cada día su ganancia por lo que revendió (lo vendido por encima del precio).'
       : 'Cobra cada quincena: la mitad del salario mensual, más bonos y menos deducciones.';
     em.cargo.placeholder = independiente ? 'Revendedor independiente' : 'Cajera, Técnico...';
     actualizarQuincenaEmpleado();

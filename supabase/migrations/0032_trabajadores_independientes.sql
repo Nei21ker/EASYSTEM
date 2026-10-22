@@ -153,7 +153,7 @@ begin
       raise exception 'Los precios de "%" no son válidos', v_nombre;
     end if;
     if v_vendido < v_lista then
-      raise exception '"%" no puede venderse por debajo del precio de lista ($% < $%)', v_nombre, v_vendido, v_lista;
+      raise exception '"%" no puede venderse por debajo de su precio ($% < $%)', v_nombre, v_vendido, v_lista;
     end if;
     v_base := v_base + v_cantidad * (v_vendido - v_lista);
   end loop;

@@ -2077,7 +2077,7 @@ export function validarLineasReventa(lineas: LineaReventa[]): string | null {
     if (!Number.isInteger(l.cantidad) || l.cantidad <= 0) return `La cantidad de "${l.producto_nombre}" debe ser un entero mayor a 0.`;
     if (!(l.precio_lista >= 0) || !Number.isFinite(l.precio_vendido)) return `Los precios de "${l.producto_nombre}" no son válidos.`;
     if (l.precio_vendido < l.precio_lista) {
-      return `"${l.producto_nombre}" no puede venderse por debajo del precio de lista (${l.precio_vendido.toFixed(2)} < ${l.precio_lista.toFixed(2)}).`;
+      return `"${l.producto_nombre}" no puede venderse por debajo de su precio (${l.precio_vendido.toFixed(2)} < ${l.precio_lista.toFixed(2)}).`;
     }
   }
   return null;
