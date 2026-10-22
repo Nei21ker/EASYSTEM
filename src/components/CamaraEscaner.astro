@@ -1,5 +1,5 @@
 ---
-// Modal de escaneo de códigos de barras por cámara, reutilizable en cualquier
+// Modal de escaneo de códigos QR y de barras por cámara, reutilizable en cualquier
 // página. No recibe props: cualquier botón en la página con el atributo
 // `data-abrir-escaner` lo abre (delegación de eventos), y al detectar un
 // código emite un evento global `easystem:codigo-escaneado` con
@@ -20,7 +20,7 @@
 >
   <div class="w-full max-w-sm rounded-xl bg-white shadow-xl dark:bg-slate-900">
     <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800">
-      <h2 id="ce-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Escanear código de barras</h2>
+      <h2 id="ce-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Escanear código QR o de barras</h2>
       <div class="flex items-center gap-1">
         <button
           id="ce-sonido"
@@ -191,21 +191,37 @@
   }
 
   async function iniciarCamara(camaraId: string) {
-    const tokenSesion = detenerAlAbrir;
-    const { Html5Qrcode } = await import('html5-qrcode');
+    const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
 
+    // Cierra la sesión anterior (si la hay). Eso invalida el token, así que el de ESTA sesión se toma DESPUÉS:
+    // tomarlo antes hacía que la comparación siguiente fallara siempre y la cámara nunca arrancara (pantalla negra).
     await detenerEscaneo();
-    if (tokenSesion !== detenerAlAbrir) return; // el modal se cerró mientras cargábamos
+    if (modal.classList.contains('hidden')) return; // el modal se cerró mientras cargábamos
+    const tokenSesion = detenerAlAbrir;
 
-    lector = new Html5Qrcode(ID_LECTOR, { verbose: false });
-    mostrarEstado('Apunta la cámara al código de barras...');
+    // Solo los formatos que usa la tienda (QR y barras de producto): decodifica más rápido y con menos falsos positivos.
+    // Con useBarCodeDetectorIfSupported se usa el lector NATIVO del teléfono (Chrome/Android) cuando existe: mucho más fiable con barras.
+    lector = new Html5Qrcode(ID_LECTOR, {
+      verbose: false,
+      useBarCodeDetectorIfSupported: true,
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_128,
+      ],
+    });
+    mostrarEstado('Apunta la cámara al código QR o de barras...');
 
+    const esteLector = lector;
     try {
-      await lector.start(
+      await esteLector.start(
         camaraId,
         {
           fps: 10,
-          qrbox: { width: 260, height: 140 },
+          // Sin recuadro de lectura: se analiza toda la imagen (sirve igual para un QR cuadrado que para barras anchas)
           aspectRatio: 1,
         },
         (textoDecodificado) => {
@@ -221,6 +237,16 @@
           // Callback de "no se detectó nada en este frame": es normal, se ignora.
         }
       );
+      if (tokenSesion !== detenerAlAbrir) {
+        // Se cerró el modal mientras la cámara arrancaba: se apaga para no dejarla encendida
+        try {
+          await esteLector.stop();
+          esteLector.clear();
+        } catch {
+          // ya estaba detenida
+        }
+        return;
+      }
       escaneando = true;
       marco.classList.remove('hidden');
     } catch (err) {

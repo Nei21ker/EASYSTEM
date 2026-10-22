@@ -2,7 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
 import FormularioProducto from '../components/productos/FormularioProducto.astro';
-import { FORMATOS_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
+import { FORMATOS_ETIQUETA, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
 
 const claseCampo =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -107,7 +107,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <aside class="space-y-4">
       <section class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Etiquetas</h2>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Código de barras y nombre del producto. Elige el tamaño de tu papel de etiquetas.</p>
+        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Código y nombre del producto. Elige el tipo de código y el tamaño de tu papel de etiquetas.</p>
+        <label for="ig-tipo" class={`mt-4 ${claseEtiqueta}`}>Tipo de código</label>
+        <select id="ig-tipo" class={`mt-1 ${claseCampo}`}>
+          {TIPOS_CODIGO_ETIQUETA.map((t) => <option value={t.id}>{t.nombre}</option>)}
+        </select>
+        <p id="ig-tipo-nota" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"></p>
         <label for="ig-formato" class={`mt-4 ${claseEtiqueta}`}>Tamaño</label>
         <select id="ig-formato" class={`mt-1 ${claseCampo}`}>
           {FORMATOS_ETIQUETA.map((f) => <option value={f.id}>{f.nombre}</option>)}
@@ -132,7 +137,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia } from '../lib/auth';
-  import { buscarFormatoEtiqueta, FORMATO_ETIQUETA_POR_DEFECTO, htmlEtiqueta, imprimirEtiquetas, paginasNecesarias, totalEtiquetas } from '../utils/etiquetas';
+  import {
+    buscarFormatoEtiqueta,
+    buscarTipoCodigo,
+    FORMATO_ETIQUETA_POR_DEFECTO,
+    htmlEtiqueta,
+    imprimirEtiquetas,
+    paginasNecesarias,
+    TIPO_CODIGO_POR_DEFECTO,
+    TIPOS_CODIGO_ETIQUETA,
+    totalEtiquetas,
+  } from '../utils/etiquetas';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { alCambiarDatos } from '../lib/realtime';
   import type { ProductoConRelaciones } from '../types/database.types';
@@ -148,6 +163,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const motivo = $<HTMLInputElement>('ig-motivo');
   const botonRegistrar = $<HTMLButtonElement>('ig-registrar');
   const selectFormato = $<HTMLSelectElement>('ig-formato');
+  const selectTipo = $<HTMLSelectElement>('ig-tipo');
 
   interface Linea {
     id: string;
@@ -161,6 +177,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   // El lote se recuerda por usuario (varias personas pueden compartir el mismo equipo)
   let LS_LOTE = 'easystem:ingreso-lote';
   const LS_FORMATO = 'easystem:formato-etiqueta';
+  const LS_TIPO_CODIGO = 'easystem:etiqueta-tipo-codigo';
 
   let productos: ProductoConRelaciones[] = [];
   let lote: Linea[] = [];
@@ -450,17 +467,28 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     error.classList.add('hidden');
     const lista = pedidas();
     if (totalEtiquetas(lista) === 0) return mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
-    imprimirEtiquetas(lista, buscarFormatoEtiqueta(selectFormato.value));
+    imprimirEtiquetas(lista, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
   });
 
   function pintarPrevia() {
     const formato = buscarFormatoEtiqueta(selectFormato.value);
     const primera = pedidas()[0] ?? { codigo: '2000000000015', nombre: 'Forro silicona iPhone 13' };
-    $('ig-previa').innerHTML = htmlEtiqueta(primera, formato);
+    const tipo = buscarTipoCodigo(selectTipo.value);
+    $('ig-previa').innerHTML = htmlEtiqueta(primera, formato, tipo);
+    $('ig-tipo-nota').textContent = TIPOS_CODIGO_ETIQUETA.find((t) => t.id === tipo)?.ayuda ?? '';
     $('ig-formato-nota').textContent = formato.hoja
       ? `Hoja A4 con ${formato.hoja.columnas * formato.hoja.filas} etiquetas de ${formato.anchoMm} × ${formato.altoMm} mm, sin márgenes de página.`
       : `Una etiqueta por página de ${formato.anchoMm} × ${formato.altoMm} mm: configura ese tamaño de papel en la impresora.`;
   }
+
+  selectTipo.addEventListener('change', () => {
+    try {
+      localStorage.setItem(LS_TIPO_CODIGO, selectTipo.value);
+    } catch {
+      /* sin almacenamiento */
+    }
+    pintarPrevia();
+  });
 
   selectFormato.addEventListener('change', () => {
     try {
@@ -514,6 +542,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       ? `El ingreso se suma al stock de: ${contexto!.local!.nombre}.`
       : 'Estás en la vista "Todos los locales": puedes preparar el lote e imprimir etiquetas, pero para registrar el ingreso elige un local en el selector del encabezado.';
 
+    try {
+      selectTipo.value = buscarTipoCodigo(localStorage.getItem(LS_TIPO_CODIGO) ?? TIPO_CODIGO_POR_DEFECTO);
+    } catch {
+      selectTipo.value = TIPO_CODIGO_POR_DEFECTO;
+    }
     try {
       selectFormato.value = localStorage.getItem(LS_FORMATO) ?? FORMATO_ETIQUETA_POR_DEFECTO;
     } catch {
