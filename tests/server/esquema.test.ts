@@ -49,7 +49,7 @@ describe('esquema D1', () => {
     const esperadas = [
       'locales', 'modelos_telefono', 'productos', 'compatibilidades', 'inventario_local', 'movimientos_inventario',
       'unidades_producto', 'ventas', 'devoluciones', 'tasas_cambio', 'ordenes_servicio', 'empleados', 'nominas',
-      'nomina_reventas', 'cuadres_caja', 'suscripcion_eventos', 'perfiles', 'contadores', 'cambios',
+      'nomina_reventas', 'cuadres_caja', 'traslados', 'traslado_unidades', 'suscripcion_eventos', 'perfiles', 'contadores', 'cambios',
       'user', 'session', 'account', 'verification',
     ];
     for (const tabla of esperadas) expect(nombres.has(tabla), `falta la tabla ${tabla}`).toBe(true);

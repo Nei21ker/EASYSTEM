@@ -11,11 +11,11 @@ import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { ahoraISO, limiteSeguro, nuevoId } from '../util';
 import { construirCodigoUnidad } from '../../utils/codigos';
-import type { MovimientoInventario, TipoMovimiento, UnidadProducto } from '../../types/database.types';
+import type { MovimientoInventario, TipoMovimiento, TipoMovimientoManual, UnidadProducto } from '../../types/database.types';
 
 export interface EntradaMovimiento {
   productoId: string;
-  tipo: TipoMovimiento;
+  tipo: TipoMovimientoManual;
   cantidad: number;
   localId: string;
   motivo?: string;
@@ -41,8 +41,8 @@ const TRAMO = 90; // D1 admite 100 parámetros por consulta
 const MSG_NO_DISPONIBLE = 'Alguna de las unidades escaneadas ya no está disponible (se vendió, es de otro local o de otro producto).';
 const MSG_NO_VENDIDA = 'Alguna de las unidades indicadas no está vendida o no pertenece a este producto.';
 
-const tramos = <T>(lista: T[]): T[][] => Array.from({ length: Math.ceil(lista.length / TRAMO) }, (_, i) => lista.slice(i * TRAMO, (i + 1) * TRAMO));
-const marcas = (n: number) => Array.from({ length: n }, () => '?').join(', ');
+export const tramos = <T>(lista: T[]): T[][] => Array.from({ length: Math.ceil(lista.length / TRAMO) }, (_, i) => lista.slice(i * TRAMO, (i + 1) * TRAMO));
+export const marcas = (n: number) => Array.from({ length: n }, () => '?').join(', ');
 
 interface FilaUnidad {
   codigo: string;

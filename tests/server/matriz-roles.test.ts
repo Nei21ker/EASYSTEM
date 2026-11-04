@@ -77,6 +77,13 @@ function casos(): Caso[] {
     { archivo: 'unidades/index.ts', metodo: 'GET', url: '/api/unidades', permitidos: NEGOCIO },
     { archivo: 'unidades/[codigo].ts', metodo: 'GET', url: '/api/unidades/2100000000012', params: { codigo: '2100000000012' }, permitidos: NEGOCIO },
     { archivo: 'unidades/impresas.ts', metodo: 'POST', url: '/api/unidades/impresas', cuerpo: { codigos: [] }, permitidos: GERENCIA },
+    // Traslados entre locales y bajas de piezas
+    { archivo: 'traslados/index.ts', metodo: 'GET', url: '/api/traslados', permitidos: GERENCIA },
+    { archivo: 'traslados/index.ts', metodo: 'POST', url: '/api/traslados', cuerpo: { origenLocalId: accesorios, destinoLocalId: vidrios, codigos: ['2100000000012'] }, permitidos: GERENCIA },
+    { archivo: 'traslados/[id]/recibir.ts', metodo: 'POST', url: '/api/traslados/no-existe/recibir', params: { id: 'no-existe' }, cuerpo: { codigos: ['2100000000012'] }, permitidos: GERENCIA },
+    { archivo: 'traslados/[id]/cerrar.ts', metodo: 'POST', url: '/api/traslados/no-existe/cerrar', params: { id: 'no-existe' }, permitidos: GERENCIA },
+    { archivo: 'bajas/index.ts', metodo: 'POST', url: '/api/bajas', cuerpo: { localId: accesorios, codigos: ['2100000000012'], motivo: 'DANADA' }, permitidos: GERENCIA },
+    { archivo: 'bajas/revertir.ts', metodo: 'POST', url: '/api/bajas/revertir', cuerpo: { codigos: ['2100000000012'] }, permitidos: GLOBAL },
     // Ventas, devoluciones y órdenes
     { archivo: 'ventas/index.ts', metodo: 'GET', url: '/api/ventas', permitidos: NEGOCIO },
     { archivo: 'ventas/index.ts', metodo: 'POST', url: '/api/ventas', cuerpo: venta, permitidos: NEGOCIO },

@@ -160,7 +160,7 @@ export const inventario_local = sqliteTable(
 export const movimientos_inventario = sqliteTable('movimientos_inventario', {
   id: text('id').primaryKey(),
   producto_id: text('producto_id').notNull(),
-  tipo: text('tipo', { enum: ['ENTRADA', 'SALIDA'] }).notNull(),
+  tipo: text('tipo', { enum: ['ENTRADA', 'SALIDA', 'TRASLADO_SALIDA', 'TRASLADO_ENTRADA', 'BAJA'] }).notNull(),
   cantidad: integer('cantidad').notNull(),
   fecha: marca('fecha'),
   motivo: text('motivo'),
@@ -173,13 +173,44 @@ export const unidades_producto = sqliteTable('unidades_producto', {
   producto_id: text('producto_id').notNull(),
   local_id: text('local_id').notNull(),
   codigo: text('codigo').notNull().unique(),
-  estado: text('estado', { enum: ['DISPONIBLE', 'VENDIDA'] }).notNull().default('DISPONIBLE'),
+  estado: text('estado', { enum: ['DISPONIBLE', 'VENDIDA', 'EN_TRANSITO', 'BAJA'] }).notNull().default('DISPONIBLE'),
   created_at: marca('created_at'),
   vendida_en: text('vendida_en'),
   impresa_en: text('impresa_en'),
   reimpresiones: integer('reimpresiones').notNull().default(0),
   ultima_reimpresion: text('ultima_reimpresion'),
+  baja_motivo: text('baja_motivo', { enum: ['DANADA', 'USADA', 'GARANTIA'] }),
+  baja_nota: text('baja_nota'),
+  baja_en: text('baja_en'),
+  baja_por: text('baja_por'),
 });
+
+export const traslados = sqliteTable('traslados', {
+  id: text('id').primaryKey(),
+  folio: integer('folio').notNull().unique(),
+  origen_local_id: text('origen_local_id').notNull(),
+  destino_local_id: text('destino_local_id').notNull(),
+  estado: text('estado', { enum: ['EN_TRANSITO', 'RECIBIDO', 'ANULADO'] }).notNull().default('EN_TRANSITO'),
+  creado_en: marca('creado_en'),
+  enviado_por: text('enviado_por').notNull(),
+  recibido_en: text('recibido_en'),
+  recibido_por: text('recibido_por'),
+  cerrado_en: text('cerrado_en'),
+  notas: text('notas'),
+});
+
+export const traslado_unidades = sqliteTable(
+  'traslado_unidades',
+  {
+    traslado_id: text('traslado_id').notNull(),
+    codigo: text('codigo').notNull(),
+    producto_id: text('producto_id').notNull(),
+    producto_nombre: text('producto_nombre').notNull(),
+    recibida_en: text('recibida_en'),
+    devuelta_en: text('devuelta_en'),
+  },
+  (t) => [primaryKey({ columns: [t.traslado_id, t.codigo] })]
+);
 
 // --- Ventas, devoluciones y tasa -------------------------------------------------------------------------------
 export const ventas = sqliteTable('ventas', {

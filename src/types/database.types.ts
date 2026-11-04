@@ -2,7 +2,16 @@
 // Si usas la CLI de Supabase, reemplaza este archivo con:
 //   npx supabase gen types typescript --local > src/types/database.types.ts
 
-export type TipoMovimiento = 'ENTRADA' | 'SALIDA';
+/** Los dos que se registran a mano (ingreso y venta/ajuste). */
+export type TipoMovimientoManual = 'ENTRADA' | 'SALIDA';
+/**
+ * Todos los tipos de movimiento. Los traslados entre locales (TRASLADO_SALIDA al despachar, TRASLADO_ENTRADA al recibir o al devolver lo
+ * que no llegó) y las BAJA de piezas mueven el stock de un local pero NO son ventas ni compras: los reportes no los cuentan.
+ */
+export type TipoMovimiento = TipoMovimientoManual | 'TRASLADO_SALIDA' | 'TRASLADO_ENTRADA' | 'BAJA';
+
+/** ¿Este tipo suma al stock del local? (el resto lo resta) */
+export const sumaStock = (tipo: TipoMovimiento): boolean => tipo === 'ENTRADA' || tipo === 'TRASLADO_ENTRADA';
 
 /** Tipo de local: define qué módulos aplican (el de servicio técnico trabaja con órdenes de servicio). */
 export type TipoLocal = 'accesorios' | 'vidrios' | 'servicio_tecnico' | 'controles';
@@ -74,8 +83,18 @@ export interface MovimientoInventario {
   unidad_codigos?: string[] | null;
 }
 
-/** Cada unidad física tiene su propio código único (EAN-13, prefijo 21). Disponible = cuenta en el stock del local. */
-export type EstadoUnidad = 'DISPONIBLE' | 'VENDIDA';
+/**
+ * Cada unidad física tiene su propio código único (EAN-13, prefijo 21). Disponible = cuenta en el stock del local.
+ * EN_TRANSITO: salió de un local en un traslado y aún no la recibe el otro. BAJA: retirada del inventario (dañada, usada, en garantía).
+ */
+export type EstadoUnidad = 'DISPONIBLE' | 'VENDIDA' | 'EN_TRANSITO' | 'BAJA';
+
+export type MotivoBaja = 'DANADA' | 'USADA' | 'GARANTIA';
+export const MOTIVOS_BAJA: { id: MotivoBaja; nombre: string; ayuda: string }[] = [
+  { id: 'DANADA', nombre: 'Dañada', ayuda: 'Se rompió o no funciona.' },
+  { id: 'USADA', nombre: 'Usada', ayuda: 'Se usó (de muestra, de prueba) y ya no se puede vender como nueva.' },
+  { id: 'GARANTIA', nombre: 'En garantía', ayuda: 'Está en reclamo de garantía con el proveedor.' },
+];
 
 export interface UnidadProducto {
   id: string;
@@ -90,6 +109,44 @@ export interface UnidadProducto {
   /** Cuántas veces se volvió a imprimir su etiqueta después de la primera (se despegó, se perdió o salió mal) */
   reimpresiones?: number;
   ultima_reimpresion?: string | null;
+  /** Solo cuando estado = BAJA */
+  baja_motivo?: MotivoBaja | null;
+  baja_nota?: string | null;
+  baja_en?: string | null;
+  baja_por?: string | null;
+}
+
+export type EstadoTraslado = 'EN_TRANSITO' | 'RECIBIDO' | 'ANULADO';
+
+export interface TrasladoUnidad {
+  codigo: string;
+  producto_id: string;
+  /** Nombre del producto tal como estaba al despachar */
+  producto_nombre: string;
+  recibida_en: string | null;
+  /** Piezas que no llegaron y volvieron al local de origen al cerrar el traslado */
+  devuelta_en: string | null;
+}
+
+/**
+ * Un traslado de mercancía entre dos locales, en dos pasos: el origen DESPACHA (las piezas quedan EN_TRANSITO) y el destino RECIBE
+ * (escaneando cada pieza). Lo que no llega se devuelve al origen al cerrar el traslado.
+ */
+export interface Traslado {
+  id: string;
+  folio: number;
+  origen_local_id: string;
+  destino_local_id: string;
+  origen_nombre?: string | null;
+  destino_nombre?: string | null;
+  estado: EstadoTraslado;
+  creado_en: string;
+  enviado_por: string;
+  recibido_en: string | null;
+  recibido_por: string | null;
+  cerrado_en: string | null;
+  notas: string | null;
+  unidades: TrasladoUnidad[];
 }
 
 /** Producto "enriquecido" con sus modelos compatibles, tal como lo consume el Dashboard */
