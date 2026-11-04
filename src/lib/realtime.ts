@@ -1,20 +1,22 @@
 // Actualización en vivo entre dispositivos: cuando alguien registra una venta, ingresa mercancía, paga la nómina,
 // cambia la tasa, etc., las demás pantallas abiertas se actualizan solas, sin recargar la página.
 //
-// Con Supabase usa Realtime (postgres_changes) sobre las tablas de la migración 0030. Los cambios llegan
-// FILTRADOS POR RLS: cada usuario solo se entera de lo que ya puede leer (un vendedor no recibe avisos de
-// la nómina, por ejemplo). Los datos del aviso se ignoran: solo se usa "qué tabla cambió" para volver a pedir
+// En modo servidor se consulta GET /api/cambios cada 5 s (solo con la pestaña visible y con actividad reciente; ver
+// src/lib/sondeo.ts). El servidor devuelve únicamente las versiones de lo que el rol puede leer (un vendedor no se
+// entera de la nómina, por ejemplo). Los datos del aviso se ignoran: solo se usa "qué tabla cambió" para volver a pedir
 // la información con las funciones de siempre (inventoryService/auth), así que nada nuevo viaja ni se guarda.
 //
-// En modo LocalStorage (sin Supabase) no hay otros dispositivos, pero sí otras pestañas del mismo navegador:
-// el evento "storage" avisa cuando una de ellas guarda, y se reutiliza el mismo mecanismo.
+// En modo demo (LocalStorage) no hay otros dispositivos, pero sí otras pestañas del mismo navegador: el evento
+// "storage" avisa cuando una de ellas guarda, y se reutiliza el mismo mecanismo.
 //
 // Uso en una pantalla:
 //   alCambiarDatos(['ventas', 'movimientos_inventario'], recargar);
 // El aviso se agrupa (debounce) y nunca se ejecutan dos recargas a la vez.
-import { supabase, supabaseConfigurado } from './supabase';
+import { api } from './api';
+import { modoServidor } from './modo';
+import { crearSondeo, type VersionCambio } from './sondeo';
 
-/** Tablas que se escuchan (deben estar en la publicación supabase_realtime: migración 0030). */
+/** Tablas cuyo cambio se avisa (el servidor sube su versión en cada escritura: src/server/cambios.ts). */
 export const TABLAS_TIEMPO_REAL = [
   'productos',
   'inventario_local',
@@ -55,12 +57,12 @@ export function iniciarTiempoReal() {
     ultimoResync = ahora;
     emitir('*');
   };
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') resincronizar();
-  });
-  window.addEventListener('online', resincronizar);
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resincronizar();
+    });
+    window.addEventListener('online', resincronizar);
     // Otras pestañas del mismo navegador (modo demostración)
     window.addEventListener('storage', (e) => {
       if (e.key === 'easystem:db:v1') emitir('*');
@@ -70,24 +72,24 @@ export function iniciarTiempoReal() {
     return;
   }
 
-  try {
-    const canal = supabase.channel('easystem-cambios');
-    for (const tabla of TABLAS_TIEMPO_REAL) {
-      canal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, () => emitir(tabla));
-    }
-    let conexiones = 0;
-    canal.subscribe((estado) => {
-      if (estado === 'SUBSCRIBED') {
-        conexiones += 1;
-        // Una reconexión pudo perder avisos: se vuelve a pedir todo
-        if (conexiones > 1) emitir('*');
-      } else if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT') {
-        console.warn('[EASYSTEM] Actualización en vivo no disponible (¿aplicaste la migración 0030?). Las pantallas se actualizan al recargar.');
-      }
-    });
-  } catch (err) {
-    console.warn('[EASYSTEM] No se pudo iniciar la actualización en vivo.', err);
+  const sondeo = crearSondeo({
+    consultar: async () => (await api.get<{ versiones: VersionCambio[] }>('/api/cambios')).versiones,
+    emitir,
+    visible: () => document.visibilityState === 'visible',
+  });
+  sondeo.iniciar();
+
+  // Cualquier gesto cuenta como actividad (si la pantalla estaba en pausa por inactividad, se consulta al instante)
+  for (const evento of ['pointerdown', 'keydown', 'touchstart', 'scroll'] as const) {
+    window.addEventListener(evento, () => sondeo.registrarActividad(), { passive: true });
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') sondeo.alVolverAVerse();
+  });
+  window.addEventListener('online', () => {
+    resincronizar();
+    sondeo.alVolverAVerse();
+  });
 }
 
 /**
