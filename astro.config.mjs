@@ -9,7 +9,9 @@ import tailwindcss from '@tailwindcss/vite';
 // https://astro.build/config
 export default defineConfig({
   output: 'static',
-  adapter: cloudflare(),
+  // No usamos sesiones de Astro (la sesión es de Better-Auth): evita que el adaptador agregue un KV innecesario
+  session: { driver: 'memory' },
+  adapter: cloudflare({ imageService: 'passthrough' }),
   vite: {
     plugins: [tailwindcss()]
   }
