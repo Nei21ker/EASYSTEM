@@ -1,0 +1,22 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "easystem",
+  "main": "@astrojs/cloudflare/entrypoints/server",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "easystem",
+      "database_id": "LOCAL",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "FOTOS_PUBLICAS", "bucket_name": "easystem-fotos-publicas" },
+    { "binding": "FOTOS_PRIVADAS", "bucket_name": "easystem-fotos-privadas" }
+  ],
+  "vars": {
+    "URL_FOTOS_PUBLICAS": "http://localhost:8787/api/archivos/publico"
+  }
+}

@@ -25,3 +25,10 @@ backups/
 
 # jetbrains setting folder
 .idea/
+.superpowers/
+
+# Cloudflare / datos locales
+.wrangler/
+.dev.vars
+datos-controles/
+worker-configuration.d.ts
