@@ -193,8 +193,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div>
           <label for="ig-galeria-modo" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Cómo mandarlas a WePrint</label>
           <select id="ig-galeria-modo" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-            <option value="tira">Una sola imagen con todas las etiquetas (recomendado)</option>
-            <option value="pdf">Un PDF con una etiqueta por página</option>
+            <option value="pdf">Un PDF con una etiqueta por página (recomendado)</option>
+            <option value="tira">Una sola imagen con todas las etiquetas (tira)</option>
             <option value="sueltas">Una imagen por etiqueta</option>
           </select>
           <p id="ig-galeria-ayuda" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
@@ -695,15 +695,15 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   // Impresora Bluetooth desde el celular (p. ej. NETUM G5 con la app WePrint): el iPhone no deja que una página hable con la
   // impresora, así que se preparan las etiquetas como archivos y se entregan a WePrint con "Compartir" (o se guardan en Fotos /
   // Archivos para abrirlas desde WePrint). WePrint imprime un archivo a la vez: por eso lo recomendado es UNA imagen (tira) con todas
-  // las etiquetas una debajo de otra, o un PDF con una etiqueta por página.
+  // las etiquetas una debajo de otra, o un PDF con una etiqueta por página (el que mejor funciona: una página = una etiqueta).
   const galeria = $('ig-galeria') as HTMLDialogElement;
   const galeriaImagenes = $('ig-galeria-imagenes');
   const galeriaError = $('ig-galeria-error');
   const galeriaModo = $('ig-galeria-modo') as HTMLSelectElement;
   const galeriaSeparacion = $('ig-galeria-separacion') as HTMLInputElement;
   const AYUDA_MODO: Record<string, string> = {
-    tira: 'Un solo archivo: todas las etiquetas una debajo de otra. En WePrint pon el papel al tamaño de UNA etiqueta y la app la imprime etiqueta por etiqueta.',
-    pdf: 'Un solo archivo de varias páginas, una etiqueta por página, cada una del tamaño exacto del papel.',
+    tira: 'Una sola imagen larga con todas las etiquetas. Algunas impresoras la comprimen en UNA etiqueta: si pasa, usa el PDF.',
+    pdf: 'Un solo archivo de varias páginas, una etiqueta por página, cada una del tamaño exacto del papel: la impresora avanza una etiqueta por página con su sensor de separación.',
     sueltas: 'Una imagen por etiqueta: WePrint solo deja imprimir una a la vez.',
   };
   let galeriaTira: File | null = null;
@@ -786,7 +786,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('ig-galeria-titulo').textContent = boton;
     $('ig-galeria-cuenta').textContent =
       `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}`;
-    galeriaModo.value = 'tira';
+    galeriaModo.value = 'pdf';
     galeriaImagenes.innerHTML = '';
     galeria.showModal();
     await prepararGaleria(true);

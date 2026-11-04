@@ -130,6 +130,12 @@ describe('construirPdfDeJpegs', () => {
     entradas.forEach((pos, i) => expect(t.slice(pos, pos + `${i + 1} 0 obj`.length)).toBe(`${i + 1} 0 obj`));
   });
 
+  it('21 etiquetas de 50×25 mm salen como 21 páginas, cada una de 141.73×70.87 pt (una etiqueta por página)', () => {
+    const t = texto(construirPdfDeJpegs(Array.from({ length: 21 }, (_, i) => jpeg(i)), 50, 25));
+    expect(t).toContain('/Count 21');
+    expect((t.match(/\/MediaBox \[0 0 141\.73 70\.87\]/g) ?? []).length).toBe(21);
+  });
+
   it('guarda los bytes del JPEG sin alterarlos y rechaza un PDF sin páginas', () => {
     const pdf = construirPdfDeJpegs([jpeg(7)], 40, 25);
     expect(texto(pdf).indexOf('stream\nÿØ\u0007ÿÙ')).toBeGreaterThan(0);
@@ -142,5 +148,13 @@ describe('renglones parejos', () => {
     const r = ajustarNombre('Cargador Honor sencillo Tipo C', 300, 300, 30, 90, 3);
     expect(r.lineas.every((l) => l.length >= 5)).toBe(true);
     expect(r.lineas.join(' ')).toBe('Cargador Honor sencillo Tipo C');
+  });
+});
+
+describe('formato de rollo 50 × 25 mm', () => {
+  it('existe en la lista fija y no cambia el formato por defecto', () => {
+    const f = FORMATOS_ETIQUETA.find((x) => x.id === 'rollo-50x25');
+    expect(f).toMatchObject({ anchoMm: 50, altoMm: 25 });
+    expect(FORMATOS_ETIQUETA[0].id).toBe('rollo-50x30');
   });
 });
