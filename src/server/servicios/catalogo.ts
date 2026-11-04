@@ -1,0 +1,295 @@
+// Catálogo compartido (productos, modelos, compatibilidades), alta de productos por local y lista de locales.
+// Reglas portadas de las políticas RLS 0023 y 0025:
+//   · leer el catálogo: cualquier rol con acceso (catalogo_accesible: no el contador)
+//   · crear/editar productos y compatibilidades: administrador, gerente y encargado; eliminar productos y editar
+//     modelos y el importador en lote: solo administrador y gerente
+//   · inventario por local: administrador y gerente (cualquier local accesible) y el encargado (el suyo), y solo el
+//     MÍNIMO y el alta: el stock cambia únicamente por movimientos (trigger de la base de datos)
+import { alcanceDe, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
+import type { Entorno } from '../entorno';
+import { ErrorApi } from '../errores';
+import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, type ProductoConInventario } from '../repos/productos';
+import { cargarLocales } from '../repos/locales';
+import { ahoraISO, nuevoId, redondear2 } from '../util';
+import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
+
+export type { ProductoConInventario } from '../repos/productos';
+
+const sinPermiso = (mensaje = 'Tu rol no tiene permiso para hacer esto.') => new ErrorApi(403, mensaje, 'sin_permiso');
+const LIMITE_LOTE = 100;
+const LIMITE_INVENTARIO = 200;
+
+function exigirGerencia(sesion: Sesion): void {
+  if (!esGerencia(sesion.rol)) throw sinPermiso();
+}
+function exigirGlobal(sesion: Sesion): void {
+  if (!esGlobal(sesion.rol)) throw sinPermiso();
+}
+
+export interface DatosProducto {
+  codigo_barras: string;
+  nombre: string;
+  categoria: string;
+  precio_compra?: number;
+  precio_venta?: number;
+  stock_minimo?: number;
+  imagen_url?: string | null;
+}
+
+function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
+  const texto = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  if ((completo || d.codigo_barras !== undefined) && !texto(d.codigo_barras)) throw new ErrorApi(400, 'El código de barras es obligatorio.', 'datos_invalidos');
+  if ((completo || d.nombre !== undefined) && !texto(d.nombre)) throw new ErrorApi(400, 'El nombre es obligatorio.', 'datos_invalidos');
+  if ((completo || d.categoria !== undefined) && !texto(d.categoria)) throw new ErrorApi(400, 'La categoría es obligatoria.', 'datos_invalidos');
+  for (const campo of ['precio_compra', 'precio_venta'] as const) {
+    const valor = d[campo];
+    if (valor !== undefined && !(Number.isFinite(valor) && valor >= 0)) throw new ErrorApi(400, 'Los precios deben ser números mayores o iguales a 0.', 'datos_invalidos');
+  }
+  if (d.stock_minimo !== undefined && !(Number.isInteger(d.stock_minimo) && d.stock_minimo >= 0)) {
+    throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
+  }
+}
+
+const duplicado = (codigo: string) => new ErrorApi(409, `Ya existe un producto con el código de barras ${codigo}.`, 'codigo_repetido');
+const esViolacionUnica = (err: unknown) => err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
+const esViolacionForanea = (err: unknown) => err instanceof Error && /FOREIGN KEY constraint failed/i.test(err.message);
+
+// --- Lectura ------------------------------------------------------------------------------------------------
+export async function listarProductos(env: Entorno, sesion: Sesion): Promise<ProductoConInventario[]> {
+  return listarConInventario(env, await alcanceDe(env, sesion));
+}
+
+export async function obtenerProductoPorCodigo(env: Entorno, sesion: Sesion, codigo: string): Promise<ProductoConInventario | null> {
+  return obtenerPorCodigo(env, await alcanceDe(env, sesion), codigo);
+}
+
+export async function listarStockBajo(env: Entorno, sesion: Sesion, localId?: string): Promise<ProductoStockBajo[]> {
+  return repoStockBajo(env, await alcanceDe(env, sesion, localId));
+}
+
+// --- Productos -------------------------------------------------------------------------------------------------
+export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosProducto): Promise<Producto> {
+  exigirGerencia(sesion);
+  await alcanceDe(env, sesion);
+  validarProducto(datos, true);
+
+  const fila = {
+    id: nuevoId(),
+    codigo_barras: datos.codigo_barras.trim(),
+    nombre: datos.nombre.trim(),
+    categoria: datos.categoria.trim(),
+    // El encargado no ve ni fija el precio de compra
+    precio_compra: sesion.rol === 'encargado' ? 0 : redondear2(datos.precio_compra ?? 0),
+    precio_venta: redondear2(datos.precio_venta ?? 0),
+    stock_minimo: datos.stock_minimo ?? 5,
+    imagen_url: datos.imagen_url ?? null,
+    created_at: ahoraISO(),
+  };
+  try {
+    await env.DB
+      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.created_at)
+      .run();
+  } catch (err) {
+    if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
+    throw err;
+  }
+  return { ...fila, stock_actual: 0 };
+}
+
+export async function actualizarProducto(env: Entorno, sesion: Sesion, id: string, cambios: Partial<DatosProducto>): Promise<Producto> {
+  exigirGerencia(sesion);
+  await alcanceDe(env, sesion);
+  validarProducto(cambios, false);
+
+  const actual = await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>();
+  if (!actual) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+
+  // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
+  const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url'];
+  if (sesion.rol !== 'encargado') permitidos.push('precio_compra');
+  const columnas: string[] = [];
+  const valores: unknown[] = [];
+  for (const campo of permitidos) {
+    if (cambios[campo] === undefined) continue;
+    const valor = cambios[campo];
+    columnas.push(`${campo} = ?`);
+    valores.push(typeof valor === 'string' ? valor.trim() : typeof valor === 'number' && campo.startsWith('precio') ? redondear2(valor) : valor);
+  }
+  if (columnas.length > 0) {
+    try {
+      await env.DB.prepare(`UPDATE productos SET ${columnas.join(', ')} WHERE id = ?`).bind(...valores, id).run();
+    } catch (err) {
+      if (esViolacionUnica(err)) throw duplicado(String(cambios.codigo_barras));
+      throw err;
+    }
+  }
+  return (await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>())!;
+}
+
+export async function eliminarProducto(env: Entorno, sesion: Sesion, id: string): Promise<void> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  const existe = await env.DB.prepare('SELECT 1 AS ok FROM productos WHERE id = ?').bind(id).first();
+  if (!existe) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+  await env.DB.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
+}
+
+/** Importador CSV: crea productos nuevos (solo administrador y gerente). Hasta 100 por petición; todo o nada. */
+export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: DatosProducto[]): Promise<{ id: string; codigo_barras: string }[]> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  if (filas.length > LIMITE_LOTE) throw new ErrorApi(400, `Se pueden crear hasta ${LIMITE_LOTE} productos por petición.`, 'lote_grande');
+  filas.forEach((f) => validarProducto(f, true));
+
+  const codigos = filas.map((f) => f.codigo_barras.trim());
+  if (new Set(codigos).size !== codigos.length) throw new ErrorApi(400, 'Hay códigos de barras repetidos en el lote.', 'codigo_repetido');
+  if (codigos.length > 0) {
+    const existente = await env.DB
+      .prepare(`SELECT codigo_barras FROM productos WHERE codigo_barras IN (${codigos.map(() => '?').join(', ')}) LIMIT 1`)
+      .bind(...codigos)
+      .first<{ codigo_barras: string }>();
+    if (existente) throw duplicado(existente.codigo_barras);
+  }
+
+  const creados = filas.map((f) => ({ id: nuevoId(), codigo_barras: f.codigo_barras.trim(), f }));
+  const ahora = ahoraISO();
+  try {
+    await env.DB.batch(
+      creados.map(({ id, codigo_barras, f }) =>
+        env.DB
+          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, ahora)
+      )
+    );
+  } catch (err) {
+    if (esViolacionUnica(err)) throw new ErrorApi(409, 'Alguno de los códigos de barras ya existe.', 'codigo_repetido');
+    throw err;
+  }
+  return creados.map(({ id, codigo_barras }) => ({ id, codigo_barras }));
+}
+
+// --- Compatibilidades ----------------------------------------------------------------------------------------------
+export async function establecerCompatibilidades(env: Entorno, sesion: Sesion, productoId: string, modeloIds: string[]): Promise<void> {
+  exigirGerencia(sesion);
+  await alcanceDe(env, sesion);
+  if (modeloIds.length > 500) throw new ErrorApi(400, 'Demasiados modelos en una sola petición.', 'lote_grande');
+  try {
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM compatibilidades WHERE producto_id = ?').bind(productoId),
+      ...[...new Set(modeloIds)].map((modeloId) =>
+        env.DB.prepare('INSERT INTO compatibilidades (id, producto_id, modelo_id) VALUES (?, ?, ?)').bind(nuevoId(), productoId, modeloId)
+      ),
+    ]);
+  } catch (err) {
+    if (esViolacionForanea(err)) throw new ErrorApi(400, 'El producto o alguno de los modelos no existe.', 'datos_invalidos');
+    throw err;
+  }
+}
+
+export async function reemplazarCompatibilidadesLote(
+  env: Entorno,
+  sesion: Sesion,
+  pares: { producto_id: string; modelo_id: string }[],
+  productoIds: string[]
+): Promise<void> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  if (productoIds.length > LIMITE_LOTE || pares.length > 500) throw new ErrorApi(400, 'El lote de compatibilidades es demasiado grande.', 'lote_grande');
+  try {
+    await env.DB.batch([
+      ...(productoIds.length > 0
+        ? [env.DB.prepare(`DELETE FROM compatibilidades WHERE producto_id IN (${productoIds.map(() => '?').join(', ')})`).bind(...productoIds)]
+        : []),
+      ...pares.map((p) => env.DB.prepare('INSERT OR IGNORE INTO compatibilidades (id, producto_id, modelo_id) VALUES (?, ?, ?)').bind(nuevoId(), p.producto_id, p.modelo_id)),
+    ]);
+  } catch (err) {
+    if (esViolacionForanea(err)) throw new ErrorApi(400, 'Algún producto o modelo no existe.', 'datos_invalidos');
+    throw err;
+  }
+}
+
+// --- Inventario por local (alta y mínimo; el stock NUNCA se escribe aquí) ----------------------------------------------------
+async function exigirInventarioLocal(env: Entorno, sesion: Sesion, localId: string): Promise<void> {
+  exigirGerencia(sesion);
+  if (!(await localAccesible(env, sesion, localId))) throw sinPermiso('No tienes acceso a ese local.');
+}
+
+/** Da de alta productos en un local (stock 0, sin mínimo); los que ya estaban no se tocan. */
+export async function asegurarEnLocal(env: Entorno, sesion: Sesion, localId: string, productoIds: string[]): Promise<void> {
+  await exigirInventarioLocal(env, sesion, localId);
+  if (productoIds.length > LIMITE_INVENTARIO) throw new ErrorApi(400, `Se pueden dar de alta hasta ${LIMITE_INVENTARIO} productos por petición.`, 'lote_grande');
+  try {
+    await env.DB.batch(
+      productoIds.map((id) =>
+        env.DB.prepare('INSERT INTO inventario_local (local_id, producto_id, stock_actual, stock_minimo) VALUES (?, ?, 0, 0) ON CONFLICT (local_id, producto_id) DO NOTHING').bind(localId, id)
+      )
+    );
+  } catch (err) {
+    if (esViolacionForanea(err)) throw new ErrorApi(400, 'Alguno de los productos no existe.', 'datos_invalidos');
+    throw err;
+  }
+}
+
+/** Fija el stock mínimo de varios productos en un local (alta con stock 0 si aún no lo manejaba). */
+export async function fijarMinimosLote(
+  env: Entorno,
+  sesion: Sesion,
+  localId: string,
+  filas: { producto_id: string; stock_minimo: number }[]
+): Promise<void> {
+  await exigirInventarioLocal(env, sesion, localId);
+  if (filas.length > LIMITE_INVENTARIO) throw new ErrorApi(400, `Se pueden fijar hasta ${LIMITE_INVENTARIO} mínimos por petición.`, 'lote_grande');
+  if (filas.some((f) => !(Number.isInteger(f.stock_minimo) && f.stock_minimo >= 0))) {
+    throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
+  }
+  try {
+    await env.DB.batch(
+      filas.map((f) =>
+        env.DB
+          .prepare('INSERT INTO inventario_local (local_id, producto_id, stock_actual, stock_minimo) VALUES (?, ?, 0, ?) ON CONFLICT (local_id, producto_id) DO UPDATE SET stock_minimo = excluded.stock_minimo')
+          .bind(localId, f.producto_id, f.stock_minimo)
+      )
+    );
+  } catch (err) {
+    if (esViolacionForanea(err)) throw new ErrorApi(400, 'Alguno de los productos no existe.', 'datos_invalidos');
+    throw err;
+  }
+}
+
+// --- Modelos de teléfono ------------------------------------------------------------------------------------------------
+export async function listarModelos(env: Entorno, sesion: Sesion): Promise<ModeloTelefono[]> {
+  await alcanceDe(env, sesion);
+  const filas = await env.DB.prepare('SELECT id, marca, modelo, created_at FROM modelos_telefono ORDER BY marca, modelo').all<ModeloTelefono>();
+  return filas.results;
+}
+
+export async function crearModelo(env: Entorno, sesion: Sesion, datos: { marca: string; modelo: string }): Promise<ModeloTelefono> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  const marca = datos.marca.trim();
+  const modelo = datos.modelo.trim();
+  if (!marca || !modelo) throw new ErrorApi(400, 'Escribe la marca y el modelo.', 'datos_invalidos');
+  const fila: ModeloTelefono = { id: nuevoId(), marca, modelo, created_at: ahoraISO() };
+  try {
+    await env.DB.prepare('INSERT INTO modelos_telefono (id, marca, modelo, created_at) VALUES (?, ?, ?, ?)').bind(fila.id, marca, modelo, fila.created_at).run();
+  } catch (err) {
+    if (esViolacionUnica(err)) throw new ErrorApi(409, `El modelo ${marca} ${modelo} ya existe.`, 'modelo_repetido');
+    throw err;
+  }
+  return fila;
+}
+
+export async function eliminarModelo(env: Entorno, sesion: Sesion, id: string): Promise<void> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  await env.DB.prepare('DELETE FROM modelos_telefono WHERE id = ?').bind(id).run();
+}
+
+// --- Locales -----------------------------------------------------------------------------------------------------------------
+/** Administrador, gerente y contador ven todos los locales; el resto, solo el suyo. */
+export async function listarLocalesVisibles(env: Entorno, sesion: Sesion): Promise<Local[]> {
+  const locales = await cargarLocales(env);
+  if (esAdministrador(sesion.rol) || esGlobal(sesion.rol) || sesion.rol === 'contador') return locales;
+  return locales.filter((l) => l.id === sesion.localId);
+}
