@@ -3,7 +3,7 @@
 // Un iPhone no deja que una página web hable directamente con una impresora Bluetooth (Safari no tiene Web Bluetooth), así
 // que el camino que funciona es: el sistema dibuja cada etiqueta como imagen del tamaño exacto del rollo y la entrega a la
 // app de la impresora (WePrint, etc.) con el menú "Compartir" del teléfono. La app hace la conexión Bluetooth y la impresión.
-import { buscarTipoCodigo, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
+import { buscarTipoCodigo, textoCodigoEtiqueta, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
 import { svgCodigoBarras } from './codigoBarras';
 import { svgQr } from './qr';
 
@@ -68,16 +68,17 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
       contenido.push(`<text x="${x}" y="${ty}" font-size="${tamNombre}" font-weight="700" ${fuente}>${escapar(linea)}</text>`);
       ty += Math.round(tamNombre * 1.15);
     }
-    const numeroEnLinea = Math.floor(ancho / (tamNumero * 0.62)) >= e.codigo.length;
+    const numero = textoCodigoEtiqueta(e.codigo);
+    const numeroEnLinea = Math.floor(ancho / (tamNumero * 0.62)) >= numero.length;
     contenido.push(
-      `<text x="${x}" y="${ty + Math.round(tamNumero * 0.4)}" font-size="${tamNumero}" font-family="'Courier New', monospace" ${numeroEnLinea ? '' : `textLength="${ancho}" lengthAdjust="spacingAndGlyphs"`}>${escapar(e.codigo)}</text>`
+      `<text x="${x}" y="${ty + Math.round(tamNumero * 0.4)}" font-size="${tamNumero}" font-family="'Courier New', monospace" ${numeroEnLinea ? '' : `textLength="${ancho}" lengthAdjust="spacingAndGlyphs"`}>${escapar(numero)}</text>`
     );
   } else {
     const barras = svgCodigoBarras(e.codigo, 40);
     if (barras) {
       const alto = pixeles(formato.barrasMm);
       contenido.push(barras.replace('<svg ', `<svg x="${margen}" y="${margen}" width="${W - margen * 2}" height="${alto}" `));
-      contenido.push(`<text x="${W / 2}" y="${margen + alto + tamNumero * 1.2}" font-size="${tamNumero}" text-anchor="middle" font-family="'Courier New', monospace">${escapar(e.codigo)}</text>`);
+      contenido.push(`<text x="${W / 2}" y="${margen + alto + tamNumero * 1.2}" font-size="${tamNumero}" text-anchor="middle" font-family="'Courier New', monospace">${escapar(textoCodigoEtiqueta(e.codigo))}</text>`);
       const caracteres = Math.max(8, Math.floor((W - margen * 2) / (tamNombre * 0.56)));
       const lineas = partirEnLineas(e.nombre, caracteres, 2);
       let ty = Math.round(margen + alto + tamNumero * 1.2 + tamNombre * 1.25);

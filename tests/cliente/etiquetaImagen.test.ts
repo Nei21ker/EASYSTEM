@@ -36,11 +36,11 @@ describe('svgEtiqueta', () => {
   it('con QR lleva el código, el número y el nombre; con barras, las barras y los mismos textos', () => {
     const e = { codigo: '2100000000012', nombre: 'Cargador Tecno doble usb' };
     const conQr = svgEtiqueta(e, rollo50x30, 'qr');
-    expect(conQr).toContain('>2100000000012</text>');
+    expect(conQr).toContain('>N.º 1</text>');
     expect(conQr).toContain('Cargador Tecno');
     expect(conQr).toContain('<svg x='); // el QR va incrustado
     const conBarras = svgEtiqueta(e, rollo50x30, 'barras');
-    expect(conBarras).toContain('>2100000000012</text>');
+    expect(conBarras).toContain('>N.º 1</text>');
     expect(conBarras).toContain('aria-label="Código de barras 2100000000012"');
     expect(conBarras).not.toBe(conQr);
   });

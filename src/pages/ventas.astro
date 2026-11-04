@@ -25,7 +25,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <div>
             <label for="pos-codigo" class="text-sm font-semibold text-slate-900 dark:text-white">Código de la unidad</label>
             <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Cada unidad tiene su propia etiqueta (código de barras o QR). Escanéala con el lector o la cámara del teléfono y se agrega esa unidad exacta.
+              Cada unidad tiene su propia etiqueta (código de barras o QR). Escanéala con el lector o la cámara del teléfono, o escribe el número que trae la etiqueta (por ejemplo 7), y se agrega esa unidad exacta.
             </p>
             <div class="relative mt-3">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
@@ -313,7 +313,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
-  import { esCodigoUnidad } from '../utils/codigos';
+  import { codigoDeNumeroCorto, esCodigoUnidad } from '../utils/codigos';
   import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
@@ -938,9 +938,10 @@ import { alCambiarDatos } from '../lib/realtime';
    * Agrega lo que identifica un código: el de UNA unidad (etiqueta propia: se agrega esa unidad exacta) o, como
    * respaldo, el código del producto (empaque de fábrica: se agrega una unidad cualquiera). Devuelve si se agregó.
    */
-  async function agregarPorCodigo(codigoCrudo: string): Promise<boolean> {
+  async function agregarPorCodigo(codigoCrudo: string, aceptarNumeroCorto = false): Promise<boolean> {
     limpiarError();
-    const codigo = codigoCrudo.trim();
+    // En el campo del lector, escribir solo el número de la etiqueta ("N.º 7" → 7) equivale a escanearla
+    const codigo = (aceptarNumeroCorto ? codigoDeNumeroCorto(codigoCrudo) : null) ?? codigoCrudo.trim();
     if (!codigo) return false;
     if (!esCodigoUnidad(codigo)) {
       const antes = carrito.reduce((suma, l) => suma + l.cantidad, 0);
@@ -980,7 +981,7 @@ import { alCambiarDatos } from '../lib/realtime';
     e.preventDefault();
     const codigo = campoCodigo.value;
     if (!codigo.trim()) return;
-    void agregarPorCodigo(codigo).then((agregado) => {
+    void agregarPorCodigo(codigo, true).then((agregado) => {
       if (agregado) campoCodigo.value = '';
       campoCodigo.select();
     });

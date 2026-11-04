@@ -58,3 +58,22 @@ export function generarCodigosInternos(existentes: Iterable<string>, cantidad = 
   const inicio = secuenciaMaxima(existentes);
   return Array.from({ length: cantidad }, (_, i) => construirCodigoInterno(inicio + i + 1));
 }
+
+// --- Número corto de una unidad ---------------------------------------------------------------
+// El código completo de una unidad (13 dígitos) acaba en un dígito verificador que hace que dos unidades seguidas NO parezcan
+// seguidas (…074 y …081 son las unidades 7 y 8). En las etiquetas se imprime el NÚMERO de la unidad (7, 8…), corto y consecutivo; el
+// QR sigue llevando el código completo. Escribir ese número en el campo del lector del POS equivale a escanear la etiqueta.
+
+/** El número de la unidad (1, 2, 3…) de un código de unidad válido; null si no lo es. */
+export function numeroCortoUnidad(codigo: string): number | null {
+  const limpio = codigo.trim();
+  return esCodigoUnidad(limpio) ? Number(limpio.slice(2, 12)) : null;
+}
+
+/** Del número corto escrito por una persona ("7") al código completo de la unidad; null si no es un número de 1 a 7 cifras mayor a 0. */
+export function codigoDeNumeroCorto(texto: string): string | null {
+  const limpio = texto.trim();
+  if (!/^\d{1,7}$/.test(limpio)) return null;
+  const numero = Number(limpio);
+  return numero > 0 ? construirCodigoUnidad(numero) : null;
+}
