@@ -39,7 +39,7 @@ export default defineConfig(async () => {
           test: {
             name: 'cliente',
             environment: 'node',
-            include: ['tests/cliente/**/*.test.ts'],
+            include: ['tests/cliente/**/*.test.ts', 'tests/scripts/**/*.test.ts'],
           },
         },
       ],

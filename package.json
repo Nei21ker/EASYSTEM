@@ -17,7 +17,8 @@
     "db:local": "wrangler d1 migrations apply easystem --local",
     "check:server": "tsc -p tsconfig.server.json",
     "check:all": "astro check && npm run check:server",
-    "crear-admin": "node scripts/crear-admin.mjs"
+    "crear-admin": "node scripts/crear-admin.mjs",
+    "cargar-controles": "node scripts/cargar-controles.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",
@@ -42,6 +43,7 @@
     "@cloudflare/vitest-plugin": "^1.5.1",
     "@cloudflare/workers-types": "^5.20261104.1",
     "drizzle-kit": "^0.31.11",
+    "sharp": "^0.35.5",
     "typescript": "^6.0.3",
     "vitest": "^4.1.12",
     "wrangler": "^4.157.0"
