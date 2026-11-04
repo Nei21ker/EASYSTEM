@@ -26,6 +26,7 @@ import * as localesDb from './db/locales';
 import * as ordenesDb from './db/ordenes';
 import * as nominaDb from './db/nomina';
 import * as unidadesDb from './db/unidades';
+import * as trasladosDb from './db/traslados';
 import * as cuadresDb from './db/cuadres';
 import * as clientesDb from './db/clientes';
 import type { ProductoConInventario } from './db/productos';
@@ -42,6 +43,7 @@ import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
+import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
 import type {
   ClienteVenta,
   Compatibilidad,
@@ -75,6 +77,10 @@ import type {
   TasaCambio,
   TipoFotoCuadre,
   TipoMovimiento,
+  TipoMovimientoManual,
+  Traslado,
+  EstadoTraslado,
+  MotivoBaja,
   UnidadProducto,
   Venta,
   VentaItem,
@@ -107,6 +113,8 @@ interface LocalDB {
   imagenesDemo?: boolean;
   /** Lista de lo que revendió cada trabajador independiente en un día (una por pago diario) */
   reventas?: (LineaReventa & { id: string; nomina_id: string; local_id: string })[];
+  /** Traslados de mercancía entre locales (despacho y recepción) */
+  traslados?: Traslado[];
   /** Una fila por unidad física con su código único (la hace el trigger de D1) y el último número usado */
   unidades?: UnidadProducto[];
   unidadSeq?: number;
@@ -431,7 +439,7 @@ function aplicarPendientesAProductos(productos: ProductoConInventario[]): Produc
     const inventario = p.inventario.map((i) => ({ ...i }));
     let total = p.stock_actual;
     for (const m of propios) {
-      const delta = m.tipo === 'ENTRADA' ? m.cantidad : -m.cantidad;
+      const delta = sumaStock(m.tipo) ? m.cantidad : -m.cantidad;
       const localId = m.local_id ?? LOCAL_ACCESORIOS_ID;
       let fila = inventario.find((i) => i.local_id === localId);
       if (!fila) {
@@ -815,6 +823,243 @@ export async function marcarEtiquetasImpresas(codigos: string[], opciones: { rei
   await unidadesDb.marcarImpresas(codigos, opciones.reimpresion === true);
 }
 
+// ----------------------------------------------------------------------------
+// Mercancía: traslados entre locales (dos pasos) y bajas de piezas
+// ----------------------------------------------------------------------------
+// En modo servidor lo hace src/server/servicios/traslados.ts en un solo lote atómico; en modo LocalStorage se replica la
+// misma regla: las piezas pasan DISPONIBLE → EN_TRANSITO (despacho) → DISPONIBLE en el destino (recepción), lo que no llega vuelve
+// al origen al cerrar, y una baja pasa la pieza a BAJA. Cada paso mueve el stock con un movimiento que no cuenta como venta ni compra.
+const MAX_PIEZAS_OPERACION = 500;
+const folioTraslado = (folio: number) => `#${String(folio).padStart(4, '0')}`;
+
+function validarCodigosOperacion(codigos: string[]): void {
+  if (codigos.length === 0) throw new Error('Escanea al menos una pieza.');
+  if (codigos.length > MAX_PIEZAS_OPERACION) throw new Error(`Son demasiadas piezas para una sola operación (máximo ${MAX_PIEZAS_OPERACION}).`);
+  if (new Set(codigos).size !== codigos.length) throw new Error('Hay piezas repetidas en la lista.');
+}
+
+async function sesionDeMercancia(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no puede mover mercancía entre locales ni dar de baja piezas.');
+  return sesion;
+}
+
+const puedeEnLocal = (sesion: SesionUsuario, localId: string) => esGlobal(sesion.rol) || sesion.local_id === localId;
+
+/** Mueve el stock de un local con un movimiento (demo). Las piezas ya cambiaron de estado: aquí solo se cuenta y se anota. */
+function movimientoDemo(db: LocalDB, tipo: TipoMovimiento, productoId: string, localId: string, codigos: string[], motivo: string): void {
+  let fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === productoId);
+  if (!fila) {
+    fila = { local_id: localId, producto_id: productoId, stock_actual: 0, stock_minimo: 0 };
+    db.inventario.push(fila);
+  }
+  const delta = sumaStock(tipo) ? codigos.length : -codigos.length;
+  fila.stock_actual += delta;
+  const producto = db.productos.find((p) => p.id === productoId);
+  if (producto) producto.stock_actual += delta;
+  db.movimientos.unshift({ id: generarId(), producto_id: productoId, tipo, cantidad: codigos.length, motivo, fecha: new Date().toISOString(), local_id: localId, unidad_codigos: codigos });
+}
+
+function porProducto(unidades: { producto_id: string; codigo: string }[]): Map<string, string[]> {
+  const grupos = new Map<string, string[]>();
+  for (const u of unidades) grupos.set(u.producto_id, [...(grupos.get(u.producto_id) ?? []), u.codigo]);
+  return grupos;
+}
+
+/** Locales a los que se puede mandar mercancía (todos los vigentes; un encargado solo ve el suyo en el resto de la app). */
+export async function listarDestinosTraslado(): Promise<{ id: string; nombre: string; tipo: string }[]> {
+  await sesionDeMercancia();
+  if (!modoServidor) {
+    return (await listarLocales()).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo }));
+  }
+  return trasladosDb.listarDestinos();
+}
+
+/** Traslados donde el local del usuario es origen o destino (administrador y gerente: todos), del más reciente al más antiguo. */
+export async function listarTraslados(estado?: EstadoTraslado): Promise<Traslado[]> {
+  const sesion = await sesionDeMercancia();
+  if (!modoServidor) {
+    return (leerDB().traslados ?? [])
+      .filter((t) => (!estado || t.estado === estado) && (esGlobal(sesion.rol) || t.origen_local_id === sesion.local_id || t.destino_local_id === sesion.local_id))
+      .sort((a, b) => b.folio - a.folio);
+  }
+  return trasladosDb.listarTraslados(estado);
+}
+
+/** El local de origen despacha: las piezas quedan EN_TRANSITO y su stock sale del origen. Necesita conexión (no se encola). */
+export async function despacharTraslado(datos: { origenLocalId: string; destinoLocalId: string; codigos: string[]; notas?: string }): Promise<Traslado> {
+  const sesion = await sesionDeMercancia();
+  if (modoServidor) return trasladosDb.despacharTraslado(datos);
+
+  validarCodigosOperacion(datos.codigos);
+  const notas = (datos.notas ?? '').trim();
+  if (notas.length > 300) throw new Error('La nota admite hasta 300 caracteres.');
+  if (datos.origenLocalId === datos.destinoLocalId) throw new Error('El local de destino debe ser distinto al de origen.');
+  if (!puedeEnLocal(sesion, datos.origenLocalId)) throw new Error('Solo puedes despachar mercancía desde tu propio local.');
+  const db = leerDB();
+  const destino = db.locales.find((l) => l.id === datos.destinoLocalId);
+  const origen = db.locales.find((l) => l.id === datos.origenLocalId);
+  if (!destino || !origen) throw new Error('El local de destino no existe.');
+
+  const unidades = datos.codigos.map((c) => (db.unidades ?? []).find((u) => u.codigo === c));
+  if (unidades.some((u) => !u || u.estado !== 'DISPONIBLE' || u.local_id !== datos.origenLocalId)) {
+    throw new Error('Alguna de las piezas ya no está disponible en este local (se vendió, ya va en un traslado, está dada de baja o es de otro local).');
+  }
+  const piezas = unidades as UnidadProducto[];
+  const traslados = db.traslados ?? (db.traslados = []);
+  const folio = traslados.reduce((m, t) => Math.max(m, t.folio), 0) + 1;
+  const nombres = new Map(db.productos.map((p) => [p.id, p.nombre]));
+  for (const [productoId, codigos] of porProducto(piezas)) {
+    movimientoDemo(db, 'TRASLADO_SALIDA', productoId, datos.origenLocalId, codigos, `Traslado ${folioTraslado(folio)} → ${destino.nombre}`);
+  }
+  for (const u of piezas) u.estado = 'EN_TRANSITO';
+  const traslado: Traslado = {
+    id: generarId(),
+    folio,
+    origen_local_id: datos.origenLocalId,
+    destino_local_id: datos.destinoLocalId,
+    origen_nombre: origen.nombre,
+    destino_nombre: destino.nombre,
+    estado: 'EN_TRANSITO',
+    creado_en: new Date().toISOString(),
+    enviado_por: sesion.nombre,
+    recibido_en: null,
+    recibido_por: null,
+    cerrado_en: null,
+    notas: notas || null,
+    unidades: piezas.map((u) => ({ codigo: u.codigo, producto_id: u.producto_id, producto_nombre: nombres.get(u.producto_id) ?? 'Producto', recibida_en: null, devuelta_en: null })),
+  };
+  traslados.unshift(traslado);
+  guardarDB(db);
+  return traslado;
+}
+
+/** El local de destino recibe (todas o parte de) las piezas escaneadas: pasan a DISPONIBLES en el destino con el mismo código. */
+export async function recibirTraslado(trasladoId: string, codigos: string[]): Promise<Traslado> {
+  const sesion = await sesionDeMercancia();
+  if (modoServidor) return trasladosDb.recibirTraslado(trasladoId, codigos);
+
+  validarCodigosOperacion(codigos);
+  const db = leerDB();
+  const t = (db.traslados ?? []).find((x) => x.id === trasladoId);
+  if (!t) throw new Error('Ese traslado no existe.');
+  if (!puedeEnLocal(sesion, t.destino_local_id)) throw new Error('Solo el local de destino puede recibir este traslado.');
+  if (t.estado !== 'EN_TRANSITO') throw new Error(`El traslado ${folioTraslado(t.folio)} ya está cerrado.`);
+  for (const codigo of codigos) {
+    const u = t.unidades.find((x) => x.codigo === codigo);
+    if (!u) throw new Error(`La pieza ${codigo} no es de este traslado.`);
+    if (u.recibida_en) throw new Error(`La pieza ${codigo} ya se recibió.`);
+    if (u.devuelta_en) throw new Error(`La pieza ${codigo} ya se devolvió al origen.`);
+  }
+  const ahora = new Date().toISOString();
+  const recibidas = t.unidades.filter((u) => codigos.includes(u.codigo));
+  for (const [productoId, lista] of porProducto(recibidas)) {
+    movimientoDemo(db, 'TRASLADO_ENTRADA', productoId, t.destino_local_id, lista, `Traslado ${folioTraslado(t.folio)} desde ${t.origen_nombre ?? 'otro local'}`);
+  }
+  for (const u of recibidas) {
+    u.recibida_en = ahora;
+    const pieza = (db.unidades ?? []).find((x) => x.codigo === u.codigo);
+    if (pieza) {
+      pieza.estado = 'DISPONIBLE';
+      pieza.local_id = t.destino_local_id;
+    }
+  }
+  t.recibido_en = ahora;
+  t.recibido_por = sesion.nombre;
+  if (t.unidades.every((u) => u.recibida_en || u.devuelta_en)) {
+    t.estado = 'RECIBIDO';
+    t.cerrado_en = ahora;
+  }
+  guardarDB(db);
+  return t;
+}
+
+/** Cierra el traslado: lo que no llegó vuelve al local de origen. Queda RECIBIDO si llegó algo, ANULADO si no llegó nada. */
+export async function cerrarTraslado(trasladoId: string): Promise<Traslado> {
+  const sesion = await sesionDeMercancia();
+  if (modoServidor) return trasladosDb.cerrarTraslado(trasladoId);
+
+  const db = leerDB();
+  const t = (db.traslados ?? []).find((x) => x.id === trasladoId);
+  if (!t) throw new Error('Ese traslado no existe.');
+  if (!puedeEnLocal(sesion, t.origen_local_id) && !puedeEnLocal(sesion, t.destino_local_id)) throw new Error('Solo el local de origen o el de destino pueden cerrar este traslado.');
+  if (t.estado !== 'EN_TRANSITO') throw new Error(`El traslado ${folioTraslado(t.folio)} ya está cerrado.`);
+  const pendientes = t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en);
+  const ahora = new Date().toISOString();
+  for (const [productoId, lista] of porProducto(pendientes)) {
+    movimientoDemo(db, 'TRASLADO_ENTRADA', productoId, t.origen_local_id, lista, `Traslado ${folioTraslado(t.folio)}: no llegó, se devolvió al origen`);
+  }
+  for (const u of pendientes) {
+    u.devuelta_en = ahora;
+    const pieza = (db.unidades ?? []).find((x) => x.codigo === u.codigo);
+    if (pieza) pieza.estado = 'DISPONIBLE';
+  }
+  t.estado = t.unidades.some((u) => u.recibida_en) ? 'RECIBIDO' : 'ANULADO';
+  t.cerrado_en = ahora;
+  guardarDB(db);
+  return t;
+}
+
+/** Retira piezas DISPONIBLES del local: salen del stock y quedan en BAJA con su motivo (dañada, usada o en garantía). */
+export async function darDeBaja(datos: { localId: string; codigos: string[]; motivo: MotivoBaja; nota?: string }): Promise<{ codigos: string[] }> {
+  const sesion = await sesionDeMercancia();
+  if (modoServidor) return trasladosDb.darDeBaja(datos);
+
+  const motivo = MOTIVOS_BAJA.find((m) => m.id === datos.motivo);
+  if (!motivo) throw new Error('Elige un motivo de baja válido: dañada, usada o en garantía.');
+  validarCodigosOperacion(datos.codigos);
+  const nota = (datos.nota ?? '').trim();
+  if (nota.length > 300) throw new Error('La nota admite hasta 300 caracteres.');
+  if (!puedeEnLocal(sesion, datos.localId)) throw new Error('Solo puedes dar de baja piezas de tu propio local.');
+
+  const db = leerDB();
+  const unidades = datos.codigos.map((c) => (db.unidades ?? []).find((u) => u.codigo === c));
+  if (unidades.some((u) => !u || u.estado !== 'DISPONIBLE' || u.local_id !== datos.localId)) {
+    throw new Error('Alguna de las piezas ya no está disponible en este local (se vendió, ya va en un traslado, está dada de baja o es de otro local).');
+  }
+  const piezas = unidades as UnidadProducto[];
+  const ahora = new Date().toISOString();
+  const texto = `Baja (${motivo.nombre})${nota ? `: ${nota}` : ''}`;
+  for (const [productoId, lista] of porProducto(piezas)) movimientoDemo(db, 'BAJA', productoId, datos.localId, lista, texto);
+  for (const u of piezas) {
+    u.estado = 'BAJA';
+    u.baja_motivo = motivo.id;
+    u.baja_nota = nota || null;
+    u.baja_en = ahora;
+    u.baja_por = sesion.nombre;
+  }
+  guardarDB(db);
+  return { codigos: datos.codigos };
+}
+
+/** Devuelve al stock piezas dadas de baja por error. Solo administrador y gerente. */
+export async function revertirBaja(codigos: string[]): Promise<number> {
+  const sesion = await sesionDeMercancia();
+  if (!esGlobal(sesion.rol)) throw new Error('Solo el administrador o el gerente pueden revertir una baja.');
+  if (modoServidor) return (await trasladosDb.revertirBaja(codigos)).revertidas;
+
+  validarCodigosOperacion(codigos);
+  const db = leerDB();
+  const unidades = codigos.map((c) => (db.unidades ?? []).find((u) => u.codigo === c));
+  const mala = codigos.find((_, i) => unidades[i]?.estado !== 'BAJA');
+  if (mala) throw new Error(`La pieza ${mala} no está dada de baja.`);
+  const piezas = unidades as UnidadProducto[];
+  const porLocal = new Map<string, UnidadProducto[]>();
+  for (const u of piezas) porLocal.set(u.local_id, [...(porLocal.get(u.local_id) ?? []), u]);
+  for (const [localId, lista] of porLocal) {
+    for (const [productoId, cods] of porProducto(lista)) movimientoDemo(db, 'ENTRADA', productoId, localId, cods, 'Reversión de baja');
+  }
+  for (const u of piezas) {
+    u.estado = 'DISPONIBLE';
+    u.baja_motivo = null;
+    u.baja_nota = null;
+    u.baja_en = null;
+    u.baja_por = null;
+  }
+  guardarDB(db);
+  return codigos.length;
+}
+
 /** Alertas de reabastecimiento del alcance activo: una fila por producto y local con mínimo > 0 y stock ≤ mínimo. */
 export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
   const alcance = await alcanceActual();
@@ -1142,7 +1387,7 @@ export async function listarMovimientos(limite = 100): Promise<MovimientoConProd
  */
 export async function registrarMovimiento(input: {
   producto_id: string;
-  tipo: TipoMovimiento;
+  tipo: TipoMovimientoManual;
   cantidad: number;
   motivo?: string;
   local_id?: string;

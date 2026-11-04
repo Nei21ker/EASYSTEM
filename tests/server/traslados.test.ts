@@ -4,7 +4,7 @@ import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { crearProducto } from '../../src/server/servicios/catalogo';
 import { listarMovimientos, listarUnidades, registrarMovimiento } from '../../src/server/servicios/movimientos';
-import { cerrarTraslado, darDeBaja, despacharTraslado, listarTraslados, recibirTraslado, revertirBaja } from '../../src/server/servicios/traslados';
+import { cerrarTraslado, darDeBaja, despacharTraslado, listarDestinos, listarTraslados, recibirTraslado, revertirBaja } from '../../src/server/servicios/traslados';
 
 const env = crearEntornoDePrueba();
 const { accesorios, vidrios, servicio } = IDS_LOCALES;
@@ -369,5 +369,21 @@ describe('las piezas que se movieron y vuelven a venderse', () => {
     const venta = await registrarMovimiento(env, sEV, { productoId: P, tipo: 'SALIDA', cantidad: 1, localId: vidrios, unidadCodigos: [c] });
     expect(venta.unidadCodigos).toEqual([c]);
     expect((await estadoDe(c))!.estado).toBe('VENDIDA');
+  });
+});
+
+describe('destinos posibles', () => {
+  it('un encargado ve todos los locales vigentes como destino (aunque en el resto de la app solo vea el suyo); vendedor y contador no', async () => {
+    const r = await listarDestinos(env, sEA);
+    expect(r.map((l) => l.id).sort()).toEqual(expect.arrayContaining([accesorios, vidrios, servicio]));
+    expect(Object.keys(r[0]).sort()).toEqual(['id', 'nombre', 'tipo']);
+    await rechazo(listarDestinos(env, sV), 403);
+    await rechazo(listarDestinos(env, sC), 403);
+  });
+
+  it('un local suspendido no aparece como destino', async () => {
+    await env.DB.prepare("UPDATE locales SET subscription_status = 'SUSPENDED' WHERE id = ?").bind(servicio).run();
+    const r = await listarDestinos(env, sG);
+    expect(r.map((l) => l.id)).not.toContain(servicio);
   });
 });

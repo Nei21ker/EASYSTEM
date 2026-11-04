@@ -40,7 +40,7 @@ export const enlacesNav: EnlaceNav[] = [
   },
   {
     href: '/ingreso',
-    etiqueta: 'Ingreso de mercancía',
+    etiqueta: 'Mercancía',
     icono: 'M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2',
     roles: GERENCIA,
   },

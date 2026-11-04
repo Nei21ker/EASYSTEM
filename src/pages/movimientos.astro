@@ -19,6 +19,9 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         <button data-filtro="SALIDA" class="mv-filtro rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300" aria-pressed="false">
           Salidas
         </button>
+        <button data-filtro="TRASLADOS" class="mv-filtro rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition dark:border-slate-700 dark:text-slate-300" aria-pressed="false">
+          Traslados y bajas
+        </button>
       </div>
     </div>
 
@@ -50,6 +53,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
   import * as inventoryService from '../lib/inventoryService';
   import type { MovimientoConProducto } from '../lib/db/movimientos';
   import { animarLista } from '../utils/animaciones';
+  import { claseTipoMovimiento, etiquetaTipoMovimiento, filtroDeTipo, signoMovimiento } from '../utils/movimientos';
 import { alCambiarDatos } from '../lib/realtime';
 
   let movimientos: MovimientoConProducto[] = [];
@@ -62,11 +66,6 @@ import { alCambiarDatos } from '../lib/realtime';
   const contador = document.getElementById('mv-contador') as HTMLParagraphElement;
   const botonesFiltro = Array.from(document.querySelectorAll<HTMLButtonElement>('.mv-filtro'));
 
-  const variantePorTipo: Record<string, string> = {
-    ENTRADA: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400',
-    SALIDA: 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400',
-  };
-  const etiquetaPorTipo: Record<string, string> = { ENTRADA: 'Entrada', SALIDA: 'Salida' };
 
   function escaparHtml(texto: string): string {
     const div = document.createElement('div');
@@ -87,7 +86,7 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   function render(animar = true) {
-    const lista = filtroActual ? movimientos.filter((m) => m.tipo === filtroActual) : movimientos;
+    const lista = filtroActual ? movimientos.filter((m) => filtroDeTipo(m.tipo) === filtroActual) : movimientos;
     sinResultados.classList.toggle('hidden', lista.length > 0);
     contador.textContent = `${lista.length} movimiento${lista.length === 1 ? '' : 's'}`;
 
@@ -101,11 +100,11 @@ import { alCambiarDatos } from '../lib/realtime';
             <td data-label="Hora" class="px-5 py-3">${fecha.toLocaleTimeString('es-GT', { timeStyle: 'short' })}</td>
             <td data-primero class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(mov.producto?.nombre ?? 'Producto eliminado')}</td>
             <td data-label="Tipo" class="px-5 py-3">
-              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantePorTipo[mov.tipo]}">
-                ${etiquetaPorTipo[mov.tipo]}
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${claseTipoMovimiento(mov.tipo)}">
+                ${etiquetaTipoMovimiento(mov.tipo)}
               </span>
             </td>
-            <td data-label="Cantidad" class="px-5 py-3">${mov.tipo === 'SALIDA' ? '-' : '+'}${mov.cantidad}</td>
+            <td data-label="Cantidad" class="px-5 py-3">${signoMovimiento(mov.tipo)}${mov.cantidad}</td>
             <td data-label="Motivo" class="px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(mov.motivo ?? '—')}</td>
             ${verLocal ? `<td data-label="Local" class="px-5 py-3 text-slate-500 dark:text-slate-400">${escaparHtml(mov.local?.nombre ?? '—')}</td>` : ''}
           </tr>

@@ -1,0 +1,705 @@
+---
+// Pestaña "Descargo" de Mercancía: mover piezas a otro local en dos pasos (despachar / recibir) y dar de baja piezas
+// dañadas, usadas o en garantía. Todo se hace escaneando el código único de cada pieza (el mismo de su etiqueta).
+import { MOTIVOS_BAJA } from '../../types/database.types';
+
+const claseCampo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+---
+
+<div id="ds-raiz" class="space-y-4">
+  <p id="ds-sin-local" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+
+  <!-- Qué se va a hacer -->
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Tipo de descargo">
+    <button id="ds-modo-traslado" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Mover a otro local <span class="font-normal opacity-70">· en dos pasos</span>
+    </button>
+    <button id="ds-modo-baja" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Dar de baja <span class="font-normal opacity-70">· dañada, usada o en garantía</span>
+    </button>
+  </div>
+
+  <p id="ds-aviso" role="status" class="hidden rounded-lg px-3 py-2 text-sm"></p>
+
+  <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+    <!-- Piezas escaneadas -->
+    <section class={`${claseTarjeta} xl:col-span-2`}>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div class="relative min-w-0 flex-1">
+          <label for="ds-codigo" class={claseEtiqueta}>Código de la pieza (escanea la etiqueta)</label>
+          <div class="relative mt-1">
+            <input id="ds-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Escanea o escribe el código y pulsa Enter..." class={`${claseCampo} pr-11`} />
+            <button
+              type="button"
+              data-abrir-escaner
+              aria-label="Escanear con la cámara"
+              title="Escanear con la cámara"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle cx="12" cy="12" r="3" stroke-linecap="round"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <button id="ds-vaciar" type="button" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Vaciar lista</button>
+      </div>
+      <p id="ds-origen-texto" class="mt-2 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
+      <p id="ds-vacio" class="mt-4 rounded-lg border border-dashed border-slate-300 px-3 py-6 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+        Todavía no hay piezas. Escanea la etiqueta de cada pieza que sale de este local.
+      </p>
+      <ul id="ds-lista" class="mt-3 divide-y divide-slate-100 dark:divide-slate-800"></ul>
+    </section>
+
+    <!-- Datos de la operación -->
+    <aside class={`${claseTarjeta} space-y-3 xl:self-start`}>
+      <div id="ds-bloque-origen" class="hidden">
+        <label for="ds-origen" class={claseEtiqueta}>Sale del local</label>
+        <select id="ds-origen" class={`${claseCampo} mt-1`}></select>
+      </div>
+
+      <div id="ds-bloque-traslado" class="space-y-3">
+        <div>
+          <label for="ds-destino" class={claseEtiqueta}>Va para el local</label>
+          <select id="ds-destino" class={`${claseCampo} mt-1`}></select>
+        </div>
+        <div>
+          <label for="ds-notas" class={claseEtiqueta}>Nota (opcional)</label>
+          <textarea id="ds-notas" rows="2" maxlength="300" placeholder="Por ejemplo: lo lleva Pedro en la tarde" class={`${claseCampo} mt-1`}></textarea>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          Al despachar, las piezas salen del stock de este local y quedan <strong>en tránsito</strong>: no se pueden vender en ningún local hasta que el de destino las reciba escaneándolas. Las etiquetas no se vuelven a imprimir.
+        </p>
+        <button id="ds-despachar" type="button" disabled class="bg-marca w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">Despachar</button>
+      </div>
+
+      <div id="ds-bloque-baja" class="hidden space-y-3">
+        <fieldset>
+          <legend class={claseEtiqueta}>Motivo de la baja</legend>
+          <div class="mt-1 space-y-2">
+            {
+              MOTIVOS_BAJA.map((m, i) => (
+                <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 dark:border-slate-700 dark:has-[:checked]:bg-slate-800">
+                  <input type="radio" name="ds-motivo" value={m.id} checked={i === 0} class="mt-1" />
+                  <span>
+                    <span class="font-medium">{m.nombre}</span>
+                    <span class="block text-xs text-slate-500 dark:text-slate-400">{m.ayuda}</span>
+                  </span>
+                </label>
+              ))
+            }
+          </div>
+        </fieldset>
+        <div>
+          <label for="ds-nota" class={claseEtiqueta}>Nota (opcional)</label>
+          <textarea id="ds-nota" rows="2" maxlength="300" placeholder="Qué le pasó, a quién se le usó, número de reclamo..." class={`${claseCampo} mt-1`}></textarea>
+        </div>
+        <p class="text-xs text-slate-500 dark:text-slate-400">
+          La pieza sale del stock del local y queda registrada como baja. No cuenta como venta. Un administrador o gerente puede revertirla si fue un error.
+        </p>
+        <button id="ds-baja" type="button" disabled class="w-full rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50">Dar de baja</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Traslados -->
+  <section class={claseTarjeta}>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Traslados</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Lo que sale de tu local y lo que viene en camino hacia él.</p>
+      </div>
+      <div class="flex gap-2" role="tablist" aria-label="Estado de los traslados">
+        <button id="ds-filtro-transito" type="button" role="tab" aria-selected="true" class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition">En tránsito</button>
+        <button id="ds-filtro-cerrados" type="button" role="tab" aria-selected="false" class="rounded-lg border px-3 py-1.5 text-xs font-semibold transition">Cerrados</button>
+      </div>
+    </div>
+    <p id="ds-traslados-estado" class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Cargando traslados…</p>
+    <div id="ds-traslados" class="mt-3 space-y-3"></div>
+  </section>
+
+  <!-- Bajas recientes -->
+  <section class={claseTarjeta}>
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Bajas recientes</h2>
+    <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Las últimas piezas retiradas del inventario (dañadas, usadas o en garantía).</p>
+    <p id="ds-bajas-estado" class="py-6 text-center text-sm text-slate-500 dark:text-slate-400">Cargando…</p>
+    <ul id="ds-bajas" class="mt-2 divide-y divide-slate-100 dark:divide-slate-800"></ul>
+  </section>
+
+  <!-- Recibir un traslado: se escanea cada pieza que llegó -->
+  <dialog id="ds-recibir" aria-labelledby="ds-recibir-titulo" class="m-auto w-[min(94vw,38rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div class="flex max-h-[90vh] flex-col">
+      <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+        <h2 id="ds-recibir-titulo" class="text-base font-semibold">Recibir traslado</h2>
+        <p id="ds-recibir-sub" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
+        <div class="relative mt-3">
+          <input id="ds-recibir-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Escanea cada pieza que llegó..." class={`${claseCampo} pr-11`} />
+          <button
+            type="button"
+            data-abrir-escaner
+            aria-label="Escanear con la cámara"
+            title="Escanear con la cámara"
+            class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+              <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round"></path>
+              <circle cx="12" cy="12" r="3" stroke-linecap="round"></circle>
+            </svg>
+          </button>
+        </div>
+        <p id="ds-recibir-aviso" role="status" class="mt-2 hidden rounded-lg px-3 py-2 text-xs"></p>
+      </div>
+      <div class="overflow-y-auto px-5 py-3 text-sm">
+        <ul id="ds-recibir-lista" class="divide-y divide-slate-100 dark:divide-slate-800"></ul>
+      </div>
+      <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+        <p id="ds-recibir-cuenta" class="text-xs text-slate-500 dark:text-slate-400"></p>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <button id="ds-recibir-todas" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Marcar todas</button>
+          <button id="ds-recibir-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
+          <button id="ds-recibir-confirmar" type="button" disabled class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">Confirmar recepción</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGlobal, esGerencia } from '../../lib/auth';
+  import { alCambiarDatos } from '../../lib/realtime';
+  import { esCodigoUnidad } from '../../utils/codigos';
+  import { escaparHtml } from '../../utils/productosUI';
+  import { formatearFecha } from '../../utils/format';
+  import { MOTIVOS_BAJA, type Local, type MotivoBaja, type Traslado, type UnidadProducto } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+  const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
+  const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
+  const TONOS: Record<string, string[]> = {
+    ok: ['bg-emerald-50', 'text-emerald-800', 'dark:bg-emerald-500/10', 'dark:text-emerald-300'],
+    error: ['bg-red-50', 'text-red-800', 'dark:bg-red-500/10', 'dark:text-red-300'],
+    aviso: ['bg-amber-50', 'text-amber-800', 'dark:bg-amber-500/10', 'dark:text-amber-300'],
+  };
+
+  interface Pieza {
+    codigo: string;
+    producto_id: string;
+    nombre: string;
+  }
+
+  let modo: 'traslado' | 'baja' = 'traslado';
+  let filtro: 'transito' | 'cerrados' = 'transito';
+  let piezas: Pieza[] = [];
+  let origenId: string | null = null;
+  let miLocalId: string | null = null;
+  let esGlobalUsuario = false;
+  let locales: Local[] = [];
+  let nombresLocal = new Map<string, string>();
+  let nombresProducto = new Map<string, string>();
+  let traslados: Traslado[] = [];
+  let recibiendo: Traslado | null = null;
+  let marcadas = new Set<string>();
+  let ocupado = false;
+  let iniciado = false;
+
+  const panelVisible = () => !$('mc-panel-descargo')?.classList.contains('hidden');
+
+  function pintarAviso(el: HTMLElement, texto: string, tono: 'ok' | 'error' | 'aviso') {
+    el.classList.remove('hidden', ...Object.values(TONOS).flat());
+    el.classList.add(...TONOS[tono]);
+    el.textContent = texto;
+  }
+  const avisar = (texto: string, tono: 'ok' | 'error' | 'aviso' = 'aviso') => pintarAviso($('ds-aviso'), texto, tono);
+  const limpiarAviso = () => $('ds-aviso').classList.add('hidden');
+  const mensaje = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+  function pintarTab(id: string, activa: boolean) {
+    const tab = $(id);
+    tab.setAttribute('aria-selected', String(activa));
+    tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
+    tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
+  }
+
+  // --- Modo y lista de piezas -----------------------------------------------------------------------------------------
+  function aplicarModo() {
+    const traslado = modo === 'traslado';
+    pintarTab('ds-modo-traslado', traslado);
+    pintarTab('ds-modo-baja', !traslado);
+    $('ds-bloque-traslado').classList.toggle('hidden', !traslado);
+    $('ds-bloque-baja').classList.toggle('hidden', traslado);
+    refrescarBotones();
+  }
+
+  function refrescarBotones() {
+    const hay = piezas.length > 0 && !!origenId && !ocupado;
+    ($('ds-despachar') as HTMLButtonElement).disabled = !hay || !($('ds-destino') as HTMLSelectElement).value;
+    ($('ds-baja') as HTMLButtonElement).disabled = !hay;
+    $('ds-despachar').textContent = piezas.length ? `Despachar ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'}` : 'Despachar';
+    $('ds-baja').textContent = piezas.length ? `Dar de baja ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'}` : 'Dar de baja';
+    ($('ds-vaciar') as HTMLButtonElement).disabled = piezas.length === 0;
+  }
+
+  function pintarPiezas() {
+    $('ds-vacio').classList.toggle('hidden', piezas.length > 0);
+    $('ds-lista').innerHTML = piezas
+      .map(
+        (p) => `
+        <li class="flex items-center justify-between gap-3 py-2">
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</p>
+            <p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.codigo)}</p>
+          </div>
+          <button type="button" data-quitar="${escaparHtml(p.codigo)}" aria-label="Quitar ${escaparHtml(p.codigo)}" class="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-slate-800">✕</button>
+        </li>`
+      )
+      .join('');
+    refrescarBotones();
+  }
+
+  const ESTADOS_TEXTO: Record<string, string> = {
+    VENDIDA: 'ya se vendió',
+    EN_TRANSITO: 'va en un traslado y todavía no la reciben',
+    BAJA: 'está dada de baja',
+  };
+
+  async function agregarPieza(texto: string) {
+    const codigo = texto.trim();
+    if (!codigo) return;
+    if (!origenId) {
+      avisar('Elige primero el local del que sale la mercancía.', 'error');
+      return;
+    }
+    if (!esCodigoUnidad(codigo)) {
+      avisar(`El código ${codigo} no es el de una pieza. Escanea la etiqueta pegada en la pieza (el código único de cada unidad).`, 'error');
+      return;
+    }
+    if (piezas.some((p) => p.codigo === codigo)) {
+      avisar(`La pieza ${codigo} ya está en la lista.`, 'aviso');
+      return;
+    }
+    let unidad: UnidadProducto | null = null;
+    try {
+      unidad = await inventoryService.obtenerUnidadPorCodigo(codigo);
+    } catch (err) {
+      avisar(`No se pudo consultar la pieza: ${mensaje(err)}`, 'error');
+      return;
+    }
+    if (!unidad) {
+      avisar(`No encontré la pieza ${codigo} en este local.`, 'error');
+      return;
+    }
+    if (unidad.local_id !== origenId) {
+      avisar(`La pieza ${codigo} es de otro local (${nombresLocal.get(unidad.local_id) ?? 'otro local'}), no del que sale la mercancía.`, 'error');
+      return;
+    }
+    if (unidad.estado !== 'DISPONIBLE') {
+      avisar(`La pieza ${codigo} no está disponible: ${ESTADOS_TEXTO[unidad.estado] ?? unidad.estado}.`, 'error');
+      return;
+    }
+    limpiarAviso();
+    piezas.push({ codigo, producto_id: unidad.producto_id, nombre: nombresProducto.get(unidad.producto_id) ?? 'Producto' });
+    pintarPiezas();
+  }
+
+  function cambiarOrigen(id: string | null) {
+    origenId = id;
+    const hayLista = piezas.length > 0;
+    piezas = [];
+    pintarPiezas();
+    $('ds-origen-texto').textContent = id ? `Sale de: ${nombresLocal.get(id) ?? 'este local'}` : '';
+    if (hayLista) avisar('Cambiaste el local de origen: la lista de piezas se vació.', 'aviso');
+    void llenarDestinos();
+  }
+
+  async function llenarDestinos() {
+    const select = $<HTMLSelectElement>('ds-destino');
+    try {
+      const destinos = (await inventoryService.listarDestinosTraslado()).filter((d) => d.id !== origenId);
+      const previo = select.value;
+      select.innerHTML = destinos.map((d) => `<option value="${escaparHtml(d.id)}">${escaparHtml(d.nombre)}</option>`).join('') || '<option value="">No hay otro local disponible</option>';
+      if (destinos.some((d) => d.id === previo)) select.value = previo;
+    } catch (err) {
+      select.innerHTML = '<option value="">No se pudieron cargar los locales</option>';
+      avisar(`No se pudieron cargar los locales de destino: ${mensaje(err)}`, 'error');
+    }
+    refrescarBotones();
+  }
+
+  // --- Despachar y dar de baja ----------------------------------------------------------------------------------------
+  async function despachar() {
+    const destinoId = $<HTMLSelectElement>('ds-destino').value;
+    if (!origenId || !destinoId || piezas.length === 0 || ocupado) return;
+    const destino = nombresLocal.get(destinoId) ?? 'el otro local';
+    if (!confirm(`¿Despachar ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'} a ${destino}?\n\nQuedarán en tránsito (fuera del stock de este local) hasta que ${destino} las reciba.`)) return;
+    ocupado = true;
+    refrescarBotones();
+    try {
+      const t = await inventoryService.despacharTraslado({ origenLocalId: origenId, destinoLocalId: destinoId, codigos: piezas.map((p) => p.codigo), notas: $<HTMLTextAreaElement>('ds-notas').value });
+      avisar(`Traslado #${String(t.folio).padStart(4, '0')} despachado: ${t.unidades.length} ${t.unidades.length === 1 ? 'pieza' : 'piezas'} en camino a ${destino}. Pídeles que las escaneen al recibirlas.`, 'ok');
+      piezas = [];
+      $<HTMLTextAreaElement>('ds-notas').value = '';
+      pintarPiezas();
+      await cargarTraslados();
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+      refrescarBotones();
+    }
+  }
+
+  async function darDeBaja() {
+    if (!origenId || piezas.length === 0 || ocupado) return;
+    const motivoId = (document.querySelector<HTMLInputElement>('input[name="ds-motivo"]:checked')?.value ?? 'DANADA') as MotivoBaja;
+    const motivo = MOTIVOS_BAJA.find((m) => m.id === motivoId)!;
+    if (!confirm(`¿Dar de baja ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'} como "${motivo.nombre}"?\n\nSalen del stock de ${nombresLocal.get(origenId) ?? 'este local'}.`)) return;
+    ocupado = true;
+    refrescarBotones();
+    try {
+      await inventoryService.darDeBaja({ localId: origenId, codigos: piezas.map((p) => p.codigo), motivo: motivoId, nota: $<HTMLTextAreaElement>('ds-nota').value });
+      avisar(`Se dieron de baja ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'} (${motivo.nombre.toLowerCase()}).`, 'ok');
+      piezas = [];
+      $<HTMLTextAreaElement>('ds-nota').value = '';
+      pintarPiezas();
+      await cargarBajas();
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+      refrescarBotones();
+    }
+  }
+
+  // --- Lista de traslados ---------------------------------------------------------------------------------------------
+  const folioTexto = (folio: number) => `#${String(folio).padStart(4, '0')}`;
+  const puedeRecibir = (t: Traslado) => esGlobalUsuario || t.destino_local_id === miLocalId;
+  const puedeCerrar = (t: Traslado) => esGlobalUsuario || t.origen_local_id === miLocalId || t.destino_local_id === miLocalId;
+  const pendientesDe = (t: Traslado) => t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en);
+
+  function pintarTraslados() {
+    const lista = traslados.filter((t) => (filtro === 'transito' ? t.estado === 'EN_TRANSITO' : t.estado !== 'EN_TRANSITO'));
+    const estado = $('ds-traslados-estado');
+    estado.classList.toggle('hidden', lista.length > 0);
+    estado.textContent = filtro === 'transito' ? 'No hay traslados en tránsito.' : 'Todavía no hay traslados cerrados.';
+    $('ds-traslados').innerHTML = lista
+      .map((t) => {
+        const recibidas = t.unidades.filter((u) => u.recibida_en).length;
+        const devueltas = t.unidades.filter((u) => u.devuelta_en).length;
+        const pendientes = pendientesDe(t).length;
+        const direccion = t.estado !== 'EN_TRANSITO' ? '' : t.destino_local_id === miLocalId ? 'Por recibir' : t.origen_local_id === miLocalId ? 'En camino' : '';
+        const insignia =
+          t.estado === 'EN_TRANSITO'
+            ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-400'
+            : t.estado === 'RECIBIDO'
+              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300';
+        const textoEstado = t.estado === 'EN_TRANSITO' ? direccion || 'En tránsito' : t.estado === 'RECIBIDO' ? 'Recibido' : 'Anulado';
+        const resumen =
+          t.estado === 'EN_TRANSITO'
+            ? `Recibidas ${recibidas} de ${t.unidades.length}${pendientes ? ` · faltan ${pendientes}` : ''}`
+            : `Recibidas ${recibidas} de ${t.unidades.length}${devueltas ? ` · ${devueltas} ${devueltas === 1 ? 'volvió' : 'volvieron'} al origen` : ''}`;
+        const acciones =
+          t.estado === 'EN_TRANSITO'
+            ? `${puedeRecibir(t) && pendientes ? `<button type="button" data-recibir="${escaparHtml(t.id)}" class="bg-marca rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm hover:brightness-110">Recibir piezas</button>` : ''}
+               ${puedeCerrar(t) ? `<button type="button" data-cerrar="${escaparHtml(t.id)}" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar traslado</button>` : ''}`
+            : '';
+        const piezasHtml = t.unidades
+          .map((u) => {
+            const marca = u.recibida_en ? '<span class="text-emerald-600">✓ recibida</span>' : u.devuelta_en ? '<span class="text-slate-500">volvió al origen</span>' : '<span class="text-sky-600">en camino</span>';
+            return `<li class="flex items-center justify-between gap-3 py-1.5 text-xs"><span class="min-w-0 truncate">${escaparHtml(u.producto_nombre)} <span class="font-mono text-slate-500">${escaparHtml(u.codigo)}</span></span>${marca}</li>`;
+          })
+          .join('');
+        return `
+          <article class="rounded-xl border border-slate-200 p-4 dark:border-slate-700">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">Traslado ${folioTexto(t.folio)} · ${escaparHtml(t.origen_nombre ?? nombresLocal.get(t.origen_local_id) ?? 'Origen')} → ${escaparHtml(t.destino_nombre ?? nombresLocal.get(t.destino_local_id) ?? 'Destino')}</p>
+                <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Despachó ${escaparHtml(t.enviado_por)} · ${escaparHtml(formatearFecha(t.creado_en))}${t.recibido_por ? ` · recibió ${escaparHtml(t.recibido_por)}` : ''}</p>
+                ${t.notas ? `<p class="mt-1 text-xs italic text-slate-500 dark:text-slate-400">“${escaparHtml(t.notas)}”</p>` : ''}
+              </div>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${insignia}">${escaparHtml(textoEstado)}</span>
+            </div>
+            <p class="mt-2 text-xs text-slate-600 dark:text-slate-300">${escaparHtml(resumen)}</p>
+            <details class="mt-2"><summary class="cursor-pointer text-xs font-medium text-brand-700 dark:text-brand-300">Ver las piezas</summary><ul class="mt-1 divide-y divide-slate-100 dark:divide-slate-800">${piezasHtml}</ul></details>
+            ${acciones ? `<div class="mt-3 flex flex-wrap gap-2">${acciones}</div>` : ''}
+          </article>`;
+      })
+      .join('');
+  }
+
+  async function cargarTraslados() {
+    try {
+      traslados = await inventoryService.listarTraslados();
+      pintarTraslados();
+    } catch (err) {
+      $('ds-traslados-estado').classList.remove('hidden');
+      $('ds-traslados-estado').textContent = `No se pudieron cargar los traslados: ${mensaje(err)}`;
+    }
+  }
+
+  async function cerrar(id: string) {
+    const t = traslados.find((x) => x.id === id);
+    if (!t || ocupado) return;
+    const pendientes = pendientesDe(t).length;
+    const texto = pendientes
+      ? `¿Cerrar el traslado ${folioTexto(t.folio)}?\n\n${pendientes} ${pendientes === 1 ? 'pieza no llegó y volverá' : 'piezas no llegaron y volverán'} al stock de ${t.origen_nombre ?? 'el local de origen'}.`
+      : `¿Cerrar el traslado ${folioTexto(t.folio)}?`;
+    if (!confirm(texto)) return;
+    ocupado = true;
+    try {
+      await inventoryService.cerrarTraslado(id);
+      avisar(`Traslado ${folioTexto(t.folio)} cerrado.${pendientes ? ` ${pendientes === 1 ? 'La pieza que no llegó volvió' : `Las ${pendientes} piezas que no llegaron volvieron`} a ${t.origen_nombre ?? 'el origen'}.` : ''}`, 'ok');
+      await cargarTraslados();
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+    }
+  }
+
+  // --- Recibir ---------------------------------------------------------------------------------------------------------
+  function pintarRecepcion() {
+    if (!recibiendo) return;
+    const pendientes = pendientesDe(recibiendo);
+    $('ds-recibir-lista').innerHTML = pendientes
+      .map((u) => {
+        const ok = marcadas.has(u.codigo);
+        return `<li class="flex items-center justify-between gap-3 py-2">
+          <div class="min-w-0"><p class="truncate text-sm font-medium">${escaparHtml(u.producto_nombre)}</p><p class="font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(u.codigo)}</p></div>
+          <span class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-medium ${ok ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-500/10 dark:text-slate-300'}">${ok ? '✓ llegó' : 'por escanear'}</span>
+        </li>`;
+      })
+      .join('');
+    $('ds-recibir-cuenta').textContent = `Marcadas ${marcadas.size} de ${pendientes.length}`;
+    ($('ds-recibir-confirmar') as HTMLButtonElement).disabled = marcadas.size === 0 || ocupado;
+  }
+
+  function abrirRecepcion(id: string) {
+    const t = traslados.find((x) => x.id === id);
+    if (!t) return;
+    recibiendo = t;
+    marcadas = new Set();
+    $('ds-recibir-titulo').textContent = `Recibir traslado ${folioTexto(t.folio)}`;
+    $('ds-recibir-sub').textContent = `${t.origen_nombre ?? 'Origen'} → ${t.destino_nombre ?? 'Destino'}. Escanea cada pieza que llegó; lo que no escanees queda pendiente.`;
+    $('ds-recibir-aviso').classList.add('hidden');
+    $<HTMLInputElement>('ds-recibir-codigo').value = '';
+    pintarRecepcion();
+    $<HTMLDialogElement>('ds-recibir').showModal();
+    $<HTMLInputElement>('ds-recibir-codigo').focus();
+  }
+
+  function marcarPieza(texto: string) {
+    const codigo = texto.trim();
+    if (!recibiendo || !codigo) return;
+    const aviso = $('ds-recibir-aviso');
+    const u = recibiendo.unidades.find((x) => x.codigo === codigo);
+    if (!u) return pintarAviso(aviso, `La pieza ${codigo} no es de este traslado.`, 'error');
+    if (u.recibida_en || u.devuelta_en) return pintarAviso(aviso, `La pieza ${codigo} ya no está pendiente (${u.recibida_en ? 'ya se recibió' : 'volvió al origen'}).`, 'aviso');
+    if (marcadas.has(codigo)) return pintarAviso(aviso, `La pieza ${codigo} ya está marcada.`, 'aviso');
+    aviso.classList.add('hidden');
+    marcadas.add(codigo);
+    pintarRecepcion();
+  }
+
+  async function confirmarRecepcion() {
+    if (!recibiendo || marcadas.size === 0 || ocupado) return;
+    const t = recibiendo;
+    ocupado = true;
+    pintarRecepcion();
+    try {
+      const antes = pendientesDe(t).length;
+      const r = await inventoryService.recibirTraslado(t.id, [...marcadas]);
+      $<HTMLDialogElement>('ds-recibir').close();
+      const faltan = pendientesDe(r).length;
+      avisar(
+        faltan === 0
+          ? `Traslado ${folioTexto(t.folio)} recibido completo: ${marcadas.size} de ${antes} piezas ya están disponibles en tu local.`
+          : `Recibiste ${marcadas.size} de ${antes} piezas del traslado ${folioTexto(t.folio)}. Faltan ${faltan}: escanéalas cuando lleguen o cierra el traslado para devolverlas al origen.`,
+        faltan === 0 ? 'ok' : 'aviso'
+      );
+      recibiendo = null;
+      await cargarTraslados();
+    } catch (err) {
+      pintarAviso($('ds-recibir-aviso'), mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+      pintarRecepcion();
+    }
+  }
+
+  // --- Bajas recientes --------------------------------------------------------------------------------------------------
+  async function cargarBajas() {
+    const estado = $('ds-bajas-estado');
+    try {
+      const bajas = (await inventoryService.listarUnidades({ estado: 'BAJA' })).sort((a, b) => (b.baja_en ?? '').localeCompare(a.baja_en ?? '')).slice(0, 30);
+      estado.classList.toggle('hidden', bajas.length > 0);
+      estado.textContent = 'Todavía no hay piezas dadas de baja.';
+      $('ds-bajas').innerHTML = bajas
+        .map((u) => {
+          const motivo = MOTIVOS_BAJA.find((m) => m.id === u.baja_motivo)?.nombre ?? 'Baja';
+          return `<li class="flex items-center justify-between gap-3 py-2">
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(nombresProducto.get(u.producto_id) ?? 'Producto')} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">${escaparHtml(motivo)}</span></p>
+              <p class="text-xs text-slate-500 dark:text-slate-400"><span class="font-mono">${escaparHtml(u.codigo)}</span> · ${escaparHtml(nombresLocal.get(u.local_id) ?? '')} · ${u.baja_en ? escaparHtml(formatearFecha(u.baja_en)) : ''}${u.baja_por ? ` · ${escaparHtml(u.baja_por)}` : ''}${u.baja_nota ? ` · ${escaparHtml(u.baja_nota)}` : ''}</p>
+            </div>
+            ${esGlobalUsuario ? `<button type="button" data-revertir="${escaparHtml(u.codigo)}" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Revertir</button>` : ''}
+          </li>`;
+        })
+        .join('');
+    } catch (err) {
+      estado.classList.remove('hidden');
+      estado.textContent = `No se pudieron cargar las bajas: ${mensaje(err)}`;
+    }
+  }
+
+  async function revertir(codigo: string) {
+    if (ocupado || !confirm(`¿Revertir la baja de la pieza ${codigo}?\n\nVuelve al stock disponible de su local.`)) return;
+    ocupado = true;
+    try {
+      await inventoryService.revertirBaja([codigo]);
+      avisar(`La pieza ${codigo} volvió al stock.`, 'ok');
+      await cargarBajas();
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+    }
+  }
+
+  // --- Arranque ---------------------------------------------------------------------------------------------------------
+  async function iniciar() {
+    if (iniciado) return;
+    iniciado = true;
+    const [contexto, productos, lista] = await Promise.all([
+      inventoryService.obtenerContextoLocal(),
+      inventoryService.listarProductos({ catalogoCompleto: true }),
+      inventoryService.listarLocales(),
+    ]);
+    if (!contexto || !esGerencia(contexto.sesion.rol)) return;
+    esGlobalUsuario = esGlobal(contexto.sesion.rol);
+    miLocalId = contexto.sesion.local_id;
+    locales = lista;
+    nombresLocal = new Map(locales.map((l) => [l.id, l.nombre]));
+    // Los destinos pueden ser locales que este usuario no ve: sus nombres llegan con la lista de destinos
+    for (const d of await inventoryService.listarDestinosTraslado().catch(() => [])) nombresLocal.set(d.id, d.nombre);
+    nombresProducto = new Map(productos.map((p) => [p.id, p.nombre]));
+
+    const selectorOrigen = $<HTMLSelectElement>('ds-origen');
+    if (esGlobalUsuario) {
+      $('ds-bloque-origen').classList.remove('hidden');
+      selectorOrigen.innerHTML = locales.map((l) => `<option value="${escaparHtml(l.id)}">${escaparHtml(l.nombre)}</option>`).join('');
+      const inicial = contexto.local?.id ?? locales[0]?.id ?? null;
+      if (inicial) selectorOrigen.value = inicial;
+      selectorOrigen.addEventListener('change', () => cambiarOrigen(selectorOrigen.value || null));
+      origenId = inicial;
+    } else {
+      origenId = miLocalId;
+    }
+    if (!origenId) {
+      const aviso = $('ds-sin-local');
+      aviso.classList.remove('hidden');
+      aviso.textContent = 'Tu usuario no tiene un local asignado. Pídele al administrador que te asigne uno.';
+    }
+    $('ds-origen-texto').textContent = origenId ? `Sale de: ${nombresLocal.get(origenId) ?? 'este local'}` : '';
+
+    aplicarModo();
+    pintarPiezas();
+    pintarTab('ds-filtro-transito', true);
+    pintarTab('ds-filtro-cerrados', false);
+    await Promise.all([llenarDestinos(), cargarTraslados(), cargarBajas()]);
+
+    alCambiarDatos(['traslados', 'unidades_producto'], () => {
+      void cargarTraslados();
+      void cargarBajas();
+    });
+  }
+
+  // Eventos
+  $('ds-modo-traslado').addEventListener('click', () => {
+    modo = 'traslado';
+    aplicarModo();
+  });
+  $('ds-modo-baja').addEventListener('click', () => {
+    modo = 'baja';
+    aplicarModo();
+  });
+  $('ds-filtro-transito').addEventListener('click', () => {
+    filtro = 'transito';
+    pintarTab('ds-filtro-transito', true);
+    pintarTab('ds-filtro-cerrados', false);
+    pintarTraslados();
+  });
+  $('ds-filtro-cerrados').addEventListener('click', () => {
+    filtro = 'cerrados';
+    pintarTab('ds-filtro-transito', false);
+    pintarTab('ds-filtro-cerrados', true);
+    pintarTraslados();
+  });
+  $('ds-codigo').addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key !== 'Enter') return;
+    e.preventDefault();
+    const campo = $<HTMLInputElement>('ds-codigo');
+    const valor = campo.value;
+    campo.value = '';
+    void agregarPieza(valor);
+  });
+  $('ds-lista').addEventListener('click', (e) => {
+    const codigo = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar]')?.dataset.quitar;
+    if (!codigo) return;
+    piezas = piezas.filter((p) => p.codigo !== codigo);
+    pintarPiezas();
+  });
+  $('ds-vaciar').addEventListener('click', () => {
+    piezas = [];
+    limpiarAviso();
+    pintarPiezas();
+  });
+  $('ds-destino').addEventListener('change', refrescarBotones);
+  $('ds-despachar').addEventListener('click', () => void despachar());
+  $('ds-baja').addEventListener('click', () => void darDeBaja());
+  $('ds-traslados').addEventListener('click', (e) => {
+    const destino = e.target as HTMLElement;
+    const recibir = destino.closest<HTMLElement>('[data-recibir]')?.dataset.recibir;
+    const cerrarId = destino.closest<HTMLElement>('[data-cerrar]')?.dataset.cerrar;
+    if (recibir) abrirRecepcion(recibir);
+    else if (cerrarId) void cerrar(cerrarId);
+  });
+  $('ds-bajas').addEventListener('click', (e) => {
+    const codigo = (e.target as HTMLElement).closest<HTMLElement>('[data-revertir]')?.dataset.revertir;
+    if (codigo) void revertir(codigo);
+  });
+  $('ds-recibir-codigo').addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key !== 'Enter') return;
+    e.preventDefault();
+    const campo = $<HTMLInputElement>('ds-recibir-codigo');
+    const valor = campo.value;
+    campo.value = '';
+    marcarPieza(valor);
+  });
+  $('ds-recibir-todas').addEventListener('click', () => {
+    if (!recibiendo) return;
+    marcadas = new Set(pendientesDe(recibiendo).map((u) => u.codigo));
+    pintarRecepcion();
+  });
+  $('ds-recibir-cerrar').addEventListener('click', () => $<HTMLDialogElement>('ds-recibir').close());
+  $('ds-recibir-confirmar').addEventListener('click', () => void confirmarRecepcion());
+
+  // Lo que escanea la cámara va a la recepción si está abierta; si no, a la lista de piezas (solo con esta pestaña a la vista)
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    if (!panelVisible()) return;
+    if ($<HTMLDialogElement>('ds-recibir').open) marcarPieza(e.detail.codigo);
+    else void agregarPieza(e.detail.codigo);
+  }) as EventListener);
+
+  // La pestaña se activa desde Mercancía (ingreso.astro): se carga la primera vez que se abre
+  window.addEventListener('easystem:mercancia-pestana', ((e: CustomEvent<{ pestana: string }>) => {
+    if (e.detail.pestana === 'descargo') void iniciar().then(() => $<HTMLInputElement>('ds-codigo').focus());
+  }) as EventListener);
+  if (panelVisible()) void iniciar();
+</script>

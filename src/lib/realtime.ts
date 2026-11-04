@@ -34,6 +34,7 @@ export const TABLAS_TIEMPO_REAL = [
   'compatibilidades',
   'unidades_producto',
   'cuadres_caja',
+  'traslados',
 ] as const;
 
 /** Cada cuánto se pregunta por cambios con la pantalla visible y activa. */

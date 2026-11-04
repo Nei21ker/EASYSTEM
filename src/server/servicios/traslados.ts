@@ -8,6 +8,8 @@
 // Todo va en UN db.batch (todo o nada). El stock lo mueven los triggers de los movimientos TRASLADO_SALIDA / TRASLADO_ENTRADA / BAJA
 // (no cuentan como venta ni compra en los reportes). Los cambios de estado de las piezas están protegidos por el trigger
 // trg_unidad_transicion: si dos operaciones chocan por la misma pieza, la segunda aborta y no cambia nada.
+import { localVigente } from '../../lib/constantes-locales';
+import { cargarLocales } from '../repos/locales';
 import { alcanceDe, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
@@ -127,6 +129,12 @@ async function leerTraslados(env: Entorno, condicion: string, valores: unknown[]
     for (const { traslado_id, ...resto } of u.results) (unidades.get(traslado_id) ?? unidades.set(traslado_id, []).get(traslado_id)!).push(resto);
   }
   return filas.results.map((f) => ({ ...f, unidades: unidades.get(f.id) ?? [] }));
+}
+
+/** Locales a los que se puede mandar mercancía: todos los que tienen la suscripción vigente (un encargado solo ve el suyo en el resto de la app). */
+export async function listarDestinos(env: Entorno, sesion: Sesion): Promise<{ id: string; nombre: string; tipo: string }[]> {
+  await exigirGerencia(env, sesion);
+  return (await cargarLocales(env)).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo }));
 }
 
 /** Los traslados donde el local del usuario es origen o destino (administrador y gerente: todos), del más reciente al más antiguo. */

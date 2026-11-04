@@ -79,6 +79,7 @@ function casos(): Caso[] {
     { archivo: 'unidades/impresas.ts', metodo: 'POST', url: '/api/unidades/impresas', cuerpo: { codigos: [] }, permitidos: GERENCIA },
     // Traslados entre locales y bajas de piezas
     { archivo: 'traslados/index.ts', metodo: 'GET', url: '/api/traslados', permitidos: GERENCIA },
+    { archivo: 'traslados/destinos.ts', metodo: 'GET', url: '/api/traslados/destinos', permitidos: GERENCIA },
     { archivo: 'traslados/index.ts', metodo: 'POST', url: '/api/traslados', cuerpo: { origenLocalId: accesorios, destinoLocalId: vidrios, codigos: ['2100000000012'] }, permitidos: GERENCIA },
     { archivo: 'traslados/[id]/recibir.ts', metodo: 'POST', url: '/api/traslados/no-existe/recibir', params: { id: 'no-existe' }, cuerpo: { codigos: ['2100000000012'] }, permitidos: GERENCIA },
     { archivo: 'traslados/[id]/cerrar.ts', metodo: 'POST', url: '/api/traslados/no-existe/cerrar', params: { id: 'no-existe' }, permitidos: GERENCIA },
