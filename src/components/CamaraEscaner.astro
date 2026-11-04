@@ -57,6 +57,10 @@
 
       <div class="relative aspect-square w-full overflow-hidden rounded-lg bg-slate-950">
         <div id="ce-lector" class="h-full w-full"></div>
+        <div id="ce-cargando" class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 text-sm text-slate-300">
+          <span class="h-6 w-6 animate-spin rounded-full border-2 border-slate-500 border-t-white"></span>
+          Iniciando cámara…
+        </div>
         <div id="ce-marco" class="pointer-events-none absolute inset-8 hidden rounded-lg border-2 border-emerald-400/80"></div>
       </div>
 
@@ -78,10 +82,16 @@
   const selectorCamaras = document.getElementById('ce-camaras') as HTMLSelectElement;
   const estado = document.getElementById('ce-estado') as HTMLParagraphElement;
   const marco = document.getElementById('ce-marco') as HTMLDivElement;
+  const cargando = document.getElementById('ce-cargando') as HTMLDivElement;
   const botonCerrar = document.getElementById('ce-cerrar') as HTMLButtonElement;
   const botonSonido = document.getElementById('ce-sonido') as HTMLButtonElement;
   const iconoSonidoOn = document.getElementById('ce-icono-sonido-on') as HTMLElement;
   const iconoSonidoOff = document.getElementById('ce-icono-sonido-off') as HTMLElement;
+
+  // Se baja en segundo plano al cargar la página (no al pulsar el botón): abrir el escáner no espera la descarga.
+  const precargarLibreria = () => void import('html5-qrcode').catch(() => undefined);
+  if ('requestIdleCallback' in window) window.requestIdleCallback(precargarLibreria, { timeout: 4000 });
+  else setTimeout(precargarLibreria, 2000);
 
   let lector: Html5QrcodeType | null = null;
   let escaneando = false;
@@ -216,6 +226,7 @@
       ],
     });
     mostrarEstado('Apunta la cámara al código QR o de barras...');
+    cargando.classList.remove('hidden');
 
     const esteLector = lector;
     try {
@@ -258,43 +269,50 @@
         return;
       }
       escaneando = true;
+      cargando.classList.add('hidden');
       marco.classList.remove('hidden');
+      void llenarSelectorCamaras(esteLector);
     } catch (err) {
+      cargando.classList.add('hidden');
       mostrarEstado(mensajeDeError(err), 'error');
+    }
+  }
+
+  /**
+   * Lista las cámaras DESPUÉS de que la cámara ya está andando. Antes se llamaba a Html5Qrcode.getCameras(), que abre la cámara
+   * y la apaga solo para listar los dispositivos, y luego se abría otra vez: dos aperturas seguidas = segundos de pantalla negra.
+   * Con la cámara ya activa los nombres vienen completos y enumerateDevices no vuelve a abrirla.
+   */
+  async function llenarSelectorCamaras(esteLector: Html5QrcodeType) {
+    try {
+      const dispositivos = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'videoinput');
+      if (dispositivos.length < 2 || esteLector !== lector) return;
+      selectorCamaras.innerHTML = dispositivos.map((c, i) => `<option value="${c.deviceId}">${c.label || `Cámara ${i + 1}`}</option>`).join('');
+      const enUso = esteLector.getRunningTrackSettings().deviceId;
+      if (enUso && dispositivos.some((d) => d.deviceId === enUso)) selectorCamaras.value = enUso;
+      selectorCamaras.classList.remove('hidden');
+    } catch {
+      // Sin lista de cámaras el escáner sigue funcionando con la trasera principal.
     }
   }
 
   async function abrirModal() {
     if (!modal.open) modal.showModal();
     marco.classList.add('hidden');
+    cargando.classList.remove('hidden');
     mostrarEstado('Solicitando acceso a la cámara...');
     selectorCamaras.classList.add('hidden');
     selectorCamaras.innerHTML = '';
 
     if (!navigator.mediaDevices?.getUserMedia) {
+      cargando.classList.add('hidden');
       mostrarEstado('Este navegador no soporta acceso a la cámara (o el sitio no está en HTTPS).', 'error');
       return;
     }
 
-    try {
-      const { Html5Qrcode } = await import('html5-qrcode');
-      const camaras = await Html5Qrcode.getCameras();
-
-      if (camaras.length === 0) {
-        mostrarEstado('No se encontró ninguna cámara en este dispositivo.', 'error');
-        return;
-      }
-
-      if (camaras.length > 1) {
-        selectorCamaras.innerHTML = camaras.map((c, i) => `<option value="${c.id}">${c.label || `Cámara ${i + 1}`}</option>`).join('');
-        selectorCamaras.classList.remove('hidden');
-      }
-
-      // Por defecto, la cámara trasera principal que elija el sistema (facingMode); el selector permite cambiar a mano
-      await iniciarCamara(null);
-    } catch (err) {
-      mostrarEstado(mensajeDeError(err), 'error');
-    }
+    // Por defecto, la cámara trasera principal que elija el sistema (facingMode); el selector permite cambiar a mano.
+    // Aquí se pide el permiso (si hace falta) y se abre la cámara UNA sola vez.
+    await iniciarCamara(null);
   }
 
   document.addEventListener('click', (e) => {
