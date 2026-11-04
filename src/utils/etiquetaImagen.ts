@@ -187,9 +187,9 @@ export function puedeCompartirArchivos(archivos: File[]): boolean {
 }
 
 /** Abre el menú Compartir con las imágenes. Devuelve false si el usuario lo cerró sin elegir nada. Debe llamarse desde un toque del usuario. */
-export async function compartirArchivos(archivos: File[]): Promise<boolean> {
+export async function compartirArchivos(archivos: File[], titulo = 'Etiquetas EASYSTEM'): Promise<boolean> {
   try {
-    await navigator.share({ files: archivos, title: 'Etiquetas EASYSTEM' });
+    await navigator.share({ files: archivos, title: titulo });
     return true;
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') return false;
