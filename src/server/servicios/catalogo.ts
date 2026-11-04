@@ -6,6 +6,7 @@
 //   · inventario por local: administrador y gerente (cualquier local accesible) y el encargado (el suyo), y solo el
 //     MÍNIMO y el alta: el stock cambia únicamente por movimientos (trigger de la base de datos)
 import { alcanceDe, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
+import { avisarCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, type ProductoConInventario } from '../repos/productos';
@@ -94,6 +95,7 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
     throw err;
   }
+  await avisarCambio(env.DB, ['productos']);
   return { ...fila, stock_actual: 0 };
 }
 
@@ -123,6 +125,7 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
       if (esViolacionUnica(err)) throw duplicado(String(cambios.codigo_barras));
       throw err;
     }
+    await avisarCambio(env.DB, ['productos']);
   }
   return (await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>())!;
 }
@@ -133,6 +136,7 @@ export async function eliminarProducto(env: Entorno, sesion: Sesion, id: string)
   const existe = await env.DB.prepare('SELECT 1 AS ok FROM productos WHERE id = ?').bind(id).first();
   if (!existe) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
   await env.DB.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
+  await avisarCambio(env.DB, ['productos', 'inventario_local', 'compatibilidades']);
 }
 
 /** Importador CSV: crea productos nuevos (solo administrador y gerente). Hasta 100 por petición; todo o nada. */
@@ -166,6 +170,7 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
     if (esViolacionUnica(err)) throw new ErrorApi(409, 'Alguno de los códigos de barras ya existe.', 'codigo_repetido');
     throw err;
   }
+  await avisarCambio(env.DB, ['productos']);
   return creados.map(({ id, codigo_barras }) => ({ id, codigo_barras }));
 }
 
@@ -185,6 +190,7 @@ export async function establecerCompatibilidades(env: Entorno, sesion: Sesion, p
     if (esViolacionForanea(err)) throw new ErrorApi(400, 'El producto o alguno de los modelos no existe.', 'datos_invalidos');
     throw err;
   }
+  await avisarCambio(env.DB, ['compatibilidades']);
 }
 
 export async function reemplazarCompatibilidadesLote(
@@ -207,6 +213,7 @@ export async function reemplazarCompatibilidadesLote(
     if (esViolacionForanea(err)) throw new ErrorApi(400, 'Algún producto o modelo no existe.', 'datos_invalidos');
     throw err;
   }
+  await avisarCambio(env.DB, ['compatibilidades']);
 }
 
 // --- Inventario por local (alta y mínimo; el stock NUNCA se escribe aquí) ----------------------------------------------------
@@ -229,6 +236,7 @@ export async function asegurarEnLocal(env: Entorno, sesion: Sesion, localId: str
     if (esViolacionForanea(err)) throw new ErrorApi(400, 'Alguno de los productos no existe.', 'datos_invalidos');
     throw err;
   }
+  await avisarCambio(env.DB, ['inventario_local'], localId);
 }
 
 /** Fija el stock mínimo de varios productos en un local (alta con stock 0 si aún no lo manejaba). */
@@ -255,6 +263,7 @@ export async function fijarMinimosLote(
     if (esViolacionForanea(err)) throw new ErrorApi(400, 'Alguno de los productos no existe.', 'datos_invalidos');
     throw err;
   }
+  await avisarCambio(env.DB, ['inventario_local'], localId);
 }
 
 // --- Modelos de teléfono ------------------------------------------------------------------------------------------------
@@ -277,6 +286,7 @@ export async function crearModelo(env: Entorno, sesion: Sesion, datos: { marca: 
     if (esViolacionUnica(err)) throw new ErrorApi(409, `El modelo ${marca} ${modelo} ya existe.`, 'modelo_repetido');
     throw err;
   }
+  await avisarCambio(env.DB, ['modelos_telefono']);
   return fila;
 }
 
@@ -284,6 +294,7 @@ export async function eliminarModelo(env: Entorno, sesion: Sesion, id: string): 
   exigirGlobal(sesion);
   await alcanceDe(env, sesion);
   await env.DB.prepare('DELETE FROM modelos_telefono WHERE id = ?').bind(id).run();
+  await avisarCambio(env.DB, ['modelos_telefono', 'compatibilidades']);
 }
 
 // --- Locales -----------------------------------------------------------------------------------------------------------------

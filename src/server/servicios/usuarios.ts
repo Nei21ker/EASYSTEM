@@ -2,6 +2,7 @@
 // cambiar_clave_usuario, cerrar_sesion_forzada, cerrar_sesiones_local, cambiar_suscripcion_local, usuarios_sistema)
 // y el trigger proteger_perfil. Las reglas de jerarquía son las de src/lib/auth.ts (rolesAsignables).
 import { crearUsuarioInterno } from '../auth';
+import { avisarCambio, sentenciasCambio } from '../cambios';
 import {
   alcanceDe, esAdministrador, esGlobal, esSinLocal, puedeGestionarUsuario, rolesAsignables, type Rol, type Sesion,
 } from '../authz';
@@ -81,7 +82,9 @@ export async function crearUsuario(
     if (!localId) throw new ErrorApi(400, 'Elige el local al que pertenece el empleado.', 'local_requerido');
     await exigirLocalExistente(env, localId);
   }
-  return crearUsuarioInterno(env, { ...datos, localId });
+  const id = await crearUsuarioInterno(env, { ...datos, localId });
+  await avisarCambio(env.DB, ['perfiles']);
+  return id;
 }
 
 export async function actualizarUsuario(
@@ -114,6 +117,7 @@ export async function actualizarUsuario(
     .prepare('UPDATE perfiles SET rol = ?, local_id = ?, status = ? WHERE id = ?')
     .bind(rolFinal, localFinal, cambios.status ?? objetivo.status, id)
     .run();
+  await avisarCambio(env.DB, ['perfiles']);
 }
 
 export async function eliminarUsuario(env: Entorno, actor: Sesion, id: string): Promise<void> {
@@ -125,6 +129,7 @@ export async function eliminarUsuario(env: Entorno, actor: Sesion, id: string): 
   }
   // El borrado en cascada quita cuenta, sesiones y perfil; las ventas y órdenes conservan el nombre y pierden el vínculo
   await env.DB.prepare('DELETE FROM user WHERE id = ?').bind(id).run();
+  await avisarCambio(env.DB, ['perfiles']);
 }
 
 export async function cambiarClaveUsuario(env: Entorno, actor: Sesion, id: string, clave: string): Promise<void> {
@@ -153,6 +158,7 @@ export async function cerrarSesionForzada(env: Entorno, actor: Sesion, usuarioId
   await env.DB.batch([
     env.DB.prepare('UPDATE perfiles SET last_force_logout_at = ? WHERE id = ?').bind(ahoraISO(), usuarioId),
     env.DB.prepare('DELETE FROM session WHERE userId = ?').bind(usuarioId),
+    ...sentenciasCambio(env.DB, ['perfiles'], null),
   ]);
 }
 
@@ -166,6 +172,7 @@ export async function cerrarSesionesLocal(env: Entorno, actor: Sesion, localId: 
   await env.DB.batch([
     env.DB.prepare(`UPDATE perfiles SET last_force_logout_at = ? WHERE id IN (${marcas})`).bind(ahoraISO(), ...ids),
     env.DB.prepare(`DELETE FROM session WHERE userId IN (${marcas})`).bind(...ids),
+    ...sentenciasCambio(env.DB, ['perfiles'], null),
   ]);
   return ids.length;
 }
@@ -192,6 +199,7 @@ export async function cambiarSuscripcionLocal(
     env.DB
       .prepare('INSERT INTO suscripcion_eventos (id, local_id, estado_anterior, estado_nuevo, vence_anterior, vence_nuevo, cambiado_por, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(nuevoId(), localId, anterior.subscription_status, estado, anterior.subscription_expires_at, venceNuevo, actor.userId, ahoraISO()),
+    ...sentenciasCambio(env.DB, ['locales'], null),
   ]);
 }
 

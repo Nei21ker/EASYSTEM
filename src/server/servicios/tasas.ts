@@ -1,5 +1,6 @@
 // Tasa del dólar (bolívares por $1): historial de solo agregar; la vigente es la última registrada.
 import { alcanceDe, type Sesion } from '../authz';
+import { avisarCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { ahoraISO, nuevoId } from '../util';
@@ -32,6 +33,7 @@ export async function registrarTasa(
     .prepare('INSERT INTO tasas_cambio (id, fecha, tasa, created_at, registrado_por, registrado_nombre) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(fila.id, fila.fecha, fila.tasa, fila.created_at, fila.registrado_por, fila.registrado_nombre)
     .run();
+  await avisarCambio(env.DB, ['tasas_cambio']);
   const { registrado_por: _quien, ...tasa } = fila;
   return tasa;
 }
