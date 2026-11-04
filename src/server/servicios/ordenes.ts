@@ -5,7 +5,7 @@ import { alcanceDe, condicionAlcance, localAccesible, type Sesion } from '../aut
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
-import { ahoraISO, nuevoId, redondear2 } from '../util';
+import { ahoraISO, limiteSeguro, nuevoId, redondear2 } from '../util';
 import type { EstadoOrdenServicio, NuevaOrdenServicio, OrdenServicio, RepuestoOrden } from '../../types/database.types';
 
 const ESTADOS: EstadoOrdenServicio[] = ['pendiente', 'en_reparacion', 'listo', 'entregado'];
@@ -23,7 +23,7 @@ const totalDeOrden = (repuestos: RepuestoOrden[], manoDeObra: number): number =>
 export async function listarOrdenes(env: Entorno, sesion: Sesion, opciones: { limite?: number; localId?: string }): Promise<OrdenServicio[]> {
   const alcance = await alcanceDe(env, sesion, opciones.localId);
   const { sql, valores } = condicionAlcance(alcance, 'local_id');
-  const limite = Math.min(Math.max(1, Math.floor(opciones.limite ?? 500)), 2000);
+  const limite = limiteSeguro(opciones.limite, 500, 2000);
   const filas = await env.DB
     .prepare(`SELECT * FROM ordenes_servicio WHERE ${sql} ORDER BY recibida_en DESC, rowid DESC LIMIT ?`)
     .bind(...valores, limite)

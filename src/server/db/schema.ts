@@ -67,6 +67,14 @@ export const verification = sqliteTable('verification', {
   updatedAt: integer('updatedAt', { mode: 'timestamp_ms' }),
 });
 
+// Limitador de intentos de Better-Auth (migración 0003)
+export const rateLimit = sqliteTable('rateLimit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: integer('lastRequest').notNull(),
+});
+
 // --- Locales y perfiles ---------------------------------------------------------------------------------------
 export const locales = sqliteTable('locales', {
   id: text('id').primaryKey(),

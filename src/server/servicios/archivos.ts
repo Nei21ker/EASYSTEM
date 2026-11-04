@@ -66,6 +66,7 @@ export async function leerArchivoPublico(env: Entorno, clave: string): Promise<R
     headers: {
       'content-type': objeto.httpMetadata?.contentType ?? 'image/jpeg',
       'cache-control': 'public, max-age=31536000, immutable',
+      'x-content-type-options': 'nosniff',
     },
   });
 }
@@ -102,7 +103,9 @@ async function autorizarRuta(env: Entorno, sesion: Sesion, ruta: string, accion:
 export async function subirArchivoPrivado(env: Entorno, sesion: Sesion, ruta: string, bytes: ArrayBuffer, tipoMime: string): Promise<void> {
   await autorizarRuta(env, sesion, ruta, 'escribir');
   validarImagen(bytes, tipoMime, MAX_ARCHIVO_PRIVADO);
-  await env.FOTOS_PRIVADAS.put(ruta, bytes, { httpMetadata: { contentType: tipoMime } });
+  // Nunca se sobrescribe: cada archivo tiene un nombre único y un comprobante ya guardado es prueba de un pago
+  const guardado = await env.FOTOS_PRIVADAS.put(ruta, bytes, { httpMetadata: { contentType: tipoMime }, onlyIf: { etagDoesNotMatch: '*' } });
+  if (guardado === null) throw new ErrorApi(409, 'Ya existe un archivo con esa ruta; no se puede sobrescribir.', 'archivo_existente');
 }
 
 export async function leerArchivoPrivado(env: Entorno, sesion: Sesion, ruta: string): Promise<Response> {
@@ -110,12 +113,22 @@ export async function leerArchivoPrivado(env: Entorno, sesion: Sesion, ruta: str
   const objeto = await env.FOTOS_PRIVADAS.get(ruta);
   if (!objeto) throw new ErrorApi(404, 'El archivo no existe.', 'no_existe');
   return new Response(objeto.body, {
-    headers: { 'content-type': objeto.httpMetadata?.contentType ?? 'image/jpeg', 'cache-control': 'private, max-age=3600' },
+    headers: { 'content-type': objeto.httpMetadata?.contentType ?? 'image/jpeg', 'cache-control': 'private, max-age=3600', 'x-content-type-options': 'nosniff' },
   });
 }
 
 export async function borrarArchivosPrivados(env: Entorno, sesion: Sesion, rutas: string[]): Promise<void> {
   if (rutas.length > 100) throw new ErrorApi(400, 'Se pueden borrar hasta 100 archivos por petición.', 'lote_grande');
   for (const ruta of rutas) await autorizarRuta(env, sesion, ruta, 'escribir');
+  // La captura de un pago PAGADO es su prueba: no se borra
+  const comprobantes = rutas.filter((r) => RUTA_COMPROBANTE.test(r));
+  if (comprobantes.length > 0) {
+    const marcas = comprobantes.map(() => '?').join(', ');
+    const ligado = await env.DB
+      .prepare(`SELECT 1 AS ok FROM nominas WHERE estado_pago = 'PAGADO' AND comprobante_path IN (${marcas}) LIMIT 1`)
+      .bind(...comprobantes)
+      .first();
+    if (ligado) throw new ErrorApi(409, 'Esa captura pertenece a un pago ya registrado como PAGADO y no se puede borrar.', 'pago_pagado');
+  }
   if (rutas.length > 0) await env.FOTOS_PRIVADAS.delete(rutas);
 }

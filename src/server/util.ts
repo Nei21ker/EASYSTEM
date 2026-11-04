@@ -52,3 +52,9 @@ export function rangoDelDiaUTC(fecha: string, zona: string): { desde: string; ha
   const siguiente = new Date(Date.UTC(+fecha.slice(0, 4), +fecha.slice(5, 7) - 1, +fecha.slice(8, 10) + 1)).toISOString().slice(0, 10);
   return { desde: new Date(inicioDelDiaUTC(fecha, zona)).toISOString(), hasta: new Date(inicioDelDiaUTC(siguiente, zona)).toISOString() };
 }
+
+/** Límite de filas de una consulta a partir de un parámetro de la URL: texto, NaN o infinito → valor por defecto; se acota a 1..maximo. */
+export function limiteSeguro(valor: number | undefined, porDefecto: number, maximo: number): number {
+  const n = typeof valor === 'number' && Number.isFinite(valor) ? Math.floor(valor) : porDefecto;
+  return Math.min(Math.max(1, n), maximo);
+}

@@ -17,6 +17,10 @@ function almacenSimulado() {
     setItem: (k: string, v: string) => void datos.set(k, v),
     removeItem: (k: string) => void datos.delete(k),
     clear: () => datos.clear(),
+    get length() {
+      return datos.size;
+    },
+    key: (i: number) => [...datos.keys()][i] ?? null,
   };
 }
 
@@ -91,6 +95,18 @@ describe('auth en modo servidor', () => {
     await registrarUsuario({ email: ' Nuevo@X.com ', password: 'clave-segura', nombre: ' Nico ', rol: 'gerente', local_id: 'L1' });
     const envio = fetchSimulado.mock.calls.find(([url]) => url === '/api/usuarios')!;
     expect(JSON.parse(String(envio[1]?.body))).toEqual({ email: 'nuevo@x.com', nombre: 'Nico', clave: 'clave-segura', rol: 'gerente', localId: null });
+  });
+});
+
+describe('cerrar sesión', () => {
+  it('borra las cachés de datos (ventas, productos…) pero conserva lo que aún no se sincronizó', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => json({ ok: true })));
+    for (const clave of ['easystem:cache:ventas', 'easystem:cache:productos', 'easystem:cache:tasa', 'easystem:sesion-servidor']) localStorage.setItem(clave, '[]');
+    localStorage.setItem('easystem:cola-ventas', '[{"pendiente":1}]');
+    const { cerrarSesion } = await cargarAuth(true);
+    await cerrarSesion();
+    for (const clave of ['easystem:cache:ventas', 'easystem:cache:productos', 'easystem:cache:tasa', 'easystem:sesion-servidor']) expect(localStorage.getItem(clave), clave).toBeNull();
+    expect(localStorage.getItem('easystem:cola-ventas')).not.toBeNull();
   });
 });
 

@@ -64,5 +64,5 @@ Lo hace el dueño con la persona que da soporte (ver la tarea 26 del plan en `do
 ## Notas
 
 - El stock nunca se escribe directo: solo cambia con movimientos de inventario (un trigger de D1 lo aplica). Cada unidad física tiene su propio código (EAN-13, prefijo 21).
-- Las pantallas se actualizan solas: el navegador consulta `/api/cambios` cada 5 s (solo con la pestaña visible y con actividad).
+- Las pantallas se actualizan solas: el navegador consulta `/api/cambios` cada 10 s (solo con la pestaña visible y con actividad).
 - Las ventas no son transaccionales entre líneas: se procesan en secuencia (ver `registrarVenta` en `inventoryService.ts`).

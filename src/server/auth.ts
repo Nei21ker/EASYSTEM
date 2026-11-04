@@ -3,27 +3,52 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { bd } from './db/cliente';
-import { account, session, user, verification } from './db/schema';
+import { account, rateLimit, session, user, verification } from './db/schema';
 import type { Entorno } from './entorno';
 import { hashearClave, verificarClave } from './password';
 import { nuevoId, ahoraISO } from './util';
 import { ErrorApi } from './errores';
 import type { Rol } from './authz';
 
-/** Better-Auth para un origen (la dirección desde la que se sirve el sitio: cookies y orígenes de confianza). */
-export function crearAuth(env: Entorno, origen: string) {
+function construirAuth(env: Entorno, origen: string) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: origen,
     trustedOrigins: [origen],
-    database: drizzleAdapter(bd(env), { provider: 'sqlite', schema: { user, session, account, verification } }),
+    database: drizzleAdapter(bd(env), { provider: 'sqlite', schema: { user, session, account, verification, rateLimit } }),
     emailAndPassword: {
       enabled: true,
       disableSignUp: true,
       minPasswordLength: 8,
       password: { hash: hashearClave, verify: ({ hash, password }) => verificarClave(password, hash) },
     },
+    // Límite de intentos: Better-Auth solo lo activa con NODE_ENV=production (que un Worker no define) y por defecto lo
+    // guarda en memoria de cada instancia; aquí se fuerza y se guarda en D1 para que valga en todas las instancias.
+    // La dirección sale de la cabecera que pone Cloudflare (el cliente no puede falsearla).
+    rateLimit: {
+      enabled: true,
+      storage: 'database',
+      window: 60,
+      max: 100,
+      customRules: { '/sign-in/email': { window: 60, max: 5 } },
+    },
+    advanced: { ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] } },
   });
+}
+
+type InstanciaAuth = ReturnType<typeof construirAuth>;
+const instancias = new WeakMap<object, Map<string, InstanciaAuth>>();
+
+/**
+ * Better-Auth para un origen (la dirección desde la que se sirve el sitio: cookies y orígenes de confianza).
+ * Se construye UNA vez por instancia del Worker y origen (construirlo en cada petición gastaba CPU del plan gratuito).
+ */
+export function crearAuth(env: Entorno, origen: string): InstanciaAuth {
+  let porOrigen = instancias.get(env);
+  if (!porOrigen) instancias.set(env, (porOrigen = new Map()));
+  let auth = porOrigen.get(origen);
+  if (!auth) porOrigen.set(origen, (auth = construirAuth(env, origen)));
+  return auth;
 }
 
 export interface DatosUsuarioNuevo {

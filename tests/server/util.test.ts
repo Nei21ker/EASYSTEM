@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, reiniciarBase } from './ayudas';
-import { ahoraISO, nuevoId, rangoDelDiaUTC, redondear2, sentenciaContador } from '../../src/server/util';
+import { ahoraISO, nuevoId, rangoDelDiaUTC, redondear2, sentenciaContador, limiteSeguro } from '../../src/server/util';
 import { bd } from '../../src/server/db/cliente';
 import { locales, ventas } from '../../src/server/db/schema';
 import { eq } from 'drizzle-orm';
@@ -71,5 +71,17 @@ describe('Drizzle sobre D1', () => {
     expect(fila.items).toEqual(items);
     expect(fila.pagos).toBeNull();
     expect(fila.total).toBe(12);
+  });
+});
+
+describe('limiteSeguro', () => {
+  it('usa el valor por defecto con texto o NaN, y acota entre 1 y el máximo', () => {
+    expect(limiteSeguro(undefined, 100, 2000)).toBe(100);
+    expect(limiteSeguro(Number('abc'), 100, 2000)).toBe(100);
+    expect(limiteSeguro(0, 100, 2000)).toBe(1);
+    expect(limiteSeguro(-5, 100, 2000)).toBe(1);
+    expect(limiteSeguro(99999, 100, 2000)).toBe(2000);
+    expect(limiteSeguro(25.9, 100, 2000)).toBe(25);
+    expect(limiteSeguro(Infinity, 100, 2000)).toBe(100);
   });
 });

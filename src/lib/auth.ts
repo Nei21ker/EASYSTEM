@@ -227,10 +227,28 @@ export async function iniciarSesion(email: string, password: string): Promise<Se
   return sesion;
 }
 
+/**
+ * Las copias locales de ventas, productos, etc. (para trabajar sin conexión) traen datos de clientes y costos: al cerrar
+ * sesión se borran para que quien use el equipo después no las lea. Lo pendiente de sincronizar (colas) NO se toca.
+ */
+function borrarCachesDeDatos() {
+  try {
+    const claves: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const clave = localStorage.key(i);
+      if (clave?.startsWith('easystem:cache:')) claves.push(clave);
+    }
+    for (const clave of claves) localStorage.removeItem(clave);
+  } catch {
+    // sin acceso al almacenamiento: nada que borrar
+  }
+}
+
 export async function cerrarSesion(): Promise<void> {
   invalidarCacheSesion();
   if (modoServidor) {
     localStorage.removeItem(LS_SESION_CACHE);
+    borrarCachesDeDatos();
     try {
       await api.post('/api/auth/sign-out');
     } catch {

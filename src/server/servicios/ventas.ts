@@ -7,7 +7,7 @@ import { alcanceDe, condicionAlcance, esGerencia, localAccesible, type Sesion } 
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
-import { nuevoId, redondear2 } from '../util';
+import { limiteSeguro, nuevoId, redondear2 } from '../util';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -74,7 +74,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
       )
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(datos.items),
-        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, datos.vendedor_nombre ?? sesion.nombre
+        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre
       ),
     ...sentenciasCambio(db, ['ventas'], datos.local_id),
   ]);
@@ -105,7 +105,7 @@ export async function listarVentas(
     condiciones.push('fecha <= ?');
     params.push(opciones.hasta);
   }
-  const limite = Math.min(Math.max(1, Math.floor(opciones.limite ?? 1000)), 5000);
+  const limite = limiteSeguro(opciones.limite, 1000, 5000);
   const filas = await env.DB
     .prepare(`SELECT * FROM ventas WHERE ${condiciones.join(' AND ')} ORDER BY fecha DESC, rowid DESC LIMIT ?`)
     .bind(...params, limite)
@@ -165,7 +165,7 @@ export async function listarDevoluciones(
     condiciones.push('v.vendedor_id = ?');
     params.push(sesion.userId);
   }
-  const limite = Math.min(Math.max(1, Math.floor(opciones.limite ?? 2000)), 5000);
+  const limite = limiteSeguro(opciones.limite, 2000, 5000);
   const filas = await env.DB
     .prepare(`SELECT d.* FROM devoluciones d JOIN ventas v ON v.id = d.venta_id WHERE ${condiciones.join(' AND ')} ORDER BY d.fecha DESC, d.rowid DESC LIMIT ?`)
     .bind(...params, limite)

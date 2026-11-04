@@ -23,6 +23,24 @@ beforeEach(async () => {
   await env.DB.prepare("INSERT INTO locales (id, nombre, tipo) VALUES (?, 'Local Accesorios', 'accesorios')").bind(L1).run();
 });
 
+describe('límite de intentos de inicio de sesión', () => {
+  const intento = (ip: string, password: string) =>
+    crearAuth(env, ORIGEN).handler(
+      new Request(`${ORIGEN}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: ORIGEN, 'cf-connecting-ip': ip },
+        body: JSON.stringify({ email: 'dueno@ejemplo.com', password }),
+      })
+    );
+
+  it('tras 5 intentos en un minuto desde la misma dirección responde 429, aun con la clave correcta; otra dirección no se afecta', async () => {
+    await crearUsuarioInterno(env, { email: 'dueno@ejemplo.com', nombre: 'Dueño', clave: 'Clave-123-abc', rol: 'administrador', localId: null });
+    for (let i = 0; i < 5; i++) expect((await intento('203.0.113.7', 'mala-clave-' + i)).status).toBe(401);
+    expect((await intento('203.0.113.7', 'Clave-123-abc')).status).toBe(429);
+    expect((await intento('203.0.113.8', 'Clave-123-abc')).status).toBe(200);
+  });
+});
+
 describe('autenticación', () => {
   it('el registro público está cerrado', async () => {
     const respuesta = await peticion('/sign-up/email', { email: 'intruso@ejemplo.com', password: 'Clave-123-abc', name: 'Intruso' });

@@ -67,7 +67,8 @@ export async function crearUsuarioDePrueba(
   const respuesta = await crearAuth(entorno, ORIGEN_PRUEBAS).handler(
     new Request(`${ORIGEN_PRUEBAS}/api/auth/sign-in/email`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', origin: ORIGEN_PRUEBAS },
+      // Una dirección distinta por usuario: el limitador de intentos cuenta por dirección y las pruebas inician muchas sesiones
+      headers: { 'content-type': 'application/json', origin: ORIGEN_PRUEBAS, 'cf-connecting-ip': `10.0.${Math.floor(contadorUsuarios / 250)}.${contadorUsuarios % 250}` },
       body: JSON.stringify({ email, password: clave }),
     })
   );

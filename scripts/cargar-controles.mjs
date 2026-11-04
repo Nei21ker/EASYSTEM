@@ -12,6 +12,7 @@
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import { cargarControles } from './lib/cargar.mjs';
+import { leerClaveOculta } from './lib/clave-oculta.mjs';
 import { crearClienteApi } from './lib/cliente-api.mjs';
 
 function argumento(nombre) {
@@ -19,38 +20,50 @@ function argumento(nombre) {
   return i >= 0 ? process.argv[i + 1] : undefined;
 }
 
+function urlSegura(texto) {
+  try {
+    const u = new URL(texto);
+    return u.protocol === 'https:' || (u.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(u.hostname));
+  } catch {
+    return false;
+  }
+}
+
 const urlApi = argumento('--api');
 const email = argumento('--email');
 const carpeta = resolve(argumento('--carpeta') ?? 'datos-controles');
+// La contraseña solo viaja por HTTPS (o por HTTP si es tu propia computadora)
+if (urlApi && !urlSegura(urlApi)) {
+  console.error('La dirección debe empezar con https:// (solo http://localhost se permite para pruebas en tu computadora).');
+  process.exit(1);
+}
 if (!urlApi || !email) {
   console.error('Uso: node scripts/cargar-controles.mjs --api <dirección del sistema> --email <tu correo> [--carpeta datos-controles]');
   process.exit(1);
 }
 
-const consola = createInterface({ input: process.stdin });
-const lineas = consola[Symbol.asyncIterator]();
+// La entrada se lee por líneas (igual escribiendo en la terminal que con la entrada redirigida); se crea al usarla por primera vez
+let consola;
+let lineas;
+function lector() {
+  if (!lineas) {
+    consola = createInterface({ input: process.stdin });
+    lineas = consola[Symbol.asyncIterator]();
+  }
+  return lineas;
+}
 
 async function preguntar(texto) {
   process.stdout.write(texto);
-  const { value, done } = await lineas.next();
+  const { value, done } = await lector().next();
   if (done) throw new Error('Faltó escribir la respuesta.');
   return String(value).trim();
 }
 
-/** Contraseña sin mostrarla en pantalla (si la entrada no es una terminal, se lee como cualquier línea). */
+/** Contraseña SIN mostrarla en pantalla (modo crudo de la terminal); con la entrada redirigida se lee como una línea. */
 async function preguntarClave(texto) {
-  if (!process.stdin.isTTY) return preguntar(texto);
-  process.stdout.write(texto);
-  const salidaOriginal = process.stdout.write.bind(process.stdout);
-  process.stdout.write = () => true; // mientras se teclea, nada se imprime
-  try {
-    const { value, done } = await lineas.next();
-    if (done) throw new Error('Faltó escribir la contraseña.');
-    return String(value);
-  } finally {
-    process.stdout.write = salidaOriginal;
-    process.stdout.write('\n');
-  }
+  if (process.stdin.isTTY) return leerClaveOculta(texto);
+  return preguntar(texto);
 }
 
 try {
@@ -69,5 +82,5 @@ try {
   console.error(`\n${err instanceof Error ? err.message : err}\n`);
   process.exitCode = 1;
 } finally {
-  consola.close();
+  consola?.close();
 }

@@ -147,6 +147,31 @@ describe('actualizarUsuario', () => {
 });
 
 describe('eliminarUsuario', () => {
+  it('se puede eliminar a quien registró un pago PAGADO o cerró un cuadre: esas filas conservan sus datos y pierden solo el vínculo', async () => {
+    const emp = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO empleados (id, local_id, nombre, apellido, cedula, cargo, salario_base) VALUES (?, ?, 'Eva', 'Mora', 'V-5000001', 'Cajera', 200)").bind(emp, accesorios),
+      env.DB.prepare("INSERT INTO nominas (id, empleado_id, local_id, periodo_inicio, periodo_fin, pago_base, total_pagado, estado_pago, pagado_en, registrado_por) VALUES ('n1', ?, ?, '2026-10-01', '2026-10-15', 100, 100, 'PAGADO', '2026-10-15T12:00:00Z', ?)").bind(emp, accesorios, vendedor.id),
+      env.DB.prepare("INSERT INTO cuadres_caja (id, local_id, fecha, estado, notas, registrado_por, cerrado_en, cerrado_por) VALUES ('c1', ?, '2026-10-15', 'CERRADO', 'ok', ?, '2026-10-15T20:00:00Z', 'Vera')").bind(accesorios, vendedor.id),
+    ]);
+    await eliminarUsuario(env, await sesionDe(admin), vendedor.id);
+    expect(await env.DB.prepare("SELECT registrado_por, total_pagado, estado_pago FROM nominas WHERE id = 'n1'").first()).toEqual({ registrado_por: null, total_pagado: 100, estado_pago: 'PAGADO' });
+    expect(await env.DB.prepare("SELECT registrado_por, estado, notas FROM cuadres_caja WHERE id = 'c1'").first()).toEqual({ registrado_por: null, estado: 'CERRADO', notas: 'ok' });
+  });
+
+  it('los triggers siguen impidiendo MODIFICAR un pago PAGADO o un cuadre CERRADO (aunque además se cambie el vínculo)', async () => {
+    const emp = crypto.randomUUID();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO empleados (id, local_id, nombre, apellido, cedula, cargo, salario_base) VALUES (?, ?, 'Eva', 'Mora', 'V-5000002', 'Cajera', 200)").bind(emp, accesorios),
+      env.DB.prepare("INSERT INTO nominas (id, empleado_id, local_id, periodo_inicio, periodo_fin, pago_base, total_pagado, estado_pago, pagado_en, registrado_por) VALUES ('n2', ?, ?, '2026-10-01', '2026-10-15', 100, 100, 'PAGADO', '2026-10-15T12:00:00Z', ?)").bind(emp, accesorios, vendedor.id),
+      env.DB.prepare("INSERT INTO cuadres_caja (id, local_id, fecha, estado, registrado_por) VALUES ('c2', ?, '2026-10-14', 'CERRADO', ?)").bind(accesorios, vendedor.id),
+    ]);
+    await expect(env.DB.prepare("UPDATE nominas SET notas = 'x', registrado_por = NULL WHERE id = 'n2'").run()).rejects.toThrow(/PAGADO/);
+    await expect(env.DB.prepare("UPDATE nominas SET notas = 'x' WHERE id = 'n2'").run()).rejects.toThrow(/PAGADO/);
+    await expect(env.DB.prepare("UPDATE cuadres_caja SET notas = 'x', registrado_por = NULL WHERE id = 'c2'").run()).rejects.toThrow(/cerrado/);
+    await expect(env.DB.prepare("UPDATE cuadres_caja SET notas = 'x' WHERE id = 'c2'").run()).rejects.toThrow(/cerrado/);
+  });
+
   it('quien no puede eliminar recibe 403 aunque el usuario no exista (no se puede tantear qué ids existen)', async () => {
     for (const u of [vendedor, encargado, contador]) {
       await rechazo(eliminarUsuario(env, await sesionDe(u), 'no-existe'), 403);

@@ -1,7 +1,7 @@
 // Actualización en vivo entre dispositivos: cuando alguien registra una venta, ingresa mercancía, paga la nómina,
 // cambia la tasa, etc., las demás pantallas abiertas se actualizan solas, sin recargar la página.
 //
-// En modo servidor se consulta GET /api/cambios cada 5 s (solo con la pestaña visible y con actividad reciente; ver
+// En modo servidor se consulta GET /api/cambios cada 10 s (solo con la pestaña visible y con actividad reciente; ver
 // src/lib/sondeo.ts). El servidor devuelve únicamente las versiones de lo que el rol puede leer (un vendedor no se
 // entera de la nómina, por ejemplo). Los datos del aviso se ignoran: solo se usa "qué tabla cambió" para volver a pedir
 // la información con las funciones de siempre (inventoryService/auth), así que nada nuevo viaja ni se guarda.
@@ -35,6 +35,9 @@ export const TABLAS_TIEMPO_REAL = [
   'unidades_producto',
   'cuadres_caja',
 ] as const;
+
+/** Cada cuánto se pregunta por cambios con la pantalla visible y activa. */
+export const INTERVALO_SONDEO_MS = 10_000;
 
 export const EVENTO_DATOS = 'easystem:datos-cambiaron';
 
@@ -76,6 +79,9 @@ export function iniciarTiempoReal() {
     consultar: async () => (await api.get<{ versiones: VersionCambio[] }>('/api/cambios')).versiones,
     emitir,
     visible: () => document.visibilityState === 'visible',
+    // Cada consulta es una petición del Worker (el plan gratuito permite 100.000 al día): 10 s con varias cajas abiertas
+    // cuesta la mitad que 5 s y sigue siendo "casi en vivo"
+    intervaloMs: INTERVALO_SONDEO_MS,
   });
   sondeo.iniciar();
 

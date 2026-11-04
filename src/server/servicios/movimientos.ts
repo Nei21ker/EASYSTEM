@@ -9,7 +9,7 @@ import { alcanceDe, condicionAlcance, esGerencia, localAccesible, type Sesion } 
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
-import { ahoraISO, nuevoId } from '../util';
+import { ahoraISO, limiteSeguro, nuevoId } from '../util';
 import { construirCodigoUnidad } from '../../utils/codigos';
 import type { MovimientoInventario, TipoMovimiento, UnidadProducto } from '../../types/database.types';
 
@@ -272,7 +272,7 @@ export async function listarMovimientos(env: Entorno, sesion: Sesion, limite = 1
        ORDER BY m.fecha DESC, m.rowid DESC
        LIMIT ?`
     )
-    .bind(...valores, Math.min(Math.max(1, Math.floor(limite)), 2000))
+    .bind(...valores, limiteSeguro(limite, 100, 2000))
     .all<Record<string, unknown>>();
   return filas.results.map((f) => ({
     id: f.id as string,

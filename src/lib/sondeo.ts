@@ -1,9 +1,9 @@
 // Núcleo de la actualización en vivo por consulta periódica (sin Durable Objects ni WebSockets: el costo es una petición
-// pequeña cada 5 s por pantalla abierta y activa). Es independiente del navegador para poder probarse con reloj falso.
+// pequeña cada 10 s por pantalla abierta y activa). Es independiente del navegador para poder probarse con reloj falso.
 //
 // Reglas:
 //  · La primera consulta fija la línea base y NO emite nada.
-//  · Cada 5 s, si la pestaña está visible y hubo actividad en los últimos 3 minutos, se consulta; una pantalla
+//  · Cada intervalo (5 s por defecto; realtime.ts usa 10 s), si la pestaña está visible y hubo actividad en los últimos 3 minutos, se consulta; una pantalla
 //    abandonada o en segundo plano no gasta peticiones.
 //  · Se emite el evento de una tabla cuando alguna de sus versiones (por local) cambió o apareció.
 //  · Al volver a verse la pestaña, o al haber actividad tras una pausa, se consulta de inmediato.

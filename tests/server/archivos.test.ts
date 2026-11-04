@@ -50,6 +50,32 @@ const rutaComprobante = (local: string = vidrios) => `comprobantes-nomina/${loca
 const cuadreCerrado = () =>
   env.DB.prepare("INSERT INTO cuadres_caja (id, local_id, fecha, estado, cerrado_en) VALUES ('c1', ?, ?, 'CERRADO', '2026-11-03T22:00:00.000Z')").bind(vidrios, FECHA).run();
 
+describe('comprobante de un pago PAGADO', () => {
+  const empleado = () => env.DB.prepare("INSERT INTO empleados (id, local_id, nombre, apellido, cedula, cargo, salario_base) VALUES ('emp1', ?, 'Eva', 'Mora', 'V-5000001', 'Cajera', 200)").bind(vidrios).run();
+  const pago = (estado: string) =>
+    env.DB.prepare("INSERT INTO nominas (id, empleado_id, local_id, periodo_inicio, periodo_fin, pago_base, total_pagado, estado_pago, comprobante_path) VALUES ('n1', 'emp1', ?, '2026-11-01', '2026-11-15', 100, 100, ?, ?)").bind(vidrios, estado, rutaComprobante()).run();
+
+  it('no se puede sobrescribir un archivo que ya existe (ni uno ligado a un pago PAGADO)', async () => {
+    await subirArchivoPrivado(env, sC, rutaComprobante(), bytes(5), 'image/jpeg');
+    await rechazo(subirArchivoPrivado(env, sC, rutaComprobante(), bytes(9), 'image/png'), 409, /Ya existe/);
+    expect((await env.FOTOS_PRIVADAS.head(rutaComprobante()))?.size).toBe(5);
+  });
+
+  it('no se puede borrar el comprobante de un pago PAGADO, pero sí el de uno PENDIENTE', async () => {
+    await empleado();
+    await subirArchivoPrivado(env, sC, rutaComprobante(), bytes(), 'image/jpeg');
+    await pago('PAGADO');
+    await rechazo(borrarArchivosPrivados(env, sC, [rutaComprobante()]), 409, /PAGADO/);
+    expect(await env.FOTOS_PRIVADAS.head(rutaComprobante())).not.toBeNull();
+    // Uno PENDIENTE (otro período y otra ruta) sí se puede borrar
+    const otra = `comprobantes-nomina/${vidrios}/emp1-2026-10-01-1720000000000.jpg`;
+    await env.DB.prepare("INSERT INTO nominas (id, empleado_id, local_id, periodo_inicio, periodo_fin, pago_base, total_pagado, estado_pago, comprobante_path) VALUES ('n2', 'emp1', ?, '2026-10-01', '2026-10-15', 100, 100, 'PENDIENTE', ?)").bind(vidrios, otra).run();
+    await subirArchivoPrivado(env, sC, otra, bytes(), 'image/jpeg');
+    await borrarArchivosPrivados(env, sC, [otra]);
+    expect(await env.FOTOS_PRIVADAS.head(otra)).toBeNull();
+  });
+});
+
 describe('fotos de producto (públicas)', () => {
   it('administrador, gerente y encargado suben; el vendedor no; la URL cuelga de la base pública y se puede leer sin sesión', async () => {
     for (const s of [sA, sG, sE]) {
@@ -139,6 +165,7 @@ describe('fotos de cuadre (privadas)', () => {
 describe('comprobantes de nómina (privados)', () => {
   it('administrador, gerente y contador suben y leen; encargado y vendedor no', async () => {
     for (const s of [sA, sG, sC]) {
+      await env.FOTOS_PRIVADAS.delete(rutaComprobante()); // cada rol sube "su" copia: una ruta ya usada no se sobrescribe
       await subirArchivoPrivado(env, s, rutaComprobante(), bytes(), 'image/jpeg');
       expect((await leerArchivoPrivado(env, s, rutaComprobante())).status).toBe(200);
     }
