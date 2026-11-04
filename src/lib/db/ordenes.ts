@@ -1,50 +1,26 @@
-import { supabase } from '../supabase';
+import { api } from '../api';
 import type { NuevaOrdenServicio, OrdenServicio } from '../../types/database.types';
 
-const normalizar = (o: OrdenServicio): OrdenServicio => ({
-  ...o,
-  mano_de_obra_usd: Number(o.mano_de_obra_usd),
-  total_usd: Number(o.total_usd),
-  repuestos: (o.repuestos ?? []).map((r) => ({ ...r, precio_unitario: Number(r.precio_unitario) })),
-});
-
 export async function listarOrdenes(opciones: { limite: number; localId?: string | null }): Promise<OrdenServicio[]> {
-  let consulta = supabase.from('ordenes_servicio').select('*').order('recibida_en', { ascending: false }).limit(opciones.limite);
-  if (opciones.localId) consulta = consulta.eq('local_id', opciones.localId);
-
-  const { data, error } = await consulta.overrideTypes<OrdenServicio[], { merge: false }>();
-  if (error) throw error;
-  return (data ?? []).map(normalizar);
+  return api.get<OrdenServicio[]>('/api/ordenes', { limite: opciones.limite, localId: opciones.localId });
 }
 
 export async function obtenerOrden(id: string): Promise<OrdenServicio | null> {
-  const { data, error } = await supabase.from('ordenes_servicio').select('*').eq('id', id).limit(1).overrideTypes<OrdenServicio[], { merge: false }>();
-  if (error) throw error;
-  return data && data.length > 0 ? normalizar(data[0]) : null;
+  try {
+    return await api.get<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}`);
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) return null;
+    throw err;
+  }
 }
 
-/** El usuario que registra (registrado_por) y el folio los asigna la base de datos. */
+/** El folio, quién registra y el total los pone el servidor. */
 export async function insertarOrden(orden: NuevaOrdenServicio): Promise<OrdenServicio> {
-  const { data, error } = await supabase
-    .from('ordenes_servicio')
-    .insert(orden)
-    .select()
-    .single()
-    .overrideTypes<OrdenServicio, { merge: false }>();
-
-  if (error) throw error;
-  return normalizar(data as OrdenServicio);
+  return api.post<OrdenServicio>('/api/ordenes', orden);
 }
 
 export async function actualizarOrden(id: string, cambios: Partial<OrdenServicio>): Promise<OrdenServicio> {
-  const { data, error } = await supabase
-    .from('ordenes_servicio')
-    .update(cambios)
-    .eq('id', id)
-    .select()
-    .single()
-    .overrideTypes<OrdenServicio, { merge: false }>();
-
-  if (error) throw error;
-  return normalizar(data as OrdenServicio);
+  // Solo estos campos se editan (el total se recalcula en el servidor con los repuestos y la mano de obra)
+  const { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd } = cambios;
+  return api.patch<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}`, { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd });
 }

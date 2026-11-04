@@ -80,7 +80,7 @@ import type {
 } from '../types/database.types';
 
 // ----------------------------------------------------------------------------
-// LocalStorage: esquema y persistencia (modo sin Supabase configurado)
+// LocalStorage: esquema y persistencia (modo demo, sin servidor)
 // ----------------------------------------------------------------------------
 const LS_KEY = 'easystem:db:v1';
 
@@ -339,7 +339,7 @@ export function reiniciarDatosLocales() {
 }
 
 // ----------------------------------------------------------------------------
-// Resiliencia offline (modo Supabase configurado)
+// Resiliencia offline (modo servidor)
 // ----------------------------------------------------------------------------
 const LS_CACHE_PRODUCTOS = 'easystem:cache:productos';
 const LS_CACHE_MODELOS = 'easystem:cache:modelos';
@@ -463,7 +463,7 @@ function encolarMovimientoPendiente(input: {
   };
 }
 
-/** Reintenta enviar a Supabase los movimientos y registros de venta encolados mientras no había conexión. */
+/** Reintenta enviar al servidor los movimientos y registros de venta encolados mientras no había conexión. */
 export async function sincronizarPendientes(): Promise<{ sincronizados: number; pendientes: number }> {
   if (!modoServidor) return { sincronizados: 0, pendientes: 0 };
 
@@ -691,7 +691,7 @@ async function listarProductosCrudos(): Promise<ProductoConInventario[]> {
     return aplicarPendientesAProductos(productos);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando el catálogo guardado localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando el catálogo guardado localmente.', err);
     return aplicarPendientesAProductos(leerCache<ProductoConInventario[]>(LS_CACHE_PRODUCTOS) ?? []);
   }
 }
@@ -753,7 +753,7 @@ export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Prom
 // ----------------------------------------------------------------------------
 /**
  * Unidades del alcance activo (de un local, o de todos en la vista "Todos"), más antiguas primero.
- * Con Supabase necesita conexión: no hay copia local de las unidades.
+ * En modo servidor necesita conexión: no hay copia local de las unidades.
  */
 export async function listarUnidades(
   opciones: { productoId?: string; estado?: UnidadProducto['estado']; sinImprimir?: boolean; codigos?: string[] } = {}
@@ -902,13 +902,13 @@ function guardarDBEstricto(db: LocalDB) {
     localStorage.setItem(LS_KEY, JSON.stringify(db));
   } catch {
     throw new Error(
-      'No hay espacio en el navegador para más fotos. Conecta Supabase (almacenamiento sin ese límite) o quita fotos que no uses.'
+      'No hay espacio en el navegador para más fotos. Usa el modo servidor (sin ese límite) o quita fotos que no uses.'
     );
   }
 }
 
 /**
- * Guarda la foto de un producto. Con Supabase va al Storage (bucket "productos",
+ * Guarda la foto de un producto. Con el servidor va a R2 (fotos públicas,
  * migración 0009) y se guarda la URL; en modo LocalStorage se guarda como data
  * URL dentro del propio producto. Devuelve la URL/data URL resultante.
  */
@@ -990,7 +990,7 @@ export async function listarModelos(): Promise<ModeloTelefono[]> {
     return modelos.slice().sort(compararModelos);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando modelos guardados localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando modelos guardados localmente.', err);
     return (leerCache<ModeloTelefono[]>(LS_CACHE_MODELOS) ?? []).sort(compararModelos);
   }
 }
@@ -1040,7 +1040,7 @@ export async function obtenerTasaVigente(): Promise<EstadoTasa> {
       ultima = await tasasDb.obtenerUltimaTasa();
     } catch (err) {
       if (!esErrorDeRed(err)) throw err;
-      console.warn('[EASYSTEM] Sin conexión con Supabase; usando la última tasa guardada localmente.', err);
+      console.warn('[EASYSTEM] Sin conexión con el servidor; usando la última tasa guardada localmente.', err);
       ultima = leerTasaCacheada();
     }
     // Una tasa registrada sin conexión es más reciente que cualquier otra del servidor
@@ -1073,7 +1073,7 @@ export async function registrarTasa(tasa: number, registradoNombre?: string): Pr
       guardada = await tasasDb.insertarTasa(nueva);
     } catch (err) {
       if (!esErrorDeRed(err)) throw err;
-      console.warn('[EASYSTEM] Sin conexión con Supabase; la tasa se guardó localmente para sincronizar después.', err);
+      console.warn('[EASYSTEM] Sin conexión con el servidor; la tasa se guardó localmente para sincronizar después.', err);
       guardada = { ...nueva, id: `pendiente-${generarId()}`, created_at: new Date().toISOString() };
       guardarColaTasas([...leerColaTasas(), guardada]);
     }
@@ -1116,7 +1116,7 @@ export async function listarMovimientos(limite = 100): Promise<MovimientoConProd
     return movimientos;
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando movimientos guardados localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando movimientos guardados localmente.', err);
     return (leerCache<MovimientoConProducto[]>(LS_CACHE_MOVIMIENTOS) ?? []).filter(delAlcance).slice(0, limite);
   }
 }
@@ -1199,7 +1199,7 @@ export async function registrarMovimiento(input: {
       throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${input.cantidad}.`);
     }
 
-    console.warn('[EASYSTEM] Sin conexión con Supabase; el movimiento se guardó localmente para sincronizar después.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; el movimiento se guardó localmente para sincronizar después.', err);
     return encolarMovimientoPendiente(registro);
   }
 }
@@ -1250,7 +1250,7 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     return await ventasDb.insertarVenta(registro);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; el registro de la venta se guardó localmente para sincronizar después.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; el registro de la venta se guardó localmente para sincronizar después.', err);
     guardarColaVentas([...leerColaVentas(), registro]);
     return { ...registro, id: `pendiente-${generarId()}`, folio: 0, pendienteSincronizar: true };
   }
@@ -1427,7 +1427,7 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
     if (alcance.todos) guardarCache(LS_CACHE_VENTAS, remotas);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las ventas guardadas localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando las ventas guardadas localmente.', err);
     remotas = (leerCache<Venta[]>(LS_CACHE_VENTAS) ?? []).filter(enRango).filter(delAlcance);
   }
 
@@ -1466,7 +1466,7 @@ export async function listarDevoluciones(opciones: { limite?: number; ventaId?: 
     return remotas;
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las devoluciones guardadas localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando las devoluciones guardadas localmente.', err);
     return (leerCache<Devolucion[]>(LS_CACHE_DEVOLUCIONES) ?? []).filter(pasa).slice(0, limite);
   }
 }
@@ -1653,7 +1653,7 @@ export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio
     return ordenes;
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
-    console.warn('[EASYSTEM] Sin conexión con Supabase; usando las órdenes de servicio guardadas localmente.', err);
+    console.warn('[EASYSTEM] Sin conexión con el servidor; usando las órdenes de servicio guardadas localmente.', err);
     return (leerCache<OrdenServicio[]>(LS_CACHE_ORDENES) ?? []).filter(delAlcance).slice(0, limite);
   }
 }
@@ -1842,7 +1842,7 @@ const MOTIVO_AJUSTE = 'Ajuste por importación';
  * productos nuevos nacen en 0 y la cantidad entra como movimiento ENTRADA; en
  * los existentes la diferencia contra el stock actual se registra como
  * ENTRADA/SALIDA ("ajuste por importación").
- * Requiere conexión cuando Supabase está configurado (no se encola offline).
+ * Requiere conexión en modo servidor (no se encola offline).
  */
 export async function importarProductos(filas: FilaImportacion[]): Promise<ResultadoImportacion> {
   const resultado: ResultadoImportacion = { creados: 0, actualizados: 0, movimientos: 0 };
@@ -1922,7 +1922,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     return resultado;
   }
 
-  // --- Supabase ---
+  // --- Servidor ---
   const stockActual = new Map(
     (await productosDb.listarProductos()).map((p) => [p.id, p.inventario.find((i) => i.local_id === local_id)?.stock_actual ?? 0])
   );
@@ -2007,7 +2007,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
 // ----------------------------------------------------------------------------
 // Empleados por local y un pago por empleado y quincena: pago_base (= salario / 2) + bonos - deducciones.
 // La base de datos (RLS) es quien niega el acceso a encargado, vendedor y técnico; aquí además se corta en LocalStorage.
-// Requiere conexión cuando hay Supabase (no se encola sin conexión: son pagos reales).
+// Requiere conexión en modo servidor (no se encola sin conexión: son pagos reales).
 
 async function exigirAccesoNomina(): Promise<void> {
   const rol = (await obtenerSesionActual())?.rol;
@@ -2149,9 +2149,17 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
     // La captura va primero al almacenamiento privado; si luego falla el guardado del pago, se borra para no dejar huérfanos
     let rutaNueva: string | null = null;
     if (datos.comprobante) rutaNueva = await nominaDb.subirComprobante(empleado.local_id, empleado.id, periodo.inicio, datos.comprobante);
-    campos.comprobante_path = rutaNueva ?? (datos.quitarComprobante ? null : (existente?.comprobante_path ?? null));
     try {
-      const guardada = existente ? await nominaDb.actualizarNomina(existente.id, campos) : (await nominaDb.insertarNominas([campos]))[0];
+      const guardada = await nominaDb.guardarPagoQuincenal({
+        empleadoId: empleado.id,
+        periodo,
+        bonos,
+        deducciones,
+        notas: campos.notas ?? null,
+        comprobantePath: rutaNueva,
+        quitarComprobante: !!datos.quitarComprobante,
+        pagar: datos.pagar,
+      });
       // Se reemplazó o quitó la captura anterior: se limpia (best-effort)
       if (existente?.comprobante_path && existente.comprobante_path !== guardada.comprobante_path) {
         nominaDb.eliminarComprobante(existente.comprobante_path).catch(() => {});
@@ -2193,7 +2201,7 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
   return nueva;
 }
 
-/** Enlace para ver la captura de un pago: temporal si está en Supabase (bucket privado); en LocalStorage, un enlace local. */
+/** Enlace para ver la captura de un pago: temporal si está en el servidor (archivo privado); en LocalStorage, un enlace local. */
 export async function urlComprobanteNomina(ruta: string): Promise<string> {
   await exigirAccesoNomina();
   if (ruta.startsWith('data:')) {
@@ -2228,10 +2236,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
     };
   });
 
-  if (modoServidor) {
-    await nominaDb.insertarNominas(filas);
-    return filas.length;
-  }
+  if (modoServidor) return nominaDb.generarPagosPendientes(periodo);
 
   const db = leerDB();
   const nominas = db.nominas ?? (db.nominas = []);
@@ -2435,6 +2440,7 @@ async function accesoCuadre(localId?: string): Promise<SesionUsuario> {
 /** Lo que el sistema esperaba cobrar ese día en ese local, por tipo de cobro (ventas y devoluciones del día, netas de vuelto). */
 export async function calcularEsperadoCuadre(localId: string, fecha: string): Promise<EsperadoCuadre[]> {
   await accesoCuadre(localId);
+  if (modoServidor) return cuadresDb.calcularEsperado(localId, fecha);
   const { desde, hasta } = rangoDelDia(fecha);
   const [ventas, devoluciones] = await Promise.all([
     listarVentas({ desde, hasta, localId, limite: 5000 }),
@@ -2535,13 +2541,7 @@ export async function guardarCuadre(datos: DatosGuardarCuadre): Promise<CuadreCa
       else lista.push(guardado);
       guardarDBEstricto(db);
     } else {
-      guardado = await cuadresDb.guardarCuadre(
-        datos.localId,
-        datos.fecha,
-        existente,
-        { esperado, contado, fotos, notas, estado, cerrado_por: datos.cerrar ? sesion.nombre : null },
-        sesion.nombre
-      );
+      guardado = await cuadresDb.guardarCuadre(datos.localId, datos.fecha, { contado, fotos, notas, cerrar: datos.cerrar });
     }
     if (modoServidor) cuadresDb.borrarFotos(datos.fotosQuitadas).catch(() => {}); // limpieza best-effort
     return guardado;
@@ -2565,10 +2565,10 @@ export async function reabrirCuadre(localId: string, fecha: string): Promise<Cua
     guardarDB(db);
     return c;
   }
-  return cuadresDb.reabrirCuadre(existente.id);
+  return cuadresDb.reabrirCuadre(localId, fecha);
 }
 
-/** Dirección para mostrar una foto del cuadre (enlace firmado de 1 hora en Supabase; en LocalStorage la propia imagen). */
+/** Dirección para mostrar una foto del cuadre (ruta de la API con sesión; en LocalStorage la propia imagen). */
 export async function urlFotoCuadre(ruta: string): Promise<string> {
   if (!modoServidor) return ruta;
   return cuadresDb.urlFirmada(ruta);

@@ -1,33 +1,11 @@
-import { supabase } from '../supabase';
+import { api } from '../api';
 import type { Devolucion, NuevaDevolucion } from '../../types/database.types';
 
-const normalizar = (d: Devolucion): Devolucion => ({
-  ...d,
-  total_devuelto: Number(d.total_devuelto),
-  total_nuevo: Number(d.total_nuevo),
-  diferencia: Number(d.diferencia),
-  tasa_cambio: d.tasa_cambio == null ? null : Number(d.tasa_cambio),
-});
-
-/** El administrador que registra (registrado_por) lo asigna la base de datos. */
+/** Quién la registra (registrado_por) lo pone el servidor con la sesión. */
 export async function insertarDevolucion(devolucion: NuevaDevolucion): Promise<Devolucion> {
-  const { data, error } = await supabase
-    .from('devoluciones')
-    .insert(devolucion)
-    .select()
-    .single()
-    .overrideTypes<Devolucion, { merge: false }>();
-
-  if (error) throw error;
-  return normalizar(data as Devolucion);
+  return api.post<Devolucion>('/api/devoluciones', devolucion);
 }
 
 export async function listarDevoluciones(opciones: { limite: number; ventaId?: string; localId?: string | null }): Promise<Devolucion[]> {
-  let consulta = supabase.from('devoluciones').select('*').order('fecha', { ascending: false }).limit(opciones.limite);
-  if (opciones.ventaId) consulta = consulta.eq('venta_id', opciones.ventaId);
-  if (opciones.localId) consulta = consulta.eq('local_id', opciones.localId);
-
-  const { data, error } = await consulta.overrideTypes<Devolucion[], { merge: false }>();
-  if (error) throw error;
-  return (data ?? []).map(normalizar);
+  return api.get<Devolucion[]>('/api/devoluciones', { limite: opciones.limite, ventaId: opciones.ventaId, localId: opciones.localId });
 }

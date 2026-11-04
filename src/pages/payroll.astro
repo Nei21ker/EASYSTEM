@@ -371,12 +371,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     el.classList.remove('hidden');
   }
   function mensajeDeError(err: unknown, porDefecto: string): string {
-    const m = err instanceof Error ? err.message : porDefecto;
-    // Las tablas de nómina vienen de las migraciones 0026 y 0027; los trabajadores independientes, de la 0032
-    if (/guardar_pago_independiente|catalogo_reventa|nomina_reventas|tipo.*does not exist|column .*tipo/i.test(m)) {
-      return 'Los trabajadores independientes aún no están disponibles en la base de datos: aplica la migración 0032 en Supabase.';
-    }
-    return /does not exist|schema cache|relation/i.test(m) ? 'La nómina aún no está disponible en la base de datos: aplica las migraciones 0026 y 0027 en Supabase.' : m;
+    return err instanceof Error ? err.message : porDefecto;
   }
 
   // ---------------------------------------------------------------------------------------------

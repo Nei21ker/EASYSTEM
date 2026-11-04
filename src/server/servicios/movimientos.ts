@@ -258,8 +258,8 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
 }
 
 // --- Lectura ----------------------------------------------------------------------------------------------------------
-export async function listarMovimientos(env: Entorno, sesion: Sesion, limite = 100): Promise<MovimientoConProducto[]> {
-  const alcance = await alcanceDe(env, sesion);
+export async function listarMovimientos(env: Entorno, sesion: Sesion, limite = 100, localId?: string): Promise<MovimientoConProducto[]> {
+  const alcance = await alcanceDe(env, sesion, localId);
   const { sql, valores } = condicionAlcance(alcance, 'm.local_id');
   const filas = await env.DB
     .prepare(

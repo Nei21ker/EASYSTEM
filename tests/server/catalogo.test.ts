@@ -5,7 +5,7 @@ import { ErrorApi } from '../../src/server/errores';
 import {
   actualizarProducto, asegurarEnLocal, crearModelo, crearProducto, crearProductosLote, eliminarModelo, eliminarProducto,
   establecerCompatibilidades, fijarMinimosLote, listarLocalesVisibles, listarModelos, listarProductos, listarStockBajo,
-  obtenerProductoPorCodigo, reemplazarCompatibilidadesLote,
+  obtenerProductoPorCodigo, obtenerProductoPorId, reemplazarCompatibilidadesLote,
 } from '../../src/server/servicios/catalogo';
 import { obtenerUltimaTasa, registrarTasa } from '../../src/server/servicios/tasas';
 
@@ -133,6 +133,14 @@ describe('listarProductos', () => {
     const p = await crearProducto(env, a, forro);
     expect((await obtenerProductoPorCodigo(env, await sesionDe(vendedor), forro.codigo_barras))?.id).toBe(p.id);
     expect(await obtenerProductoPorCodigo(env, a, '0000000000000')).toBeNull();
+  });
+
+  it('obtenerProductoPorId devuelve el producto con su inventario, null si no existe y 403 al contador', async () => {
+    const a = await sesionDe(admin);
+    const p = await crearProducto(env, a, forro);
+    expect(await obtenerProductoPorId(env, await sesionDe(vendedor), p.id)).toMatchObject({ id: p.id, nombre: forro.nombre, inventario: [], modelos_compatibles: [] });
+    expect(await obtenerProductoPorId(env, a, 'no-existe')).toBeNull();
+    await rechazo(obtenerProductoPorId(env, await sesionDe(contador), p.id), 403);
   });
 });
 

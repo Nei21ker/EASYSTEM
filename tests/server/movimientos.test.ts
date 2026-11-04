@@ -291,6 +291,14 @@ describe('lectura: movimientos y unidades', () => {
     await rechazo(listarMovimientos(env, sC, 10), 403);
   });
 
+  it('listarMovimientos con localId trae solo ese local y rechaza uno al que no se accede', async () => {
+    await entrada(P, accesorios, 1);
+    await entrada(Q, vidrios, 1);
+    expect((await listarMovimientos(env, sA, 100, vidrios)).map((m) => m.producto_id)).toEqual([Q]);
+    expect((await listarMovimientos(env, sG, 100, accesorios)).map((m) => m.producto_id)).toEqual([P]);
+    await rechazo(listarMovimientos(env, sV, 100, vidrios), 403);
+  });
+
   it('listarUnidades filtra por producto, estado, etiqueta y códigos, dentro del alcance', async () => {
     const a = await entrada(P, accesorios, 3);
     await entrada(P, vidrios, 2);

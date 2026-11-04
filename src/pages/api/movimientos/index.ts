@@ -6,7 +6,7 @@ export const prerender = false;
 
 /** Movimientos recientes (más nuevos primero) de los locales a los que el usuario accede. */
 export const GET = conSesion(({ env, sesion, request }) =>
-  listarMovimientos(env, sesion, Number(new URL(request.url).searchParams.get('limite') ?? 100))
+  listarMovimientos(env, sesion, Number(new URL(request.url).searchParams.get('limite') ?? 100), new URL(request.url).searchParams.get('localId') ?? undefined)
 );
 
 /** Registra UN movimiento; devuelve el movimiento y todos los códigos de unidad que movió. */

@@ -1,192 +1,110 @@
-import { supabase } from '../supabase';
+import { api } from '../api';
 import type { InventarioLocal, Producto, ProductoConRelaciones, ProductoStockBajo } from '../../types/database.types';
 
-/** Producto del catálogo con su stock en cada local que lo maneja (RLS: un empleado solo recibe su local). */
+/** Producto del catálogo con su stock en cada local que lo maneja (el servidor entrega solo los locales del usuario). */
 export type ProductoConInventario = ProductoConRelaciones & { inventario: InventarioLocal[] };
 
-const PRODUCTO_CON_RELACIONES_SELECT = `
-  *,
-  modelos_compatibles:compatibilidades(modelo:modelos_telefono(*)),
-  inventario:inventario_local(local_id, producto_id, stock_actual, stock_minimo)
-`;
+type DatosProducto = Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>;
 
-/** Aplana la respuesta anidada de Supabase (compatibilidades -> modelo) a un arreglo simple */
-function normalizarProducto(row: any): ProductoConInventario {
-  return {
-    ...row,
-    modelos_compatibles: (row.modelos_compatibles ?? []).map((c: any) => c.modelo).filter(Boolean),
-    inventario: row.inventario ?? [],
-  };
-}
+// Topes del servidor por petición
+const PRODUCTOS_POR_LOTE = 100;
+const INVENTARIO_POR_LOTE = 200;
+const PARES_COMPATIBILIDAD_POR_LOTE = 500;
 
 export async function listarProductos(): Promise<ProductoConInventario[]> {
-  const { data, error } = await supabase
-    .from('productos')
-    .select(PRODUCTO_CON_RELACIONES_SELECT)
-    .order('nombre', { ascending: true })
-    .overrideTypes<any[], { merge: false }>();
-
-  if (error) throw error;
-  return (data ?? []).map(normalizarProducto);
+  return api.get<ProductoConInventario[]>('/api/productos');
 }
 
 export async function obtenerProducto(id: string): Promise<ProductoConInventario | null> {
-  const { data, error } = await supabase
-    .from('productos')
-    .select(PRODUCTO_CON_RELACIONES_SELECT)
-    .eq('id', id)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? normalizarProducto(data) : null;
+  return (await api.get<{ producto: ProductoConInventario | null }>(`/api/productos/${encodeURIComponent(id)}`)).producto;
 }
 
 export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Promise<ProductoConInventario | null> {
-  const { data, error } = await supabase
-    .from('productos')
-    .select(PRODUCTO_CON_RELACIONES_SELECT)
-    .eq('codigo_barras', codigoBarras)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? normalizarProducto(data) : null;
+  return (await api.get<{ producto: ProductoConInventario | null }>(`/api/productos/por-codigo/${encodeURIComponent(codigoBarras)}`)).producto;
 }
 
 export async function listarProductosStockBajo(localId?: string | null): Promise<ProductoStockBajo[]> {
-  let consulta = supabase.from('vw_productos_stock_bajo').select('*');
-  if (localId) consulta = consulta.eq('local_id', localId);
-  const { data, error } = await consulta.overrideTypes<ProductoStockBajo[], { merge: false }>();
-
-  if (error) throw error;
-  return data ?? [];
+  return api.get<ProductoStockBajo[]>('/api/productos/stock-bajo', { localId });
 }
 
-export async function crearProducto(
-  producto: Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>
-): Promise<Producto> {
-  const { data, error } = await supabase
-    .from('productos')
-    .insert(producto)
-    .select()
-    .single()
-    .overrideTypes<Producto, { merge: false }>();
-  if (error) throw error;
-  return data as Producto;
+export async function crearProducto(producto: DatosProducto): Promise<Producto> {
+  return api.post<Producto>('/api/productos', producto);
 }
 
 export async function actualizarProducto(id: string, cambios: Partial<Producto>): Promise<Producto> {
-  const { data, error } = await supabase
-    .from('productos')
-    .update(cambios)
-    .eq('id', id)
-    .select()
-    .single()
-    .overrideTypes<Producto, { merge: false }>();
-  if (error) throw error;
-  return data as Producto;
+  return api.patch<Producto>(`/api/productos/${encodeURIComponent(id)}`, cambios);
 }
 
 export async function eliminarProducto(id: string) {
-  const { error } = await supabase.from('productos').delete().eq('id', id);
-  if (error) throw error;
+  await api.delete(`/api/productos/${encodeURIComponent(id)}`);
 }
 
-const BUCKET_IMAGENES = 'productos';
-
-/** Sube la foto a Supabase Storage (bucket público "productos") y devuelve su URL pública. */
+/** Sube la foto (R2) y devuelve su URL; el servidor la sirve sin sesión para poder mostrarla en cualquier pantalla. */
 export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
-  // Nombre único por subida: así la URL cambia y no queda la foto vieja en caché.
-  const ruta = `${productoId}/${Date.now()}.jpg`;
-  const { error } = await supabase.storage.from(BUCKET_IMAGENES).upload(ruta, imagen, {
-    contentType: 'image/jpeg',
-    cacheControl: '31536000',
-  });
-  if (error) {
-    throw new Error(
-      /bucket not found/i.test(error.message)
-        ? 'Falta el almacenamiento de fotos en Supabase: aplica la migración 0009.'
-        : `No se pudo subir la foto: ${error.message}`
-    );
-  }
-  return supabase.storage.from(BUCKET_IMAGENES).getPublicUrl(ruta).data.publicUrl;
+  return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, 'image/jpeg');
 }
 
-/** Borra del Storage el archivo al que apunta una URL pública (si es de nuestro bucket). */
+/** Borra del almacenamiento el archivo al que apunta una URL (si es de nuestro almacenamiento; si no, no hace nada). */
 export async function eliminarImagenProducto(url: string | null | undefined): Promise<void> {
   if (!url) return;
-  const marca = `/${BUCKET_IMAGENES}/`;
-  const indice = url.indexOf(marca);
-  if (indice === -1) return;
-  const ruta = decodeURIComponent(url.slice(indice + marca.length).split('?')[0]);
-  await supabase.storage.from(BUCKET_IMAGENES).remove([ruta]);
+  await api.delete('/api/archivos/producto/foto', { url });
 }
 
-/** Inserta productos en lotes; devuelve id y código de cada uno (para enlazar compatibilidades y stock). */
-export async function crearProductosLote(
-  filas: (Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>)[]
-): Promise<{ id: string; codigo_barras: string }[]> {
+/** Crea productos en lotes de 100 (cada lote es atómico); devuelve id y código de cada uno para enlazar compatibilidades y stock. */
+export async function crearProductosLote(filas: DatosProducto[]): Promise<{ id: string; codigo_barras: string }[]> {
   const creados: { id: string; codigo_barras: string }[] = [];
-  for (let i = 0; i < filas.length; i += 200) {
-    const { data, error } = await supabase
-      .from('productos')
-      .insert(filas.slice(i, i + 200))
-      .select('id, codigo_barras')
-      .overrideTypes<{ id: string; codigo_barras: string }[], { merge: false }>();
-    if (error) throw error;
-    creados.push(...(data ?? []));
+  for (let i = 0; i < filas.length; i += PRODUCTOS_POR_LOTE) {
+    creados.push(...(await api.post<{ id: string; codigo_barras: string }[]>('/api/productos/lote', { filas: filas.slice(i, i + PRODUCTOS_POR_LOTE) })));
   }
   return creados;
 }
 
-/** Reemplaza las compatibilidades de varios productos: borra las actuales y inserta las nuevas en lote. */
+/** Reemplaza las compatibilidades de varios productos: cada tanda de 100 productos borra las actuales e inserta las nuevas. */
 export async function reemplazarCompatibilidadesLote(pares: { producto_id: string; modelo_id: string }[], productoIds: string[]) {
-  for (let i = 0; i < productoIds.length; i += 100) {
-    const { error } = await supabase.from('compatibilidades').delete().in('producto_id', productoIds.slice(i, i + 100));
-    if (error) throw error;
-  }
-  for (let i = 0; i < pares.length; i += 500) {
-    const { error } = await supabase.from('compatibilidades').insert(pares.slice(i, i + 500));
-    if (error) throw error;
+  const porProducto = new Map<string, { producto_id: string; modelo_id: string }[]>();
+  for (const par of pares) porProducto.set(par.producto_id, [...(porProducto.get(par.producto_id) ?? []), par]);
+
+  // Los productos van de 100 en 100; si los pares de una tanda pasan de 500 se parten en peticiones sucesivas (la primera
+  // borra las compatibilidades actuales de la tanda y las siguientes solo agregan)
+  for (let i = 0; i < productoIds.length; i += PRODUCTOS_POR_LOTE) {
+    const ids = productoIds.slice(i, i + PRODUCTOS_POR_LOTE);
+    const paresTanda = ids.flatMap((id) => porProducto.get(id) ?? []);
+    let primera = true;
+    for (let j = 0; j < Math.max(paresTanda.length, 1); j += PARES_COMPATIBILIDAD_POR_LOTE) {
+      await api.post('/api/productos/compatibilidades-lote', {
+        pares: paresTanda.slice(j, j + PARES_COMPATIBILIDAD_POR_LOTE),
+        productoIds: primera ? ids : [],
+      });
+      primera = false;
+    }
   }
 }
 
 export async function establecerCompatibilidades(productoId: string, modeloIds: string[]) {
-  await supabase.from('compatibilidades').delete().eq('producto_id', productoId);
-  if (modeloIds.length === 0) return;
-
-  const filas = modeloIds.map((modelo_id) => ({ producto_id: productoId, modelo_id }));
-  const { error } = await supabase.from('compatibilidades').insert(filas);
-  if (error) throw error;
+  await api.put(`/api/productos/${encodeURIComponent(productoId)}/compatibilidades`, { modeloIds });
 }
 
 /**
  * Da de alta productos en el inventario de un local (fila con stock 0 y sin mínimo) para que el local
- * los maneje aunque todavía no tengan existencias. Los que ya estaban no se tocan. Solo administrador (RLS).
+ * los maneje aunque todavía no tengan existencias. Los que ya estaban no se tocan.
  */
 export async function asegurarEnLocal(localId: string, productoIds: string[]): Promise<void> {
-  for (let i = 0; i < productoIds.length; i += 500) {
-    const filas = productoIds.slice(i, i + 500).map((producto_id) => ({ local_id: localId, producto_id, stock_minimo: 0 }));
-    const { error } = await supabase.from('inventario_local').upsert(filas, { onConflict: 'local_id,producto_id', ignoreDuplicates: true });
-    if (error) throw error;
+  for (let i = 0; i < productoIds.length; i += INVENTARIO_POR_LOTE) {
+    await api.post(`/api/locales/${encodeURIComponent(localId)}/inventario/alta`, { productoIds: productoIds.slice(i, i + INVENTARIO_POR_LOTE) });
   }
 }
 
 /**
  * Fija el stock mínimo de varios productos en un local. Si el local aún no manejaba el producto, queda dado
- * de alta con stock 0; si ya lo manejaba, solo cambia el mínimo (el stock no se toca). Solo administrador (RLS).
+ * de alta con stock 0; si ya lo manejaba, solo cambia el mínimo (el stock no se toca).
  */
 export async function fijarMinimosLote(localId: string, filas: { producto_id: string; stock_minimo: number }[]): Promise<void> {
-  for (let i = 0; i < filas.length; i += 500) {
-    const lote = filas.slice(i, i + 500).map((f) => ({ local_id: localId, producto_id: f.producto_id, stock_minimo: f.stock_minimo }));
-    const { error } = await supabase.from('inventario_local').upsert(lote, { onConflict: 'local_id,producto_id' });
-    if (error) throw error;
+  for (let i = 0; i < filas.length; i += INVENTARIO_POR_LOTE) {
+    await api.post(`/api/locales/${encodeURIComponent(localId)}/inventario/minimos`, { filas: filas.slice(i, i + INVENTARIO_POR_LOTE) });
   }
 }
 
 /** Cambia el stock mínimo de un producto en un local (stock_minimo = 0 → sin control de reabastecimiento). */
 export async function actualizarStockMinimo(localId: string, productoId: string, stockMinimo: number): Promise<void> {
-  const { error } = await supabase
-    .from('inventario_local')
-    .upsert({ local_id: localId, producto_id: productoId, stock_minimo: stockMinimo }, { onConflict: 'local_id,producto_id' });
-  if (error) throw error;
+  await fijarMinimosLote(localId, [{ producto_id: productoId, stock_minimo: stockMinimo }]);
 }

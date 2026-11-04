@@ -1,14 +1,7 @@
-import { supabase } from '../supabase';
+import { api } from '../api';
 import type { Local } from '../../types/database.types';
 
-/** Locales que el usuario puede ver (RLS: el administrador todos; el resto solo el suyo). */
+/** Locales que el usuario puede ver (administrador, gerente y contador todos; el resto, el suyo). */
 export async function listarLocales(): Promise<Local[]> {
-  const { data, error } = await supabase
-    .from('locales')
-    .select('*')
-    .order('created_at', { ascending: true })
-    .overrideTypes<Local[], { merge: false }>();
-
-  if (error) throw error;
-  return data ?? [];
+  return api.get<Local[]>('/api/locales');
 }

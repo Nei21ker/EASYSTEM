@@ -51,6 +51,12 @@ export async function obtenerPorCodigo(env: Entorno, alcance: Alcance, codigo: s
   return (await ensamblar(env, [producto], alcance))[0];
 }
 
+export async function obtenerPorId(env: Entorno, alcance: Alcance, id: string): Promise<ProductoConInventario | null> {
+  const producto = await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>();
+  if (!producto) return null;
+  return (await ensamblar(env, [producto], alcance))[0];
+}
+
 /** Productos con mínimo definido (> 0) cuyo stock llegó o bajó del mínimo, uno por local dentro del alcance. */
 export async function listarStockBajo(env: Entorno, alcance: Alcance): Promise<ProductoStockBajo[]> {
   const { sql, valores } = condicionAlcance(alcance, 'i.local_id');

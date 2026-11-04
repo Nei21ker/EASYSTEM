@@ -1,37 +1,17 @@
-import { supabase } from '../supabase';
+import { api } from '../api';
 import type { NuevaVenta, Venta } from '../../types/database.types';
 
-/**
- * Guarda el registro de una venta. El folio lo asigna la base de datos y el
- * vendedor (vendedor_id) también: la política RLS exige que sea quien inserta.
- */
+/** Guarda el registro de una venta. El folio y el vendedor los pone el servidor (el vendedor sale de la sesión). */
 export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
-  const { data, error } = await supabase
-    .from('ventas')
-    .insert(venta)
-    .select()
-    .single()
-    .overrideTypes<Venta, { merge: false }>();
-
-  if (error) throw error;
-  return data as Venta;
+  return api.post<Venta>('/api/ventas', venta);
 }
 
-/** Ventas recientes (más nuevas primero), opcionalmente dentro de un rango de fechas. */
+/** Ventas recientes (más nuevas primero), opcionalmente dentro de un rango de fechas. El vendedor solo recibe las suyas. */
 export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite: number; localId?: string | null }): Promise<Venta[]> {
-  let consulta = supabase.from('ventas').select('*').order('fecha', { ascending: false }).limit(opciones.limite);
-  if (opciones.localId) consulta = consulta.eq('local_id', opciones.localId);
-  if (opciones.desde) consulta = consulta.gte('fecha', opciones.desde.toISOString());
-  if (opciones.hasta) consulta = consulta.lte('fecha', opciones.hasta.toISOString());
-
-  const { data, error } = await consulta.overrideTypes<Venta[], { merge: false }>();
-  if (error) throw error;
-
-  // numeric puede llegar como texto según la configuración de PostgREST: se normaliza
-  return (data ?? []).map((v) => ({
-    ...v,
-    total: Number(v.total),
-    tasa_cambio: v.tasa_cambio == null ? null : Number(v.tasa_cambio),
-    total_bs: v.total_bs == null ? null : Number(v.total_bs),
-  }));
+  return api.get<Venta[]>('/api/ventas', {
+    desde: opciones.desde?.toISOString(),
+    hasta: opciones.hasta?.toISOString(),
+    limite: opciones.limite,
+    localId: opciones.localId,
+  });
 }

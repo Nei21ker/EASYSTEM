@@ -9,7 +9,7 @@ import { alcanceDe, esAdministrador, esGerencia, esGlobal, localAccesible, type 
 import { avisarCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
-import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, type ProductoConInventario } from '../repos/productos';
+import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
@@ -62,6 +62,10 @@ export async function listarProductos(env: Entorno, sesion: Sesion): Promise<Pro
 
 export async function obtenerProductoPorCodigo(env: Entorno, sesion: Sesion, codigo: string): Promise<ProductoConInventario | null> {
   return obtenerPorCodigo(env, await alcanceDe(env, sesion), codigo);
+}
+
+export async function obtenerProductoPorId(env: Entorno, sesion: Sesion, id: string): Promise<ProductoConInventario | null> {
+  return obtenerPorId(env, await alcanceDe(env, sesion), id);
 }
 
 export async function listarStockBajo(env: Entorno, sesion: Sesion, localId?: string): Promise<ProductoStockBajo[]> {
