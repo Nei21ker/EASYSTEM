@@ -33,7 +33,7 @@ function esActivo(href: string) {
       <a
         href={enlace.href}
         data-roles={enlace.roles.join(',')}
-        data-solo-tipo={enlace.soloTipoLocal ?? ''}
+        data-href={enlace.href}
         class:list={[
           'nav-enlace group hidden items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
           esActivo(enlace.href)
@@ -73,6 +73,7 @@ function esActivo(href: string) {
   import { cerrarSesion, esSinLocal, ETIQUETAS_ROL } from '../../lib/auth';
   import { obtenerContextoLocal } from '../../lib/inventoryService';
   import { ALCANCE_TODOS } from '../../lib/constantes-locales';
+  import { enlaceVisible, enlacesNav } from '../../lib/navLinks';
 
   const backdrop = document.getElementById('nav-backdrop') as HTMLDivElement;
   const sidebar = document.getElementById('nav-sidebar') as HTMLDivElement;
@@ -108,11 +109,9 @@ function esActivo(href: string) {
     const { sesion, local, alcance } = contexto;
 
     for (const enlace of document.querySelectorAll<HTMLAnchorElement>('.nav-enlace')) {
-      const roles = (enlace.dataset.roles ?? '').split(',');
-      if (!roles.includes(sesion.rol)) continue;
-      // Enlaces propios de un tipo de local (p. ej. Servicio técnico): solo en ese local, o en la vista "Todos" del administrador
-      const soloTipo = enlace.dataset.soloTipo;
-      if (soloTipo && alcance !== ALCANCE_TODOS && local?.tipo !== soloTipo) continue;
+      // Rol, enlaces propios de un tipo de local (Servicio técnico) y los ocultos en cierto local (Modelos en Controles)
+      const definicion = enlacesNav.find((e) => e.href === enlace.dataset.href);
+      if (!definicion || !enlaceVisible(definicion, sesion.rol, local?.tipo ?? null, alcance === ALCANCE_TODOS)) continue;
       enlace.classList.remove('hidden');
       enlace.classList.add('flex');
     }

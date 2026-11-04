@@ -9,6 +9,8 @@ export interface EnlaceNav {
   roles: Rol[];
   /** Si se define, el enlace solo se muestra cuando el local activo es de ese tipo (el administrador, que ve "Todos", también lo ve). */
   soloTipoLocal?: TipoLocal;
+  /** Si se define, estos roles NO ven el enlace cuando su local es de ese tipo (administrador y gerente no están afectados salvo que se los nombre). */
+  ocultoEnLocal?: { tipo: TipoLocal; roles: Rol[] };
 }
 
 const TODOS: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
@@ -50,6 +52,8 @@ export const enlacesNav: EnlaceNav[] = [
     etiqueta: 'Modelos de teléfono',
     icono: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM12 18h.01',
     roles: TODOS,
+    // El Local de controles no trabaja con forros/vidrios por modelo: su encargado y vendedores no lo necesitan
+    ocultoEnLocal: { tipo: 'controles', roles: ['encargado', 'vendedor'] },
   },
   { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: SIN_VENDEDOR },
   {
@@ -84,3 +88,14 @@ export const enlacesNav: EnlaceNav[] = [
     roles: ['administrador'],
   },
 ];
+
+/**
+ * ¿Se muestra este enlace a este usuario? `tipoLocal` es el tipo del local activo (null si no hay) y `vistaTodos` es la vista
+ * "Todos los locales" del administrador. Es solo de interfaz: los datos siguen protegidos en el servidor.
+ */
+export function enlaceVisible(enlace: EnlaceNav, rol: Rol, tipoLocal: TipoLocal | null, vistaTodos: boolean): boolean {
+  if (!enlace.roles.includes(rol)) return false;
+  if (enlace.soloTipoLocal && !vistaTodos && tipoLocal !== enlace.soloTipoLocal) return false;
+  if (enlace.ocultoEnLocal && !vistaTodos && tipoLocal === enlace.ocultoEnLocal.tipo && enlace.ocultoEnLocal.roles.includes(rol)) return false;
+  return true;
+}

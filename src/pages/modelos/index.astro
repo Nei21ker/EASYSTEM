@@ -39,6 +39,14 @@ import ProductosDelModelo from '../../components/modelos/ProductosDelModelo.astr
   import * as inventoryService from '../../lib/inventoryService';
   import type { ModeloTelefono } from '../../types/database.types';
   import { animarLista } from '../../utils/animaciones';
+  import { ALCANCE_TODOS } from '../../lib/constantes-locales';
+  import { enlaceVisible, enlacesNav } from '../../lib/navLinks';
+
+  // Esta página no es para el encargado ni el vendedor del Local de controles: si entran por la dirección, vuelven al inicio
+  void inventoryService.obtenerContextoLocal().then((contexto) => {
+    const enlace = enlacesNav.find((e) => e.href === '/modelos');
+    if (contexto && enlace && !enlaceVisible(enlace, contexto.sesion.rol, contexto.local?.tipo ?? null, contexto.alcance === ALCANCE_TODOS)) window.location.href = '/';
+  });
 
   const resumen = document.getElementById('md-resumen') as HTMLParagraphElement;
   const buscador = document.getElementById('md-buscador') as HTMLInputElement;
