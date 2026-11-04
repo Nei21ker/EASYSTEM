@@ -208,31 +208,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </div>
   </div>
 
-  <!-- Paso 1 al procesar: escanear el QR de CADA unidad que se vende (así queda registrado cuál exactamente). No es un <dialog> modal
-       a propósito: la cámara del escáner (z-50) debe verse por encima. -->
-  <div id="pos-escaneo" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="pos-escaneo-titulo">
-    <div class="flex max-h-[92vh] w-[min(34rem,100%)] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100">
-      <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 id="pos-escaneo-titulo" class="text-base font-semibold">Escanea lo que vas a vender</h2>
-        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Escanea el QR de la etiqueta de cada unidad: así queda registrado exactamente cuál se vendió.</p>
-      </div>
-      <div class="space-y-3 overflow-y-auto px-5 py-4">
-        <ul id="pos-escaneo-lista" class="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
-        <div class="relative">
-          <input id="pos-escaneo-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Escanea o escribe el código de la etiqueta..." aria-label="Código de la unidad" class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-12 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-          <button type="button" data-abrir-escaner aria-label="Escanear con la cámara" title="Escanear con la cámara" class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5"><path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="12" cy="12" r="3" stroke-linecap="round" /></svg>
-          </button>
-        </div>
-        <p id="pos-escaneo-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
-      </div>
-      <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:justify-end">
-        <button id="pos-escaneo-cancelar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
-        <button id="pos-escaneo-sinconexion" type="button" class="hidden rounded-lg border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-slate-800">Continuar sin escanear (sin conexión)</button>
-      </div>
-    </div>
-  </div>
-
   <!-- Confirmación antes de procesar la venta + datos del cliente y tipo de cobro -->
   <dialog
     id="pos-confirmar"
@@ -248,13 +223,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             </svg>
           </span>
           <div class="min-w-0">
-            <h2 id="pos-confirmar-titulo" class="text-base font-semibold">¿Procesar esta venta?</h2>
+            <h2 id="pos-confirmar-titulo" class="text-base font-semibold">Procesar venta</h2>
             <p id="pos-confirmar-resumen" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"></p>
           </div>
         </div>
+        <ol id="pos-pasos" class="flex gap-1.5" aria-label="Pasos de la venta"></ol>
 
         <div>
-          <ul id="pos-confirmar-lineas" class="max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+          <ul id="pos-confirmar-lineas" class="hidden max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
           <div class="mt-3 flex items-center justify-between text-base font-semibold">
             <span>Total a cobrar</span>
             <span id="pos-confirmar-total"></span>
@@ -262,7 +238,23 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <p id="pos-confirmar-total-bs" class="text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
         </div>
 
-        <fieldset class="space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <section data-paso="escaneo" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Escanea lo que vas a vender</p>
+            <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Escanea el QR de la etiqueta de cada unidad: así queda registrado exactamente cuál se vendió.</p>
+          </div>
+          <ul id="pos-escaneo-lista" class="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+          <div class="relative">
+            <input id="pos-escaneo-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Escanea o escribe el código de la etiqueta..." aria-label="Código de la unidad" class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-12 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <button type="button" data-abrir-escaner aria-label="Escanear con la cámara" title="Escanear con la cámara" class="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5"><path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" /><circle cx="12" cy="12" r="3" stroke-linecap="round" /></svg>
+            </button>
+          </div>
+          <p id="pos-escaneo-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+          <button id="pos-escaneo-sinconexion" type="button" class="hidden w-full rounded-lg border border-amber-300 px-4 py-2.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-slate-800">Continuar sin escanear (sin conexión)</button>
+        </section>
+
+        <fieldset data-paso="cliente" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
           <legend class="sr-only">Datos del cliente</legend>
           <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Datos del cliente</p>
 
@@ -296,10 +288,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </fieldset>
 
         <!-- Formas de pago y vuelto (utils/formularioPagos.ts) -->
-        <div id="pos-formulario-pagos"></div>
+        <div data-paso="pago" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
+          <div id="pos-formulario-pagos"></div>
+        </div>
 
         <p id="pos-confirmar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
-        <p class="text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
+        <p id="pos-confirmar-nota" class="hidden text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
       </div>
 
       <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
@@ -768,14 +762,15 @@ import { alCambiarDatos } from '../lib/realtime';
     formPagos.reiniciar();
   }
 
-  /** Devuelve los datos del cliente y los pagos ya validados, o muestra el primer error y devuelve null. */
-  function leerDatosCliente(): { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null } | null {
-    const fallar = (mensaje: string, el: HTMLElement | null | undefined) => {
-      errorConfirmar.textContent = mensaje;
-      errorConfirmar.classList.remove('hidden');
-      el?.focus();
-      return null;
-    };
+  const fallar = (mensaje: string, el: HTMLElement | null | undefined) => {
+    errorConfirmar.textContent = mensaje;
+    errorConfirmar.classList.remove('hidden');
+    el?.focus();
+    return null;
+  };
+
+  /** Los datos del cliente ya validados, o muestra el primer error y devuelve null. */
+  function validarCliente(): ClienteVenta | null {
     const cedula = campoCedula.value.replace(/\D/g, '');
     const nombre = campoNombre.value.trim().replace(/\s+/g, ' ');
     const apellido = campoApellido.value.trim().replace(/\s+/g, ' ');
@@ -790,15 +785,22 @@ import { alCambiarDatos } from '../lib/realtime';
       return fallar('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', campoTelefono);
     }
 
+    errorConfirmar.classList.add('hidden');
+    return { cedula: `${campoNac.value}-${cedula}`, nombre: `${nombre} ${apellido}`, apellido, telefono };
+  }
+
+  /** Devuelve los datos del cliente y los pagos ya validados, o muestra el primer error y devuelve null. */
+  function leerDatosCliente(): { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null } | null {
+    const cliente = validarCliente();
+    if (!cliente) {
+      irAlPaso('cliente'); // el error estaba en los datos del cliente: se vuelve a ese paso
+      validarCliente();
+      return null;
+    }
     const lectura = formPagos.leer();
     if (!lectura.ok) return fallar(lectura.mensaje, lectura.foco);
-
     errorConfirmar.classList.add('hidden');
-    return {
-      cliente: { cedula: `${campoNac.value}-${cedula}`, nombre: `${nombre} ${apellido}`, apellido, telefono },
-      pagos: lectura.pagos,
-      vuelto: lectura.vuelto,
-    };
+    return { cliente, pagos: lectura.pagos, vuelto: lectura.vuelto };
   }
 
   /** Paso previo: muestra el resumen y pide los datos del cliente; la venta solo se registra al confirmar. */
@@ -825,9 +827,12 @@ import { alCambiarDatos } from '../lib/realtime';
       .join('');
 
     errorConfirmar.classList.add('hidden');
+    // Pasos: si falta escanear alguna unidad, primero eso; después los datos del cliente y, al final, el cobro
+    pasos = pendientesDeEscanear().length > 0 ? ['escaneo', 'cliente', 'pago'] : ['cliente', 'pago'];
+    pasoActual = 0;
+    pintarPasos();
     dialogoConfirmar.showModal();
-    // Foco en la cédula: la pistola lectora no cobra nada (Enter con datos incompletos solo muestra un aviso).
-    campoCedula.focus();
+    enfocarPaso();
   }
 
   function pedirConfirmacionActualiza() {
@@ -836,7 +841,10 @@ import { alCambiarDatos } from '../lib/realtime';
     formPagos.refrescar();
   }
 
-  document.getElementById('pos-confirmar-no')!.addEventListener('click', () => dialogoConfirmar.close());
+  document.getElementById('pos-confirmar-no')!.addEventListener('click', () => {
+    if (pasoActual > 0) retroceder();
+    else dialogoConfirmar.close();
+  });
   // Clic en el fondo oscuro = cancelar (los datos escritos se conservan si se reabre)
   dialogoConfirmar.addEventListener('click', (e) => {
     if (e.target === dialogoConfirmar) dialogoConfirmar.close();
@@ -849,6 +857,15 @@ import { alCambiarDatos } from '../lib/realtime';
   campoNac.addEventListener('change', programarBusquedaCliente);
   formConfirmar.addEventListener('submit', (e) => {
     e.preventDefault();
+    const paso = pasos[pasoActual];
+    if (paso === 'escaneo') {
+      if (pendientesDeEscanear().length === 0) avanzar();
+      return;
+    }
+    if (paso === 'cliente') {
+      if (validarCliente()) avanzar();
+      return;
+    }
     const datos = leerDatosCliente();
     if (!datos) return;
     dialogoConfirmar.close();
@@ -1215,13 +1232,19 @@ import { alCambiarDatos } from '../lib/realtime';
     if (codigo && selProducto && agregarUnidad(selProducto, codigo)) pintarSelectorUnidades();
   });
 
-  // --- Paso 1 al procesar la venta: escanear el QR de cada unidad -----------------------------------------------------------
-  const panelEscaneo = document.getElementById('pos-escaneo') as HTMLDivElement;
+  // --- Pasos de "Procesar venta": 1) escanear el QR de cada unidad, 2) datos del cliente, 3) cobro ---------------------------
+  type Paso = 'escaneo' | 'cliente' | 'pago';
+  const TITULO_PASO: Record<Paso, string> = { escaneo: 'Escanea lo que vas a vender', cliente: 'Datos del cliente', pago: 'Cobro' };
+  let pasos: Paso[] = ['cliente', 'pago'];
+  let pasoActual = 0;
+
   const listaEscaneo = document.getElementById('pos-escaneo-lista') as HTMLUListElement;
   const campoEscaneo = document.getElementById('pos-escaneo-codigo') as HTMLInputElement;
   const errorEscaneo = document.getElementById('pos-escaneo-error') as HTMLParagraphElement;
   const botonSinConexion = document.getElementById('pos-escaneo-sinconexion') as HTMLButtonElement;
-  const escaneoAbierto = () => !panelEscaneo.classList.contains('hidden');
+  const botonSiguiente = document.getElementById('pos-confirmar-si') as HTMLButtonElement;
+  const botonAtras = document.getElementById('pos-confirmar-no') as HTMLButtonElement;
+  const escaneoAbierto = () => dialogoConfirmar.open && pasos[pasoActual] === 'escaneo';
 
   /** Líneas del carrito con unidades todavía sin escanear. */
   const pendientesDeEscanear = () => carrito.filter((l) => l.unidades.length < l.cantidad);
@@ -1232,11 +1255,59 @@ import { alCambiarDatos } from '../lib/realtime';
         const hecho = l.unidades.length >= l.cantidad;
         const chips = l.unidades.map((c) => `<span class="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">${escaparHtml(c)}</span>`).join(' ');
         return `<li class="flex items-center justify-between gap-3 px-3 py-2">
-          <div class="min-w-0"><p class="truncate font-medium">${escaparHtml(l.producto.nombre)}</p><div class="mt-1 flex flex-wrap gap-1">${chips}</div></div>
+          <div class="min-w-0"><p class="font-medium">${escaparHtml(l.producto.nombre)}</p><div class="mt-1 flex flex-wrap gap-1">${chips}</div></div>
           <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${hecho ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'}">${hecho ? 'Listo' : `${l.unidades.length} de ${l.cantidad}`}</span>
         </li>`;
       })
       .join('');
+  }
+
+  /** Muestra solo la sección del paso actual y ajusta el encabezado, la barra de avance y los botones. */
+  function pintarPasos() {
+    const paso = pasos[pasoActual];
+    for (const seccion of dialogoConfirmar.querySelectorAll<HTMLElement>('[data-paso]')) seccion.classList.toggle('hidden', seccion.dataset.paso !== paso);
+    document.getElementById('pos-confirmar-resumen')!.textContent = `Paso ${pasoActual + 1} de ${pasos.length} · ${TITULO_PASO[paso]}`;
+    document.getElementById('pos-pasos')!.innerHTML = pasos
+      .map((_, i) => `<li class="h-1.5 flex-1 rounded-full ${i <= pasoActual ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'}"></li>`)
+      .join('');
+    // La lista de productos y el aviso de stock solo en el cobro; el total, siempre
+    document.getElementById('pos-confirmar-lineas')!.classList.toggle('hidden', paso !== 'pago');
+    document.getElementById('pos-confirmar-nota')!.classList.toggle('hidden', paso !== 'pago');
+    errorConfirmar.classList.add('hidden');
+    errorEscaneo.classList.add('hidden');
+    botonSinConexion.classList.toggle('hidden', !(paso === 'escaneo' && navigator.onLine === false));
+
+    const ultimo = pasoActual === pasos.length - 1;
+    botonAtras.textContent = pasoActual === 0 ? 'Cancelar' : 'Atrás';
+    botonSiguiente.textContent = ultimo ? 'Sí, procesar venta' : 'Siguiente';
+    botonSiguiente.disabled = paso === 'escaneo' && pendientesDeEscanear().length > 0;
+    if (paso === 'escaneo') pintarEscaneo();
+  }
+
+  function enfocarPaso() {
+    const paso = pasos[pasoActual];
+    // En el POS la pistola lectora escribe y manda Enter: el foco va siempre al campo del paso
+    (paso === 'escaneo' ? campoEscaneo : paso === 'cliente' ? campoCedula : null)?.focus();
+  }
+
+  function irAlPaso(paso: Paso) {
+    const i = pasos.indexOf(paso);
+    if (i < 0 || i === pasoActual) return;
+    pasoActual = i;
+    pintarPasos();
+    enfocarPaso();
+  }
+  function avanzar() {
+    if (pasoActual >= pasos.length - 1) return;
+    pasoActual += 1;
+    pintarPasos();
+    enfocarPaso();
+  }
+  function retroceder() {
+    if (pasoActual <= 0) return;
+    pasoActual -= 1;
+    pintarPasos();
+    enfocarPaso();
   }
 
   function errorDeEscaneo(mensaje: string, red = false) {
@@ -1245,35 +1316,18 @@ import { alCambiarDatos } from '../lib/realtime';
     botonSinConexion.classList.toggle('hidden', !red && navigator.onLine !== false);
   }
 
-  function cerrarEscaneo() {
-    panelEscaneo.classList.add('hidden');
-    panelEscaneo.classList.remove('flex');
-    errorEscaneo.classList.add('hidden');
-    campoEscaneo.value = '';
-    botonSinConexion.classList.add('hidden');
-  }
-
-  /** Procesar venta: primero se escanea cada unidad (si falta alguna); cuando está todo, se piden los datos del cliente y el cobro. */
+  /** Procesar venta: abre el diálogo en su primer paso (escanear lo pendiente, o directamente los datos del cliente). */
   function iniciarCobro() {
     if (carrito.length === 0 || dialogoConfirmar.open) return;
-    if (pendientesDeEscanear().length === 0) {
-      pedirConfirmacion();
-      return;
-    }
-    errorEscaneo.classList.add('hidden');
-    botonSinConexion.classList.toggle('hidden', navigator.onLine !== false);
-    pintarEscaneo();
-    panelEscaneo.classList.remove('hidden');
-    panelEscaneo.classList.add('flex');
-    campoEscaneo.focus();
+    pedirConfirmacion();
   }
 
   function terminarEscaneoSiCompleto() {
     pintarEscaneo();
+    botonSiguiente.disabled = pendientesDeEscanear().length > 0;
     if (pendientesDeEscanear().length > 0) return;
-    cerrarEscaneo();
     renderCarrito();
-    pedirConfirmacion();
+    avanzar(); // todo escaneado: se pasa solo a los datos del cliente
   }
 
   /** Un código escaneado (o escrito) durante este paso: debe ser de una unidad de lo que se está vendiendo y que aún no se escaneó. */
@@ -1327,17 +1381,14 @@ import { alCambiarDatos } from '../lib/realtime';
   campoEscaneo.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
+    e.stopPropagation();
     void registrarEscaneo(campoEscaneo.value).then((ok) => {
       if (ok) campoEscaneo.value = '';
       else campoEscaneo.select();
     });
   });
-  document.getElementById('pos-escaneo-cancelar')!.addEventListener('click', cerrarEscaneo);
   // Sin conexión no se puede reconocer cada unidad: se deja vender y el sistema asigna las unidades más antiguas (como antes)
-  botonSinConexion.addEventListener('click', () => {
-    cerrarEscaneo();
-    pedirConfirmacion();
-  });
+  botonSinConexion.addEventListener('click', () => avanzar());
 
   // Móvil: el carrito queda debajo de los productos; estos botones llevan hasta él (para cambiar cantidades o quitar productos)
   const irAlCarrito = () => document.getElementById('pos-carrito-seccion')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

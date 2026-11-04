@@ -11,11 +11,9 @@
 // páginas que la incluyen.
 ---
 
-<div
+<dialog
   id="ce-modal"
-  class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 p-4"
-  role="dialog"
-  aria-modal="true"
+  class="m-0 h-full max-h-none w-full max-w-none bg-transparent p-4 backdrop:bg-black/60 open:flex open:items-center open:justify-center"
   aria-labelledby="ce-titulo"
 >
   <div class="w-full max-w-sm rounded-xl bg-white shadow-xl dark:bg-slate-900">
@@ -67,7 +65,7 @@
       </p>
     </div>
   </div>
-</div>
+</dialog>
 
 <script>
   import type { Html5Qrcode as Html5QrcodeType } from 'html5-qrcode';
@@ -76,7 +74,7 @@
   const LS_SONIDO = 'easystem:escaner:sonido';
   const ID_LECTOR = 'ce-lector';
 
-  const modal = document.getElementById('ce-modal') as HTMLDivElement;
+  const modal = document.getElementById('ce-modal') as HTMLDialogElement;
   const selectorCamaras = document.getElementById('ce-camaras') as HTMLSelectElement;
   const estado = document.getElementById('ce-estado') as HTMLParagraphElement;
   const marco = document.getElementById('ce-marco') as HTMLDivElement;
@@ -185,8 +183,7 @@
   }
 
   function cerrarModal() {
-    modal.classList.add('hidden');
-    modal.classList.remove('flex');
+    if (modal.open) modal.close();
     void detenerEscaneo();
   }
 
@@ -201,7 +198,7 @@
     // Cierra la sesión anterior (si la hay). Eso invalida el token, así que el de ESTA sesión se toma DESPUÉS:
     // tomarlo antes hacía que la comparación siguiente fallara siempre y la cámara nunca arrancara (pantalla negra).
     await detenerEscaneo();
-    if (modal.classList.contains('hidden')) return; // el modal se cerró mientras cargábamos
+    if (!modal.open) return; // el modal se cerró mientras cargábamos
     const tokenSesion = detenerAlAbrir;
 
     // Solo los formatos que usa la tienda (QR y barras de producto): decodifica más rápido y con menos falsos positivos.
@@ -268,8 +265,7 @@
   }
 
   async function abrirModal() {
-    modal.classList.remove('hidden');
-    modal.classList.add('flex');
+    if (!modal.open) modal.showModal();
     marco.classList.add('hidden');
     mostrarEstado('Solicitando acceso a la cámara...');
     selectorCamaras.classList.add('hidden');
@@ -311,10 +307,11 @@
   });
 
   botonCerrar.addEventListener('click', cerrarModal);
+  modal.addEventListener('close', () => void detenerEscaneo());
   modal.addEventListener('click', (e) => {
     if (e.target === modal) cerrarModal();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !modal.classList.contains('hidden')) cerrarModal();
+    if (e.key === 'Escape' && modal.open) cerrarModal();
   });
 </script>
