@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { codigoDeNumeroCorto, construirCodigoUnidad, numeroCortoUnidad } from '../../src/utils/codigos';
-import { FORMATOS_ETIQUETA, htmlEtiqueta, textoCodigoEtiqueta } from '../../src/utils/etiquetas';
+import { FORMATOS_ETIQUETA, htmlEtiqueta } from '../../src/utils/etiquetas';
 import { svgEtiqueta } from '../../src/utils/etiquetaImagen';
 
 const rollo = FORMATOS_ETIQUETA[0];
@@ -30,19 +30,19 @@ describe('número corto de una unidad', () => {
 });
 
 describe('texto de la etiqueta', () => {
-  it('una unidad se rotula con su número corto; otro código se queda igual', () => {
-    expect(textoCodigoEtiqueta('2100000000074')).toBe('N.º 7');
-    expect(textoCodigoEtiqueta('2000000000015')).toBe('2000000000015');
-  });
-
-  it('la etiqueta (imagen y HTML) muestra el número corto y ya no el código largo, pero el QR conserva el código completo', () => {
+  it('la etiqueta (imagen y HTML) NO imprime ni el número ni el código largo: solo el nombre; el QR conserva el código completo', () => {
     const e = { codigo: '2100000000074', nombre: 'Cargador Honor' };
     const svg = svgEtiqueta(e, rollo, 'qr');
-    expect(svg).toContain('>N.º 7</text>');
-    expect(svg).not.toContain('>2100000000074</text>');
+    expect(svg).not.toContain('N.º');
+    expect(svg).not.toContain('>2100000000074<');
+    expect([...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]).join(' ')).toBe('Cargador Honor');
+    expect(svg).toContain('aria-label="Código QR 2100000000074"'); // el QR lleva el código por dentro
     const html = htmlEtiqueta(e, rollo, 'qr');
-    expect(html).toContain('N.º 7');
-    expect(html).not.toContain('>2100000000074<'); // el código largo ya no se imprime como texto (el QR lo guarda por dentro)
-    expect(svgEtiqueta(e, rollo, 'barras')).toContain('N.º 7');
+    expect(html).not.toContain('N.º');
+    expect(html).not.toContain('>2100000000074<');
+    expect(html).toContain('Cargador Honor');
+    const barras = svgEtiqueta(e, rollo, 'barras');
+    expect(barras).not.toContain('N.º');
+    expect(barras).not.toContain('>2100000000074<');
   });
 });

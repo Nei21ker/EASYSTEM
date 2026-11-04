@@ -3,7 +3,7 @@
 // Un iPhone no deja que una página web hable directamente con una impresora Bluetooth (Safari no tiene Web Bluetooth), así
 // que el camino que funciona es: el sistema dibuja cada etiqueta como imagen del tamaño exacto del rollo y la entrega a la
 // app de la impresora (WePrint, etc.) con el menú "Compartir" del teléfono. La app hace la conexión Bluetooth y la impresión.
-import { buscarTipoCodigo, textoCodigoEtiqueta, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
+import { buscarTipoCodigo, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
 import { svgCodigoBarras } from './codigoBarras';
 import { svgQr } from './qr';
 
@@ -40,54 +40,106 @@ export function partirEnLineas(texto: string, maxCaracteres: number, maxLineas: 
 }
 
 /**
- * SVG de UNA etiqueta (fondo blanco, tamaño exacto del formato a `DPI_IMAGEN`). Con QR: el código a la izquierda y el nombre
- * y el número a su lado; con barras: barras arriba, número y nombre abajo. Si no se puede dibujar el código, deja un aviso.
+ * La letra más grande (entre `tamMin` y `tamMax`, en píxeles) con la que el nombre cabe en `anchoPx` × `altoPx`, y sus renglones.
+ * Prefiere achicar la letra antes que cortar el nombre; solo si ni con la letra mínima cabe, lo corta con "…".
+ */
+/**
+ * Reparte las palabras en a lo más `maxLineas` renglones de a lo más `ancho` caracteres, lo más parejos posible (minimiza la suma
+ * de los cuadrados de lo que le falta a cada renglón para llegar a `ancho`: evita una palabra suelta sola en el último). null si no cabe.
+ */
+function repartirParejo(palabras: string[], ancho: number, maxLineas: number): string[] | null {
+  const n = palabras.length;
+  if (palabras.some((p) => p.length > ancho)) return null;
+  const largo = (i: number, j: number) => palabras.slice(i, j).join(' ').length; // palabras i..j-1
+  // mejor[j][k]: costo mínimo de repartir las primeras j palabras en exactamente k renglones
+  const mejor: number[][] = Array.from({ length: n + 1 }, () => Array(maxLineas + 1).fill(Infinity));
+  const desde: number[][] = Array.from({ length: n + 1 }, () => Array(maxLineas + 1).fill(0));
+  mejor[0][0] = 0;
+  for (let j = 1; j <= n; j++) {
+    for (let k = 1; k <= maxLineas; k++) {
+      for (let i = k - 1; i < j; i++) {
+        const l = largo(i, j);
+        if (l > ancho || mejor[i][k - 1] === Infinity) continue;
+        const costo = mejor[i][k - 1] + (ancho - l) ** 2;
+        if (costo < mejor[j][k]) {
+          mejor[j][k] = costo;
+          desde[j][k] = i;
+        }
+      }
+    }
+  }
+  let mejorK = -1;
+  for (let k = 1; k <= maxLineas; k++) if (mejor[n][k] < (mejorK < 0 ? Infinity : mejor[n][mejorK])) mejorK = k;
+  if (mejorK < 0) return null;
+  const lineas: string[] = [];
+  for (let j = n, k = mejorK; k > 0; k--) {
+    const i = desde[j][k];
+    lineas.unshift(palabras.slice(i, j).join(' '));
+    j = i;
+  }
+  return lineas;
+}
+
+/**
+ * La letra más grande (entre `tamMin` y `tamMax`, en píxeles) con la que el nombre cabe en `anchoPx` × `altoPx`, y sus renglones
+ * (parejos). Prefiere achicar la letra antes que cortar el nombre; solo si ni con la letra mínima cabe, lo corta con "…".
+ */
+export function ajustarNombre(nombre: string, anchoPx: number, altoPx: number, tamMin: number, tamMax: number, maxLineas: number): { tam: number; lineas: string[] } {
+  const palabras = nombre.trim().split(/\s+/).filter(Boolean);
+  const completo = palabras.join(' ');
+  for (let tam = Math.round(tamMax); tam >= tamMin; tam -= 2) {
+    const maxCaracteres = Math.max(4, Math.floor(anchoPx / (tam * 0.58)));
+    const lineasPermitidas = Math.min(maxLineas, Math.floor(altoPx / (tam * 1.15)));
+    if (lineasPermitidas < 1) continue;
+    const lineas = repartirParejo(palabras, maxCaracteres, lineasPermitidas);
+    if (lineas) return { tam, lineas };
+  }
+  const tam = Math.round(tamMin);
+  return { tam, lineas: partirEnLineas(completo, Math.max(4, Math.floor(anchoPx / (tam * 0.58))), maxLineas) };
+}
+
+/**
+ * SVG de UNA etiqueta (fondo blanco, tamaño exacto del formato a `DPI_IMAGEN`). Con QR: el código a la izquierda y el NOMBRE del
+ * producto, grande y centrado, en el resto del ancho; con barras: barras arriba y el nombre grande y centrado debajo. La etiqueta no
+ * imprime ningún número: el código vive en el QR / las barras. Si no se puede dibujar el código, deja un aviso.
  */
 export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = 'qr'): string {
   const W = pixeles(formato.anchoMm);
   const H = pixeles(formato.altoMm);
   const margen = pixeles(1.6);
   const pt = (puntos: number) => Math.round((puntos / 72) * DPI_IMAGEN);
-  const tamNombre = pt(formato.nombrePt);
-  const tamNumero = pt(formato.numeroPt);
-  const fuente = "font-family=\"Arial, Helvetica, sans-serif\"";
+  const tamBase = pt(formato.nombrePt);
+  const tamMin = tamBase;
+  const tamMax = Math.round(tamBase * 2.2);
+  const fuente = 'font-family="Arial, Helvetica, sans-serif"';
   const contenido: string[] = [];
+
+  const texto = (lineas: string[], tam: number, centroX: number, primeraY: number) =>
+    lineas.map((linea, i) => `<text x="${centroX}" y="${Math.round(primeraY + i * tam * 1.15)}" font-size="${tam}" font-weight="700" text-anchor="middle" ${fuente}>${escapar(linea)}</text>`);
 
   const qr = buscarTipoCodigo(tipo) === 'qr' ? svgQr(e.codigo) : null;
   if (qr) {
-    const lado = Math.min(pixeles(formato.qrMm), H - margen * 2);
+    // El QR un poco más chico que el del formato: así el nombre tiene más ancho y se imprime más grande (un QR de ~19 mm se lee bien)
+    const lado = Math.min(Math.round(pixeles(formato.qrMm) * 0.85), H - margen * 2);
     const y = Math.round((H - lado) / 2);
     contenido.push(qr.replace('<svg ', `<svg x="${margen}" y="${y}" width="${lado}" height="${lado}" `));
-    const x = margen + lado + pixeles(2);
+    const x = margen + lado + pixeles(1.5);
     const ancho = W - x - margen;
-    const caracteres = Math.max(6, Math.floor(ancho / (tamNombre * 0.56)));
-    const lineas = partirEnLineas(e.nombre, caracteres, 3);
-    const altoTexto = lineas.length * tamNombre * 1.15 + tamNumero * 1.4;
-    let ty = Math.round((H - altoTexto) / 2 + tamNombre);
-    for (const linea of lineas) {
-      contenido.push(`<text x="${x}" y="${ty}" font-size="${tamNombre}" font-weight="700" ${fuente}>${escapar(linea)}</text>`);
-      ty += Math.round(tamNombre * 1.15);
-    }
-    const numero = textoCodigoEtiqueta(e.codigo);
-    const numeroEnLinea = Math.floor(ancho / (tamNumero * 0.62)) >= numero.length;
-    contenido.push(
-      `<text x="${x}" y="${ty + Math.round(tamNumero * 0.4)}" font-size="${tamNumero}" font-family="'Courier New', monospace" ${numeroEnLinea ? '' : `textLength="${ancho}" lengthAdjust="spacingAndGlyphs"`}>${escapar(numero)}</text>`
-    );
+    const { tam, lineas } = ajustarNombre(e.nombre, ancho, H - margen * 2, tamMin, tamMax, 3);
+    const altoBloque = lineas.length * tam * 1.15;
+    contenido.push(...texto(lineas, tam, Math.round(x + ancho / 2), (H - altoBloque) / 2 + tam * 0.85));
   } else {
     const barras = svgCodigoBarras(e.codigo, 40);
     if (barras) {
       const alto = pixeles(formato.barrasMm);
       contenido.push(barras.replace('<svg ', `<svg x="${margen}" y="${margen}" width="${W - margen * 2}" height="${alto}" `));
-      contenido.push(`<text x="${W / 2}" y="${margen + alto + tamNumero * 1.2}" font-size="${tamNumero}" text-anchor="middle" font-family="'Courier New', monospace">${escapar(textoCodigoEtiqueta(e.codigo))}</text>`);
-      const caracteres = Math.max(8, Math.floor((W - margen * 2) / (tamNombre * 0.56)));
-      const lineas = partirEnLineas(e.nombre, caracteres, 2);
-      let ty = Math.round(margen + alto + tamNumero * 1.2 + tamNombre * 1.25);
-      for (const linea of lineas) {
-        contenido.push(`<text x="${W / 2}" y="${ty}" font-size="${tamNombre}" font-weight="700" text-anchor="middle" ${fuente}>${escapar(linea)}</text>`);
-        ty += Math.round(tamNombre * 1.15);
-      }
+      const inicio = margen + alto + pixeles(1);
+      const disponible = H - inicio - margen;
+      const { tam, lineas } = ajustarNombre(e.nombre, W - margen * 2, disponible, tamMin, tamMax, 2);
+      const altoBloque = lineas.length * tam * 1.15;
+      contenido.push(...texto(lineas, tam, Math.round(W / 2), inicio + (disponible - altoBloque) / 2 + tam * 0.85));
     } else {
-      contenido.push(`<text x="${margen}" y="${H / 2}" font-size="${tamNombre}" font-weight="700" ${fuente}>Código no imprimible: ${escapar(e.codigo)}</text>`);
+      contenido.push(`<text x="${W / 2}" y="${H / 2}" font-size="${tamBase}" font-weight="700" text-anchor="middle" ${fuente}>Código no imprimible</text>`);
     }
   }
 

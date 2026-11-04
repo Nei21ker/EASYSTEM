@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FORMATOS_ETIQUETA } from '../../src/utils/etiquetas';
-import { nombreArchivoEtiqueta, partirEnLineas, svgEtiqueta, DPI_IMAGEN } from '../../src/utils/etiquetaImagen';
+import { ajustarNombre, nombreArchivoEtiqueta, partirEnLineas, svgEtiqueta, DPI_IMAGEN } from '../../src/utils/etiquetaImagen';
 
 const rollo50x30 = FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-50x30')!;
 const rollo40x25 = FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-40x25')!;
@@ -24,6 +24,9 @@ describe('partirEnLineas', () => {
   });
 });
 
+/** Los renglones de texto de la etiqueta, unidos. */
+const textoDe = (svg: string) => [...svg.matchAll(/<text [^>]*>([^<]*)<\/text>/g)].map((m) => m[1]).join(' ');
+
 describe('svgEtiqueta', () => {
   it('tiene el tamaño exacto del rollo a 300 dpi y fondo blanco', () => {
     const svg = svgEtiqueta({ codigo: '2100000000012', nombre: 'Cargador Honor sencillo Tipo C' }, rollo50x30);
@@ -36,11 +39,11 @@ describe('svgEtiqueta', () => {
   it('con QR lleva el código, el número y el nombre; con barras, las barras y los mismos textos', () => {
     const e = { codigo: '2100000000012', nombre: 'Cargador Tecno doble usb' };
     const conQr = svgEtiqueta(e, rollo50x30, 'qr');
-    expect(conQr).toContain('>N.º 1</text>');
-    expect(conQr).toContain('Cargador Tecno');
+    expect(conQr).not.toContain('>N.º');
+    expect(textoDe(conQr)).toBe('Cargador Tecno doble usb');
     expect(conQr).toContain('<svg x='); // el QR va incrustado
     const conBarras = svgEtiqueta(e, rollo50x30, 'barras');
-    expect(conBarras).toContain('>N.º 1</text>');
+    expect(conBarras).not.toContain('>N.º');
     expect(conBarras).toContain('aria-label="Código de barras 2100000000012"');
     expect(conBarras).not.toBe(conQr);
   });
@@ -55,6 +58,44 @@ describe('svgEtiqueta', () => {
   it('un código que no se puede dibujar en barras deja un aviso en vez de una etiqueta vacía', () => {
     const svg = svgEtiqueta({ codigo: 'código ñandú', nombre: 'Prueba' }, rollo50x30, 'barras');
     expect(svg).toContain('Código no imprimible');
+  });
+});
+
+describe('nombre grande y centrado', () => {
+  const tam = (svg: string) => Number(/font-size="(\d+)"/.exec(svg)![1]);
+
+  it('un nombre corto se imprime más grande que uno largo, y siempre cabe en la etiqueta', () => {
+    const corto = ajustarNombre('Cargador Tecno', 260, 300, 30, 90, 3);
+    const largo = ajustarNombre('Cargador Infinix doble usb Micro-USB reforzado', 260, 300, 30, 90, 3);
+    expect(corto.tam).toBeGreaterThan(largo.tam);
+    for (const r of [corto, largo]) {
+      expect(r.lineas.length).toBeLessThanOrEqual(3);
+      expect(r.lineas.length * r.tam * 1.15).toBeLessThanOrEqual(300 + 1);
+    }
+  });
+
+  it('prefiere no cortar el nombre: usa una letra menor antes de poner puntos suspensivos', () => {
+    const r = ajustarNombre('Cargador Infinix doble usb Micro-USB', 260, 300, 30, 90, 3);
+    expect(r.lineas.join(' ')).toBe('Cargador Infinix doble usb Micro-USB');
+  });
+
+  it('el nombre sale centrado (text-anchor middle) y más grande que la letra base del formato, con QR y con barras', () => {
+    const e = { codigo: '2100000000012', nombre: 'Cargador Honor' };
+    const baseQr = Math.round((rollo50x30.nombrePt / 72) * DPI_IMAGEN);
+    for (const tipo of ['qr', 'barras'] as const) {
+      const svg = svgEtiqueta(e, rollo50x30, tipo);
+      expect(svg).toContain('text-anchor="middle"');
+      expect(tam(svg)).toBeGreaterThan(baseQr);
+    }
+  });
+
+  it('con QR el nombre queda dentro de la etiqueta, a la derecha del código', () => {
+    const svg = svgEtiqueta({ codigo: '2100000000012', nombre: 'Cargador Honor sencillo Tipo C' }, rollo50x30, 'qr');
+    const W = mmAPx(50);
+    for (const m of svg.matchAll(/<text x="([\d.]+)"/g)) {
+      expect(Number(m[1])).toBeGreaterThan(mmAPx(22)); // pasado el QR
+      expect(Number(m[1])).toBeLessThan(W);
+    }
   });
 });
 
@@ -93,5 +134,13 @@ describe('construirPdfDeJpegs', () => {
     const pdf = construirPdfDeJpegs([jpeg(7)], 40, 25);
     expect(texto(pdf).indexOf('stream\nÿØ\u0007ÿÙ')).toBeGreaterThan(0);
     expect(() => construirPdfDeJpegs([], 40, 25)).toThrow(/páginas/);
+  });
+});
+
+describe('renglones parejos', () => {
+  it('no deja una palabra suelta sola en el último renglón', () => {
+    const r = ajustarNombre('Cargador Honor sencillo Tipo C', 300, 300, 30, 90, 3);
+    expect(r.lineas.every((l) => l.length >= 5)).toBe(true);
+    expect(r.lineas.join(' ')).toBe('Cargador Honor sencillo Tipo C');
   });
 });

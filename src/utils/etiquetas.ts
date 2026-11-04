@@ -9,7 +9,6 @@
 // Se imprime con window.print() sobre un contenedor temporal (ocultando el resto de la página con CSS de
 // impresión), igual que el resto del sistema; las barras vienen de utils/codigoBarras.ts.
 import { svgCodigoBarras } from './codigoBarras';
-import { numeroCortoUnidad } from './codigos';
 import { svgQr } from './qr';
 
 export type TipoCodigoEtiqueta = 'qr' | 'barras';
@@ -63,25 +62,17 @@ function escapar(texto: string): string {
   return texto.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Lo que se imprime como "número" de la etiqueta: de una unidad, su número corto (N.º 7); de otro código, el código completo. */
-export function textoCodigoEtiqueta(codigo: string): string {
-  const corto = numeroCortoUnidad(codigo);
-  return corto === null ? codigo : `N.º ${corto}`;
-}
-
 /** CSS de la etiqueta (sirve tanto para la vista previa en pantalla como para imprimir). */
 export function estilosEtiqueta(): string {
   return `
 .etq{box-sizing:border-box;display:flex;flex-direction:column;justify-content:center;gap:.4mm;overflow:hidden;background:#fff;color:#000;font-family:Arial,Helvetica,sans-serif;padding:1.6mm 2mm;line-height:1.1;break-inside:avoid}
 .etq svg{display:block;width:100%}
-.etq .etq-numero{text-align:center;font-family:'Courier New',monospace;letter-spacing:.15mm;white-space:nowrap}
 .etq .etq-nombre{font-weight:700;text-align:center;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .etq.etq-fila{flex-direction:row;align-items:center;justify-content:flex-start;gap:2mm}
 .etq .etq-qr{flex:none}
 .etq .etq-qr svg{width:100%;height:100%}
 .etq .etq-texto{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:.8mm}
-.etq-fila .etq-nombre{text-align:left;-webkit-line-clamp:3}
-.etq-fila .etq-numero{text-align:left;letter-spacing:0}
+.etq-fila .etq-nombre{text-align:center;-webkit-line-clamp:3}
 .etq .etq-sin-barras{font-size:7pt;font-weight:700;text-align:center;border:.3mm dashed #000;padding:1mm}
 `;
 }
@@ -92,15 +83,14 @@ export function htmlEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, forma
   const qr = tipo === 'qr' ? svgQr(e.codigo) : null;
   // Con QR: el código a la izquierda y, a su lado, el nombre y el número. Si no se puede generar un QR, se cae a las barras.
   if (qr) {
-    return `<div class="etq etq-fila" style="${dimensiones}"><div class="etq-qr" style="width:${formato.qrMm}mm;height:${formato.qrMm}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt}pt">${escapar(e.nombre)}</div><div class="etq-numero" style="font-size:${formato.numeroPt}pt">${escapar(textoCodigoEtiqueta(e.codigo))}</div></div></div>`;
+    return `<div class="etq etq-fila" style="${dimensiones}"><div class="etq-qr" style="width:${formato.qrMm}mm;height:${formato.qrMm}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt * 1.7}pt">${escapar(e.nombre)}</div></div></div>`;
   }
 
   const barras = svgCodigoBarras(e.codigo, 40);
   const cuerpo = barras
-    ? `<div style="height:${formato.barrasMm}mm">${barras.replace('<svg ', '<svg style="height:100%" ')}</div>
-       <div class="etq-numero" style="font-size:${formato.numeroPt}pt">${escapar(textoCodigoEtiqueta(e.codigo))}</div>`
-    : `<div class="etq-sin-barras">Código no imprimible en barras: ${escapar(e.codigo)}</div>`;
-  return `<div class="etq" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt}pt">${escapar(e.nombre)}</div></div>`;
+    ? `<div style="height:${formato.barrasMm}mm">${barras.replace('<svg ', '<svg style="height:100%" ')}</div>`
+    : `<div class="etq-sin-barras">Código no imprimible en barras</div>`;
+  return `<div class="etq" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt * 1.5}pt">${escapar(e.nombre)}</div></div>`;
 }
 
 /** Cantidad total de etiquetas del pedido. */
