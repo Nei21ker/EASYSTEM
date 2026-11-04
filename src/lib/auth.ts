@@ -37,7 +37,7 @@ export const ROLES: Rol[] = ['administrador', 'gerente', 'contador', 'encargado'
 /** Roles que cada quien puede asignar al crear o editar usuarios. */
 export function rolesAsignables(rol?: Rol | null): Rol[] {
   if (rol === 'administrador') return ROLES;
-  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico'];
+  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico', 'contador'];
   return [];
 }
 

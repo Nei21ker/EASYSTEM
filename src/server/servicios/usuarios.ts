@@ -34,7 +34,6 @@ export interface UsuarioSistema {
   last_force_logout_at: string | null;
 }
 
-const ROLES_DE_LOCAL: Rol[] = ['encargado', 'vendedor', 'tecnico'];
 const sinPermiso = (mensaje: string) => new ErrorApi(403, mensaje, 'sin_permiso');
 
 /** Administrador o gerente. El gerente solo opera mientras algún local tenga la suscripción vigente (catalogo_accesible). */
@@ -75,7 +74,7 @@ export async function crearUsuario(
 ): Promise<string> {
   await exigirGestion(env, actor, 'Solo un administrador o gerente puede crear usuarios.');
   if (!rolesAsignables(actor.rol).includes(datos.rol)) {
-    throw sinPermiso(actor.rol === 'gerente' ? 'Un gerente solo puede crear encargados, vendedores y técnicos.' : 'No puedes crear usuarios con ese rol.');
+    throw sinPermiso(actor.rol === 'gerente' ? 'Un gerente solo puede crear encargados, vendedores, técnicos y contadores.' : 'No puedes crear usuarios con ese rol.');
   }
   const localId = esSinLocal(datos.rol) ? null : datos.localId;
   if (!esSinLocal(datos.rol)) {
@@ -125,7 +124,7 @@ export async function eliminarUsuario(env: Entorno, actor: Sesion, id: string): 
   await exigirGestion(env, actor, 'No tienes permiso para eliminar a este usuario.');
   const objetivo = await perfilDe(env, id);
   if (id === actor.userId) throw sinPermiso('No puedes eliminar tu propio usuario.');
-  if (!esAdministrador(actor.rol) && !ROLES_DE_LOCAL.includes(objetivo.rol)) throw sinPermiso('No tienes permiso para eliminar a este usuario.');
+  if (!puedeGestionarUsuario(actor.rol, objetivo.rol)) throw sinPermiso('No tienes permiso para eliminar a este usuario.');
   // El borrado en cascada quita cuenta, sesiones y perfil; las ventas y órdenes conservan el nombre y pierden el vínculo
   await env.DB.prepare('DELETE FROM user WHERE id = ?').bind(id).run();
   await avisarCambio(env.DB, ['perfiles']);
@@ -136,7 +135,7 @@ export async function cambiarClaveUsuario(env: Entorno, actor: Sesion, id: strin
   if (!esAdministrador(actor.rol)) await exigirGestion(env, actor, 'No tienes permiso para cambiar la contraseña de este usuario.');
   const objetivo = await perfilDe(env, id);
   if (!esAdministrador(actor.rol)) {
-    if (id !== actor.userId && !ROLES_DE_LOCAL.includes(objetivo.rol)) {
+    if (id !== actor.userId && !puedeGestionarUsuario(actor.rol, objetivo.rol)) {
       throw sinPermiso('No tienes permiso para cambiar la contraseña de este usuario.');
     }
   }

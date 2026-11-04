@@ -50,7 +50,7 @@ export const esSinLocal = (rol: Rol): boolean => rol === 'administrador' || rol 
 /** Roles que cada quien puede asignar al crear o editar usuarios (mismas reglas que el cliente: rolesAsignables). */
 export function rolesAsignables(rol: Rol): Rol[] {
   if (rol === 'administrador') return ROLES;
-  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico'];
+  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico', 'contador'];
   return [];
 }
 

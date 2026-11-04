@@ -154,8 +154,8 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
 
   const AYUDA_ROL: Record<Rol, string> = {
     administrador: 'Dueño del servicio: acceso total, suscripciones, sesiones y gestión de cualquier usuario.',
-    contador: 'Solo ve la Nómina, de todos los locales. Lo crea y elimina el administrador.',
-    gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina encargados, vendedores y técnicos.',
+    contador: 'Solo ve la Nómina, de todos los locales. Lo crean el administrador o el gerente.',
+    gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina encargados, vendedores, técnicos y contadores.',
     encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
     vendedor: 'Cajero de su local: ventas y consulta de productos.',
     tecnico: 'Servicio técnico de su local: órdenes de servicio y repuestos.',
@@ -214,7 +214,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     filas.innerHTML = ordenados
       .map((u, indice) => {
         const yo = u.id === miId;
-        // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo encargados, vendedores y técnicos); nunca a uno mismo
+        // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo encargados, vendedores, técnicos y contadores); nunca a uno mismo
         const gestionable = !yo && puedeGestionarUsuario(miRol, u.rol);
         const inactivo = u.status === 'inactive';
         const nombreLocal = locales.find((l) => l.id === u.local_id)?.nombre;
@@ -436,7 +436,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     selectRolNuevo.innerHTML = opcionesRol('vendedor');
     selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${l.nombre}</option>`).join('');
     if (miRol === 'gerente') {
-      (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar encargados, vendedores y técnicos.';
+      (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar encargados, vendedores, técnicos y contadores.';
     }
     actualizarFormularioNuevo();
     cargarUsuarios();

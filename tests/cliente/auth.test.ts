@@ -126,3 +126,18 @@ describe('auth en modo demo', () => {
     await expect(iniciarSesion('admin@edwardaccesorios.com', 'otra')).rejects.toThrow('Correo o contraseña incorrectos.');
   });
 });
+
+describe('jerarquía de roles al crear usuarios', () => {
+  it('el gerente asigna encargado, vendedor, técnico y contador; nunca administrador ni gerente', async () => {
+    const { rolesAsignables, puedeGestionarUsuario } = await cargarAuth(false);
+    expect(rolesAsignables('gerente').sort()).toEqual(['contador', 'encargado', 'tecnico', 'vendedor']);
+    expect(puedeGestionarUsuario('gerente', 'contador')).toBe(true);
+    expect(puedeGestionarUsuario('gerente', 'gerente')).toBe(false);
+    expect(puedeGestionarUsuario('gerente', 'administrador')).toBe(false);
+  });
+
+  it('encargado, vendedor, técnico y contador no asignan ningún rol', async () => {
+    const { rolesAsignables } = await cargarAuth(false);
+    for (const rol of ['encargado', 'vendedor', 'tecnico', 'contador'] as const) expect(rolesAsignables(rol)).toEqual([]);
+  });
+});

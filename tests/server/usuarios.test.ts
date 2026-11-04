@@ -62,14 +62,17 @@ describe('crearUsuario', () => {
     expect(perfil).toEqual({ local_id: null });
   });
 
-  it('el gerente crea encargados, vendedores y técnicos', async () => {
+  it('el gerente crea encargados, vendedores, técnicos y contadores', async () => {
     const g = await sesionDe(gerente);
     for (const rol of ['encargado', 'vendedor', 'tecnico'] as const) {
       expect(await crearUsuario(env, g, nuevo(rol, accesorios))).toBeTruthy();
     }
+    const id = await crearUsuario(env, g, nuevo('contador', accesorios));
+    // el contador no pertenece a un local: se guarda sin local aunque se envíe uno
+    expect(await env.DB.prepare('SELECT rol, local_id FROM perfiles WHERE id = ?').bind(id).first()).toEqual({ rol: 'contador', local_id: null });
   });
 
-  it.each(['administrador', 'gerente', 'contador'] as const)('el gerente NO puede crear un %s (403)', async (rol) => {
+  it.each(['administrador', 'gerente'] as const)('el gerente NO puede crear un %s (403)', async (rol) => {
     await rechazo(crearUsuario(env, await sesionDe(gerente), nuevo(rol, null)), 403);
   });
 
@@ -123,10 +126,15 @@ describe('actualizarUsuario', () => {
     await rechazo(actualizarUsuario(env, g, encargado.id, { rol: 'gerente' }), 403);
   });
 
-  it('el gerente no toca a un administrador, a otro gerente ni al contador', async () => {
+  it('el gerente no toca a un administrador ni a otro gerente, pero sí desactiva a un contador (sin poder ascenderlo)', async () => {
     const g = await sesionDe(gerente);
     await rechazo(actualizarUsuario(env, g, admin.id, { status: 'inactive' }), 403);
-    await rechazo(actualizarUsuario(env, g, contador.id, { status: 'inactive' }), 403);
+    const otroGerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null });
+    await rechazo(actualizarUsuario(env, g, otroGerente.id, { status: 'inactive' }), 403);
+    await actualizarUsuario(env, g, contador.id, { status: 'inactive' });
+    expect(await env.DB.prepare('SELECT status FROM perfiles WHERE id = ?').bind(contador.id).first()).toEqual({ status: 'inactive' });
+    await rechazo(actualizarUsuario(env, g, contador.id, { rol: 'gerente' }), 403);
+    await rechazo(actualizarUsuario(env, g, contador.id, { rol: 'administrador' }), 403);
   });
 
   it('el administrador asigna cualquier rol; un rol sin local deja el local en blanco', async () => {
@@ -199,6 +207,11 @@ describe('eliminarUsuario', () => {
     await rechazo(eliminarUsuario(env, g, otroGerente.id), 403);
   });
 
+  it('el gerente elimina a un contador', async () => {
+    await eliminarUsuario(env, await sesionDe(gerente), contador.id);
+    expect(await env.DB.prepare('SELECT id FROM perfiles WHERE id = ?').bind(contador.id).first()).toBeNull();
+  });
+
   it('las ventas conservan el nombre del vendedor eliminado', async () => {
     await env.DB
       .prepare("INSERT INTO ventas (id, folio, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, vendedor_id, vendedor_nombre) VALUES ('v1', 1, ?, 'V-12345678', 'Ana Pérez', '0414-1234567', 'USD_EFECTIVO', 5, '[]', ?, 'Vendedor X')")
@@ -241,6 +254,11 @@ describe('cambiarClaveUsuario', () => {
     const g = await sesionDe(gerente);
     await cambiarClaveUsuario(env, g, encargado.id, 'Clave-encargado-1');
     await rechazo(cambiarClaveUsuario(env, g, admin.id, 'Clave-admin-1234'), 403);
+  });
+
+  it('el gerente cambia la clave de un contador', async () => {
+    await cambiarClaveUsuario(env, await sesionDe(gerente), contador.id, 'Clave-contador-1');
+    await rechazo(sesionDe(contador), 401); // sus sesiones abiertas se cierran: debe entrar con la clave nueva
   });
 
   it('rechaza claves de menos de 8 caracteres y usuarios inexistentes', async () => {
