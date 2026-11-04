@@ -183,3 +183,19 @@ export async function ticketComoPng(venta: VentaParaTicket): Promise<Blob> {
 export async function archivoDeTicket(venta: VentaParaTicket): Promise<File> {
   return new File([await ticketComoPng(venta)], nombreArchivoTicket(venta.folio), { type: 'image/png' });
 }
+
+/**
+ * Copia la imagen al portapapeles para pegarla en el chat de WhatsApp (mantener pulsado el cuadro de mensaje → Pegar). Es la forma de
+ * mandar una imagen al chat de UN número concreto: el menú Compartir no deja elegir el chat, y un enlace wa.me solo lleva texto.
+ * Se pide escribir de inmediato con la imagen como promesa: Safari exige que `write()` ocurra dentro del toque del usuario.
+ * Devuelve false si el navegador no sabe copiar imágenes o no lo permite (entonces se descarga o se comparte).
+ */
+export async function copiarImagenAlPortapapeles(archivo: Promise<File>): Promise<boolean> {
+  if (typeof navigator === 'undefined' || !navigator.clipboard?.write || typeof ClipboardItem === 'undefined') return false;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': archivo.then((a) => new Blob([a], { type: 'image/png' })) })]);
+    return true;
+  } catch {
+    return false;
+  }
+}
