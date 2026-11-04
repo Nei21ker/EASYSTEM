@@ -119,33 +119,35 @@ export async function etiquetaComoPng(e: Pick<EtiquetaPedida, 'codigo' | 'nombre
   return blob;
 }
 
-export type ResultadoEnvio = { modo: 'compartido' | 'descargado' | 'cancelado'; enviadas: number };
-
-/**
- * Entrega las etiquetas (una imagen por unidad) a otra app con el menú "Compartir" del teléfono (ahí se elige WePrint u otra app de
- * la impresora). Si el navegador no puede compartir archivos (una computadora), las descarga como imágenes.
- * Se llama desde un clic del usuario: los navegadores del teléfono exigen ese gesto para abrir "Compartir".
- */
-export async function enviarEtiquetasComoImagenes(
+/** Una imagen PNG (archivo) por etiqueta, hasta MAX_ETIQUETAS_POR_ENVIO. */
+export async function prepararArchivosEtiquetas(
   etiquetas: Pick<EtiquetaPedida, 'codigo' | 'nombre'>[],
   formato: FormatoEtiqueta,
   tipo: TipoCodigoEtiqueta = 'qr'
-): Promise<ResultadoEnvio> {
-  const lote = etiquetas.slice(0, MAX_ETIQUETAS_POR_ENVIO);
-  const archivos = await Promise.all(
-    lote.map(async (e) => new File([await etiquetaComoPng(e, formato, tipo)], nombreArchivoEtiqueta(e.codigo), { type: 'image/png' }))
+): Promise<File[]> {
+  return Promise.all(
+    etiquetas.slice(0, MAX_ETIQUETAS_POR_ENVIO).map(async (e) => new File([await etiquetaComoPng(e, formato, tipo)], nombreArchivoEtiqueta(e.codigo), { type: 'image/png' }))
   );
+}
 
-  if (typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: archivos })) {
-    try {
-      await navigator.share({ files: archivos, title: 'Etiquetas EASYSTEM' });
-      return { modo: 'compartido', enviadas: archivos.length };
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') return { modo: 'cancelado', enviadas: 0 };
-      throw err;
-    }
+/** ¿Este navegador puede abrir el menú "Compartir" con archivos? (iPhone y Android sí; una computadora normalmente no.) */
+export function puedeCompartirArchivos(archivos: File[]): boolean {
+  return typeof navigator !== 'undefined' && typeof navigator.canShare === 'function' && navigator.canShare({ files: archivos });
+}
+
+/** Abre el menú Compartir con las imágenes. Devuelve false si el usuario lo cerró sin elegir nada. Debe llamarse desde un toque del usuario. */
+export async function compartirArchivos(archivos: File[]): Promise<boolean> {
+  try {
+    await navigator.share({ files: archivos, title: 'Etiquetas EASYSTEM' });
+    return true;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return false;
+    throw err;
   }
+}
 
+/** Descarga las imágenes (en el iPhone quedan en la app Archivos, de donde WePrint las puede abrir). */
+export function descargarArchivos(archivos: File[]): void {
   for (const archivo of archivos) {
     const url = URL.createObjectURL(archivo);
     const enlace = document.createElement('a');
@@ -156,5 +158,4 @@ export async function enviarEtiquetasComoImagenes(
     enlace.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
-  return { modo: 'descargado', enviadas: archivos.length };
 }
