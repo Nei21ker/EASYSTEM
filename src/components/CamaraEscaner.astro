@@ -190,7 +190,12 @@
     void detenerEscaneo();
   }
 
-  async function iniciarCamara(camaraId: string) {
+  /**
+   * camaraId = null → la cámara trasera principal (facingMode environment). En un iPhone moderno hay varias traseras
+   * (gran angular, ultra gran angular, teleobjetivo): elegir por nombre podía caer en la ultra gran angular, que no enfoca de cerca
+   * y no lee códigos; con facingMode el sistema entrega la principal.
+   */
+  async function iniciarCamara(camaraId: string | null) {
     const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import('html5-qrcode');
 
     // Cierra la sesión anterior (si la hay). Eso invalida el token, así que el de ESTA sesión se toma DESPUÉS:
@@ -218,11 +223,19 @@
     const esteLector = lector;
     try {
       await esteLector.start(
-        camaraId,
+        camaraId ?? { facingMode: 'environment' },
         {
-          fps: 10,
+          fps: 15,
           // Sin recuadro de lectura: se analiza toda la imagen (sirve igual para un QR cuadrado que para barras anchas)
           aspectRatio: 1,
+          // Resolución alta: las barras de un EAN-13 pequeño son finas y con 640×480 (lo que se pide por defecto) no se distinguen.
+          // El enfoque continuo lo respeta Chrome/Android; Safari lo ignora y enfoca solo.
+          videoConstraints: {
+            ...(camaraId ? { deviceId: { exact: camaraId } } : { facingMode: { ideal: 'environment' } }),
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet],
+          },
         },
         (textoDecodificado) => {
           if (tokenSesion !== detenerAlAbrir) return; // sesión de escaneo ya cerrada; ignorar detección tardía
@@ -281,12 +294,8 @@
         selectorCamaras.classList.remove('hidden');
       }
 
-      // Preferir la cámara trasera ("environment") en móviles, que suele traer "back" en el label.
-      const trasera = camaras.find((c) => /back|rear|trasera|environment/i.test(c.label));
-      const camaraElegida = trasera ?? camaras[0];
-      if (selectorCamaras.classList.contains('hidden') === false) selectorCamaras.value = camaraElegida.id;
-
-      await iniciarCamara(camaraElegida.id);
+      // Por defecto, la cámara trasera principal que elija el sistema (facingMode); el selector permite cambiar a mano
+      await iniciarCamara(null);
     } catch (err) {
       mostrarEstado(mensajeDeError(err), 'error');
     }

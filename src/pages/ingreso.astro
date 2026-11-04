@@ -95,6 +95,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <button id="ig-imprimir" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
               Imprimir etiquetas
             </button>
+            <button id="ig-compartir" type="button" title="Para impresoras Bluetooth desde el celular: entrega las etiquetas como imágenes a la app de la impresora (WePrint)" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
+              Enviar a la impresora del celular
+            </button>
             <button id="ig-registrar" type="button" class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
               Registrar ingreso
             </button>
@@ -151,6 +154,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     TIPOS_CODIGO_ETIQUETA,
     totalEtiquetas,
   } from '../utils/etiquetas';
+  import { enviarEtiquetasComoImagenes, MAX_ETIQUETAS_POR_ENVIO } from '../utils/etiquetaImagen';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { alCambiarDatos } from '../lib/realtime';
   import type { ProductoConRelaciones } from '../types/database.types';
@@ -523,11 +527,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   });
 
   // --- Etiquetas -------------------------------------------------------------------------
-  $('ig-imprimir').addEventListener('click', async () => {
+  /** Las etiquetas a sacar (una por unidad: primero las de este ingreso y después las más antiguas sin etiqueta), o null si falta algo. */
+  function reunirEtiquetas(): { codigo: string; nombre: string; copias: number }[] | null {
     error.classList.add('hidden');
-    if (totalEtiquetas(pedidas()) === 0) return mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
+    if (totalEtiquetas(pedidas()) === 0) {
+      mostrarError('No hay etiquetas por imprimir: pon una cantidad de etiquetas mayor a 0 en algún producto.');
+      return null;
+    }
     if (lote.some((l) => l.cantidad > 0 && producto(l.id))) {
-      return mostrarError('Primero registra el ingreso: cada unidad recibe su código al registrarse y la etiqueta lleva ese código.');
+      mostrarError('Primero registra el ingreso: cada unidad recibe su código al registrarse y la etiqueta lleva ese código.');
+      return null;
     }
 
     // Una etiqueta por unidad: primero las del ingreso de esta pantalla, después las más antiguas que siguen sin etiqueta
@@ -544,8 +553,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       if (codigos.length < l.copias) faltas.push(`${p.nombre}: pides ${l.copias} y solo hay ${codigos.length} unidad${codigos.length === 1 ? '' : 'es'} sin etiqueta`);
       for (const codigo of codigos) etiquetas.push({ codigo, nombre: p.nombre, copias: 1 });
     }
-    if (etiquetas.length === 0) return mostrarError(faltas.length ? `No hay unidades para etiquetar. ${faltas.join(' · ')}` : 'No hay etiquetas por imprimir.');
+    if (etiquetas.length === 0) {
+      mostrarError(faltas.length ? `No hay unidades para etiquetar. ${faltas.join(' · ')}` : 'No hay etiquetas por imprimir.');
+      return null;
+    }
     if (faltas.length) avisar(`Se imprimen solo las que existen. ${faltas.join(' · ')}`);
+    return etiquetas;
+  }
+
+  $('ig-imprimir').addEventListener('click', async () => {
+    const etiquetas = reunirEtiquetas();
+    if (!etiquetas) return;
 
     imprimirEtiquetas(etiquetas, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
     try {
@@ -553,6 +571,34 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       await cargarSinEtiqueta();
     } catch {
       /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
+    }
+  });
+
+  // Impresora Bluetooth desde el celular (p. ej. NETUM G5 con la app WePrint): el iPhone no deja que una página hable con la
+  // impresora, así que se entregan las etiquetas como imágenes por el menú "Compartir" y la app de la impresora las imprime.
+  $('ig-compartir').addEventListener('click', async () => {
+    const etiquetas = reunirEtiquetas();
+    if (!etiquetas) return;
+    const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_ENVIO);
+    try {
+      const resultado = await enviarEtiquetasComoImagenes(envio, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
+      if (resultado.modo === 'cancelado') return;
+      const restantes = etiquetas.length - resultado.enviadas;
+      mostrarExito(
+        (resultado.modo === 'compartido'
+          ? `Entregadas ${resultado.enviadas} etiqueta${resultado.enviadas === 1 ? '' : 's'} a la app de la impresora: elige WePrint en el menú y mándalas a imprimir.`
+          : `Se descargaron ${resultado.enviadas} imagen${resultado.enviadas === 1 ? '' : 'es'} de etiqueta (este navegador no abre el menú Compartir): ábrelas con la app de la impresora.`) +
+          (restantes > 0 ? ` Faltan ${restantes}: vuelve a pulsar el botón para las siguientes.` : '')
+      );
+      // Las unidades entregadas ya no se vuelven a ofrecer como "sin etiqueta"
+      try {
+        await inventoryService.marcarEtiquetasImpresas(envio.map((e) => e.codigo));
+        await cargarSinEtiqueta();
+      } catch {
+        /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
+      }
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudieron preparar las etiquetas.');
     }
   });
 
