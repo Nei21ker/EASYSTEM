@@ -1,0 +1,175 @@
+// Ventas y devoluciones. Reglas portadas de las políticas RLS 0011/0014/0016/0023:
+//   · registrar una venta: cualquier rol con acceso al local (el vendedor queda como `vendedor_id` por su sesión);
+//   · ver ventas: administrador, gerente y encargado las de sus locales; vendedor y técnico solo las suyas;
+//   · registrar una devolución: administrador, gerente y encargado del local de la venta; nadie edita ni borra.
+// El folio sale de la tabla `contadores` DENTRO del mismo lote que inserta la fila (no se repite ni con ventas simultáneas).
+import { alcanceDe, condicionAlcance, esGerencia, localAccesible, type Sesion } from '../authz';
+import { sentenciasCambio } from '../cambios';
+import type { Entorno } from '../entorno';
+import { ErrorApi } from '../errores';
+import { nuevoId, redondear2 } from '../util';
+import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
+
+const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
+
+const json = (valor: unknown) => (valor === null || valor === undefined ? null : JSON.stringify(valor));
+const analizar = <T>(texto: unknown): T | null => (typeof texto === 'string' ? (JSON.parse(texto) as T) : null);
+
+function aVenta(f: Record<string, unknown>): Venta {
+  return {
+    ...(f as unknown as Venta),
+    items: analizar(f.items) ?? [],
+    pagos: analizar(f.pagos),
+    vuelto: analizar(f.vuelto),
+    tasa_cambio: (f.tasa_cambio as number | null) ?? null,
+    total_bs: (f.total_bs as number | null) ?? null,
+    vendedor_id: (f.vendedor_id as string | null) ?? null,
+    vendedor_nombre: (f.vendedor_nombre as string | null) ?? null,
+  };
+}
+
+function aDevolucion(f: Record<string, unknown>): Devolucion {
+  return {
+    ...(f as unknown as Devolucion),
+    items_devueltos: analizar(f.items_devueltos) ?? [],
+    items_nuevos: analizar(f.items_nuevos) ?? [],
+    pagos: analizar(f.pagos),
+    vuelto: analizar(f.vuelto),
+    reembolso: analizar(f.reembolso),
+    tasa_cambio: (f.tasa_cambio as number | null) ?? null,
+    registrado_nombre: (f.registrado_nombre as string | null) ?? null,
+  };
+}
+
+/** La fecha que trae la venta (las hechas sin conexión conservan la suya); no se aceptan fechas del futuro. */
+function fechaValida(fecha: string, mensaje: string): string {
+  const t = Date.parse(fecha);
+  if (!Number.isFinite(t) || t > Date.now() + 10 * 60_000) throw new ErrorApi(400, mensaje, 'datos_invalidos');
+  return new Date(t).toISOString();
+}
+
+// --- Ventas ---------------------------------------------------------------------------------------------------
+export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
+  if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+
+  const cedula = datos.cliente_cedula?.trim() ?? '';
+  const nombre = (datos.cliente_nombre ?? '').trim().replace(/\s+/g, ' ');
+  const telefono = datos.cliente_telefono?.trim() ?? '';
+  if (cedula.length < 5 || cedula.length > 20 || nombre.length < 3 || nombre.length > 120 || telefono.length < 7 || telefono.length > 25) {
+    throw new ErrorApi(400, 'Faltan datos del cliente (cédula, nombre y teléfono).', 'datos_invalidos');
+  }
+  if (!Array.isArray(datos.items) || datos.items.length === 0) throw new ErrorApi(400, 'El carrito está vacío.', 'datos_invalidos');
+  if (!Number.isFinite(datos.total) || datos.total < 0) throw new ErrorApi(400, 'El total de la venta no es válido.', 'datos_invalidos');
+  if (!METODOS.includes(datos.metodo_pago)) throw new ErrorApi(400, 'Tipo de cobro inválido.', 'datos_invalidos');
+  const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
+
+  const id = nuevoId();
+  const db = env.DB;
+  const lote = await db.batch<{ valor: number }>([
+    db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('ventas', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
+    db
+      .prepare(
+        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(datos.items),
+        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, datos.vendedor_nombre ?? sesion.nombre
+      ),
+    ...sentenciasCambio(db, ['ventas'], datos.local_id),
+  ]);
+  const folio = lote[0].results[0].valor;
+  const fila = await db.prepare('SELECT * FROM ventas WHERE id = ?').bind(id).first<Record<string, unknown>>();
+  return { ...aVenta(fila!), folio };
+}
+
+export async function listarVentas(
+  env: Entorno,
+  sesion: Sesion,
+  opciones: { desde?: string; hasta?: string; limite?: number; localId?: string }
+): Promise<Venta[]> {
+  const alcance = await alcanceDe(env, sesion, opciones.localId);
+  const { sql, valores } = condicionAlcance(alcance, 'local_id');
+  const condiciones = [sql];
+  const params: unknown[] = [...valores];
+  // El vendedor y el técnico solo ven sus propias ventas
+  if (!esGerencia(sesion.rol)) {
+    condiciones.push('vendedor_id = ?');
+    params.push(sesion.userId);
+  }
+  if (opciones.desde) {
+    condiciones.push('fecha >= ?');
+    params.push(opciones.desde);
+  }
+  if (opciones.hasta) {
+    condiciones.push('fecha <= ?');
+    params.push(opciones.hasta);
+  }
+  const limite = Math.min(Math.max(1, Math.floor(opciones.limite ?? 1000)), 5000);
+  const filas = await env.DB
+    .prepare(`SELECT * FROM ventas WHERE ${condiciones.join(' AND ')} ORDER BY fecha DESC, rowid DESC LIMIT ?`)
+    .bind(...params, limite)
+    .all<Record<string, unknown>>();
+  return filas.results.map(aVenta);
+}
+
+// --- Devoluciones --------------------------------------------------------------------------------------------------
+export async function guardarDevolucion(env: Entorno, sesion: Sesion, datos: NuevaDevolucion): Promise<Devolucion> {
+  if (!esGerencia(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador, el gerente o el encargado registran devoluciones.', 'sin_permiso');
+  if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+
+  const motivo = (datos.motivo ?? '').trim().replace(/\s+/g, ' ');
+  if (motivo.length < 3 || motivo.length > 200) throw new ErrorApi(400, 'Escribe el motivo de la devolución.', 'datos_invalidos');
+  if (!Array.isArray(datos.items_devueltos) || datos.items_devueltos.length === 0) throw new ErrorApi(400, 'Indica qué producto se devuelve.', 'datos_invalidos');
+  const fecha = fechaValida(datos.fecha, 'La fecha de la devolución no es válida.');
+
+  const ventaOriginal = await env.DB.prepare('SELECT id, folio, local_id FROM ventas WHERE id = ?').bind(datos.venta_id).first<{ id: string; folio: number; local_id: string }>();
+  if (!ventaOriginal) throw new ErrorApi(404, 'La venta no existe.', 'no_existe');
+  if (ventaOriginal.local_id !== datos.local_id) throw new ErrorApi(400, 'La devolución debe registrarse en el local de la venta.', 'datos_invalidos');
+
+  const id = nuevoId();
+  const db = env.DB;
+  const lote = await db.batch<{ valor: number }>([
+    db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('devoluciones', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
+    db
+      .prepare(
+        `INSERT INTO devoluciones (id, folio, fecha, local_id, venta_id, venta_folio, motivo, items_devueltos, items_nuevos, total_devuelto, total_nuevo, diferencia, tasa_cambio, pagos, vuelto, reembolso, registrado_por, registrado_nombre)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'devoluciones'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(
+        id, fecha, datos.local_id, datos.venta_id, ventaOriginal.folio, motivo, JSON.stringify(datos.items_devueltos), JSON.stringify(datos.items_nuevos ?? []),
+        redondear2(datos.total_devuelto), redondear2(datos.total_nuevo ?? 0), redondear2(datos.diferencia), datos.tasa_cambio ?? null,
+        json(datos.pagos), json(datos.vuelto), json(datos.reembolso), sesion.userId, datos.registrado_nombre ?? sesion.nombre
+      ),
+    ...sentenciasCambio(db, ['devoluciones'], datos.local_id),
+  ]);
+  const fila = await db.prepare('SELECT * FROM devoluciones WHERE id = ?').bind(id).first<Record<string, unknown>>();
+  return { ...aDevolucion(fila!), folio: lote[0].results[0].valor };
+}
+
+export async function listarDevoluciones(
+  env: Entorno,
+  sesion: Sesion,
+  opciones: { ventaId?: string; limite?: number; localId?: string }
+): Promise<Devolucion[]> {
+  const alcance = await alcanceDe(env, sesion, opciones.localId);
+  const { sql, valores } = condicionAlcance(alcance, 'd.local_id');
+  const condiciones = [sql];
+  const params: unknown[] = [...valores];
+  if (opciones.ventaId) {
+    condiciones.push('d.venta_id = ?');
+    params.push(opciones.ventaId);
+  }
+  // Quien no es de gerencia solo ve las devoluciones de las ventas que puede ver (las suyas)
+  if (!esGerencia(sesion.rol)) {
+    condiciones.push('v.vendedor_id = ?');
+    params.push(sesion.userId);
+  }
+  const limite = Math.min(Math.max(1, Math.floor(opciones.limite ?? 2000)), 5000);
+  const filas = await env.DB
+    .prepare(`SELECT d.* FROM devoluciones d JOIN ventas v ON v.id = d.venta_id WHERE ${condiciones.join(' AND ')} ORDER BY d.fecha DESC, d.rowid DESC LIMIT ?`)
+    .bind(...params, limite)
+    .all<Record<string, unknown>>();
+  return filas.results.map(aDevolucion);
+}
+
