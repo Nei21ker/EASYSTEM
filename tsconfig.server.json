@@ -24,6 +24,9 @@
     "tests/server/**/*.ts",
     "node_modules/@cloudflare/vitest-plugin/types/cloudflare-test.d.ts",
     "src/lib/catalogo-modelos.ts",
-    "src/lib/constantes-locales.ts"
+    "src/lib/constantes-locales.ts",
+    "src/utils/cuadre.ts",
+    "src/utils/pagos.ts",
+    "src/utils/ventasResumen.ts"
   ]
 }

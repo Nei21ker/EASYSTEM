@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, reiniciarBase } from './ayudas';
-import { ahoraISO, nuevoId, redondear2, sentenciaContador } from '../../src/server/util';
+import { ahoraISO, nuevoId, rangoDelDiaUTC, redondear2, sentenciaContador } from '../../src/server/util';
 import { bd } from '../../src/server/db/cliente';
 import { locales, ventas } from '../../src/server/db/schema';
 import { eq } from 'drizzle-orm';
@@ -35,6 +35,26 @@ describe('utilidades', () => {
       sentenciaContador(env.DB, 'ventas'),
     ]);
     expect(lote.map((r) => r.results[0].valor)).toEqual([1, 2, 1, 3]);
+  });
+});
+
+describe('rangoDelDiaUTC (el día del negocio, no el de UTC)', () => {
+  it('en Venezuela (UTC-4, sin horario de verano) el día empieza a las 04:00 UTC', () => {
+    expect(rangoDelDiaUTC('2026-11-03', 'America/Caracas')).toEqual({ desde: '2026-11-03T04:00:00.000Z', hasta: '2026-11-04T04:00:00.000Z' });
+  });
+
+  it('con UTC el día coincide con el de UTC', () => {
+    expect(rangoDelDiaUTC('2026-11-03', 'UTC')).toEqual({ desde: '2026-11-03T00:00:00.000Z', hasta: '2026-11-04T00:00:00.000Z' });
+  });
+
+  it('respeta el horario de verano de otras zonas (Madrid cambia de hora el 25 de octubre de 2026)', () => {
+    expect(rangoDelDiaUTC('2026-10-24', 'Europe/Madrid').desde).toBe('2026-10-23T22:00:00.000Z');
+    expect(rangoDelDiaUTC('2026-10-25', 'Europe/Madrid')).toEqual({ desde: '2026-10-24T22:00:00.000Z', hasta: '2026-10-25T23:00:00.000Z' });
+  });
+
+  it('una fecha inválida lanza error', () => {
+    expect(() => rangoDelDiaUTC('03/11/2026', 'UTC')).toThrow();
+    expect(() => rangoDelDiaUTC('2026-02-30', 'UTC')).toThrow();
   });
 });
 

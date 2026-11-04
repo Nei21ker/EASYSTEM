@@ -18,6 +18,7 @@ export default defineConfig(async () => {
           bindings: {
             BETTER_AUTH_SECRET: 'secreto-solo-para-pruebas-0123456789abcdef',
             URL_FOTOS_PUBLICAS: 'https://fotos.test/publico',
+            ZONA_HORARIA: 'America/Caracas',
             MIGRACIONES: migraciones,
           },
         },
