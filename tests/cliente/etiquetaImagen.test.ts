@@ -64,3 +64,34 @@ describe('nombreArchivoEtiqueta', () => {
     expect(nombreArchivoEtiqueta('../x y.png')).toBe('etiqueta-xypng.png');
   });
 });
+
+import { construirPdfDeJpegs } from '../../src/utils/etiquetaImagen';
+
+describe('construirPdfDeJpegs', () => {
+  const jpeg = (n: number) => ({ bytes: new Uint8Array([0xff, 0xd8, n, 0xff, 0xd9]), ancho: 591, alto: 354 });
+  const texto = (b: Uint8Array) => new TextDecoder('latin1').decode(b);
+
+  it('es un PDF válido con una página por etiqueta y del tamaño exacto (50×30 mm = 141.73×85.04 pt)', () => {
+    const t = texto(construirPdfDeJpegs([jpeg(1), jpeg(2), jpeg(3)], 50, 30));
+    expect(t.startsWith('%PDF-1.4')).toBe(true);
+    expect(t.trimEnd().endsWith('%%EOF')).toBe(true);
+    expect(t).toContain('/Count 3');
+    expect((t.match(/\/Type \/Page /g) ?? []).length).toBe(3);
+    expect((t.match(/\/MediaBox \[0 0 141\.73 85\.04\]/g) ?? []).length).toBe(3);
+  });
+
+  it('la tabla xref apunta exactamente al inicio de cada objeto', () => {
+    const t = texto(construirPdfDeJpegs([jpeg(1), jpeg(2)], 50, 30));
+    const inicioXref = Number(/startxref\n(\d+)/.exec(t)![1]);
+    expect(t.slice(inicioXref, inicioXref + 4)).toBe('xref');
+    const entradas = [...t.slice(inicioXref).matchAll(/^(\d{10}) 00000 n $/gm)].map((m) => Number(m[1]));
+    expect(entradas).toHaveLength(8); // catálogo, páginas y 3 objetos por página
+    entradas.forEach((pos, i) => expect(t.slice(pos, pos + `${i + 1} 0 obj`.length)).toBe(`${i + 1} 0 obj`));
+  });
+
+  it('guarda los bytes del JPEG sin alterarlos y rechaza un PDF sin páginas', () => {
+    const pdf = construirPdfDeJpegs([jpeg(7)], 40, 25);
+    expect(texto(pdf).indexOf('stream\nÿØ\u0007ÿÙ')).toBeGreaterThan(0);
+    expect(() => construirPdfDeJpegs([], 40, 25)).toThrow(/páginas/);
+  });
+});

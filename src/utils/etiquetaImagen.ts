@@ -9,8 +9,6 @@ import { svgQr } from './qr';
 
 /** Puntos por pulgada de la imagen: 300 sobra para el cabezal de las térmicas de 203 y de 300 dpi (la app la reduce). */
 export const DPI_IMAGEN = 300;
-/** Máximo de etiquetas que se entregan juntas en un "Compartir" (el menú del teléfono se vuelve pesado con muchas). */
-export const MAX_ETIQUETAS_POR_ENVIO = 20;
 
 const MM_POR_PULGADA = 25.4;
 const pixeles = (mm: number) => Math.round((mm / MM_POR_PULGADA) * DPI_IMAGEN);
@@ -119,14 +117,14 @@ export async function etiquetaComoPng(e: Pick<EtiquetaPedida, 'codigo' | 'nombre
   return blob;
 }
 
-/** Una imagen PNG (archivo) por etiqueta, hasta MAX_ETIQUETAS_POR_ENVIO. */
+/** Una imagen PNG (archivo) por etiqueta, hasta MAX_ETIQUETAS_POR_TIRA. */
 export async function prepararArchivosEtiquetas(
   etiquetas: Pick<EtiquetaPedida, 'codigo' | 'nombre'>[],
   formato: FormatoEtiqueta,
   tipo: TipoCodigoEtiqueta = 'qr'
 ): Promise<File[]> {
   return Promise.all(
-    etiquetas.slice(0, MAX_ETIQUETAS_POR_ENVIO).map(async (e) => new File([await etiquetaComoPng(e, formato, tipo)], nombreArchivoEtiqueta(e.codigo), { type: 'image/png' }))
+    etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA).map(async (e) => new File([await etiquetaComoPng(e, formato, tipo)], nombreArchivoEtiqueta(e.codigo), { type: 'image/png' }))
   );
 }
 
@@ -158,4 +156,123 @@ export function descargarArchivos(archivos: File[]): void {
     enlace.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Varias etiquetas en UN solo archivo (las apps de impresoras como WePrint suelen aceptar una imagen o un PDF a la vez)
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** Máximo de etiquetas en una tira o en un PDF. */
+export const MAX_ETIQUETAS_POR_TIRA = 40;
+
+/**
+ * UNA imagen con todas las etiquetas una debajo de otra (ancho = el de la etiqueta, alto = etiquetas × alto de la etiqueta, más
+ * `separacionMm` entre una y otra). Con el papel de etiquetas configurado en la app a ese mismo tamaño, la app imprime la tira
+ * etiqueta por etiqueta. `separacionMm` sirve para compensar el espacio entre etiquetas del rollo si la impresión se va corriendo.
+ */
+export async function tiraComoPng(
+  etiquetas: Pick<EtiquetaPedida, 'codigo' | 'nombre'>[],
+  formato: FormatoEtiqueta,
+  tipo: TipoCodigoEtiqueta = 'qr',
+  separacionMm = 0
+): Promise<Blob> {
+  const lote = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
+  if (lote.length === 0) throw new Error('No hay etiquetas para la tira.');
+  const ancho = pixeles(formato.anchoMm);
+  const alto = pixeles(formato.altoMm);
+  const separacion = pixeles(Math.max(0, Math.min(separacionMm, 10)));
+  const canvas = document.createElement('canvas');
+  canvas.width = ancho;
+  canvas.height = alto * lote.length + separacion * (lote.length - 1);
+  const contexto = canvas.getContext('2d');
+  if (!contexto) throw new Error('El navegador no pudo preparar la imagen de la tira.');
+  contexto.fillStyle = '#fff';
+  contexto.fillRect(0, 0, canvas.width, canvas.height);
+  for (const [i, e] of lote.entries()) {
+    const imagen = new Image();
+    imagen.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgEtiqueta(e, formato, tipo))}`;
+    await imagen.decode();
+    contexto.drawImage(imagen, 0, i * (alto + separacion), ancho, alto);
+  }
+  const blob = await new Promise<Blob | null>((resolver) => canvas.toBlob(resolver, 'image/png'));
+  if (!blob) throw new Error('No se pudo crear la imagen de la tira.');
+  return blob;
+}
+
+function concatenar(partes: Uint8Array[]): Uint8Array {
+  const total = partes.reduce((s, p) => s + p.length, 0);
+  const salida = new Uint8Array(total);
+  let pos = 0;
+  for (const p of partes) {
+    salida.set(p, pos);
+    pos += p.length;
+  }
+  return salida;
+}
+
+/**
+ * PDF de varias páginas, UNA etiqueta por página con el tamaño exacto de la etiqueta (cada página es una imagen JPEG).
+ * Es un PDF mínimo escrito a mano (sin librerías): catálogo, árbol de páginas y, por página, su contenido y su imagen.
+ */
+export function construirPdfDeJpegs(jpegs: { bytes: Uint8Array; ancho: number; alto: number }[], anchoMm: number, altoMm: number): Uint8Array {
+  if (jpegs.length === 0) throw new Error('No hay páginas para el PDF.');
+  const codificador = new TextEncoder();
+  const puntos = (mm: number) => ((mm * 72) / MM_POR_PULGADA).toFixed(2);
+  const W = puntos(anchoMm);
+  const H = puntos(altoMm);
+
+  // Numeración: 1 = catálogo, 2 = páginas; por cada página i: 3+3i = página, 4+3i = contenido, 5+3i = imagen
+  const objetos: Uint8Array[] = [];
+  objetos[1] = codificador.encode('<< /Type /Catalog /Pages 2 0 R >>');
+  objetos[2] = codificador.encode(`<< /Type /Pages /Count ${jpegs.length} /Kids [${jpegs.map((_, i) => `${3 + 3 * i} 0 R`).join(' ')}] >>`);
+  jpegs.forEach((j, i) => {
+    const pagina = 3 + 3 * i;
+    const contenido = codificador.encode(`q ${W} 0 0 ${H} 0 0 cm /Im0 Do Q`);
+    objetos[pagina] = codificador.encode(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${W} ${H}] /Resources << /XObject << /Im0 ${pagina + 2} 0 R >> >> /Contents ${pagina + 1} 0 R >>`);
+    objetos[pagina + 1] = concatenar([codificador.encode(`<< /Length ${contenido.length} >>\nstream\n`), contenido, codificador.encode('\nendstream')]);
+    objetos[pagina + 2] = concatenar([
+      codificador.encode(`<< /Type /XObject /Subtype /Image /Width ${j.ancho} /Height ${j.alto} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${j.bytes.length} >>\nstream\n`),
+      j.bytes,
+      codificador.encode('\nendstream'),
+    ]);
+  });
+
+  const partes: Uint8Array[] = [codificador.encode('%PDF-1.4\n')];
+  const posiciones: number[] = [];
+  let largo = partes[0].length;
+  for (let n = 1; n < objetos.length; n++) {
+    posiciones[n] = largo;
+    const cabeza = codificador.encode(`${n} 0 obj\n`);
+    const cola = codificador.encode('\nendobj\n');
+    partes.push(cabeza, objetos[n], cola);
+    largo += cabeza.length + objetos[n].length + cola.length;
+  }
+  const filas = ['0000000000 65535 f '];
+  for (let n = 1; n < objetos.length; n++) filas.push(`${String(posiciones[n]).padStart(10, '0')} 00000 n `);
+  partes.push(codificador.encode(`xref\n0 ${objetos.length}\n${filas.join('\n')}\ntrailer\n<< /Size ${objetos.length} /Root 1 0 R >>\nstartxref\n${largo}\n%%EOF\n`));
+  return concatenar(partes);
+}
+
+/** PDF con una etiqueta por página (solo en el navegador: dibuja cada etiqueta y la guarda como JPEG). */
+export async function etiquetasComoPdf(etiquetas: Pick<EtiquetaPedida, 'codigo' | 'nombre'>[], formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = 'qr'): Promise<Blob> {
+  const ancho = pixeles(formato.anchoMm);
+  const alto = pixeles(formato.altoMm);
+  const jpegs: { bytes: Uint8Array; ancho: number; alto: number }[] = [];
+  for (const e of etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA)) {
+    const imagen = new Image();
+    imagen.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgEtiqueta(e, formato, tipo))}`;
+    await imagen.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = ancho;
+    canvas.height = alto;
+    const contexto = canvas.getContext('2d');
+    if (!contexto) throw new Error('El navegador no pudo preparar el PDF.');
+    contexto.fillStyle = '#fff';
+    contexto.fillRect(0, 0, ancho, alto);
+    contexto.drawImage(imagen, 0, 0, ancho, alto);
+    const blob = await new Promise<Blob | null>((resolver) => canvas.toBlob(resolver, 'image/jpeg', 0.95));
+    if (!blob) throw new Error('No se pudo crear el PDF de etiquetas.');
+    jpegs.push({ bytes: new Uint8Array(await blob.arrayBuffer()), ancho, alto });
+  }
+  return new Blob([construirPdfDeJpegs(jpegs, formato.anchoMm, formato.altoMm) as BlobPart], { type: 'application/pdf' });
 }

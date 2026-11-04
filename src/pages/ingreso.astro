@@ -138,17 +138,31 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </aside>
   </div>
 
-  <!-- Etiquetas listas como imágenes para la impresora del celular (WePrint): se ven aquí y se comparten o guardan -->
-  <dialog id="ig-galeria" class="m-auto w-[min(94vw,34rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-    <div class="flex max-h-[88vh] flex-col">
+  <!-- Etiquetas listas para la impresora del celular (WePrint): UN archivo con todas (tira o PDF) o imágenes sueltas -->
+  <dialog id="ig-galeria" class="m-auto w-[min(94vw,36rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div class="flex max-h-[90vh] flex-col">
       <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 class="text-base font-semibold">Etiquetas listas para la impresora del celular</h2>
+        <h2 class="text-base font-semibold">Imprimir etiquetas</h2>
         <p id="ig-galeria-cuenta" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div class="space-y-3 overflow-y-auto px-5 py-4 text-sm">
+        <div>
+          <label for="ig-galeria-modo" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Cómo mandarlas a WePrint</label>
+          <select id="ig-galeria-modo" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            <option value="tira">Una sola imagen con todas las etiquetas (recomendado)</option>
+            <option value="pdf">Un PDF con una etiqueta por página</option>
+            <option value="sueltas">Una imagen por etiqueta</option>
+          </select>
+          <p id="ig-galeria-ayuda" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <div id="ig-galeria-separacion-caja">
+          <label for="ig-galeria-separacion" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Separación entre etiquetas (mm)</label>
+          <input id="ig-galeria-separacion" type="number" inputmode="decimal" min="0" max="10" step="0.5" value="0" class="mt-1 w-28 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <span class="ml-2 text-xs text-slate-500 dark:text-slate-400">Déjala en 0; si al imprimir la tira las etiquetas se van corriendo, pon el espacio que hay entre etiquetas en tu rollo (por ejemplo 2 o 3).</span>
+        </div>
         <ol class="list-decimal space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
-          <li>Pulsa <strong>Compartir con WePrint</strong> y elige WePrint en el menú.</li>
-          <li>Si WePrint no aparece en el menú: mantén el dedo sobre una etiqueta y elige <strong>Guardar en Fotos</strong> (o pulsa <strong>Descargar imágenes</strong>) y, dentro de WePrint, elige la imagen desde Fotos o Archivos.</li>
+          <li>Pulsa <strong>Compartir con WePrint</strong> y elige WePrint en el menú. En WePrint deja el papel en el tamaño de la etiqueta.</li>
+          <li>Si WePrint no aparece en el menú, pulsa <strong>Descargar</strong> (queda en la app Archivos) o mantén el dedo sobre una etiqueta y elige <strong>Guardar en Fotos</strong>, y ábrela desde WePrint.</li>
           <li>Cuando las hayas impreso, pulsa <strong>Ya las imprimí</strong>.</li>
         </ol>
         <div id="ig-galeria-imagenes" class="grid grid-cols-2 gap-2"></div>
@@ -156,7 +170,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       </div>
       <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:justify-end">
         <button id="ig-galeria-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar</button>
-        <button id="ig-galeria-descargar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar imágenes</button>
+        <button id="ig-galeria-descargar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar</button>
         <button id="ig-galeria-compartir" type="button" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">Compartir con WePrint</button>
         <button id="ig-galeria-listo" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Ya las imprimí</button>
       </div>
@@ -181,7 +195,15 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     TIPOS_CODIGO_ETIQUETA,
     totalEtiquetas,
   } from '../utils/etiquetas';
-  import { compartirArchivos, descargarArchivos, MAX_ETIQUETAS_POR_ENVIO, prepararArchivosEtiquetas, puedeCompartirArchivos } from '../utils/etiquetaImagen';
+  import {
+    compartirArchivos,
+    descargarArchivos,
+    etiquetasComoPdf,
+    MAX_ETIQUETAS_POR_TIRA,
+    prepararArchivosEtiquetas,
+    puedeCompartirArchivos,
+    tiraComoPng,
+  } from '../utils/etiquetaImagen';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { alCambiarDatos } from '../lib/realtime';
   import type { ProductoConRelaciones } from '../types/database.types';
@@ -589,16 +611,78 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   // Impresora Bluetooth desde el celular (p. ej. NETUM G5 con la app WePrint): el iPhone no deja que una página hable con la
-  // impresora, así que se preparan las etiquetas como imágenes, se muestran aquí y se entregan a WePrint con "Compartir"
-  // (o se guardan en Fotos / Archivos para abrirlas desde WePrint).
+  // impresora, así que se preparan las etiquetas como archivos y se entregan a WePrint con "Compartir" (o se guardan en Fotos /
+  // Archivos para abrirlas desde WePrint). WePrint imprime un archivo a la vez: por eso lo recomendado es UNA imagen (tira) con todas
+  // las etiquetas una debajo de otra, o un PDF con una etiqueta por página.
   const galeria = $('ig-galeria') as HTMLDialogElement;
   const galeriaImagenes = $('ig-galeria-imagenes');
   const galeriaError = $('ig-galeria-error');
-  let galeriaArchivos: File[] = [];
+  const galeriaModo = $('ig-galeria-modo') as HTMLSelectElement;
+  const galeriaSeparacion = $('ig-galeria-separacion') as HTMLInputElement;
+  const AYUDA_MODO: Record<string, string> = {
+    tira: 'Un solo archivo: todas las etiquetas una debajo de otra. En WePrint pon el papel al tamaño de UNA etiqueta y la app la imprime etiqueta por etiqueta.',
+    pdf: 'Un solo archivo de varias páginas, una etiqueta por página, cada una del tamaño exacto del papel.',
+    sueltas: 'Una imagen por etiqueta: WePrint solo deja imprimir una a la vez.',
+  };
+  let galeriaTira: File | null = null;
+  let galeriaPdf: File | null = null;
+  let galeriaSueltas: File[] = [];
   let galeriaCodigos: string[] = [];
+  let galeriaEtiquetas: { codigo: string; nombre: string }[] = [];
   let galeriaUrls: string[] = [];
+  let galeriaVersion = 0;
+
+  function archivosDelModo(): File[] {
+    if (galeriaModo.value === 'tira') return galeriaTira ? [galeriaTira] : [];
+    if (galeriaModo.value === 'pdf') return galeriaPdf ? [galeriaPdf] : [];
+    return galeriaSueltas;
+  }
+
+  function actualizarBotonesGaleria() {
+    const archivos = archivosDelModo();
+    $('ig-galeria-ayuda').textContent = AYUDA_MODO[galeriaModo.value] ?? '';
+    $('ig-galeria-separacion-caja').classList.toggle('hidden', galeriaModo.value !== 'tira');
+    ($('ig-galeria-compartir') as HTMLButtonElement).disabled = archivos.length === 0;
+    ($('ig-galeria-descargar') as HTMLButtonElement).disabled = archivos.length === 0;
+    $('ig-galeria-compartir').classList.toggle('hidden', archivos.length > 0 && !puedeCompartirArchivos(archivos));
+  }
+
+  /** Genera la tira y el PDF (y las imágenes sueltas la primera vez); se vuelve a llamar si cambia la separación. */
+  async function prepararGaleria(incluirSueltas: boolean) {
+    const version = ++galeriaVersion;
+    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const tipo = buscarTipoCodigo(selectTipo.value);
+    const separacion = Math.max(0, Math.min(10, Number(galeriaSeparacion.value) || 0));
+    galeriaTira = null;
+    galeriaPdf = null;
+    actualizarBotonesGaleria();
+    try {
+      const [tira, pdf, sueltas] = await Promise.all([
+        tiraComoPng(galeriaEtiquetas, formato, tipo, separacion),
+        etiquetasComoPdf(galeriaEtiquetas, formato, tipo),
+        incluirSueltas ? prepararArchivosEtiquetas(galeriaEtiquetas, formato, tipo) : Promise.resolve(galeriaSueltas),
+      ]);
+      if (version !== galeriaVersion) return; // llegó otra petición más nueva
+      galeriaTira = new File([tira], 'etiquetas-tira.png', { type: 'image/png' });
+      galeriaPdf = new File([pdf], 'etiquetas.pdf', { type: 'application/pdf' });
+      galeriaSueltas = sueltas;
+      if (incluirSueltas) {
+        galeriaUrls.forEach((u) => URL.revokeObjectURL(u));
+        galeriaUrls = sueltas.map((a) => URL.createObjectURL(a));
+        galeriaImagenes.innerHTML = sueltas
+          .map((a, i) => `<img src="${galeriaUrls[i]}" alt="Etiqueta ${escapar(a.name)}" class="w-full rounded border border-slate-300 bg-white" />`)
+          .join('');
+      }
+      galeriaError.classList.add('hidden');
+    } catch (err) {
+      galeriaError.textContent = err instanceof Error ? err.message : 'No se pudieron preparar las etiquetas.';
+      galeriaError.classList.remove('hidden');
+    }
+    actualizarBotonesGaleria();
+  }
 
   function cerrarGaleria() {
+    galeriaVersion += 1;
     galeria.close();
     galeriaUrls.forEach((u) => URL.revokeObjectURL(u));
     galeriaUrls = [];
@@ -608,37 +692,32 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   $('ig-compartir').addEventListener('click', async () => {
     const etiquetas = reunirEtiquetas();
     if (!etiquetas) return;
-    const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_ENVIO);
-    try {
-      galeriaArchivos = await prepararArchivosEtiquetas(envio, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
-    } catch (err) {
-      mostrarError(err instanceof Error ? err.message : 'No se pudieron preparar las etiquetas.');
-      return;
-    }
+    const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
+    galeriaEtiquetas = envio.map((e) => ({ codigo: e.codigo, nombre: e.nombre }));
     galeriaCodigos = envio.map((e) => e.codigo);
-    galeriaUrls = galeriaArchivos.map((a) => URL.createObjectURL(a));
-    galeriaImagenes.innerHTML = galeriaArchivos
-      .map((a, i) => `<img src="${galeriaUrls[i]}" alt="Etiqueta ${escapar(a.name)}" class="w-full rounded border border-slate-300 bg-white" />`)
-      .join('');
     const restantes = etiquetas.length - envio.length;
     $('ig-galeria-cuenta').textContent =
-      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar el botón para las siguientes)` : ''}`;
-    galeriaError.classList.add('hidden');
-    $('ig-galeria-compartir').classList.toggle('hidden', !puedeCompartirArchivos(galeriaArchivos));
+      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "Imprimir etiquetas" para las siguientes)` : ''}`;
+    galeriaModo.value = 'tira';
+    galeriaImagenes.innerHTML = '';
     galeria.showModal();
+    await prepararGaleria(true);
   });
 
-  // El menú "Compartir" exige que se abra con un toque del usuario: por eso es un botón propio dentro de la galería
+  galeriaModo.addEventListener('change', actualizarBotonesGaleria);
+  galeriaSeparacion.addEventListener('change', () => void prepararGaleria(false));
+
+  // El menú "Compartir" exige que se abra con un toque del usuario: los archivos ya están listos antes de pulsar el botón
   $('ig-galeria-compartir').addEventListener('click', async () => {
     galeriaError.classList.add('hidden');
     try {
-      await compartirArchivos(galeriaArchivos);
+      await compartirArchivos(archivosDelModo());
     } catch (err) {
-      galeriaError.textContent = err instanceof Error ? `No se pudo abrir el menú Compartir (${err.message}). Usa "Descargar imágenes" o guarda las etiquetas en Fotos.` : 'No se pudo abrir el menú Compartir.';
+      galeriaError.textContent = err instanceof Error ? `No se pudo abrir el menú Compartir (${err.message}). Usa "Descargar" o guarda las etiquetas en Fotos.` : 'No se pudo abrir el menú Compartir.';
       galeriaError.classList.remove('hidden');
     }
   });
-  $('ig-galeria-descargar').addEventListener('click', () => descargarArchivos(galeriaArchivos));
+  $('ig-galeria-descargar').addEventListener('click', () => descargarArchivos(archivosDelModo()));
   $('ig-galeria-cerrar').addEventListener('click', cerrarGaleria);
   $('ig-galeria-listo').addEventListener('click', async () => {
     const codigos = galeriaCodigos;
@@ -717,7 +796,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     guardarLote();
     pintarLote();
     mostrarExito(
-      `Agregados ${productos} producto${productos === 1 ? '' : 's'} con ${unidades} unidad${unidades === 1 ? '' : 'es'} sin etiqueta. Pulsa "Imprimir etiquetas" (se preparan 20 por vez; al terminar, vuelve a pulsar para las siguientes).`
+      `Agregados ${productos} producto${productos === 1 ? '' : 's'} con ${unidades} unidad${unidades === 1 ? '' : 'es'} sin etiqueta. Pulsa "Imprimir etiquetas" (se preparan hasta 40 por vez; al terminar, vuelve a pulsar para las siguientes).`
     );
   });
 
