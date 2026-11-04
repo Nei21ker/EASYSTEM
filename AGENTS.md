@@ -4,26 +4,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-EASYSTEM is an inventory/POS system for **Edward Accesorios** (phone accessories retailer). Astro + Tailwind CSS v4 frontend, mobile-first, with Supabase (Postgres + Auth) as the backend — but it also runs with **zero configuration** via an automatic LocalStorage fallback when Supabase credentials are absent or unreachable. The rest of this file (and the README, which is in Spanish) assumes familiarity with that dual-mode design.
+EASYSTEM is an inventory/POS/service-orders/payroll/cash-reconciliation system for **Edward Accesorios** (4 locales). Astro (static site) + Tailwind v4 frontend; backend on **Cloudflare** (Worker + D1 + R2 + Better-Auth). It also runs with **zero configuration** in a LocalStorage demo mode when `PUBLIC_USAR_API` is not "true". Branch `cloudflare` holds the migration away from Vercel + Supabase (the old system stays on `main` until cutover; `supabase/` is an archive). The README is in Spanish.
+
+## Backend actual (Cloudflare) — lee esto primero
+
+Todo lo que dice más abajo sobre Supabase, RLS, funciones RPC o migraciones `00NN` describe el sistema anterior: **las reglas de negocio siguen vigentes, pero su implementación ahora es esta**:
+
+- **Datos**: D1 (SQLite). Esquema y triggers de seguridad en `migrations/0001_d1_schema.sql`; semilla (4 locales con ids fijos `…0001` a `…0004`, catálogo de modelos de teléfono) en `0002_seed.sql` (generada con `scripts/generar-seed.mjs`). No hay productos de ejemplo. Archivos en R2: `FOTOS_PUBLICAS` (se sirven sin sesión por `/api/archivos/publico/*`) y `FOTOS_PRIVADAS` (comprobantes de nómina y fotos de cuadre: solo con sesión y los mismos permisos que los datos).
+- **API**: `src/pages/api/**`. Cada archivo lleva `export const prerender = false` y se construye con `conSesion`, salvo `salud`, `auth/*`, `archivos/publico/*` y `cuenta/estado` (`tests/server/rutas-protegidas.test.ts` lo exige). Servicios en `src/server/servicios/`, lecturas en `src/server/repos/`.
+- **Seguridad (reemplaza a RLS)**: `src/server/authz.ts` — `cargarSesion` (cookie Better-Auth + perfil; usuario inactivo o con cierre forzado = 401), `alcanceDe` / `alcanceNomina` (locales accesibles según rol y suscripción vigente), `condicionAlcance`, `exigirRol`. Todo servicio recibe una `Sesion` y filtra por `Alcance`. Se comprueba primero el permiso y después la existencia (no se pueden tantear ids). `tests/server/matriz-roles.test.ts` prueba cada endpoint contra cada rol: **al agregar una ruta hay que agregarla a esa tabla**.
+- **Auth**: Better-Auth con adaptador Drizzle (`src/server/auth.ts`), registro público deshabilitado, hash PBKDF2-SHA256 de 100.000 iteraciones (`password.ts`), clave mínima de 8. Las altas solo pasan por `crearUsuarioInterno` (lote atómico user + account + perfil). El primer administrador se crea con `node scripts/crear-admin.mjs --db local|remote` (clave aleatoria mostrada una vez, en la terminal del dueño; nunca por chat).
+- **Atomicidad**: D1 no tiene transacciones interactivas, solo `db.batch` (atómico). Movimientos e unidades se registran en lote (`registrarMovimientos`: hasta 50 movimientos y 500 unidades; reintenta si dos ventas eligen la misma unidad). Los folios salen de la tabla `contadores`. Un lote sin sentencias da error en D1: protege los lotes vacíos.
+- **Tiempo real**: cada escritura sube una versión en la tabla `cambios` (`sentenciasCambio` dentro del batch, o `avisarCambio` después, para catálogo, tasas y usuarios). `GET /api/cambios` devuelve solo lo que el rol puede ver; el cliente (`src/lib/sondeo.ts` + `realtime.ts`) consulta cada 5 s con la pestaña visible y actividad reciente y emite el evento `easystem:datos-cambiaron`. La API `alCambiarDatos` no cambió.
+- **Cliente**: `src/lib/modo.ts` (`modoServidor`), `src/lib/api.ts` (errores en español; un fallo de red coincide con `esErrorDeRed`), `src/lib/auth.ts` y `src/lib/db/*.ts` hablan con la API. `inventoryService.ts` y `auth.ts` siguen siendo los únicos puntos de acceso a datos de las páginas.
+- **Día de negocio**: el cuadre de caja se calcula en el servidor con `ZONA_HORARIA` (America/Caracas).
+- **Scripts**: `scripts/crear-admin.mjs`, `scripts/cargar-controles.mjs` (carga validada y reanudable del inventario real del Local de controles desde `datos-controles/`, ignorada por git), `scripts/generar-seed.mjs`.
 
 ## Commands
 
 ```
-npm run dev            # dev server at localhost:4321
-astro dev --background # dev server as a background process
-astro dev stop         # stop the background dev server
-astro dev status       # check if a background dev server is running
-astro dev logs         # view logs from the background dev server
-npm run build           # production build to ./dist/
-npm run preview         # serve the production build locally
-npm run astro check     # type-check the whole project
+npm run dev              # modo demo (LocalStorage) en localhost:4321
+npm test                 # vitest: proyecto servidor (workerd + D1/R2 simulados), cliente y scripts
+npm run check:all        # astro check + tsc del servidor (tsconfig.server.json)
+npm run build            # build (con PUBLIC_USAR_API=true para el modo servidor)
+npm run db:local         # aplica migrations/ a la base D1 local
+npx wrangler dev         # Worker local (necesita .dev.vars con BETTER_AUTH_SECRET y un build previo)
+npm run backup           # wrangler d1 export de la base remota
 ```
 
-There is no test suite and no lint script configured. Use `npm run astro check` to verify TypeScript correctness after changes.
+Cuentas demo (modo LocalStorage; dominio `edwardaccesorios.com`): admin/admin123, vendedor/vendedor123, encargado/encargado123, tecnico/tecnico123, gerente/gerente123, contador/contador123.
 
-Demo login credentials (LocalStorage mode, no Supabase needed): `admin@edwardaccesorios.com` / `admin123` (administrador) `vendedor@edwardaccesorios.com` / `vendedor123` (vendedor, Local Accesorios), `encargado@edwardaccesorios.com` / `encargado123` (encargado, Local Vidrios), `tecnico@edwardaccesorios.com` / `tecnico123` (técnico, Local Servicio Técnico), and `gerente@edwardaccesorios.com` / `gerente123` (gerente; the demo admin is the administrador) and `contador@edwardaccesorios.com` / `contador123` (contador: only sees /payroll).
+## Architecture (reglas de negocio; los detalles de Supabase/RLS/SQL son del sistema anterior)
 
-## Architecture
 
 ### The dual-mode data layer is the core design constraint
 

@@ -106,7 +106,7 @@ interface LocalDB {
   imagenesDemo?: boolean;
   /** Lista de lo que revendió cada trabajador independiente en un día (una por pago diario) */
   reventas?: (LineaReventa & { id: string; nomina_id: string; local_id: string })[];
-  /** Una fila por unidad física con su código único (migración 0033 en Supabase) y el último número usado */
+  /** Una fila por unidad física con su código único (la hace el trigger de D1) y el último número usado */
   unidades?: UnidadProducto[];
   unidadSeq?: number;
   /** Cuadres de caja diarios (las fotos van como data URL dentro de cada cuadre) */
@@ -147,7 +147,7 @@ function construirSeedInicial(): LocalDB {
 }
 
 // ----------------------------------------------------------------------------
-// Unidades con código único (modo LocalStorage). En Supabase lo hace el trigger de la migración 0033;
+// Unidades con código único (modo LocalStorage). En modo servidor lo hace un trigger de D1;
 // aquí se replica la misma regla: una entrada crea una unidad por cada una, una salida marca VENDIDA las
 // unidades indicadas (y, si faltan, las más antiguas del local), una entrada con códigos reactiva esas.
 // ----------------------------------------------------------------------------
@@ -227,7 +227,7 @@ function moverUnidadesLocal(
 
 /**
  * Datos guardados antes del multi-local: se agregan los 3 locales y TODO lo existente (stock, movimientos,
- * ventas, devoluciones) pasa al Local Accesorios, igual que hace la migración 0016 en Supabase.
+ * ventas, devoluciones) pasa al Local Accesorios, igual que el servidor.
  */
 function migrarAMultilocal(db: LocalDB): boolean {
   let cambio = false;
@@ -1673,7 +1673,7 @@ async function obtenerOrdenServicio(id: string): Promise<OrdenServicio> {
   return orden;
 }
 
-/** Guarda cambios de una orden (en LocalStorage también pone las marcas de tiempo que en Supabase pone un trigger). */
+/** Guarda cambios de una orden (en LocalStorage también pone las marcas de tiempo que en el servidor pone un trigger). */
 async function guardarCambiosOrden(orden: OrdenServicio, cambios: Partial<OrdenServicio>): Promise<OrdenServicio> {
   const ahora = new Date().toISOString();
   const nuevo: Partial<OrdenServicio> = { ...cambios };

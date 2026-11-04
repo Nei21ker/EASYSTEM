@@ -1,6 +1,6 @@
 // Consulta de versiones para la actualización en vivo. El cliente pregunta cada pocos segundos y solo
 // recarga las pantallas de las tablas cuya versión cambió. Solo se revelan las versiones de lo que el rol
-// puede leer (equivale al filtrado por RLS del Realtime de Supabase); el contenido nunca viaja aquí.
+// puede leer (reemplaza el filtrado por RLS del sistema anterior); el contenido nunca viaja aquí.
 import { alcanceDe, alcanceNomina, esGerencia, type Alcance, type Sesion } from '../authz';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
