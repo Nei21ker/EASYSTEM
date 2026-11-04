@@ -1143,4 +1143,5 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   document.getElementById('mc-tab-ingreso')!.addEventListener('click', () => mostrarPestana('ingreso'));
   document.getElementById('mc-tab-descargo')!.addEventListener('click', () => mostrarPestana('descargo'));
   mostrarPestana(location.hash === '#descargo' ? 'descargo' : 'ingreso');
+  window.addEventListener('hashchange', () => mostrarPestana(location.hash === '#descargo' ? 'descargo' : 'ingreso'));
 </script>
