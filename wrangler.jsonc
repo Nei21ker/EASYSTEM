@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "easystem",
-      "database_id": "LOCAL",
+      "database_id": "bcc46775-46b2-4a75-973f-44a9b59b16b9",
       "migrations_dir": "migrations"
     }
   ],
