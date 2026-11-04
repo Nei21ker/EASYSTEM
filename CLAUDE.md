@@ -166,6 +166,8 @@ EASYSTEM is sold as a service: **one subscription per local** (migrations `0020`
 - **Bajas** (`POST /api/bajas`): piece leaves the stock (movement BAJA) and keeps its code; "Bajas recientes" lists them with "Revertir" (ENTRADA "Reversión de baja", unit back to DISPONIBLE). `GET /api/unidades?estado=` now accepts EN_TRANSITO and BAJA.
 - Realtime: `traslados` is in `TABLAS_LOCAL` (server) and `TABLAS_TIEMPO_REAL` (client).
 
+- **Inventario (third tab, `components/mercancia/Inventario.astro`, deep link `/ingreso#inventario`)**: prints the sheet to count a local by hand and compare with the system. Two sheets, both built by pure functions in `utils/hojasImpresas.ts` (`htmlInventarioPorProducto`: one line per product with the system quantity and blank "Contado"/"Diferencia" columns, subtotal per category; `htmlInventarioPorPieza`: the code of EVERY DISPONIBLE piece with a ☐, grouped by product, plus "sobran"/"faltan" lines). Local picker for administrador/gerente (the encargado is pinned to his own), category filter, "include stock 0" (por producto only). Data is fetched at print time (`listarProductos({ localId })` + `listarUnidades({ estado: 'DISPONIBLE', localId })`), never from the screen's stale copy; EN_TRANSITO and BAJA pieces are not counted. Read-only: it writes nothing.
+
 ### Payroll (Nómina) and the contador role
 
 `pages/payroll.astro` (route `/payroll`, nav "Nómina") — personal and pay (fortnightly for fixed staff, daily for independent resellers) for ALL locales. Roles: **administrador, gerente and the new `contador`** (`puedeNomina()`); encargado/vendedor/tecnico get nothing (nav, page `roles`, `exigirAccesoNomina()` in the service, and RLS).

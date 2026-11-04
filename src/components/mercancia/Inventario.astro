@@ -1,0 +1,221 @@
+---
+// Pestaña "Inventario" de Mercancía: imprime la hoja para contar a mano lo que hay en un local y compararlo con lo que dice el sistema.
+// Dos hojas: por producto (una línea por producto, con columnas para anotar lo contado) o por pieza (el código de cada pieza con una
+// casilla, para verificar con el lector de códigos).
+const claseCampo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+---
+
+<div id="iv-raiz" class="space-y-4">
+  <p id="iv-sin-local" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+  <p id="iv-aviso" role="status" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-500/10 dark:text-red-300"></p>
+
+  <section class={`${claseTarjeta} space-y-4`}>
+    <div>
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Hoja de inventario físico</h2>
+      <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+        Imprime lo que el sistema dice que hay en el local para contarlo a mano y anotar las diferencias. No incluye piezas en tránsito ni dadas de baja.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap gap-2" role="tablist" aria-label="Tipo de hoja">
+      <button id="iv-modo-producto" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+        Por producto <span class="font-normal opacity-70">· una línea por producto</span>
+      </button>
+      <button id="iv-modo-pieza" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+        Por pieza <span class="font-normal opacity-70">· el código de cada pieza</span>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div id="iv-bloque-local" class="hidden">
+        <label for="iv-local" class={claseEtiqueta}>Local</label>
+        <select id="iv-local" class={`${claseCampo} mt-1`}></select>
+      </div>
+      <div>
+        <label for="iv-categoria" class={claseEtiqueta}>Categoría</label>
+        <select id="iv-categoria" class={`${claseCampo} mt-1`}>
+          <option value="">Todas las categorías</option>
+        </select>
+      </div>
+    </div>
+
+    <label id="iv-bloque-cero" class="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+      <input id="iv-cero" type="checkbox" class="h-4 w-4 rounded border-slate-300" />
+      Incluir también los productos con 0 existencias (por si hay mercancía que el sistema no tiene registrada)
+    </label>
+
+    <div id="iv-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">Cargando…</div>
+
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <button id="iv-imprimir" type="button" disabled class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">
+        Imprimir hoja de inventario
+      </button>
+      <button id="iv-actualizar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Actualizar cifras</button>
+    </div>
+    <p class="text-xs text-slate-500 dark:text-slate-400">La hoja se arma con las existencias del momento en que pulsas imprimir. Para guardarla como PDF, elige "Guardar como PDF" en la ventana de impresión.</p>
+  </section>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGlobal, esGerencia } from '../../lib/auth';
+  import { escaparHtml } from '../../utils/productosUI';
+  import { htmlInventarioPorPieza, htmlInventarioPorProducto, imprimirHoja } from '../../utils/hojasImpresas';
+  import type { Local, ProductoConRelaciones } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
+  const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
+
+  let modo: 'producto' | 'pieza' = 'producto';
+  let localId: string | null = null;
+  let locales: Local[] = [];
+  let miNombre = '';
+  let productos: ProductoConRelaciones[] = [];
+  let iniciado = false;
+  let ocupado = false;
+
+  const nombreLocal = () => locales.find((l) => l.id === localId)?.nombre ?? 'Local';
+  const mensaje = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  const error = (texto: string) => {
+    $('iv-aviso').textContent = texto;
+    $('iv-aviso').classList.remove('hidden');
+  };
+
+  function pintarTab(id: string, activa: boolean) {
+    const tab = $(id);
+    tab.setAttribute('aria-selected', String(activa));
+    tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
+    tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
+  }
+
+  const categoriaElegida = () => $<HTMLSelectElement>('iv-categoria').value;
+  const incluirCero = () => $<HTMLInputElement>('iv-cero').checked;
+  const categoriaDe = (p: ProductoConRelaciones) => (p.categoria ?? '').trim();
+  const delFiltro = (p: ProductoConRelaciones) => !categoriaElegida() || categoriaDe(p) === categoriaElegida();
+
+  function aplicarModo() {
+    pintarTab('iv-modo-producto', modo === 'producto');
+    pintarTab('iv-modo-pieza', modo === 'pieza');
+    $('iv-bloque-cero').classList.toggle('hidden', modo === 'pieza');
+    pintarResumen();
+  }
+
+  function pintarResumen() {
+    const lista = productos.filter(delFiltro);
+    const conStock = lista.filter((p) => p.stock_actual > 0);
+    const unidades = conStock.reduce((s, p) => s + p.stock_actual, 0);
+    const productosHoja = modo === 'producto' && incluirCero() ? lista.length : conStock.length;
+    $('iv-resumen').innerHTML = `<strong>${escaparHtml(nombreLocal())}</strong>: ${productosHoja} ${productosHoja === 1 ? 'producto' : 'productos'} y <strong>${unidades}</strong> ${unidades === 1 ? 'unidad' : 'unidades'} según el sistema${
+      modo === 'pieza' ? ` (se imprimirá el código de cada una de las ${unidades})` : ''
+    }.`;
+    ($('iv-imprimir') as HTMLButtonElement).disabled = ocupado || !localId || (modo === 'pieza' ? unidades === 0 : productosHoja === 0);
+  }
+
+  function llenarCategorias() {
+    const select = $<HTMLSelectElement>('iv-categoria');
+    const previa = select.value;
+    const categorias = [...new Set(productos.map(categoriaDe).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    select.innerHTML = '<option value="">Todas las categorías</option>' + categorias.map((c) => `<option value="${escaparHtml(c)}">${escaparHtml(c)}</option>`).join('');
+    if (categorias.includes(previa)) select.value = previa;
+  }
+
+  async function cargarProductos() {
+    if (!localId) return;
+    try {
+      // Lo que ese local maneja, con las existencias de ese local
+      productos = await inventoryService.listarProductos({ localId });
+      $('iv-aviso').classList.add('hidden');
+      llenarCategorias();
+      pintarResumen();
+    } catch (err) {
+      $('iv-resumen').textContent = '';
+      error(`No se pudieron cargar las existencias: ${mensaje(err)}`);
+    }
+  }
+
+  async function imprimir() {
+    if (!localId || ocupado) return;
+    ocupado = true;
+    const boton = $<HTMLButtonElement>('iv-imprimir');
+    const texto = boton.textContent;
+    boton.disabled = true;
+    boton.textContent = 'Preparando…';
+    try {
+      const actuales = await inventoryService.listarProductos({ localId }); // cifras del momento
+      const filtrados = actuales.filter(delFiltro);
+      if (modo === 'producto') {
+        const filas = filtrados
+          .filter((p) => incluirCero() || p.stock_actual > 0)
+          .map((p) => ({ categoria: categoriaDe(p), codigo: p.codigo_barras, nombre: p.nombre, stock: p.stock_actual }));
+        await imprimirHoja(htmlInventarioPorProducto({ local: nombreLocal(), filas, impresoPor: miNombre }));
+      } else {
+        const porId = new Map(filtrados.map((p) => [p.id, p]));
+        const unidades = await inventoryService.listarUnidades({ estado: 'DISPONIBLE', localId });
+        const piezas = unidades
+          .filter((u) => porId.has(u.producto_id))
+          .map((u) => ({ codigo: u.codigo, producto_id: u.producto_id, nombre: porId.get(u.producto_id)!.nombre, categoria: categoriaDe(porId.get(u.producto_id)!) }));
+        await imprimirHoja(htmlInventarioPorPieza({ local: nombreLocal(), piezas, impresoPor: miNombre }));
+      }
+      productos = actuales;
+    } catch (err) {
+      error(`No se pudo preparar la hoja: ${mensaje(err)}`);
+    } finally {
+      ocupado = false;
+      boton.textContent = texto;
+      pintarResumen();
+    }
+  }
+
+  async function iniciar() {
+    if (iniciado) return;
+    iniciado = true;
+    const [contexto, lista] = await Promise.all([inventoryService.obtenerContextoLocal(), inventoryService.listarLocales()]);
+    if (!contexto || !esGerencia(contexto.sesion.rol)) return;
+    miNombre = contexto.sesion.nombre;
+    locales = lista;
+    if (esGlobal(contexto.sesion.rol)) {
+      $('iv-bloque-local').classList.remove('hidden');
+      const select = $<HTMLSelectElement>('iv-local');
+      select.innerHTML = locales.map((l) => `<option value="${escaparHtml(l.id)}">${escaparHtml(l.nombre)}</option>`).join('');
+      localId = contexto.local?.id ?? locales[0]?.id ?? null;
+      if (localId) select.value = localId;
+      select.addEventListener('change', () => {
+        localId = select.value || null;
+        void cargarProductos();
+      });
+    } else {
+      localId = contexto.sesion.local_id;
+    }
+    if (!localId) {
+      $('iv-sin-local').classList.remove('hidden');
+      $('iv-sin-local').textContent = 'Tu usuario no tiene un local asignado. Pídele al administrador que te asigne uno.';
+      $('iv-resumen').textContent = '';
+      return;
+    }
+    aplicarModo();
+    await cargarProductos();
+  }
+
+  $('iv-modo-producto').addEventListener('click', () => {
+    modo = 'producto';
+    aplicarModo();
+  });
+  $('iv-modo-pieza').addEventListener('click', () => {
+    modo = 'pieza';
+    aplicarModo();
+  });
+  $('iv-categoria').addEventListener('change', pintarResumen);
+  $('iv-cero').addEventListener('change', pintarResumen);
+  $('iv-actualizar').addEventListener('click', () => void cargarProductos());
+  $('iv-imprimir').addEventListener('click', () => void imprimir());
+
+  pintarTab('iv-modo-producto', true);
+  pintarTab('iv-modo-pieza', false);
+  window.addEventListener('easystem:mercancia-pestana', ((e: CustomEvent<{ pestana: string }>) => {
+    if (e.detail.pestana === 'inventario') void iniciar();
+  }) as EventListener);
+</script>

@@ -29,6 +29,14 @@ export const ESTILO_HOJA = `
   #${ID_IMPRESION} .hi-meta td{border:none;padding:1px 6px 1px 0}
   #${ID_IMPRESION} .hi-pie{margin-top:16px;font-size:8.5pt;color:#333}
   #${ID_IMPRESION} .hi-firmas{display:flex;gap:30px;margin-top:40px;break-inside:avoid}
+  #${ID_IMPRESION} .hi-ancho{width:24mm}
+  #${ID_IMPRESION} .hi-blanco{height:7mm}
+  #${ID_IMPRESION} .hi-subtotal td{background:#f2f2f2}
+  #${ID_IMPRESION} .hi-producto{break-inside:avoid;margin-bottom:8px}
+  #${ID_IMPRESION} .hi-prod-titulo{margin:6px 0 2px}
+  #${ID_IMPRESION} .hi-piezas td{border:1px solid #888;padding:2px 4px;font-size:9pt}
+  #${ID_IMPRESION} .hi-chk{width:6mm;text-align:center;font-size:11pt}
+  #${ID_IMPRESION} .hi-ajustes{margin-top:14px;break-inside:avoid}
   #${ID_IMPRESION} .hi-firma{flex:1;border-top:1px solid #000;padding-top:3px;text-align:center;font-size:9pt}
 }`;
 
@@ -94,6 +102,131 @@ export function htmlHojaDespacho(t: Traslado, opciones: { impresoPor?: string; a
   <div class="hi-firma">Recibe (nombre y firma)</div>
 </div>
 <p class="hi-pie">Impreso el ${escapar(fechaHora(opciones.ahora ?? new Date()))}${opciones.impresoPor ? ` por ${escapar(opciones.impresoPor)}` : ''}.</p>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Inventario físico: la hoja para contar a mano lo que hay en un local y compararlo con lo que dice el sistema.
+// ---------------------------------------------------------------------------------------------------------------------
+export interface FilaInventario {
+  categoria: string;
+  codigo: string;
+  nombre: string;
+  /** Existencias que dice el sistema en ese local */
+  stock: number;
+}
+
+export interface PiezaInventario {
+  codigo: string;
+  producto_id: string;
+  nombre: string;
+  categoria: string;
+}
+
+const SIN_CATEGORIA = 'Sin categoría';
+const comparar = (a: string, b: string) => a.localeCompare(b, 'es');
+
+/** Agrupa por categoría (alfabética, "Sin categoría" al final) y ordena los productos por nombre dentro de cada una. */
+export function agruparPorCategoria<T extends { categoria: string; nombre: string }>(filas: T[]): { categoria: string; filas: T[] }[] {
+  const grupos = new Map<string, T[]>();
+  for (const f of filas) {
+    const categoria = f.categoria.trim() || SIN_CATEGORIA;
+    grupos.set(categoria, [...(grupos.get(categoria) ?? []), f]);
+  }
+  return [...grupos.entries()]
+    .sort(([a], [b]) => (a === SIN_CATEGORIA ? 1 : b === SIN_CATEGORIA ? -1 : comparar(a, b)))
+    .map(([categoria, lista]) => ({ categoria, filas: [...lista].sort((x, y) => comparar(x.nombre, y.nombre)) }));
+}
+
+interface DatosHojaInventario {
+  local: string;
+  ahora?: Date;
+  impresoPor?: string;
+}
+
+function cabeceraInventario(d: DatosHojaInventario, subtitulo: string, sello: string): string {
+  const cuando = fechaHora(d.ahora ?? new Date());
+  return `
+<div class="hi-cab">
+  <div><h1>Edward Accesorios</h1><div>Inventario físico · ${escapar(subtitulo)}</div></div>
+  <div class="hi-sello">${escapar(sello)}</div>
+</div>
+<table class="hi-meta"><tbody>
+  <tr><td><strong>Local:</strong></td><td>${escapar(d.local)}</td></tr>
+  <tr><td><strong>Existencias del sistema al:</strong></td><td>${escapar(cuando)}</td></tr>
+  <tr><td><strong>Fecha del conteo:</strong></td><td>____ / ____ / ________</td></tr>
+</tbody></table>`;
+}
+
+function pieInventario(d: DatosHojaInventario): string {
+  return `
+<div class="hi-firmas">
+  <div class="hi-firma">Contó (nombre y firma)</div>
+  <div class="hi-firma">Revisó (nombre y firma)</div>
+</div>
+<p class="hi-pie">Impreso el ${escapar(fechaHora(d.ahora ?? new Date()))}${d.impresoPor ? ` por ${escapar(d.impresoPor)}` : ''}. No incluye piezas en tránsito ni dadas de baja. Si el sistema cambió después de imprimir (ventas, ingresos), la hoja ya no refleja esos movimientos.</p>`;
+}
+
+/** Hoja por producto: una línea por producto con lo que dice el sistema y espacio para anotar lo contado y la diferencia. */
+export function htmlInventarioPorProducto(d: DatosHojaInventario & { filas: FilaInventario[] }): string {
+  const cab = cabeceraInventario(d, 'por producto', 'CONTEO');
+  if (d.filas.length === 0) return `${cab}<p>No hay productos con existencias para contar en este local.</p>${pieInventario(d)}`;
+  const total = d.filas.reduce((s, f) => s + f.stock, 0);
+  const cuerpo = agruparPorCategoria(d.filas)
+    .map((g) => {
+      const subtotal = g.filas.reduce((s, f) => s + f.stock, 0);
+      return `
+<h2>${escapar(g.categoria)} (${g.filas.length} ${g.filas.length === 1 ? 'producto' : 'productos'})</h2>
+<table>
+  <thead><tr><th>Código</th><th>Producto</th><th class="hi-der">En sistema</th><th class="hi-ancho">Contado</th><th class="hi-ancho">Diferencia</th></tr></thead>
+  <tbody>${g.filas
+    .map((f) => `<tr><td class="hi-cod">${escapar(f.codigo)}</td><td>${escapar(f.nombre)}</td><td class="hi-der">${f.stock}</td><td class="hi-blanco"></td><td class="hi-blanco"></td></tr>`)
+    .join('')}
+  <tr class="hi-subtotal"><td colspan="2"><strong>Subtotal ${escapar(g.categoria)}</strong></td><td class="hi-der"><strong>${subtotal}</strong></td><td></td><td></td></tr></tbody>
+</table>`;
+    })
+    .join('');
+  return `${cab}
+<p><strong>Productos:</strong> ${d.filas.length} &nbsp;·&nbsp; <strong>Total de unidades:</strong> ${total}</p>
+${cuerpo}
+${pieInventario(d)}`;
+}
+
+/**
+ * Hoja por pieza: el código de CADA pieza que el sistema dice que hay, con una casilla para marcarla al encontrarla.
+ * Pensada para verificar con el lector de códigos pieza por pieza.
+ */
+export function htmlInventarioPorPieza(d: DatosHojaInventario & { piezas: PiezaInventario[] }): string {
+  const cab = cabeceraInventario(d, 'por pieza', 'CONTEO');
+  if (d.piezas.length === 0) return `${cab}<p>No hay piezas disponibles para contar en este local.</p>${pieInventario(d)}`;
+  const porProducto = new Map<string, PiezaInventario[]>();
+  for (const p of d.piezas) porProducto.set(p.producto_id, [...(porProducto.get(p.producto_id) ?? []), p]);
+  const productos = [...porProducto.values()].map((lista) => ({ categoria: lista[0].categoria, nombre: lista[0].nombre, piezas: [...lista].sort((a, b) => a.codigo.localeCompare(b.codigo)) }));
+  const COLUMNAS = 3;
+  const cuerpo = agruparPorCategoria(productos)
+    .map((g) => {
+      const bloques = g.filas
+        .map((prod) => {
+          const filasHtml: string[] = [];
+          for (let i = 0; i < prod.piezas.length; i += COLUMNAS) {
+            const celdas = prod.piezas.slice(i, i + COLUMNAS).map((p) => `<td class="hi-chk">☐</td><td class="hi-cod">${escapar(p.codigo)}</td>`);
+            while (celdas.length < COLUMNAS) celdas.push('<td class="hi-chk"></td><td></td>');
+            filasHtml.push(`<tr>${celdas.join('')}</tr>`);
+          }
+          const n = prod.piezas.length;
+          return `<div class="hi-producto"><p class="hi-prod-titulo"><strong>${escapar(prod.nombre)}</strong> — ${n} ${n === 1 ? 'pieza' : 'piezas'}</p><table class="hi-piezas"><tbody>${filasHtml.join('')}</tbody></table></div>`;
+        })
+        .join('');
+      return `<h2>${escapar(g.categoria)}</h2>${bloques}`;
+    })
+    .join('');
+  return `${cab}
+<p><strong>Total de piezas:</strong> ${d.piezas.length}</p>
+${cuerpo}
+<div class="hi-ajustes">
+  <p><strong>Piezas que sobran</strong> (están en el local y no aparecen en la lista): ______________________________________________</p>
+  <p><strong>Piezas que faltan</strong> (códigos sin marcar): ______________________________________________</p>
+</div>
+${pieInventario(d)}`;
 }
 
 function limpiarImpresion() {

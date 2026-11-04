@@ -3,6 +3,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
 import FormularioProducto from '../components/productos/FormularioProducto.astro';
 import Descargo from '../components/mercancia/Descargo.astro';
+import Inventario from '../components/mercancia/Inventario.astro';
 import { FORMATOS_ETIQUETA, FORMATO_PERSONALIZADO_ID, LIMITES_FORMATO_PERSONALIZADO, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
 
 const claseCampo =
@@ -14,7 +15,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
 <DashboardLayout
   titulo="Mercancía"
-  subtitulo="Ingreso: registra lo que llega e imprime las etiquetas. Descargo: mueve piezas a otro local o dalas de baja"
+  subtitulo="Ingreso: lo que llega y sus etiquetas. Descargo: traslados y bajas. Inventario: hoja para contar lo que hay en el local"
   roles={['administrador', 'gerente', 'encargado']}
 >
   <div class="flex flex-wrap gap-2" role="tablist" aria-label="Mercancía">
@@ -23,6 +24,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </button>
     <button id="mc-tab-descargo" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
       Descargo <span class="font-normal opacity-70">· traslados y bajas</span>
+    </button>
+    <button id="mc-tab-inventario" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Inventario <span class="font-normal opacity-70">· hoja para contar</span>
     </button>
   </div>
 
@@ -178,6 +182,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   <div id="mc-panel-descargo" class="mt-4 hidden">
     <Descargo />
+  </div>
+
+  <div id="mc-panel-inventario" class="mt-4 hidden">
+    <Inventario />
   </div>
 
   <!-- Etiquetas listas para la impresora del celular (WePrint): UN archivo con todas (tira o PDF) o imágenes sueltas -->
@@ -1126,22 +1134,26 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     }
   });
 
-  // --- Pestañas de Mercancía: Ingreso (esta pantalla) y Descargo (traslados y bajas, componente aparte) ---
+  // --- Pestañas de Mercancía: Ingreso (esta pantalla), Descargo (traslados y bajas) e Inventario (hoja de conteo), estos dos como componentes aparte ---
   const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
   const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
-  function mostrarPestana(pestana: 'ingreso' | 'descargo') {
-    for (const [id, activa] of [['ingreso', pestana === 'ingreso'], ['descargo', pestana === 'descargo']] as const) {
+  type Pestana = 'ingreso' | 'descargo' | 'inventario';
+  const pestanaDelHash = (): Pestana => (location.hash === '#descargo' ? 'descargo' : location.hash === '#inventario' ? 'inventario' : 'ingreso');
+  function mostrarPestana(pestana: Pestana) {
+    for (const id of ['ingreso', 'descargo', 'inventario'] as const) {
+      const activa = pestana === id;
       const tab = document.getElementById(`mc-tab-${id}`)!;
       tab.setAttribute('aria-selected', String(activa));
       tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
       tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
       document.getElementById(`mc-panel-${id}`)!.classList.toggle('hidden', !activa);
     }
-    history.replaceState(null, '', pestana === 'descargo' ? '#descargo' : location.pathname + location.search);
+    history.replaceState(null, '', pestana === 'ingreso' ? location.pathname + location.search : `#${pestana}`);
     window.dispatchEvent(new CustomEvent('easystem:mercancia-pestana', { detail: { pestana } }));
   }
   document.getElementById('mc-tab-ingreso')!.addEventListener('click', () => mostrarPestana('ingreso'));
   document.getElementById('mc-tab-descargo')!.addEventListener('click', () => mostrarPestana('descargo'));
-  mostrarPestana(location.hash === '#descargo' ? 'descargo' : 'ingreso');
-  window.addEventListener('hashchange', () => mostrarPestana(location.hash === '#descargo' ? 'descargo' : 'ingreso'));
+  document.getElementById('mc-tab-inventario')!.addEventListener('click', () => mostrarPestana('inventario'));
+  mostrarPestana(pestanaDelHash());
+  window.addEventListener('hashchange', () => mostrarPestana(pestanaDelHash()));
 </script>

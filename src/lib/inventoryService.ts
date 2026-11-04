@@ -772,9 +772,10 @@ export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Prom
  * En modo servidor necesita conexión: no hay copia local de las unidades.
  */
 export async function listarUnidades(
-  opciones: { productoId?: string; estado?: UnidadProducto['estado']; sinImprimir?: boolean; codigos?: string[] } = {}
+  opciones: { productoId?: string; estado?: UnidadProducto['estado']; sinImprimir?: boolean; codigos?: string[]; localId?: string } = {}
 ): Promise<UnidadProducto[]> {
-  const alcance = await alcanceActual();
+  // `localId` fuerza un local concreto (p. ej. el que se eligió en Mercancía) en vez del local activo del encabezado
+  const alcance: Alcance = opciones.localId ? { todos: false, localId: opciones.localId } : await alcanceActual();
   if (!modoServidor) {
     const codigos = opciones.codigos ? new Set(opciones.codigos) : null;
     return (leerDB().unidades ?? []).filter(
@@ -786,7 +787,7 @@ export async function listarUnidades(
         (!codigos || codigos.has(u.codigo))
     );
   }
-  const { codigos, ...resto } = opciones;
+  const { codigos, localId: _localId, ...resto } = opciones;
   if (!codigos) return unidadesDb.listarUnidades({ ...resto, localId: alcance.localId });
   // Los códigos viajan en la dirección de la consulta: se piden en tandas
   const encontradas: UnidadProducto[] = [];
