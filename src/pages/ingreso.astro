@@ -2,7 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
 import FormularioProducto from '../components/productos/FormularioProducto.astro';
-import { FORMATOS_ETIQUETA, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
+import { FORMATOS_ETIQUETA, FORMATO_PERSONALIZADO_ID, LIMITES_FORMATO_PERSONALIZADO, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
 
 const claseCampo =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -134,7 +134,23 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <label for="ig-formato" class={`mt-4 ${claseEtiqueta}`}>Tamaño</label>
         <select id="ig-formato" class={`mt-1 ${claseCampo}`}>
           {FORMATOS_ETIQUETA.map((f) => <option value={f.id}>{f.nombre}</option>)}
+          <option value={FORMATO_PERSONALIZADO_ID}>Tamaño personalizado…</option>
         </select>
+        <div id="ig-personalizado" class="mt-2 hidden rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label for="ig-ancho" class={claseEtiqueta}>Ancho (mm)</label>
+              <input id="ig-ancho" type="number" inputmode="decimal" step="0.5" min={LIMITES_FORMATO_PERSONALIZADO.anchoMin} max={LIMITES_FORMATO_PERSONALIZADO.anchoMax} value="50" class={`mt-1 ${claseCampo}`} />
+            </div>
+            <div>
+              <label for="ig-alto" class={claseEtiqueta}>Alto (mm)</label>
+              <input id="ig-alto" type="number" inputmode="decimal" step="0.5" min={LIMITES_FORMATO_PERSONALIZADO.altoMin} max={LIMITES_FORMATO_PERSONALIZADO.altoMax} value="30" class={`mt-1 ${claseCampo}`} />
+            </div>
+          </div>
+          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+            Escribe lo que mide tu etiqueta (ancho {LIMITES_FORMATO_PERSONALIZADO.anchoMin}–{LIMITES_FORMATO_PERSONALIZADO.anchoMax} mm, alto {LIMITES_FORMATO_PERSONALIZADO.altoMin}–{LIMITES_FORMATO_PERSONALIZADO.altoMax} mm). El código y el nombre se ajustan solos al tamaño. Se recuerda en este equipo.
+          </p>
+        </div>
         <p id="ig-formato-nota" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"></p>
 
         <p class="mt-4 text-xs font-medium text-slate-600 dark:text-slate-400">Vista previa</p>
@@ -223,6 +239,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     buscarFormatoEtiqueta,
     buscarTipoCodigo,
     FORMATO_ETIQUETA_POR_DEFECTO,
+    FORMATO_PERSONALIZADO_ID,
     htmlEtiqueta,
     paginasNecesarias,
     TIPO_CODIGO_POR_DEFECTO,
@@ -254,6 +271,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const motivo = $<HTMLInputElement>('ig-motivo');
   const botonRegistrar = $<HTMLButtonElement>('ig-registrar');
   const selectFormato = $<HTMLSelectElement>('ig-formato');
+  const campoAncho = $<HTMLInputElement>('ig-ancho');
+  const campoAlto = $<HTMLInputElement>('ig-alto');
+
+  /** El formato elegido; con "Tamaño personalizado" usa el ancho y el alto escritos (corregidos a los límites). */
+  function formatoElegido() {
+    return buscarFormatoEtiqueta(selectFormato.value, { anchoMm: Number(campoAncho.value), altoMm: Number(campoAlto.value) });
+  }
   const selectTipo = $<HTMLSelectElement>('ig-tipo');
 
   interface Linea {
@@ -270,6 +294,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   // El lote se recuerda por usuario (varias personas pueden compartir el mismo equipo)
   let LS_LOTE = 'easystem:ingreso-lote';
   const LS_FORMATO = 'easystem:formato-etiqueta';
+  const LS_TAMANO_PERSONALIZADO = 'easystem:formato-personalizado';
   const LS_TIPO_CODIGO = 'easystem:etiqueta-tipo-codigo';
 
   let productos: ProductoConRelaciones[] = [];
@@ -555,7 +580,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   function actualizarResumen() {
     const unidades = lote.reduce((s, l) => s + l.cantidad, 0);
     const lineasConIngreso = lote.filter((l) => l.cantidad > 0).length;
-    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const formato = formatoElegido();
     const etiquetas = totalEtiquetas(pedidas());
     const paginas = paginasNecesarias(pedidas(), formato);
     resumen.textContent = lote.length
@@ -691,7 +716,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   /** Genera la tira y el PDF (y las imágenes sueltas la primera vez); se vuelve a llamar si cambia la separación. */
   async function prepararGaleria(incluirSueltas: boolean) {
     const version = ++galeriaVersion;
-    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const formato = formatoElegido();
     const tipo = buscarTipoCodigo(selectTipo.value);
     const separacion = Math.max(0, Math.min(10, Number(galeriaSeparacion.value) || 0));
     galeriaTira = null;
@@ -908,7 +933,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   });
 
   function pintarPrevia() {
-    const formato = buscarFormatoEtiqueta(selectFormato.value);
+    const formato = formatoElegido();
     const primeraLinea = lote.find((l) => producto(l.id));
     const primerProducto = primeraLinea ? producto(primeraLinea.id) : undefined;
     const codigoEjemplo = primeraLinea
@@ -932,15 +957,40 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     pintarPrevia();
   });
 
+  /** Muestra los campos de ancho y alto solo con "Tamaño personalizado". */
+  function mostrarCamposPersonalizados() {
+    $('ig-personalizado').classList.toggle('hidden', selectFormato.value !== FORMATO_PERSONALIZADO_ID);
+  }
+
   selectFormato.addEventListener('change', () => {
     try {
       localStorage.setItem(LS_FORMATO, selectFormato.value);
     } catch {
       /* sin almacenamiento */
     }
+    mostrarCamposPersonalizados();
     pintarPrevia();
     actualizarResumen();
   });
+
+  // Al terminar de escribir, el tamaño se corrige a los límites, se recuerda y se redibuja la vista previa
+  for (const campo of [campoAncho, campoAlto]) {
+    campo.addEventListener('input', () => {
+      pintarPrevia();
+    });
+    campo.addEventListener('change', () => {
+      const formato = formatoElegido();
+      campoAncho.value = String(formato.anchoMm);
+      campoAlto.value = String(formato.altoMm);
+      try {
+        localStorage.setItem(LS_TAMANO_PERSONALIZADO, JSON.stringify({ anchoMm: formato.anchoMm, altoMm: formato.altoMm }));
+      } catch {
+        /* sin almacenamiento */
+      }
+      pintarPrevia();
+      actualizarResumen();
+    });
+  }
 
   // --- Producto nuevo / editado desde el formulario ---------------------------------------------
   // Mercancía que ya está en el sistema pero nunca se etiquetó: se agrega cada producto con unidades sin etiqueta, con cantidad
@@ -1028,6 +1078,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
     }
     if (!selectFormato.value) selectFormato.value = FORMATO_ETIQUETA_POR_DEFECTO;
+    try {
+      const guardado = JSON.parse(localStorage.getItem(LS_TAMANO_PERSONALIZADO) ?? 'null');
+      if (guardado) {
+        const formato = buscarFormatoEtiqueta(FORMATO_PERSONALIZADO_ID, guardado);
+        campoAncho.value = String(formato.anchoMm);
+        campoAlto.value = String(formato.altoMm);
+      }
+    } catch {
+      /* sin tamaño guardado: quedan 50 × 30 */
+    }
+    mostrarCamposPersonalizados();
 
     alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto'], refrescarExistencias);
     lote = leerLote().filter((l) => lista.some((p) => p.id === l.id));

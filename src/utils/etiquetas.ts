@@ -48,7 +48,45 @@ export const FORMATOS_ETIQUETA: FormatoEtiqueta[] = [
 
 export const FORMATO_ETIQUETA_POR_DEFECTO = FORMATOS_ETIQUETA[0].id;
 
-export function buscarFormatoEtiqueta(id: string | null | undefined): FormatoEtiqueta {
+/** Id del formato con el ancho y el alto que escribe el usuario (el que no está en la lista fija). */
+export const FORMATO_PERSONALIZADO_ID = 'personalizado';
+
+/** Límites del tamaño personalizado, en mm (rollos y etiquetas adhesivas de uso normal). */
+export const LIMITES_FORMATO_PERSONALIZADO = { anchoMin: 20, anchoMax: 120, altoMin: 12, altoMax: 100 };
+
+export interface TamanoEtiqueta {
+  anchoMm: number;
+  altoMm: number;
+}
+
+const unDecimal = (n: number) => Math.round(n * 10) / 10;
+const dentro = (n: number, min: number, max: number, defecto: number) => (Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : defecto);
+
+/**
+ * Formato de rollo con el tamaño que se pida (ancho × alto en mm, con límites razonables; lo que no sea número cae en 50 × 30).
+ * El lado del QR, el alto de las barras y la letra se calculan del tamaño con las mismas proporciones de los formatos de rollo
+ * de la lista: el QR es lo más grande que cabe sin pasar de la mitad del ancho y dejando margen arriba y abajo.
+ */
+export function formatoPersonalizado(anchoMm: number, altoMm: number): FormatoEtiqueta {
+  const L = LIMITES_FORMATO_PERSONALIZADO;
+  const ancho = unDecimal(dentro(anchoMm, L.anchoMin, L.anchoMax, 50));
+  const alto = unDecimal(dentro(altoMm, L.altoMin, L.altoMax, 30));
+  const nombrePt = Math.min(14, Math.max(5, Math.round(alto * 0.25 * 2) / 2));
+  return {
+    id: FORMATO_PERSONALIZADO_ID,
+    nombre: `Personalizado (${ancho} × ${alto} mm)`,
+    anchoMm: ancho,
+    altoMm: alto,
+    qrMm: unDecimal(Math.min(alto * 0.73, ancho * 0.5, alto - 3)),
+    barrasMm: unDecimal(alto * 0.43),
+    nombrePt,
+    numeroPt: nombrePt - 0.5,
+  };
+}
+
+/** El formato con ese id; "personalizado" usa el tamaño indicado (o 50 × 30 si no se indica). */
+export function buscarFormatoEtiqueta(id: string | null | undefined, personalizado?: TamanoEtiqueta): FormatoEtiqueta {
+  if (id === FORMATO_PERSONALIZADO_ID) return formatoPersonalizado(personalizado?.anchoMm ?? NaN, personalizado?.altoMm ?? NaN);
   return FORMATOS_ETIQUETA.find((f) => f.id === id) ?? FORMATOS_ETIQUETA[0];
 }
 
