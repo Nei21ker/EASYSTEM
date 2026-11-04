@@ -18,16 +18,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   subtitulo="Ingreso: lo que llega y sus etiquetas. Descargo: traslados y bajas. Inventario: hoja para contar lo que hay en el local"
   roles={['administrador', 'gerente', 'encargado']}
 >
-  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Mercancía">
-    <button id="mc-tab-ingreso" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
-      Ingreso <span class="font-normal opacity-70">· lo que llega</span>
-    </button>
-    <button id="mc-tab-descargo" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
-      Descargo <span class="font-normal opacity-70">· traslados y bajas</span>
-    </button>
-    <button id="mc-tab-inventario" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
-      Inventario <span class="font-normal opacity-70">· hoja para contar</span>
-    </button>
+  <div class="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap" role="tablist" aria-label="Mercancía">
+    <button id="mc-tab-ingreso" type="button" role="tab" aria-selected="true" class="rounded-lg border px-2 py-2 text-center text-sm font-semibold transition sm:px-4">Ingreso</button>
+    <button id="mc-tab-descargo" type="button" role="tab" aria-selected="false" class="rounded-lg border px-2 py-2 text-center text-sm font-semibold transition sm:px-4">Descargo</button>
+    <button id="mc-tab-inventario" type="button" role="tab" aria-selected="false" class="rounded-lg border px-2 py-2 text-center text-sm font-semibold transition sm:px-4">Inventario</button>
   </div>
 
   <div id="mc-panel-ingreso" class="mt-4">
