@@ -16,7 +16,8 @@
     "dev:cf": "astro build && wrangler dev",
     "db:local": "wrangler d1 migrations apply easystem --local",
     "check:server": "tsc -p tsconfig.server.json",
-    "check:all": "astro check && npm run check:server"
+    "check:all": "astro check && npm run check:server",
+    "crear-admin": "node scripts/crear-admin.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",
