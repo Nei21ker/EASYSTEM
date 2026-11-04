@@ -39,9 +39,9 @@ export async function obtenerUnidadPorCodigo(codigo: string): Promise<UnidadProd
   return (await api.get<{ unidad: UnidadProducto | null }>(`/api/unidades/${encodeURIComponent(codigo)}`)).unidad;
 }
 
-/** Anota que ya se imprimió la etiqueta de esas unidades. */
-export async function marcarImpresas(codigos: string[]): Promise<void> {
+/** Anota que ya se imprimió la etiqueta de esas unidades (o, con `reimpresion`, que se volvió a imprimir). */
+export async function marcarImpresas(codigos: string[], reimpresion = false): Promise<void> {
   for (let i = 0; i < codigos.length; i += CODIGOS_POR_AVISO) {
-    await api.post('/api/unidades/impresas', { codigos: codigos.slice(i, i + CODIGOS_POR_AVISO) });
+    await api.post('/api/unidades/impresas', { codigos: codigos.slice(i, i + CODIGOS_POR_AVISO), ...(reimpresion ? { reimpresion: true } : {}) });
   }
 }

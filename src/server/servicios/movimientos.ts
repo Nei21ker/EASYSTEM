@@ -326,8 +326,12 @@ export async function obtenerUnidadPorCodigo(env: Entorno, sesion: Sesion, codig
   return env.DB.prepare(`SELECT * FROM unidades_producto WHERE codigo = ? AND ${sql}`).bind(codigo, ...valores).first<UnidadProducto>();
 }
 
-/** Anota que ya se imprimieron las etiquetas de esas unidades (administrador, gerente y encargado; solo sus locales). */
-export async function marcarUnidadesImpresas(env: Entorno, sesion: Sesion, codigos: string[]): Promise<number> {
+/**
+ * Anota que ya se imprimieron las etiquetas de esas unidades (administrador, gerente y encargado; solo sus locales).
+ * Con `reimpresion` no cambia la primera impresión: suma una reimpresión y la fecha, y solo a unidades DISPONIBLES (una vendida ya
+ * no está en el local: su etiqueta no se pega en otra pieza).
+ */
+export async function marcarUnidadesImpresas(env: Entorno, sesion: Sesion, codigos: string[], opciones: { reimpresion?: boolean } = {}): Promise<number> {
   if (!esGerencia(sesion.rol)) throw new ErrorApi(403, 'Solo administrador, gerente o encargado pueden imprimir etiquetas.', 'sin_permiso');
   const alcance = await alcanceDe(env, sesion);
   const { sql, valores } = condicionAlcance(alcance, 'local_id');
@@ -335,7 +339,11 @@ export async function marcarUnidadesImpresas(env: Entorno, sesion: Sesion, codig
   let marcadas = 0;
   for (const tramo of tramos([...new Set(codigos)])) {
     const r = await env.DB
-      .prepare(`UPDATE unidades_producto SET impresa_en = ? WHERE codigo IN (${marcas(tramo.length)}) AND ${sql}`)
+      .prepare(
+        opciones.reimpresion
+          ? `UPDATE unidades_producto SET reimpresiones = reimpresiones + 1, ultima_reimpresion = ? WHERE codigo IN (${marcas(tramo.length)}) AND estado = 'DISPONIBLE' AND ${sql}`
+          : `UPDATE unidades_producto SET impresa_en = ? WHERE codigo IN (${marcas(tramo.length)}) AND ${sql}`
+      )
       .bind(ahora, ...tramo, ...valores)
       .run();
     marcadas += r.meta.changes ?? 0;

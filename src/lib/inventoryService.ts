@@ -794,18 +794,25 @@ export async function obtenerUnidadPorCodigo(codigo: string): Promise<UnidadProd
   return unidadesDb.obtenerUnidadPorCodigo(codigo);
 }
 
-/** Anota que ya se imprimieron las etiquetas de esas unidades (así "etiquetas pendientes" no vuelve a ofrecerlas). */
-export async function marcarEtiquetasImpresas(codigos: string[]): Promise<void> {
+/** Anota que ya se imprimieron las etiquetas de esas unidades (así "etiquetas pendientes" no vuelve a ofrecerlas); con `reimpresion`, que se volvieron a imprimir. */
+export async function marcarEtiquetasImpresas(codigos: string[], opciones: { reimpresion?: boolean } = {}): Promise<void> {
   if (codigos.length === 0) return;
   if (!modoServidor) {
     const db = leerDB();
     const lista = new Set(codigos);
     const ahora = new Date().toISOString();
-    for (const u of db.unidades ?? []) if (lista.has(u.codigo)) u.impresa_en = ahora;
+    for (const u of db.unidades ?? []) {
+      if (!lista.has(u.codigo)) continue;
+      if (!opciones.reimpresion) u.impresa_en = ahora;
+      else if (u.estado === 'DISPONIBLE') {
+        u.reimpresiones = (u.reimpresiones ?? 0) + 1;
+        u.ultima_reimpresion = ahora;
+      }
+    }
     guardarDB(db);
     return;
   }
-  await unidadesDb.marcarImpresas(codigos);
+  await unidadesDb.marcarImpresas(codigos, opciones.reimpresion === true);
 }
 
 /** Alertas de reabastecimiento del alcance activo: una fila por producto y local con mínimo > 0 y stock ≤ mínimo. */

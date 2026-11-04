@@ -87,6 +87,9 @@ export interface UnidadProducto {
   vendida_en?: string | null;
   /** Cuándo se imprimió su etiqueta; null = todavía no tiene etiqueta pegada */
   impresa_en?: string | null;
+  /** Cuántas veces se volvió a imprimir su etiqueta después de la primera (se despegó, se perdió o salió mal) */
+  reimpresiones?: number;
+  ultima_reimpresion?: string | null;
 }
 
 /** Producto "enriquecido" con sus modelos compatibles, tal como lo consume el Dashboard */

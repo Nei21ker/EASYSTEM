@@ -50,6 +50,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             Agregar todo lo que está sin etiqueta
           </button>
         </div>
+        <div class="mt-2 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
+          <p>¿Una etiqueta se despegó, se perdió o salió mal? Se vuelve a imprimir con el mismo código.</p>
+          <button id="ig-reimprimir-abrir" type="button" class="shrink-0 rounded-lg border border-brand-300 px-3 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-slate-800">
+            Reimprimir etiquetas
+          </button>
+        </div>
         <p id="ig-aviso" role="status" class="mt-2 hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
         <p id="ig-local" class="mt-2 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
       </section>
@@ -97,6 +103,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <p id="ig-resumen" class="text-xs text-slate-500 dark:text-slate-400"></p>
           <p id="ig-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <p id="ig-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+          <div id="ig-reimprimir-ultimas" class="hidden flex-col gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300 sm:flex-row sm:items-center sm:justify-between">
+            <p>¿Alguna etiqueta salió mal o se dañó? Puedes volver a imprimir estas mismas.</p>
+            <button id="ig-reimprimir-estas" type="button" class="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold hover:bg-amber-100 dark:border-amber-500/50 dark:hover:bg-amber-500/20">Reimprimir estas</button>
+          </div>
           <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
             <button id="ig-compartir" type="button" title="Prepara las etiquetas como imágenes y las entrega a la app de tu impresora Bluetooth (WePrint)" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
               Imprimir etiquetas
@@ -142,7 +152,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   <dialog id="ig-galeria" class="m-auto w-[min(94vw,36rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div class="flex max-h-[90vh] flex-col">
       <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 class="text-base font-semibold">Imprimir etiquetas</h2>
+        <h2 id="ig-galeria-titulo" class="text-base font-semibold">Imprimir etiquetas</h2>
         <p id="ig-galeria-cuenta" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div class="space-y-3 overflow-y-auto px-5 py-4 text-sm">
@@ -177,6 +187,30 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </div>
   </dialog>
 
+  <!-- Reimprimir etiquetas: se eligen unidades que ya están en el local (disponibles); el código de cada una no cambia -->
+  <dialog id="ig-reimp" aria-labelledby="ig-reimp-titulo" class="m-auto w-[min(94vw,36rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div class="flex max-h-[90vh] flex-col">
+      <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+        <h2 id="ig-reimp-titulo" class="text-base font-semibold">Reimprimir etiquetas</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          Marca las unidades cuya etiqueta quieres volver a imprimir. El código no cambia: la etiqueta nueva reemplaza a la perdida. Solo aparecen unidades que están disponibles en el local (las vendidas no se reimprimen).
+        </p>
+        <input id="ig-reimp-buscar" type="search" placeholder="Buscar por nombre, código de barras o código de la unidad..." autocomplete="off" class="mt-3 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+      </div>
+      <div class="overflow-y-auto px-5 py-3 text-sm">
+        <p id="ig-reimp-estado" class="py-6 text-center text-xs text-slate-500 dark:text-slate-400"></p>
+        <div id="ig-reimp-lista" class="space-y-3"></div>
+      </div>
+      <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+        <p id="ig-reimp-cuenta" class="text-xs text-slate-500 dark:text-slate-400"></p>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <button id="ig-reimp-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
+          <button id="ig-reimp-imprimir" type="button" disabled class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50">Reimprimir</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <CamaraEscaner />
   <FormularioProducto />
 </DashboardLayout>
@@ -206,7 +240,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   } from '../utils/etiquetaImagen';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { alCambiarDatos } from '../lib/realtime';
-  import type { ProductoConRelaciones } from '../types/database.types';
+  import { agruparUnidadesParaReimprimir, resumenReimpresion } from '../utils/reimpresion';
+  import type { ProductoConRelaciones, UnidadProducto } from '../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const buscar = $<HTMLInputElement>('ig-buscar');
@@ -278,12 +313,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     aviso.classList.remove('hidden');
   }
   function mostrarError(texto: string) {
+    $('ig-reimprimir-ultimas').classList.add('hidden');
     exito.classList.add('hidden');
     error.textContent = texto;
     error.classList.remove('hidden');
     reanimar(error, 'anim-sacudir');
   }
   function mostrarExito(texto: string) {
+    $('ig-reimprimir-ultimas').classList.add('hidden');
     error.classList.add('hidden');
     exito.textContent = texto;
     exito.classList.remove('hidden');
@@ -628,6 +665,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let galeriaPdf: File | null = null;
   let galeriaSueltas: File[] = [];
   let galeriaCodigos: string[] = [];
+  /** La galería abierta es una reimpresión: al terminar se anota como reimpresión y no cambia la fecha de la primera impresión */
+  let galeriaEsReimpresion = false;
+  /** Las últimas etiquetas que se dieron por impresas (para ofrecer reimprimirlas si alguna salió mal) */
+  let ultimasImpresas: { codigo: string; nombre: string }[] = [];
   let galeriaEtiquetas: { codigo: string; nombre: string }[] = [];
   let galeriaUrls: string[] = [];
   let galeriaVersion = 0;
@@ -689,19 +730,27 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     galeriaImagenes.innerHTML = '';
   }
 
-  $('ig-compartir').addEventListener('click', async () => {
-    const etiquetas = reunirEtiquetas();
-    if (!etiquetas) return;
+  /** Abre la galería con esas etiquetas (hasta MAX_ETIQUETAS_POR_TIRA por vez) lista para mandarla a la impresora. */
+  async function abrirGaleria(etiquetas: { codigo: string; nombre: string }[], esReimpresion: boolean) {
     const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
+    galeriaEsReimpresion = esReimpresion;
     galeriaEtiquetas = envio.map((e) => ({ codigo: e.codigo, nombre: e.nombre }));
     galeriaCodigos = envio.map((e) => e.codigo);
     const restantes = etiquetas.length - envio.length;
+    const boton = esReimpresion ? 'Reimprimir etiquetas' : 'Imprimir etiquetas';
+    $('ig-galeria-titulo').textContent = boton;
     $('ig-galeria-cuenta').textContent =
-      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "Imprimir etiquetas" para las siguientes)` : ''}`;
+      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}`;
     galeriaModo.value = 'tira';
     galeriaImagenes.innerHTML = '';
     galeria.showModal();
     await prepararGaleria(true);
+  }
+
+  $('ig-compartir').addEventListener('click', async () => {
+    const etiquetas = reunirEtiquetas();
+    if (!etiquetas) return;
+    await abrirGaleria(etiquetas, false);
   });
 
   galeriaModo.addEventListener('change', actualizarBotonesGaleria);
@@ -721,15 +770,141 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   $('ig-galeria-cerrar').addEventListener('click', cerrarGaleria);
   $('ig-galeria-listo').addEventListener('click', async () => {
     const codigos = galeriaCodigos;
+    const etiquetas = galeriaEtiquetas;
+    const esReimpresion = galeriaEsReimpresion;
     cerrarGaleria();
-    mostrarExito(`Marcadas ${codigos.length} etiqueta${codigos.length === 1 ? '' : 's'} como impresas.`);
+    mostrarExito(
+      esReimpresion
+        ? `Reimpresión anotada en ${codigos.length} etiqueta${codigos.length === 1 ? '' : 's'}.`
+        : `Marcadas ${codigos.length} etiqueta${codigos.length === 1 ? '' : 's'} como impresas.`
+    );
+    // Justo cuando se ve el resultado es cuando se nota que alguna salió mal: se ofrece reimprimir estas mismas
+    ultimasImpresas = etiquetas;
+    $('ig-reimprimir-ultimas').classList.remove('hidden');
+    $('ig-reimprimir-ultimas').classList.add('flex');
     // Las unidades impresas ya no se vuelven a ofrecer como "sin etiqueta"
     try {
-      await inventoryService.marcarEtiquetasImpresas(codigos);
+      await inventoryService.marcarEtiquetasImpresas(codigos, { reimpresion: esReimpresion });
       await cargarSinEtiqueta();
     } catch {
       /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
     }
+  });
+
+  // --- Reimprimir etiquetas ---------------------------------------------------------------
+  // Se elige entre las unidades DISPONIBLES del local (una vendida ya no está aquí). El código no cambia; al terminar se anota la
+  // reimpresión (cuántas veces y cuándo) sin tocar la fecha de la primera impresión.
+  const reimp = $('ig-reimp') as HTMLDialogElement;
+  const reimpBuscar = $<HTMLInputElement>('ig-reimp-buscar');
+  const reimpLista = $('ig-reimp-lista');
+  const reimpEstado = $('ig-reimp-estado');
+  const reimpImprimir = $<HTMLButtonElement>('ig-reimp-imprimir');
+  const MAX_FILAS_REIMPRESION = 300;
+  let reimpUnidades: UnidadProducto[] = [];
+  let reimpSeleccion = new Set<string>();
+  let reimpSoloProducto: string | undefined;
+
+  function actualizarCuentaReimp() {
+    const n = reimpSeleccion.size;
+    const aImprimir = Math.min(n, MAX_ETIQUETAS_POR_TIRA);
+    $('ig-reimp-cuenta').textContent = n
+      ? `${n} seleccionada${n === 1 ? '' : 's'}${n > MAX_ETIQUETAS_POR_TIRA ? ` · se preparan ${MAX_ETIQUETAS_POR_TIRA} por vez` : ''}`
+      : 'Ninguna seleccionada';
+    reimpImprimir.disabled = n === 0;
+    reimpImprimir.textContent = n ? `Reimprimir ${aImprimir} etiqueta${aImprimir === 1 ? '' : 's'}` : 'Reimprimir';
+  }
+
+  function pintarReimp() {
+    const grupos = agruparUnidadesParaReimprimir(reimpUnidades, productos, reimpBuscar.value, reimpSoloProducto);
+    reimpEstado.classList.toggle('hidden', grupos.length > 0);
+    if (grupos.length === 0) reimpEstado.textContent = reimpUnidades.length ? 'No hay unidades que coincidan con la búsqueda.' : 'No hay unidades disponibles en este local.';
+    let dibujadas = 0;
+    reimpLista.innerHTML = grupos
+      .map((g) => {
+        const visibles = g.unidades.slice(0, Math.max(0, MAX_FILAS_REIMPRESION - dibujadas));
+        dibujadas += visibles.length;
+        const todas = visibles.length > 0 && visibles.every((u) => reimpSeleccion.has(u.codigo));
+        return `
+          <section class="rounded-lg border border-slate-200 dark:border-slate-700">
+            <label class="flex cursor-pointer items-center gap-2 bg-slate-50 px-3 py-2 dark:bg-slate-800/60">
+              <input type="checkbox" data-reimp-grupo="${escapar(g.producto.id)}" ${todas ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-brand-600" />
+              <span class="min-w-0 flex-1 text-sm font-semibold">${escapar(g.producto.nombre)}</span>
+              <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${g.unidades.length} disponible${g.unidades.length === 1 ? '' : 's'}</span>
+            </label>
+            <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+              ${visibles
+                .map(
+                  (u) => `
+                <li>
+                  <label class="flex cursor-pointer items-center gap-2 px-3 py-2">
+                    <input type="checkbox" data-reimp-unidad="${escapar(u.codigo)}" data-producto="${escapar(g.producto.id)}" ${reimpSeleccion.has(u.codigo) ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-brand-600" />
+                    <span class="font-mono text-xs">${escapar(u.codigo)}</span>
+                    <span class="ml-auto text-xs ${(u.reimpresiones ?? 0) > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-slate-400'}">${escapar(resumenReimpresion(u))}</span>
+                  </label>
+                </li>`
+                )
+                .join('')}
+            </ul>
+          </section>`;
+      })
+      .join('');
+    if (dibujadas < grupos.reduce((n, g) => n + g.unidades.length, 0)) {
+      reimpLista.insertAdjacentHTML('beforeend', `<p class="text-center text-xs text-slate-500 dark:text-slate-400">Se muestran las primeras ${MAX_FILAS_REIMPRESION} unidades: afina la búsqueda para ver el resto.</p>`);
+    }
+    actualizarCuentaReimp();
+  }
+
+  async function abrirReimprimir(soloProducto?: string) {
+    reimpSoloProducto = soloProducto;
+    reimpSeleccion = new Set();
+    reimpBuscar.value = '';
+    reimpUnidades = [];
+    reimpLista.innerHTML = '';
+    reimpEstado.classList.remove('hidden');
+    reimpEstado.textContent = 'Cargando unidades…';
+    actualizarCuentaReimp();
+    reimp.showModal();
+    try {
+      reimpUnidades = await inventoryService.listarUnidades({ estado: 'DISPONIBLE' });
+      pintarReimp();
+    } catch (err) {
+      reimpEstado.textContent = err instanceof Error ? `No se pudieron cargar las unidades (${err.message}).` : 'No se pudieron cargar las unidades.';
+    }
+  }
+
+  reimpBuscar.addEventListener('input', pintarReimp);
+  reimpLista.addEventListener('change', (e) => {
+    const casilla = e.target as HTMLInputElement;
+    if (casilla.dataset.reimpUnidad) {
+      if (casilla.checked) reimpSeleccion.add(casilla.dataset.reimpUnidad);
+      else reimpSeleccion.delete(casilla.dataset.reimpUnidad);
+      const grupo = reimpLista.querySelector<HTMLInputElement>(`[data-reimp-grupo="${casilla.dataset.producto}"]`);
+      if (grupo) {
+        const unidades = [...reimpLista.querySelectorAll<HTMLInputElement>(`[data-reimp-unidad][data-producto="${casilla.dataset.producto}"]`)];
+        grupo.checked = unidades.every((u) => u.checked);
+      }
+    } else if (casilla.dataset.reimpGrupo) {
+      for (const u of reimpLista.querySelectorAll<HTMLInputElement>(`[data-reimp-unidad][data-producto="${casilla.dataset.reimpGrupo}"]`)) {
+        u.checked = casilla.checked;
+        if (casilla.checked) reimpSeleccion.add(u.dataset.reimpUnidad!);
+        else reimpSeleccion.delete(u.dataset.reimpUnidad!);
+      }
+    }
+    actualizarCuentaReimp();
+  });
+  $('ig-reimp-cerrar').addEventListener('click', () => reimp.close());
+  $('ig-reimprimir-abrir').addEventListener('click', () => void abrirReimprimir());
+  reimpImprimir.addEventListener('click', () => {
+    const nombres = new Map(productos.map((p) => [p.id, p.nombre]));
+    const elegidas = reimpUnidades
+      .filter((u) => reimpSeleccion.has(u.codigo))
+      .map((u) => ({ codigo: u.codigo, nombre: nombres.get(u.producto_id) ?? 'Producto' }));
+    if (elegidas.length === 0) return;
+    reimp.close();
+    void abrirGaleria(elegidas, true);
+  });
+  $('ig-reimprimir-estas').addEventListener('click', () => {
+    if (ultimasImpresas.length > 0) void abrirGaleria(ultimasImpresas, true);
   });
 
   function pintarPrevia() {
@@ -857,8 +1032,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto'], refrescarExistencias);
     lote = leerLote().filter((l) => lista.some((p) => p.id === l.id));
     cargarSinEtiqueta();
-    const pedido = new URLSearchParams(window.location.search).get('producto');
-    if (pedido && lista.some((p) => p.id === pedido)) {
+    const parametros = new URLSearchParams(window.location.search);
+    const pedido = parametros.get('producto');
+    const reimprimir = parametros.get('reimprimir');
+    if (reimprimir && lista.some((p) => p.id === reimprimir)) {
+      history.replaceState(null, '', window.location.pathname);
+      pintarLote();
+      void abrirReimprimir(reimprimir);
+    } else if (pedido && lista.some((p) => p.id === pedido)) {
       history.replaceState(null, '', window.location.pathname);
       agregar(pedido);
     } else {

@@ -328,6 +328,34 @@ describe('lectura: movimientos y unidades', () => {
     expect(await marcarUnidadesImpresas(env, sA, a.unidadCodigos)).toBe(2);
     expect(await listarUnidades(env, sG, { sinImprimir: true })).toHaveLength(0);
   });
+
+  it('reimprimir: cuenta la reimpresión sin tocar la primera impresión y solo en unidades disponibles de sus locales', async () => {
+    const a = await entrada(P, accesorios, 3);
+    const b = await entrada(P, vidrios, 1);
+    await marcarUnidadesImpresas(env, sA, [...a.unidadCodigos, ...b.unidadCodigos]);
+    const antes = await listarUnidades(env, sG, { codigos: a.unidadCodigos });
+    await salida(sV, P, accesorios, 1, [a.unidadCodigos[2]]); // una se vende: ya no se reimprime
+
+    await rechazo(marcarUnidadesImpresas(env, sV, a.unidadCodigos, { reimpresion: true }), 403);
+    // el encargado es de vidrios: de las de accesorios no se toca ninguna; sí la de su local
+    expect(await marcarUnidadesImpresas(env, sE, [...a.unidadCodigos, ...b.unidadCodigos], { reimpresion: true })).toBe(1);
+    expect(await marcarUnidadesImpresas(env, sA, a.unidadCodigos, { reimpresion: true })).toBe(2); // la vendida no cuenta
+    expect(await marcarUnidadesImpresas(env, sA, [a.unidadCodigos[0]], { reimpresion: true })).toBe(1);
+
+    const despues = await listarUnidades(env, sG, { codigos: a.unidadCodigos });
+    const por = (lista: typeof despues, c: string) => lista.find((u) => u.codigo === c)!;
+    expect(por(despues, a.unidadCodigos[0]).reimpresiones).toBe(2);
+    expect(por(despues, a.unidadCodigos[1]).reimpresiones).toBe(1);
+    expect(por(despues, a.unidadCodigos[2]).reimpresiones).toBe(0); // vendida
+    expect(por(despues, a.unidadCodigos[0]).ultima_reimpresion).toBeTruthy();
+    // la fecha de la primera impresión no cambia
+    for (const c of a.unidadCodigos) expect(por(despues, c).impresa_en).toBe(por(antes, c).impresa_en);
+    // una unidad nunca reimpresa lo dice
+    const nueva = await entrada(P, accesorios, 1);
+    const [u] = await listarUnidades(env, sG, { codigos: nueva.unidadCodigos });
+    expect(u.reimpresiones).toBe(0);
+    expect(u.ultima_reimpresion).toBeNull();
+  });
 });
 
 describe('actualización en vivo', () => {

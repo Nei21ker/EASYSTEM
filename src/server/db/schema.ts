@@ -177,6 +177,8 @@ export const unidades_producto = sqliteTable('unidades_producto', {
   created_at: marca('created_at'),
   vendida_en: text('vendida_en'),
   impresa_en: text('impresa_en'),
+  reimpresiones: integer('reimpresiones').notNull().default(0),
+  ultima_reimpresion: text('ultima_reimpresion'),
 });
 
 // --- Ventas, devoluciones y tasa -------------------------------------------------------------------------------
