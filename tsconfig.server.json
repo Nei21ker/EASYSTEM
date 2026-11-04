@@ -26,6 +26,7 @@
     "src/lib/catalogo-modelos.ts",
     "src/lib/constantes-locales.ts",
     "src/utils/cuadre.ts",
+    "src/utils/nomina.ts",
     "src/utils/pagos.ts",
     "src/utils/ventasResumen.ts"
   ]
