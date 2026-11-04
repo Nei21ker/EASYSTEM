@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { conSesion, leerJson } from '../../../../server/http';
-import { guardarCuadre, obtenerCuadre } from '../../../../server/servicios/cuadres';
+import { conSesion, leerJson } from '../../../../../server/http';
+import { guardarCuadre, obtenerCuadre } from '../../../../../server/servicios/cuadres';
 
 export const prerender = false;
 

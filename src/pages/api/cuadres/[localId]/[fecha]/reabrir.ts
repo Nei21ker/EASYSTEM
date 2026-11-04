@@ -1,5 +1,5 @@
-import { conSesion } from '../../../../server/http';
-import { reabrirCuadre } from '../../../../server/servicios/cuadres';
+import { conSesion } from '../../../../../server/http';
+import { reabrirCuadre } from '../../../../../server/servicios/cuadres';
 
 export const prerender = false;
 
