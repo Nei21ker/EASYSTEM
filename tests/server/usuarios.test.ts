@@ -299,6 +299,10 @@ describe('estadoCuenta', () => {
     expect(await estadoCuenta(env, peticionComo(vendedor))).toMatchObject({ acceso: true, motivo: 'ok', rol: 'vendedor', local_nombre: 'Local Accesorios', subscription_status: 'ACTIVE' });
   });
 
+  it('incluye los datos del usuario para que la interfaz arme la sesión sin otra consulta', async () => {
+    expect((await estadoCuenta(env, peticionComo(vendedor))).usuario).toEqual({ id: vendedor.id, email: vendedor.email, nombre: expect.any(String), rol: 'vendedor', local_id: accesorios, status: 'active' });
+  });
+
   it('local suspendido: sin acceso (local_suspendido)', async () => {
     await env.DB.prepare("UPDATE locales SET subscription_status = 'SUSPENDED' WHERE id = ?").bind(accesorios).run();
     expect(await estadoCuenta(env, peticionComo(vendedor))).toMatchObject({ acceso: false, motivo: 'local_suspendido' });

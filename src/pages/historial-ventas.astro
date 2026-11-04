@@ -361,9 +361,9 @@ import { alCambiarDatos } from '../lib/realtime';
       if (miCarga !== cargaId) return;
       devolucionesPorVenta = new Map();
       for (const d of devoluciones) devolucionesPorVenta.set(d.venta_id, [...(devolucionesPorVenta.get(d.venta_id) ?? []), d]);
-      // Con Supabase la base de datos ya entrega solo las ventas del vendedor (RLS); en el modo demo
+      // Con el servidor, la API ya entrega solo las ventas del vendedor (permisos por rol); en el modo demo
       // local se replica esa regla aquí para que el comportamiento sea el mismo.
-      const filtrarPropias = !esAdministrador && !inventoryService.obtenerEstadoConexion().usaSupabase;
+      const filtrarPropias = !esAdministrador && !inventoryService.obtenerEstadoConexion().usaServidor;
       // (en modo demo local no hay RLS: el encargado ve todo su local y el resto solo lo propio)
       ventas = filtrarPropias ? lista.filter((v) => v.vendedor_nombre === nombreSesion) : lista;
     } catch (err) {

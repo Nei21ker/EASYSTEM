@@ -1,6 +1,6 @@
 // Servicio de datos único para toda la app: decide en tiempo de ejecución si
-// habla con Supabase o con LocalStorage, según haya o no credenciales en .env
-// (supabaseConfigurado, ver src/lib/supabase.ts). Los componentes/páginas solo
+// habla con el servidor (API de Cloudflare) o con LocalStorage, según la variable
+// PUBLIC_USAR_API (modoServidor, ver src/lib/modo.ts). Los componentes/páginas solo
 // deberían importar este archivo, nunca src/lib/db/*.ts directamente, para no
 // acoplarse al backend elegido.
 //
@@ -8,13 +8,14 @@
 // módulo desde un <script> de cliente (ver src/pages/ventas.astro), no desde
 // el frontmatter de Astro (que corre en el servidor).
 //
-// Resiliencia offline (solo aplica cuando supabaseConfigurado es true): las
+// Resiliencia offline (solo aplica cuando modoServidor es true): las
 // lecturas de productos/modelos se cachean en LocalStorage en cada consulta
 // exitosa; si una llamada falla por falta de red, se sirve esa caché en su
 // lugar. Las ventas hechas sin conexión se encolan (easystem:cola-sync) y se
 // reintentan automáticamente al reconectar, o manualmente con
 // sincronizarPendientes(). Ver ConnectionStatus.astro para el indicador de UI.
-import { supabaseConfigurado } from './supabase';
+import { modoServidor } from './modo';
+import { esErrorDeRed } from '../utils/red';
 import * as productosDb from './db/productos';
 import * as modelosDb from './db/modelos';
 import * as movimientosDb from './db/movimientos';
@@ -410,13 +411,6 @@ function guardarColaTasas(cola: TasaCambio[]) {
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(EVENTO_CONEXION));
 }
 
-/** Heurística: ¿el error parece ser de conectividad (y no una regla de negocio real)? */
-function esErrorDeRed(err: unknown): boolean {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-  const mensaje = err instanceof Error ? err.message : String(err);
-  return /fetch|network|conexión|conexion|timeout|NetworkError/i.test(mensaje);
-}
-
 /** Ajusta el stock en caché (por local) restando/sumando los movimientos aún no sincronizados. */
 function aplicarPendientesAProductos(productos: ProductoConInventario[]): ProductoConInventario[] {
   const pendientes = leerColaSync();
@@ -471,7 +465,7 @@ function encolarMovimientoPendiente(input: {
 
 /** Reintenta enviar a Supabase los movimientos y registros de venta encolados mientras no había conexión. */
 export async function sincronizarPendientes(): Promise<{ sincronizados: number; pendientes: number }> {
-  if (!supabaseConfigurado) return { sincronizados: 0, pendientes: 0 };
+  if (!modoServidor) return { sincronizados: 0, pendientes: 0 };
 
   const cola = leerColaSync();
   const colaVentas = leerColaVentas();
@@ -538,14 +532,14 @@ export async function sincronizarPendientes(): Promise<{ sincronizados: number; 
 export interface EstadoConexion {
   online: boolean;
   pendientes: number;
-  usaSupabase: boolean;
+  usaServidor: boolean;
 }
 
 export function obtenerEstadoConexion(): EstadoConexion {
   return {
     online: typeof navigator === 'undefined' ? true : navigator.onLine,
-    pendientes: supabaseConfigurado ? leerColaSync().length + leerColaVentas().length + leerColaTasas().length : 0,
-    usaSupabase: supabaseConfigurado,
+    pendientes: modoServidor ? leerColaSync().length + leerColaVentas().length + leerColaTasas().length : 0,
+    usaServidor: modoServidor,
   };
 }
 
@@ -587,7 +581,7 @@ let contextoPromesa: Promise<ContextoLocal | null> | null = null;
 
 export async function listarLocales(): Promise<Local[]> {
   // Modo LocalStorage: el estado de suscripción simulado (lo cambia el super_admin) se mezcla con los locales
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const suscripciones = leerSuscripcionesLocales();
     return leerDB().locales.map((l) => ({ ...l, ...suscripciones[l.id] }));
   }
@@ -686,7 +680,7 @@ async function exigirLocal(accion: string): Promise<string> {
  * que lo proyecta al local activo.
  */
 async function listarProductosCrudos(): Promise<ProductoConInventario[]> {
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     return db.productos.map((p) => normalizarProductoLocal(p, db)).sort((a, b) => a.nombre.localeCompare(b.nombre));
   }
@@ -738,7 +732,7 @@ export async function listarProductos(opciones: { catalogoCompleto?: boolean; lo
 
 export async function obtenerProductoPorCodigoBarras(codigoBarras: string): Promise<ProductoConRelaciones | null> {
   let crudo: ProductoConInventario | null | undefined;
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const producto = db.productos.find((p) => p.codigo_barras === codigoBarras);
     crudo = producto ? normalizarProductoLocal(producto, db) : null;
@@ -765,7 +759,7 @@ export async function listarUnidades(
   opciones: { productoId?: string; estado?: UnidadProducto['estado']; sinImprimir?: boolean; codigos?: string[] } = {}
 ): Promise<UnidadProducto[]> {
   const alcance = await alcanceActual();
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const codigos = opciones.codigos ? new Set(opciones.codigos) : null;
     return (leerDB().unidades ?? []).filter(
       (u) =>
@@ -788,14 +782,14 @@ export async function listarUnidades(
 
 /** La unidad con ese código (de cualquier local que el usuario pueda ver), o null si no existe. */
 export async function obtenerUnidadPorCodigo(codigo: string): Promise<UnidadProducto | null> {
-  if (!supabaseConfigurado) return (leerDB().unidades ?? []).find((u) => u.codigo === codigo) ?? null;
+  if (!modoServidor) return (leerDB().unidades ?? []).find((u) => u.codigo === codigo) ?? null;
   return unidadesDb.obtenerUnidadPorCodigo(codigo);
 }
 
 /** Anota que ya se imprimieron las etiquetas de esas unidades (así "etiquetas pendientes" no vuelve a ofrecerlas). */
 export async function marcarEtiquetasImpresas(codigos: string[]): Promise<void> {
   if (codigos.length === 0) return;
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const lista = new Set(codigos);
     const ahora = new Date().toISOString();
@@ -833,7 +827,7 @@ export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
     return filas.sort((a, b) => a.stock_actual - b.stock_actual);
   };
 
-  if (!supabaseConfigurado) return derivar();
+  if (!modoServidor) return derivar();
 
   try {
     return await productosDb.listarProductosStockBajo(alcance.localId);
@@ -849,7 +843,7 @@ export async function crearProducto(
   // El producto nace en el catálogo (compartido); si hay un local elegido, ese local empieza a manejarlo (con su mínimo)
   const { localId } = await alcanceActual();
 
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     const creado = await productosDb.crearProducto(input);
     if (localId) await productosDb.fijarMinimosLote(localId, [{ producto_id: creado.id, stock_minimo: input.stock_minimo ?? 0 }]);
     return creado;
@@ -881,7 +875,7 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   // El stock mínimo es POR LOCAL: con un local elegido se guarda en su inventario
   const { localId } = await alcanceActual();
 
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     const actualizado = await productosDb.actualizarProducto(id, cambios);
     if (localId && cambios.stock_minimo !== undefined) {
       await productosDb.fijarMinimosLote(localId, [{ producto_id: id, stock_minimo: cambios.stock_minimo }]);
@@ -919,7 +913,7 @@ function guardarDBEstricto(db: LocalDB) {
  * URL dentro del propio producto. Devuelve la URL/data URL resultante.
  */
 export async function guardarImagenProducto(productoId: string, imagen: Blob): Promise<string> {
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     const anterior = (await productosDb.obtenerProducto(productoId))?.imagen_url;
     const url = await productosDb.subirImagenProducto(productoId, imagen);
     await productosDb.actualizarProducto(productoId, { imagen_url: url });
@@ -942,7 +936,7 @@ export async function guardarImagenProducto(productoId: string, imagen: Blob): P
 }
 
 export async function quitarImagenProducto(productoId: string): Promise<void> {
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     const anterior = (await productosDb.obtenerProducto(productoId))?.imagen_url;
     await productosDb.actualizarProducto(productoId, { imagen_url: null });
     productosDb.eliminarImagenProducto(anterior).catch(() => {});
@@ -957,7 +951,7 @@ export async function quitarImagenProducto(productoId: string): Promise<void> {
 }
 
 export async function eliminarProducto(id: string): Promise<void> {
-  if (supabaseConfigurado) return productosDb.eliminarProducto(id);
+  if (modoServidor) return productosDb.eliminarProducto(id);
 
   const db = leerDB();
   db.productos = db.productos.filter((p) => p.id !== id);
@@ -969,7 +963,7 @@ export async function eliminarProducto(id: string): Promise<void> {
 }
 
 export async function establecerCompatibilidades(productoId: string, modeloIds: string[]): Promise<void> {
-  if (supabaseConfigurado) return productosDb.establecerCompatibilidades(productoId, modeloIds);
+  if (modoServidor) return productosDb.establecerCompatibilidades(productoId, modeloIds);
 
   const db = leerDB();
   db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== productoId);
@@ -986,7 +980,7 @@ function compararModelos(a: ModeloTelefono, b: ModeloTelefono): number {
 }
 
 export async function listarModelos(): Promise<ModeloTelefono[]> {
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     return leerDB().modelos.slice().sort(compararModelos);
   }
 
@@ -1002,7 +996,7 @@ export async function listarModelos(): Promise<ModeloTelefono[]> {
 }
 
 export async function crearModelo(input: Pick<ModeloTelefono, 'marca' | 'modelo'>): Promise<ModeloTelefono> {
-  if (supabaseConfigurado) return modelosDb.crearModelo(input);
+  if (modoServidor) return modelosDb.crearModelo(input);
 
   const db = leerDB();
   if (db.modelos.some((m) => m.marca === input.marca && m.modelo === input.modelo)) {
@@ -1038,7 +1032,7 @@ function estadoDeTasa(ultima: TasaCambio | null): EstadoTasa {
 export async function obtenerTasaVigente(): Promise<EstadoTasa> {
   let ultima: TasaCambio | null;
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const tasas = leerDB().tasas ?? [];
     ultima = tasas.slice().sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ?? null;
   } else {
@@ -1069,7 +1063,7 @@ export async function registrarTasa(tasa: number, registradoNombre?: string): Pr
   };
 
   let guardada: TasaCambio;
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     guardada = { ...nueva, id: generarId(), created_at: new Date().toISOString() };
     (db.tasas ?? (db.tasas = [])).unshift(guardada);
@@ -1096,7 +1090,7 @@ export async function listarMovimientos(limite = 100): Promise<MovimientoConProd
   const alcance = await alcanceActual();
   const delAlcance = (m: { local_id: string }) => alcance.todos || m.local_id === alcance.localId;
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const productosPorId = Object.fromEntries(db.productos.map((p) => [p.id, p]));
     const localesPorId = Object.fromEntries(db.locales.map((l) => [l.id, l]));
@@ -1147,7 +1141,7 @@ export async function registrarMovimiento(input: {
   if (input.cantidad <= 0) throw new Error('La cantidad debe ser mayor a 0.');
   const local_id = input.local_id ?? (await exigirLocal('registrar el movimiento de stock'));
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const producto = db.productos.find((p) => p.id === input.producto_id);
     if (!producto) throw new Error('Producto no encontrado.');
@@ -1243,7 +1237,7 @@ export interface DatosVenta {
 export type VentaRegistrada = Venta & { pendienteSincronizar?: boolean };
 
 async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegistrada> {
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const ventas = db.ventas ?? (db.ventas = []);
     const venta: Venta = { ...registro, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
@@ -1423,7 +1417,7 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
   };
   const masNuevasPrimero = (a: { fecha: string }, b: { fecha: string }) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     return (leerDB().ventas ?? []).filter(enRango).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
   }
 
@@ -1463,7 +1457,7 @@ export async function listarDevoluciones(opciones: { limite?: number; ventaId?: 
   const pasa = (d: Devolucion) => (!opciones.ventaId || d.venta_id === opciones.ventaId) && (alcance.todos || d.local_id === alcance.localId);
   const masNuevasPrimero = (a: Devolucion, b: Devolucion) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     return (leerDB().devoluciones ?? []).filter(pasa).sort(masNuevasPrimero).slice(0, limite);
   }
   try {
@@ -1515,7 +1509,7 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   if (!venta.folio || venta.id.startsWith('pendiente-')) {
     throw new Error('Esa venta aún no se sincroniza (está pendiente de enviarse). Espera a que se sincronice para devolverla.');
   }
-  if (supabaseConfigurado && !obtenerEstadoConexion().online) {
+  if (modoServidor && !obtenerEstadoConexion().online) {
     throw new Error('Las devoluciones necesitan conexión a internet. Inténtalo de nuevo cuando vuelva.');
   }
   const motivo = datos.motivo.trim().replace(/\s+/g, ' ');
@@ -1612,7 +1606,7 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
     registrado_nombre: datos.registrado_nombre ?? null,
   };
   try {
-    if (!supabaseConfigurado) {
+    if (!modoServidor) {
       const db = leerDB();
       const lista = db.devoluciones ?? (db.devoluciones = []);
       const devolucion: Devolucion = { ...registro, id: generarId(), folio: lista.reduce((m, d) => Math.max(m, d.folio), 0) + 1 };
@@ -1651,7 +1645,7 @@ export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio
   const delAlcance = (o: OrdenServicio) => alcance.todos || o.local_id === alcance.localId;
   const masNuevasPrimero = (a: OrdenServicio, b: OrdenServicio) => new Date(b.recibida_en).getTime() - new Date(a.recibida_en).getTime();
 
-  if (!supabaseConfigurado) return (leerDB().ordenes ?? []).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
+  if (!modoServidor) return (leerDB().ordenes ?? []).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
 
   try {
     const ordenes = await ordenesDb.listarOrdenes({ limite, localId: alcance.localId });
@@ -1665,7 +1659,7 @@ export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio
 }
 
 async function obtenerOrdenServicio(id: string): Promise<OrdenServicio> {
-  const orden = supabaseConfigurado
+  const orden = modoServidor
     ? await ordenesDb.obtenerOrden(id)
     : ((leerDB().ordenes ?? []).find((o) => o.id === id) ?? null);
   if (!orden) throw new Error('Orden de servicio no encontrada.');
@@ -1680,7 +1674,7 @@ async function guardarCambiosOrden(orden: OrdenServicio, cambios: Partial<OrdenS
   const mano = cambios.mano_de_obra_usd ?? orden.mano_de_obra_usd;
   nuevo.total_usd = totalDeOrden(repuestos, mano);
 
-  if (supabaseConfigurado) return ordenesDb.actualizarOrden(orden.id, nuevo);
+  if (modoServidor) return ordenesDb.actualizarOrden(orden.id, nuevo);
 
   const db = leerDB();
   const guardada = (db.ordenes ?? []).find((o) => o.id === orden.id);
@@ -1733,7 +1727,7 @@ export async function crearOrdenServicio(datos: DatosNuevaOrden): Promise<OrdenS
   if (!registro.equipo_marca || !registro.equipo_modelo) throw new Error('Indica la marca y el modelo del equipo.');
   if (registro.falla_reportada.length < 3) throw new Error('Describe la falla que reporta el cliente.');
 
-  if (supabaseConfigurado) return ordenesDb.insertarOrden(registro);
+  if (modoServidor) return ordenesDb.insertarOrden(registro);
 
   const db = leerDB();
   const ordenes = db.ordenes ?? (db.ordenes = []);
@@ -1857,7 +1851,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
   // La cantidad y el mínimo del archivo son los de UN local: el activo
   const local_id = await exigirLocal('importar productos (el stock del archivo se carga en ese local)');
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const codigos = new Set(db.productos.map((p) => p.codigo_barras));
     const repetido = nuevas.find((f) => codigos.has(f.codigo_barras));
@@ -2026,7 +2020,7 @@ const textoLimpio = (v: string | null | undefined) => (v ?? '').trim().replace(/
 
 export async function listarEmpleados(): Promise<Empleado[]> {
   await exigirAccesoNomina();
-  if (supabaseConfigurado) return nominaDb.listarEmpleados();
+  if (modoServidor) return nominaDb.listarEmpleados();
   return [...(leerDB().empleados ?? [])].sort((a, b) => a.apellido.localeCompare(b.apellido, 'es') || a.nombre.localeCompare(b.nombre, 'es'));
 }
 
@@ -2061,7 +2055,7 @@ export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
   validarEmpleado(datos, true);
   const limpio = limpiarEmpleado(datos);
 
-  if (supabaseConfigurado) return nominaDb.crearEmpleado(limpio);
+  if (modoServidor) return nominaDb.crearEmpleado(limpio);
 
   const db = leerDB();
   const empleados = db.empleados ?? (db.empleados = []);
@@ -2089,7 +2083,7 @@ export async function actualizarEmpleado(id: string, cambiosCrudos: Partial<Nuev
   validarEmpleado(cambios, false);
   const limpio = limpiarEmpleado(cambios);
 
-  if (supabaseConfigurado) return nominaDb.actualizarEmpleado(id, limpio);
+  if (modoServidor) return nominaDb.actualizarEmpleado(id, limpio);
 
   const db = leerDB();
   const empleado = (db.empleados ?? []).find((e) => e.id === id);
@@ -2105,7 +2099,7 @@ export async function actualizarEmpleado(id: string, cambiosCrudos: Partial<Nuev
 /** Pagos de una quincena (período "aaaa-mm-dd" a "aaaa-mm-dd") de todos los locales. */
 export async function listarNominas(periodoInicio: string, periodoFin: string): Promise<Nomina[]> {
   await exigirAccesoNomina();
-  if (supabaseConfigurado) return nominaDb.listarNominas(periodoInicio, periodoFin);
+  if (modoServidor) return nominaDb.listarNominas(periodoInicio, periodoFin);
   return (leerDB().nominas ?? []).filter((n) => n.periodo_inicio >= periodoInicio && n.periodo_fin <= periodoFin);
 }
 
@@ -2151,7 +2145,7 @@ export async function guardarPagoQuincenal(datos: DatosPagoQuincenal): Promise<N
     notas: textoLimpio(datos.notas) || null,
   };
 
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     // La captura va primero al almacenamiento privado; si luego falla el guardado del pago, se borra para no dejar huérfanos
     let rutaNueva: string | null = null;
     if (datos.comprobante) rutaNueva = await nominaDb.subirComprobante(empleado.local_id, empleado.id, periodo.inicio, datos.comprobante);
@@ -2234,7 +2228,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
     };
   });
 
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     await nominaDb.insertarNominas(filas);
     return filas.length;
   }
@@ -2250,7 +2244,7 @@ export async function generarPagosPendientes(empleados: Empleado[], periodo: { i
 /** Borra un pago PENDIENTE (uno PAGADO no se borra). */
 export async function eliminarPagoPendiente(id: string): Promise<void> {
   await exigirAccesoNomina();
-  if (supabaseConfigurado) return nominaDb.eliminarNomina(id);
+  if (modoServidor) return nominaDb.eliminarNomina(id);
 
   const db = leerDB();
   const nominas = db.nominas ?? [];
@@ -2292,7 +2286,7 @@ export async function buscarProductosReventa(texto: string): Promise<ProductoRev
   await exigirAccesoNomina();
   const q = texto.trim().toLowerCase();
   if (!q) return [];
-  if (supabaseConfigurado) return nominaDb.buscarProductosReventa(texto.trim());
+  if (modoServidor) return nominaDb.buscarProductosReventa(texto.trim());
 
   return leerDB()
     .productos.filter((p) => p.nombre.toLowerCase().includes(q) || p.codigo_barras.toLowerCase().includes(q) || p.categoria.toLowerCase().includes(q))
@@ -2304,7 +2298,7 @@ export async function buscarProductosReventa(texto: string): Promise<ProductoRev
 /** Listas de reventa de varios pagos diarios, por id de pago. */
 export async function listarReventas(nominaIds: string[]): Promise<Record<string, LineaReventa[]>> {
   await exigirAccesoNomina();
-  if (supabaseConfigurado) return nominaDb.listarReventas(nominaIds);
+  if (modoServidor) return nominaDb.listarReventas(nominaIds);
   const porNomina: Record<string, LineaReventa[]> = {};
   for (const { id: _id, nomina_id, local_id: _local, ...linea } of leerDB().reventas ?? []) {
     if (nominaIds.includes(nomina_id)) (porNomina[nomina_id] ??= []).push(linea);
@@ -2351,7 +2345,7 @@ export async function guardarPagoIndependiente(datos: DatosPagoIndependiente): P
   if (datos.pagar && lineas.length === 0) throw new Error('Agrega al menos un producto a la lista antes de registrar el pago.');
   const notas = textoLimpio(datos.notas) || null;
 
-  if (supabaseConfigurado) {
+  if (modoServidor) {
     // La captura va primero al almacenamiento privado; si luego falla el guardado, se borra para no dejar huérfanos
     let rutaNueva: string | null = null;
     if (datos.comprobante) rutaNueva = await nominaDb.subirComprobante(empleado.local_id, empleado.id, dia, datos.comprobante);
@@ -2456,13 +2450,13 @@ export async function calcularEsperadoCuadre(localId: string, fecha: string): Pr
 /** Los cuadres de un día de los locales que el usuario puede ver (todos para administrador y gerente, el suyo para el encargado). */
 export async function listarCuadresDelDia(fecha: string): Promise<CuadreCaja[]> {
   const sesion = await accesoCuadre();
-  if (!supabaseConfigurado) return (leerDB().cuadres ?? []).filter((c) => c.fecha === fecha && (esGlobal(sesion.rol) || c.local_id === sesion.local_id));
+  if (!modoServidor) return (leerDB().cuadres ?? []).filter((c) => c.fecha === fecha && (esGlobal(sesion.rol) || c.local_id === sesion.local_id));
   return cuadresDb.listarCuadresDelDia(fecha);
 }
 
 export async function obtenerCuadre(localId: string, fecha: string): Promise<CuadreCaja | null> {
   await accesoCuadre(localId);
-  if (!supabaseConfigurado) return (leerDB().cuadres ?? []).find((c) => c.local_id === localId && c.fecha === fecha) ?? null;
+  if (!modoServidor) return (leerDB().cuadres ?? []).find((c) => c.local_id === localId && c.fecha === fecha) ?? null;
   return cuadresDb.obtenerCuadre(localId, fecha);
 }
 
@@ -2487,7 +2481,7 @@ export interface DatosGuardarCuadre {
  */
 export async function guardarCuadre(datos: DatosGuardarCuadre): Promise<CuadreCaja> {
   const sesion = await accesoCuadre(datos.localId);
-  if (supabaseConfigurado && !obtenerEstadoConexion().online) throw new Error('El cuadre de caja necesita conexión a internet. Inténtalo de nuevo cuando vuelva.');
+  if (modoServidor && !obtenerEstadoConexion().online) throw new Error('El cuadre de caja necesita conexión a internet. Inténtalo de nuevo cuando vuelva.');
 
   const existente = await obtenerCuadre(datos.localId, datos.fecha);
   if (existente?.estado === 'CERRADO') throw new Error('Este cuadre ya está cerrado y no se puede modificar.');
@@ -2510,14 +2504,14 @@ export async function guardarCuadre(datos: DatosGuardarCuadre): Promise<CuadreCa
   const subidas: FotoCuadre[] = [];
   try {
     for (const nueva of datos.fotosNuevas) {
-      const path = supabaseConfigurado ? await cuadresDb.subirFoto(datos.localId, datos.fecha, nueva.tipo, nueva.imagen) : await blobADataUrl(nueva.imagen);
+      const path = modoServidor ? await cuadresDb.subirFoto(datos.localId, datos.fecha, nueva.tipo, nueva.imagen) : await blobADataUrl(nueva.imagen);
       subidas.push({ tipo: nueva.tipo, path });
     }
     const fotos = [...conservadas, ...subidas];
     const estado = datos.cerrar ? ('CERRADO' as const) : ('ABIERTO' as const);
 
     let guardado: CuadreCaja;
-    if (!supabaseConfigurado) {
+    if (!modoServidor) {
       const db = leerDB();
       const lista = db.cuadres ?? (db.cuadres = []);
       const ahora = new Date().toISOString();
@@ -2549,10 +2543,10 @@ export async function guardarCuadre(datos: DatosGuardarCuadre): Promise<CuadreCa
         sesion.nombre
       );
     }
-    if (supabaseConfigurado) cuadresDb.borrarFotos(datos.fotosQuitadas).catch(() => {}); // limpieza best-effort
+    if (modoServidor) cuadresDb.borrarFotos(datos.fotosQuitadas).catch(() => {}); // limpieza best-effort
     return guardado;
   } catch (err) {
-    if (supabaseConfigurado) cuadresDb.borrarFotos(subidas.map((f) => f.path)).catch(() => {});
+    if (modoServidor) cuadresDb.borrarFotos(subidas.map((f) => f.path)).catch(() => {});
     throw err;
   }
 }
@@ -2564,7 +2558,7 @@ export async function reabrirCuadre(localId: string, fecha: string): Promise<Cua
   const existente = await obtenerCuadre(localId, fecha);
   if (!existente) throw new Error('Ese cuadre no existe.');
 
-  if (!supabaseConfigurado) {
+  if (!modoServidor) {
     const db = leerDB();
     const c = (db.cuadres ?? []).find((x) => x.local_id === localId && x.fecha === fecha)!;
     Object.assign(c, { estado: 'ABIERTO', cerrado_en: null, cerrado_por: null, updated_at: new Date().toISOString() });
@@ -2576,6 +2570,6 @@ export async function reabrirCuadre(localId: string, fecha: string): Promise<Cua
 
 /** Dirección para mostrar una foto del cuadre (enlace firmado de 1 hora en Supabase; en LocalStorage la propia imagen). */
 export async function urlFotoCuadre(ruta: string): Promise<string> {
-  if (!supabaseConfigurado) return ruta;
+  if (!modoServidor) return ruta;
   return cuadresDb.urlFirmada(ruta);
 }

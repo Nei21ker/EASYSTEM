@@ -1,5 +1,8 @@
 ---
 import DashboardLayout from '../layouts/DashboardLayout.astro';
+
+// El servidor exige 8 caracteres; el modo demo acepta 6
+const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
 ---
 
 <DashboardLayout titulo="Usuarios" subtitulo="Cuentas con acceso a EASYSTEM y sus permisos" roles={['administrador', 'gerente']}>
@@ -39,7 +42,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         </div>
         <div>
           <label for="us-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña temporal</label>
-          <input id="us-password" type="text" required minlength="6" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <input id="us-password" type="text" required minlength={MIN_CLAVE} class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <div>
           <label for="us-rol" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Rol</label>
@@ -85,7 +88,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
         <div>
           <label for="ed-clave" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nueva contraseña (opcional)</label>
           <div class="mt-1 flex gap-2">
-            <input id="ed-clave" type="password" autocomplete="new-password" minlength="6" placeholder="Déjala vacía para no cambiarla" class="min-w-0 flex-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <input id="ed-clave" type="password" autocomplete="new-password" minlength={MIN_CLAVE} placeholder="Déjala vacía para no cambiarla" class="min-w-0 flex-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <button id="ed-ojo" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Ver</button>
             <button id="ed-generar" type="button" class="shrink-0 rounded-lg border border-slate-200 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Generar</button>
           </div>

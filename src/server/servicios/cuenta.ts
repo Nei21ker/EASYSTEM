@@ -11,6 +11,8 @@ export type MotivoBloqueo = 'ok' | 'local_suspendido' | 'usuario_inactivo' | 'se
 export interface EstadoCuenta {
   acceso: boolean;
   motivo: MotivoBloqueo;
+  /** Datos del usuario (la interfaz arma la sesión con esto) */
+  usuario?: { id: string; email: string; nombre: string; rol: string; local_id: string | null; status: string };
   rol?: string;
   local_id?: string | null;
   local_nombre?: string;
@@ -19,7 +21,7 @@ export interface EstadoCuenta {
 }
 
 export async function estadoCuenta(env: Entorno, request: Request): Promise<EstadoCuenta> {
-  const { emitidaMs, perfil } = await leerSesionYPerfil(env, request);
+  const { userId, emitidaMs, perfil } = await leerSesionYPerfil(env, request);
   if (!perfil) return { acceso: false, motivo: 'sin_perfil' };
 
   const locales = await cargarLocales(env);
@@ -41,6 +43,7 @@ export async function estadoCuenta(env: Entorno, request: Request): Promise<Esta
   return {
     acceso: motivo === 'ok',
     motivo,
+    usuario: { id: userId, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id, status: perfil.status },
     rol: perfil.rol,
     local_id: perfil.local_id,
     local_nombre: local?.nombre,

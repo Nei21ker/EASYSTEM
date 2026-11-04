@@ -1,14 +1,12 @@
-// Servicio de autenticación y roles, con el mismo patrón dual que
-// inventoryService.ts: Supabase Auth cuando hay credenciales (.env), o un
-// simulador de usuarios en LocalStorage cuando no las hay.
+// Servicio de autenticación y roles, con el mismo patrón dual que inventoryService.ts: el servidor de EASYSTEM
+// (Cloudflare Worker + D1 + Better-Auth, cookie de sesión) cuando hay modo servidor, o un simulador de usuarios en
+// LocalStorage cuando no (modo demo).
 //
-// AVISO DE SEGURIDAD: el modo LocalStorage guarda las "contraseñas" en texto
-// plano en el navegador. Es intencional y está bien para probar la UI de
-// login/roles sin backend, pero NUNCA debe tratarse como autenticación real.
-// La autenticación real (hashing, tokens, RLS) la provee Supabase Auth
-// cuando está configurado.
-import { createClient } from '@supabase/supabase-js';
-import { supabase, supabaseConfigurado, supabaseUrl, supabaseAnonKey } from './supabase';
+// AVISO DE SEGURIDAD: el modo LocalStorage guarda las "contraseñas" en texto plano en el navegador. Es intencional y
+// está bien para probar la UI de login/roles sin backend, pero NUNCA debe tratarse como autenticación real. La
+// autenticación real (hash PBKDF2, sesiones en D1, permisos por rol en cada ruta de la API) la provee el servidor.
+import { api, ErrorDeApi } from './api';
+import { modoServidor } from './modo';
 import { alCambiarDatos, iniciarTiempoReal } from './realtime';
 import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
@@ -61,7 +59,7 @@ export interface SesionUsuario {
 }
 
 /** Por qué una cuenta no tiene acceso a los datos (ver estado_cuenta() en la migración 0021). */
-export type MotivoBloqueo = 'ok' | 'local_suspendido' | 'usuario_inactivo' | 'sesion_cerrada' | 'sin_perfil';
+export type MotivoBloqueo = 'ok' | 'local_suspendido' | 'usuario_inactivo' | 'sesion_cerrada' | 'sin_perfil' | 'sesion_expirada';
 
 export interface EstadoCuenta {
   acceso: boolean;
@@ -109,8 +107,10 @@ export const puedeNomina = (rol?: Rol | null) => rol === 'administrador' || rol 
 export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'encargado';
 
 const LS_SESION = 'easystem:sesion';
+// Última sesión conocida en modo servidor (para abrir el sistema sin conexión)
+const LS_SESION_CACHE = 'easystem:sesion-servidor';
 const LS_USUARIOS = 'easystem:usuarios';
-// Simulador de suscripciones y cierres forzados (solo modo LocalStorage; con Supabase viven en la base de datos)
+// Simulador de suscripciones y cierres forzados (solo modo LocalStorage; con el servidor viven en la base de datos)
 const LS_SUSCRIPCIONES = 'easystem:suscripciones';
 const LS_CIERRES_FORZADOS = 'easystem:cierres-forzados';
 
@@ -184,49 +184,37 @@ function guardarUsuariosLocales(usuarios: UsuarioLocal[]) {
 
 // Varios componentes por página (Sidebar, DashboardLayout, la propia página)
 // llaman a obtenerSesionActual() de forma independiente; se memoiza dentro de
-// la misma carga de página para no repetir la consulta a Supabase/localStorage.
+// la misma carga de página para no repetir la consulta al servidor/localStorage.
 let sesionEnCache: Promise<SesionUsuario | null> | null = null;
 
 function invalidarCacheSesion() {
   sesionEnCache = null;
 }
 
-/** Traduce los mensajes de error de Supabase Auth a algo accionable para el usuario. */
-function traducirErrorAuth(mensaje: string): string {
-  const m = mensaje.toLowerCase();
-  if (m.includes('email not confirmed')) {
-    return 'Tu correo aún no está confirmado. Abre el enlace que te enviamos por correo (revisa también spam) y vuelve a iniciar sesión.';
+/** Traduce los errores de Better-Auth (por código) a algo accionable para el usuario. */
+function traducirErrorAuth(err: unknown): string {
+  if (err instanceof ErrorDeApi) {
+    if (err.codigo === 'INVALID_EMAIL_OR_PASSWORD' || err.codigo === 'USER_NOT_FOUND' || err.codigo === 'CREDENTIAL_ACCOUNT_NOT_FOUND') return 'Correo o contraseña incorrectos.';
+    if (err.status === 429) return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
+    if (err.status === 403 && /origin/i.test(err.message)) return 'No se pudo iniciar sesión desde esta dirección. Abre el sistema desde su dirección oficial.';
   }
-  if (m.includes('invalid login credentials')) return 'Correo o contraseña incorrectos.';
-  if (m.includes('user already registered')) return 'Ya existe una cuenta con ese correo.';
-  if (m.includes('password should be at least')) return 'La contraseña debe tener al menos 6 caracteres.';
-  if (m.includes('email logins are disabled') || m.includes('email_provider_disabled')) {
-    return 'El inicio de sesión con correo está desactivado en Supabase. Actívalo en Authentication → Sign In / Providers → Email → "Enable Email provider".';
-  }
-  if (m.includes('registro_no_autorizado') || m.includes('database error saving new user')) {
-    return 'No se pudo crear la cuenta: el correo no está autorizado o falta aplicar las migraciones 0002–0004 de Supabase.';
-  }
-  if (m.includes('signups not allowed')) return 'El registro de cuentas nuevas está deshabilitado en Supabase.';
-  if (m.includes('rate limit')) return 'Demasiados intentos. Espera unos minutos e inténtalo de nuevo.';
-  return mensaje;
+  return err instanceof Error ? err.message : String(err);
 }
 
+/** Mínimo de la contraseña: el servidor exige 8; el modo demo sigue aceptando 6. */
+export const MIN_CLAVE = modoServidor ? 8 : 6;
+
 export async function iniciarSesion(email: string, password: string): Promise<SesionUsuario> {
-  if (supabaseConfigurado) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw new Error(traducirErrorAuth(error.message));
-    if (!data.user) throw new Error('Correo o contraseña incorrectos.');
-
-    const { data: perfil, error: errorPerfil } = await supabase
-      .from('perfiles')
-      .select('*')
-      .eq('id', data.user.id)
-      .maybeSingle();
-    if (errorPerfil || !perfil) {
-      throw new Error('Tu cuenta no tiene un perfil asociado todavía. Contacta a un administrador.');
+  if (modoServidor) {
+    try {
+      await api.post('/api/auth/sign-in/email', { email: email.trim(), password });
+    } catch (err) {
+      throw new Error(traducirErrorAuth(err));
     }
-
-    return sesionDesdePerfil(data.user.id, perfil);
+    invalidarCacheSesion();
+    const sesion = await obtenerSesionActual();
+    if (!sesion) throw new Error('Tu cuenta no tiene un perfil asociado todavía. Contacta a un administrador.');
+    return sesion;
   }
 
   const usuario = leerUsuariosLocales().find((u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
@@ -241,8 +229,13 @@ export async function iniciarSesion(email: string, password: string): Promise<Se
 
 export async function cerrarSesion(): Promise<void> {
   invalidarCacheSesion();
-  if (supabaseConfigurado) {
-    await supabase.auth.signOut();
+  if (modoServidor) {
+    localStorage.removeItem(LS_SESION_CACHE);
+    try {
+      await api.post('/api/auth/sign-out');
+    } catch {
+      // Sin conexión o sesión ya cerrada: de todos modos se sigue al login
+    }
     return;
   }
   localStorage.removeItem(LS_SESION);
@@ -253,15 +246,31 @@ export async function obtenerSesionActual(): Promise<SesionUsuario | null> {
   return sesionEnCache;
 }
 
+/** Estado de cuenta tal como lo responde el servidor (incluye los datos del usuario). */
+interface RespuestaEstado extends EstadoCuenta {
+  usuario?: { id: string; email: string; nombre: string; rol: Rol; local_id: string | null; status: 'active' | 'inactive' };
+}
+
 async function cargarSesionActual(): Promise<SesionUsuario | null> {
-  if (supabaseConfigurado) {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session?.user) return null;
-
-    const { data: perfil } = await supabase.from('perfiles').select('*').eq('id', data.session.user.id).maybeSingle();
-    if (!perfil) return null;
-
-    return sesionDesdePerfil(data.session.user.id, perfil);
+  if (modoServidor) {
+    try {
+      const estado = await api.get<RespuestaEstado>('/api/cuenta/estado');
+      if (!estado.usuario) {
+        localStorage.removeItem(LS_SESION_CACHE);
+        return null;
+      }
+      const sesion = sesionDesdePerfil(estado.usuario.id, estado.usuario);
+      localStorage.setItem(LS_SESION_CACHE, JSON.stringify(sesion));
+      return sesion;
+    } catch (err) {
+      // 401 = no hay sesión (o expiró): al login. Sin conexión o con un error del servidor: se sigue con la última sesión conocida para poder vender
+      if (err instanceof ErrorDeApi && err.status === 401) {
+        localStorage.removeItem(LS_SESION_CACHE);
+        return null;
+      }
+      // Sin conexión o error del servidor: última sesión conocida (el servidor niega los datos si no corresponde)
+      return leerJsonLS<SesionUsuario | null>(LS_SESION_CACHE, null);
+    }
   }
 
   try {
@@ -280,12 +289,7 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
  * Crea una cuenta de empleado. SOLO un administrador con sesión puede hacerlo:
  * EASYSTEM es de uso interno y no existe registro público.
  *
- * En modo Supabase el alta es de dos pasos, porque la base de datos rechaza
- * cualquier registro cuyo correo no haya sido autorizado antes por un admin
- * (trigger `verificar_registro_autorizado`, migración 0004):
- *   1. el administrador autoriza el correo (tabla usuarios_autorizados, RLS);
- *   2. se crea la cuenta con un cliente aislado (persistSession: false) para que
- *      el signUp no reemplace la sesión del administrador.
+ * En modo servidor el alta la hace POST /api/usuarios (crea cuenta, perfil, rol y local en un solo paso atómico).
  */
 export async function registrarUsuario(input: {
   email: string;
@@ -309,47 +313,11 @@ export async function registrarUsuario(input: {
   if (!nombre) throw new Error('El nombre es obligatorio.');
   const local_id = esSinLocal(rol) ? null : (input.local_id ?? null);
   if (!esSinLocal(rol) && !local_id) throw new Error('Elige el local al que pertenece el empleado.');
-  if (input.password.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
+  if (input.password.length < MIN_CLAVE) throw new Error(`La contraseña debe tener al menos ${MIN_CLAVE} caracteres.`);
 
-  if (supabaseConfigurado) {
-    // Paso 1: autorizar el correo. Se borran autorizaciones viejas del mismo
-    // correo para no acumular filas.
-    await supabase.from('usuarios_autorizados').delete().eq('email', email);
-    const { error: errorAutorizar } = await supabase.from('usuarios_autorizados').insert({ email });
-    if (errorAutorizar) {
-      const sinPermiso = /row-level security|permission denied/i.test(errorAutorizar.message);
-      throw new Error(
-        sinPermiso
-          ? 'Tu cuenta no tiene permiso para crear usuarios. Revisa que tu rol sea administrador o gerente y que las migraciones 0022 y 0023 estén aplicadas en Supabase (detalle: ' + errorAutorizar.message + ')'
-          : 'No se pudo autorizar el correo (¿aplicaste la migración 0004 en Supabase?): ' + errorAutorizar.message
-      );
-    }
-
-    // Paso 2: crear la cuenta. El rol NO viaja en el metadata: el trigger de
-    // perfiles siempre crea 'vendedor' y el ascenso lo hace el admin abajo.
-    const clienteAislado = createClient(supabaseUrl, supabaseAnonKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data, error } = await clienteAislado.auth.signUp({
-      email,
-      password: input.password,
-      options: { data: { nombre } },
-    });
-
-    if (error || !data.user || data.user.identities?.length === 0) {
-      // No dejar la autorización abierta si el alta falló (si ya se consumió,
-      // este delete simplemente no encuentra filas).
-      await supabase.from('usuarios_autorizados').delete().eq('email', email);
-      if (error) throw new Error(traducirErrorAuth(error.message));
-      throw new Error('Ya existe una cuenta con ese correo.');
-    }
-
-    // El perfil nace como 'vendedor' sin local; el administrador asigna el rol y el local
-    const { error: errorRol } = await supabase.from('perfiles').update({ rol, local_id }).eq('id', data.user.id);
-    if (errorRol) throw new Error('La cuenta se creó, pero no se pudo asignar el rol y el local: ' + errorRol.message);
-
-    return { requiereConfirmacion: !data.session };
+  if (modoServidor) {
+    await api.post('/api/usuarios', { email, nombre, clave: input.password, rol, localId: local_id });
+    return { requiereConfirmacion: false };
   }
 
   const usuarios = leerUsuariosLocales();
@@ -362,10 +330,9 @@ export async function registrarUsuario(input: {
 }
 
 export async function listarUsuarios(): Promise<SesionUsuario[]> {
-  if (supabaseConfigurado) {
-    const { data, error } = await supabase.from('perfiles').select('*').order('created_at', { ascending: true });
-    if (error) throw error;
-    return (data ?? []).map((p: any) => sesionDesdePerfil(p.id, p));
+  if (modoServidor) {
+    const perfiles = await api.get<any[]>('/api/usuarios');
+    return perfiles.map((p) => sesionDesdePerfil(p.id, p));
   }
 
   // Un gerente no ve a los administradores (igual que la política de la tabla perfiles)
@@ -387,9 +354,8 @@ export async function actualizarAccesoUsuario(
   const parche: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' } = { ...cambios };
   if (cambios.rol && esSinLocal(cambios.rol)) parche.local_id = null; // administrador, gerente y contador no tienen local
 
-  if (supabaseConfigurado) {
-    const { error } = await supabase.from('perfiles').update(parche).eq('id', id);
-    if (error) throw error;
+  if (modoServidor) {
+    await api.patch(`/api/usuarios/${id}`, { rol: parche.rol, localId: parche.local_id, status: parche.status });
     return;
   }
 
@@ -412,9 +378,8 @@ export async function eliminarUsuario(id: string): Promise<void> {
   const actor = await obtenerSesionActual();
   if (actor?.id === id) throw new Error('No puedes eliminar tu propio usuario.');
 
-  if (supabaseConfigurado) {
-    const { error } = await supabase.rpc('eliminar_usuario', { p_usuario: id });
-    if (error) throw new Error(error.message);
+  if (modoServidor) {
+    await api.delete(`/api/usuarios/${id}`);
     return;
   }
 
@@ -431,11 +396,10 @@ export async function eliminarUsuario(id: string): Promise<void> {
  * A otro usuario se le cierran las sesiones abiertas: tiene que entrar con la nueva.
  */
 export async function cambiarClaveUsuario(id: string, clave: string): Promise<void> {
-  if (clave.length < 6) throw new Error('La contraseña debe tener al menos 6 caracteres.');
+  if (clave.length < MIN_CLAVE) throw new Error(`La contraseña debe tener al menos ${MIN_CLAVE} caracteres.`);
 
-  if (supabaseConfigurado) {
-    const { error } = await supabase.rpc('cambiar_clave_usuario', { p_usuario: id, p_clave: clave });
-    if (error) throw new Error(error.message);
+  if (modoServidor) {
+    await api.post(`/api/usuarios/${id}/clave`, { clave });
     return;
   }
 
@@ -485,14 +449,14 @@ export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
   const sesion = await obtenerSesionActual();
   if (!sesion) return { acceso: false, motivo: 'sin_perfil' };
 
-  if (supabaseConfigurado) {
-    // Si la consulta falla (sin conexión, o la migración 0021 aún no se aplicó) NO se bloquea: el sistema
-    // sigue funcionando sin conexión, y la base de datos es quien realmente niega los datos.
+  if (modoServidor) {
+    // Si la consulta falla por conexión o por un error del servidor NO se bloquea: el sistema sigue funcionando
+    // sin conexión, y el servidor es quien realmente niega los datos.
     try {
-      const { data, error } = await supabase.rpc('estado_cuenta');
-      if (error || !data) return { acceso: true, motivo: 'ok' };
-      return data as EstadoCuenta;
-    } catch {
+      const { usuario: _usuario, ...estado } = await api.get<RespuestaEstado>('/api/cuenta/estado');
+      return estado;
+    } catch (err) {
+      if (err instanceof ErrorDeApi && err.status === 401) return { acceso: false, motivo: 'sesion_expirada' };
       return { acceso: true, motivo: 'ok' };
     }
   }
@@ -523,7 +487,7 @@ export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
 /** Lleva al usuario a donde corresponde según por qué se quedó sin acceso. */
 async function redirigirPorBloqueo(motivo: MotivoBloqueo): Promise<void> {
   if (motivo === 'local_suspendido') {
-    if (window.location.pathname !== '/subscription-suspended') window.location.href = '/subscription-suspended';
+    if (!window.location.pathname.startsWith('/subscription-suspended')) window.location.href = '/subscription-suspended';
     return;
   }
   try {
@@ -615,10 +579,8 @@ export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
   await exigirAdministrador();
 
   let locales: Local[];
-  if (supabaseConfigurado) {
-    const { data, error } = await supabase.from('locales').select('*').order('created_at', { ascending: true });
-    if (error) throw error;
-    locales = (data ?? []) as Local[];
+  if (modoServidor) {
+    locales = await api.get<Local[]>('/api/locales');
   } else {
     locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
   }
@@ -641,14 +603,8 @@ export async function cambiarSuscripcionLocal(localId: string, estado: EstadoSus
   await exigirAdministrador();
   const cambiarVencimiento = vencimiento !== undefined;
 
-  if (supabaseConfigurado) {
-    const { error } = await supabase.rpc('cambiar_suscripcion_local', {
-      p_local: localId,
-      p_estado: estado,
-      p_vence: cambiarVencimiento ? vencimiento : null,
-      p_cambiar_vencimiento: cambiarVencimiento,
-    });
-    if (error) throw new Error(error.message);
+  if (modoServidor) {
+    await api.post(`/api/suscripciones/${localId}`, { estado, vence: cambiarVencimiento ? vencimiento : null, cambiarVencimiento });
     return;
   }
 
@@ -665,11 +621,7 @@ export async function cambiarSuscripcionLocal(localId: string, estado: EstadoSus
 export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
   await exigirAdministrador();
 
-  if (supabaseConfigurado) {
-    const { data, error } = await supabase.rpc('usuarios_sistema');
-    if (error) throw new Error(error.message);
-    return (data ?? []) as UsuarioSistema[];
-  }
+  if (modoServidor) return api.get<UsuarioSistema[]>('/api/suscripciones/usuarios');
 
   const locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
   const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
@@ -695,9 +647,8 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
 export async function cerrarSesionForzada(usuarioId: string): Promise<void> {
   await exigirAdministrador();
 
-  if (supabaseConfigurado) {
-    const { error } = await supabase.rpc('cerrar_sesion_forzada', { p_usuario: usuarioId });
-    if (error) throw new Error(error.message);
+  if (modoServidor) {
+    await api.post(`/api/usuarios/${usuarioId}/cerrar-sesion`);
     return;
   }
 
@@ -710,10 +661,9 @@ export async function cerrarSesionForzada(usuarioId: string): Promise<void> {
 export async function cerrarSesionesLocal(localId: string): Promise<number> {
   await exigirAdministrador();
 
-  if (supabaseConfigurado) {
-    const { data, error } = await supabase.rpc('cerrar_sesiones_local', { p_local: localId });
-    if (error) throw new Error(error.message);
-    return Number(data ?? 0);
+  if (modoServidor) {
+    const { cerradas } = await api.post<{ cerradas: number }>(`/api/suscripciones/${localId}/cerrar-sesiones`);
+    return Number(cerradas ?? 0);
   }
 
   const afectados = leerUsuariosLocales().filter((u) => u.local_id === localId && u.rol !== 'administrador');

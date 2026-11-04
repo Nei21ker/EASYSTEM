@@ -31,7 +31,7 @@
   };
 
   function pintar(estado: inventoryService.EstadoConexion) {
-    if (!estado.usaSupabase) {
+    if (!estado.usaServidor) {
       contenedor.className = 'hidden';
       return;
     }

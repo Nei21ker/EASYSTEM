@@ -2,9 +2,8 @@
 import '../styles/global.css';
 import FondoAnimado from '../components/login/FondoAnimado.astro';
 
-// Chequeo en build/servidor de si Supabase está configurado, solo para
-// decidir si mostrar la pista de credenciales demo (no requiere localStorage).
-const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && import.meta.env.PUBLIC_SUPABASE_ANON_KEY);
+// Con el modo servidor activo no se muestran las credenciales de demostración
+const modoServidor = import.meta.env.PUBLIC_USAR_API === 'true';
 ---
 
 <!doctype html>
@@ -80,9 +79,9 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
 
         <p id="auth-error" class="mt-4 hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
 
-        {!supabaseConfigurado && (
+        {!modoServidor && (
           <div class="mt-5 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">
-            <p class="font-medium text-slate-600 dark:text-slate-300">Modo demo (sin Supabase configurado):</p>
+            <p class="font-medium text-slate-600 dark:text-slate-300">Modo demo (sin servidor, datos solo en este navegador):</p>
             <p class="mt-1">Administrador: admin@edwardaccesorios.com / admin123</p>
             <p>Vendedor: vendedor@edwardaccesorios.com / vendedor123</p>
             <p>Gerente: gerente@edwardaccesorios.com / gerente123</p>
@@ -120,6 +119,7 @@ const supabaseConfigurado = Boolean(import.meta.env.PUBLIC_SUPABASE_URL && impor
         sesion_cerrada: 'Tu sesión fue cerrada por el administrador del sistema. Inicia sesión de nuevo.',
         usuario_inactivo: 'Tu cuenta está desactivada. Comunícate con el administrador de tu negocio.',
         sin_perfil: 'Tu cuenta no tiene un perfil asociado. Comunícate con el administrador.',
+        sesion_expirada: 'Tu sesión expiró. Inicia sesión de nuevo.',
       };
       const motivo = new URLSearchParams(window.location.search).get('motivo');
       if (motivo && AVISOS[motivo]) {
