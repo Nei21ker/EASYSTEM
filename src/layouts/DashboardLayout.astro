@@ -3,6 +3,7 @@ import Sidebar from '../components/layout/Sidebar.astro';
 import Header from '../components/layout/Header.astro';
 import TasaDelDia from '../components/layout/TasaDelDia.astro';
 import ContextoLocal from '../components/layout/ContextoLocal.astro';
+import VisorImagen from '../components/layout/VisorImagen.astro';
 import '../styles/global.css';
 import type { Rol } from '../lib/auth';
 
@@ -54,6 +55,9 @@ const { titulo, subtitulo, roles, tituloPestana } = Astro.props;
 
     <!-- Contexto de local (sesión, locales y local activo) y aviso si el usuario no tiene local asignado -->
     <ContextoLocal />
+
+    <!-- Visor de fotos: al tocar la foto de un producto se amplía en el centro; tocar fuera la cierra -->
+    <VisorImagen />
 
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';

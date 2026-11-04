@@ -64,13 +64,13 @@ const ICONO_CAJA =
 
 /**
  * HTML de la miniatura de un producto: la foto si existe, o un recuadro con un
- * ícono. `clases` define el tamaño (p. ej. "h-10 w-10").
+ * ícono. La foto se puede ampliar al tocarla (VisorImagen.astro, global en DashboardLayout). `clases` define el tamaño (p. ej. "h-10 w-10").
  */
 export function htmlMiniatura(url: string | null | undefined, alt: string, clases = 'h-10 w-10'): string {
   const base = `${clases} shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800`;
   if (url && urlSegura(url)) {
     const seguraAlt = alt.replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    return `<img src="${url.replace(/"/g, '&quot;')}" alt="${seguraAlt}" loading="lazy" decoding="async" class="${base} object-cover" />`;
+    return `<img src="${url.replace(/"/g, '&quot;')}" alt="${seguraAlt}" loading="lazy" decoding="async" class="${base} cursor-zoom-in object-cover" data-ampliable />`;
   }
   return `<span class="${base} flex items-center justify-center text-slate-400 dark:text-slate-500" aria-hidden="true">${ICONO_CAJA}</span>`;
 }

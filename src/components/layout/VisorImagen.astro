@@ -1,0 +1,55 @@
+---
+// Visor de fotos: al tocar la foto de un producto (cualquier imagen con `data-ampliable`, que ponen todas las
+// miniaturas de htmlMiniatura) se muestra grande en el centro de la pantalla; al tocar fuera de la imagen, o con Escape, se cierra.
+// Está incluido en DashboardLayout, así que vale para todas las pantallas y para las fotos que se agreguen en el futuro
+// (basta usar htmlMiniatura o poner `data-ampliable` a la imagen).
+// Es un <dialog> abierto con showModal(): queda por encima de cualquier otra ventana abierta (formularios, cobro, etc.).
+---
+
+<dialog
+  id="visor-imagen"
+  aria-label="Foto ampliada"
+  class="m-0 h-full max-h-none w-full max-w-none bg-transparent p-0 backdrop:bg-slate-950/80 open:flex open:items-center open:justify-center"
+>
+  <figure class="flex max-h-full max-w-full flex-col items-center gap-3 p-4">
+    <img id="visor-imagen-foto" alt="" class="max-h-[80vh] w-[min(92vw,640px)] cursor-default rounded-xl bg-white object-contain shadow-2xl" />
+    <figcaption id="visor-imagen-nombre" class="max-w-[92vw] text-center text-sm font-medium text-white"></figcaption>
+  </figure>
+</dialog>
+
+<script>
+  const visor = document.getElementById('visor-imagen') as HTMLDialogElement;
+  const foto = document.getElementById('visor-imagen-foto') as HTMLImageElement;
+  const nombre = document.getElementById('visor-imagen-nombre') as HTMLElement;
+
+  function abrir(origen: HTMLImageElement) {
+    foto.src = origen.currentSrc || origen.src;
+    foto.alt = origen.alt;
+    nombre.textContent = origen.alt;
+    if (!visor.open) visor.showModal();
+  }
+
+  // En fase de captura y deteniendo el evento: si la foto está dentro de una fila o botón que hace otra cosa al tocarla
+  // (agregar al carrito, abrir el producto…), tocar la foto solo la amplía.
+  document.addEventListener(
+    'click',
+    (e) => {
+      const objetivo = e.target;
+      if (!(objetivo instanceof HTMLImageElement) || !objetivo.hasAttribute('data-ampliable')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      abrir(objetivo);
+    },
+    true
+  );
+
+  // Tocar cualquier espacio fuera de la imagen (el fondo o el nombre) la cierra; tocar la imagen misma no.
+  visor.addEventListener('click', (e) => {
+    if (e.target !== foto) visor.close();
+  });
+
+  // Al cerrar se suelta la imagen (no queda cargada en memoria ni se ve un destello al abrir la siguiente)
+  visor.addEventListener('close', () => {
+    foto.removeAttribute('src');
+  });
+</script>
