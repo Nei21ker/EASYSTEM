@@ -171,7 +171,19 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <p class="mt-4 text-center text-xs text-slate-400 print:text-black">¡Gracias por su compra!</p>
     </div>
 
-    <div class="mx-auto mt-4 flex max-w-sm gap-3 print:hidden">
+    <div class="mx-auto mt-4 max-w-sm print:hidden">
+      <button
+        id="pos-whatsapp"
+        type="button"
+        class="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true"><path d="M12.04 2a9.93 9.93 0 0 0-8.5 15.07L2 22l5.07-1.5A9.94 9.94 0 1 0 12.04 2Zm0 1.8a8.14 8.14 0 1 1-4.2 15.1l-.3-.18-3 .88.9-2.92-.2-.3A8.13 8.13 0 0 1 12.04 3.8Zm-3.2 4.2c-.17 0-.45.06-.69.32-.24.26-.9.88-.9 2.15s.93 2.5 1.06 2.67c.13.17 1.8 2.86 4.45 3.9 2.2.87 2.65.7 3.13.65.48-.04 1.55-.63 1.77-1.24.22-.6.22-1.13.15-1.24-.06-.11-.24-.17-.5-.3-.26-.13-1.55-.77-1.8-.85-.24-.09-.41-.13-.59.13-.17.26-.67.85-.82 1.02-.15.18-.3.2-.57.07-.26-.13-1.1-.4-2.1-1.3-.77-.69-1.3-1.55-1.45-1.8-.15-.27-.02-.4.11-.53.12-.12.26-.3.4-.46.13-.15.17-.26.26-.44.09-.17.04-.33-.02-.46-.07-.13-.59-1.43-.81-1.95-.21-.5-.43-.43-.59-.44h-.5Z"/></svg>
+        Enviar ticket por WhatsApp
+      </button>
+      <p id="pos-whatsapp-aviso" role="status" class="mt-1 hidden text-center text-xs text-red-600 dark:text-red-400"></p>
+    </div>
+
+    <div class="mx-auto mt-3 flex max-w-sm gap-3 print:hidden">
       <button
         id="pos-imprimir"
         type="button"
@@ -341,6 +353,7 @@ import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
   import { codigoDeNumeroCorto, esCodigoUnidad } from '../utils/codigos';
   import { esErrorDeRed } from '../utils/red';
+  import { telefonoParaWhatsApp, textoTicketWhatsApp, urlWhatsApp } from '../utils/ticketWhatsApp';
   import type { ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
@@ -608,7 +621,22 @@ import { alCambiarDatos } from '../lib/realtime';
     renderResultados(buscador.value);
   }
 
+  // El ticket de la última venta, para enviarlo por WhatsApp al teléfono que dejó el cliente
+  let ultimaVenta: VentaRegistrada | null = null;
+
   function mostrarTicket(venta: VentaRegistrada) {
+    ultimaVenta = venta;
+    const avisoWhatsApp = document.getElementById('pos-whatsapp-aviso')!;
+    avisoWhatsApp.classList.add('hidden');
+    const botonWhatsApp = document.getElementById('pos-whatsapp') as HTMLButtonElement;
+    // Si el teléfono no sirve para WhatsApp se dice desde ya, antes de que el cajero lo toque
+    const telefonoOk = telefonoParaWhatsApp(venta.cliente_telefono) !== null;
+    botonWhatsApp.disabled = !telefonoOk;
+    botonWhatsApp.classList.toggle('opacity-60', !telefonoOk);
+    if (!telefonoOk) {
+      avisoWhatsApp.textContent = `El teléfono ${venta.cliente_telefono} no parece válido para WhatsApp.`;
+      avisoWhatsApp.classList.remove('hidden');
+    }
     document.getElementById('ticket-folio')!.textContent = venta.folio
       ? `Folio #${venta.folio.toString().padStart(4, '0')}`
       : 'Folio pendiente (se asigna al sincronizar)';
@@ -1301,6 +1329,14 @@ import { alCambiarDatos } from '../lib/realtime';
   barraCobrar.addEventListener('click', iniciarCobro);
   document.getElementById('pos-imprimir')?.addEventListener('click', () => window.print());
   document.getElementById('pos-nueva-venta')?.addEventListener('click', iniciarNuevaVenta);
+
+  // Abre WhatsApp (el del teléfono donde se usa el sistema) en el chat del cliente con el ticket ya escrito: solo falta tocar "Enviar"
+  document.getElementById('pos-whatsapp')?.addEventListener('click', () => {
+    if (!ultimaVenta) return;
+    const url = urlWhatsApp(ultimaVenta.cliente_telefono, textoTicketWhatsApp(ultimaVenta));
+    if (!url) return;
+    window.open(url, '_blank', 'noopener');
+  });
 
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
