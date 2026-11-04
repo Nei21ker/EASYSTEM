@@ -27,3 +27,9 @@ export function localesPorDefecto(): Local[] {
     { id: LOCAL_CONTROLES_ID, nombre: 'Local de controles', tipo: 'controles', activo: true, created_at: creado },
   ];
 }
+
+/** Agrega los locales por defecto que falten (por id) en una lista guardada antes de que existieran (modo demo). */
+export function agregarLocalesFaltantes(guardados: Local[]): { locales: Local[]; cambio: boolean } {
+  const faltantes = localesPorDefecto().filter((d) => !guardados.some((g) => g.id === d.id));
+  return faltantes.length === 0 ? { locales: guardados, cambio: false } : { locales: [...guardados, ...faltantes], cambio: true };
+}

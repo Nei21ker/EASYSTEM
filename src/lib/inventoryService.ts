@@ -30,7 +30,7 @@ import * as cuadresDb from './db/cuadres';
 import type { ProductoConInventario } from './db/productos';
 import { esGerencia, esGlobal, leerSuscripcionesLocales, obtenerSesionActual, type SesionUsuario } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
-import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
+import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto, agregarLocalesFaltantes } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
@@ -234,6 +234,13 @@ function migrarAMultilocal(db: LocalDB): boolean {
   if (!db.locales) {
     db.locales = localesPorDefecto();
     cambio = true;
+  } else {
+    // Navegadores con los 3 locales originales reciben el Local de controles (vacío)
+    const { locales, cambio: agregados } = agregarLocalesFaltantes(db.locales);
+    if (agregados) {
+      db.locales = locales;
+      cambio = true;
+    }
   }
   if (!db.inventario) {
     db.inventario = db.productos.map((p) => ({ local_id: LOCAL_ACCESORIOS_ID, producto_id: p.id, stock_actual: p.stock_actual, stock_minimo: p.stock_minimo }));
