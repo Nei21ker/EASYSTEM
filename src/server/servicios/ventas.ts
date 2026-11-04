@@ -8,6 +8,7 @@ import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId, redondear2 } from '../util';
+import { normalizarCedula, separarNombre } from './clientes';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -52,7 +53,7 @@ function fechaValida(fecha: string, mensaje: string): string {
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
-  const cedula = datos.cliente_cedula?.trim() ?? '';
+  const cedula = normalizarCedula(datos.cliente_cedula ?? '');
   const nombre = (datos.cliente_nombre ?? '').trim().replace(/\s+/g, ' ');
   const telefono = datos.cliente_telefono?.trim() ?? '';
   if (cedula.length < 5 || cedula.length > 20 || nombre.length < 3 || nombre.length > 120 || telefono.length < 7 || telefono.length > 25) {
@@ -65,6 +66,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
 
   const id = nuevoId();
   const db = env.DB;
+  const separado = separarNombre(nombre, datos.cliente_apellido);
   const lote = await db.batch<{ valor: number }>([
     db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('ventas', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
     db
@@ -76,6 +78,13 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(datos.items),
         json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre
       ),
+    // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
+    db
+      .prepare(
+        `INSERT INTO clientes (cedula, nombre, apellido, telefono, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (cedula) DO UPDATE SET nombre = excluded.nombre, apellido = excluded.apellido, telefono = excluded.telefono, updated_at = excluded.updated_at`
+      )
+      .bind(cedula, separado.nombre, separado.apellido, telefono, new Date().toISOString()),
     ...sentenciasCambio(db, ['ventas'], datos.local_id),
   ]);
   const folio = lote[0].results[0].valor;

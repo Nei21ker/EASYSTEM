@@ -27,6 +27,7 @@ import * as ordenesDb from './db/ordenes';
 import * as nominaDb from './db/nomina';
 import * as unidadesDb from './db/unidades';
 import * as cuadresDb from './db/cuadres';
+import * as clientesDb from './db/clientes';
 import type { ProductoConInventario } from './db/productos';
 import { esGerencia, esGlobal, leerSuscripcionesLocales, obtenerSesionActual, type SesionUsuario } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
@@ -1317,6 +1318,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   const cliente = {
     cedula: datos.cliente.cedula.trim(),
     nombre: datos.cliente.nombre.trim().replace(/\s+/g, ' '),
+    apellido: (datos.cliente.apellido ?? '').trim().replace(/\s+/g, ' '),
     telefono: datos.cliente.telefono.trim(),
   };
   if (!cliente.cedula || !cliente.nombre || !cliente.telefono) {
@@ -1371,6 +1373,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     local_id,
     cliente_cedula: cliente.cedula,
     cliente_nombre: cliente.nombre,
+    cliente_apellido: cliente.apellido || null,
     cliente_telefono: cliente.telefono,
     metodo_pago: pagos.length === 1 ? pagos[0].metodo : 'MIXTO',
     pagos,
@@ -1413,6 +1416,32 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
  * administrador todas (lo exige la base de datos). Las ventas hechas sin conexión
  * y aún sin sincronizar aparecen con folio 0 y `pendienteSincronizar`.
  */
+/** Los datos de un cliente que ya compró (por cédula, con su nacionalidad: V-12345678); null si es nuevo o no se pudo consultar (sin conexión). */
+export interface ClienteConocido {
+  cedula: string;
+  nombre: string;
+  apellido: string;
+  telefono: string;
+}
+
+export async function buscarCliente(cedula: string): Promise<ClienteConocido | null> {
+  const clave = cedula.trim().replace(/\s+/g, '').toUpperCase();
+  if (clave.length < 5) return null;
+  if (modoServidor) {
+    try {
+      return (await clientesDb.buscarCliente(clave)) ?? null;
+    } catch {
+      return null; // sin conexión o sin permiso: el cajero escribe los datos a mano
+    }
+  }
+  const ventas = [...(leerDB().ventas ?? [])].sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+  const v = ventas.find((x) => x.cliente_cedula.toUpperCase() === clave);
+  if (!v) return null;
+  const apellido = (v.cliente_apellido ?? '').trim();
+  const nombre = apellido && v.cliente_nombre.toLowerCase().endsWith(apellido.toLowerCase()) ? v.cliente_nombre.slice(0, v.cliente_nombre.length - apellido.length).trim() : v.cliente_nombre;
+  return { cedula: clave, nombre, apellido: nombre === v.cliente_nombre ? '' : apellido, telefono: v.cliente_telefono };
+}
+
 export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limite?: number; localId?: string } = {}): Promise<VentaRegistrada[]> {
   const limite = opciones.limite ?? 1000;
   // `localId` fuerza un local concreto (el cuadre de caja de un local que no es el activo)

@@ -121,6 +121,7 @@ function casos(): Caso[] {
     { archivo: 'nomina/independientes/index.ts', metodo: 'POST', url: '/api/nomina/independientes', cuerpo: { empleadoId: ids.empleado, dia, lineas: [], bonos: 0, deducciones: 0, notas: null, pagar: false }, permitidos: NOMINA },
     { archivo: 'nomina/reventas/index.ts', metodo: 'POST', url: '/api/nomina/reventas', cuerpo: { nominaIds: [ids.nomina] }, permitidos: NOMINA },
     { archivo: 'nomina/catalogo-reventa/index.ts', metodo: 'GET', url: '/api/nomina/catalogo-reventa?q=forro', permitidos: NOMINA },
+    { archivo: 'clientes/[cedula].ts', metodo: 'GET', url: '/api/clientes/V-12345678', params: { cedula: 'V-12345678' }, permitidos: NEGOCIO },
     // Cualquier usuario con sesión
     { archivo: 'cambios.ts', metodo: 'GET', url: '/api/cambios', permitidos: TODOS },
   ];

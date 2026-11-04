@@ -37,6 +37,7 @@ export const esquemaVenta = z.object({
   local_id: z.string(),
   cliente_cedula: z.string(),
   cliente_nombre: z.string(),
+  cliente_apellido: z.string().nullable().optional(),
   cliente_telefono: z.string(),
   metodo_pago: z.string(),
   pagos: z.array(esquemaPago).nullable().optional(),

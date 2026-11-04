@@ -145,6 +145,8 @@ export interface ClienteVenta {
   /** Con prefijo de nacionalidad, p. ej. "V-12345678" */
   cedula: string;
   nombre: string;
+  /** Apellido por separado (para recordar al cliente); el nombre completo se guarda en la venta */
+  apellido?: string;
   telefono: string;
 }
 
@@ -155,6 +157,8 @@ export interface NuevaVenta {
   local_id: string;
   cliente_cedula: string;
   cliente_nombre: string;
+  /** Apellido por separado (para recordar al cliente: nombre y apellido en campos distintos); cliente_nombre sigue siendo el nombre completo */
+  cliente_apellido?: string | null;
   cliente_telefono: string;
   metodo_pago: MetodoPagoVenta;
   /** Detalle de cobros por tipo; las ventas anteriores a las migraciones 0013 pueden no traerlo (ver pagosDeVenta) */

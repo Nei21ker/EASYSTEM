@@ -75,6 +75,15 @@ export const rateLimit = sqliteTable('rateLimit', {
   lastRequest: integer('lastRequest').notNull(),
 });
 
+// Clientes que ya compraron (migración 0004)
+export const clientes = sqliteTable('clientes', {
+  cedula: text('cedula').primaryKey(),
+  nombre: text('nombre').notNull(),
+  apellido: text('apellido').notNull().default(''),
+  telefono: text('telefono').notNull(),
+  updated_at: text('updated_at').notNull(),
+});
+
 // --- Locales y perfiles ---------------------------------------------------------------------------------------
 export const locales = sqliteTable('locales', {
   id: text('id').primaryKey(),
