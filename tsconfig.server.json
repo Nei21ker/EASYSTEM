@@ -21,6 +21,9 @@
     "src/pages/api/**/*.ts",
     "src/types/**/*.ts",
     "src/utils/codigos.ts",
-    "tests/server/**/*.ts"
+    "tests/server/**/*.ts",
+    "node_modules/@cloudflare/vitest-plugin/types/cloudflare-test.d.ts",
+    "src/lib/catalogo-modelos.ts",
+    "src/lib/constantes-locales.ts"
   ]
 }

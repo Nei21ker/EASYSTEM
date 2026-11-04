@@ -5,7 +5,7 @@
 export type TipoMovimiento = 'ENTRADA' | 'SALIDA';
 
 /** Tipo de local: define qué módulos aplican (el de servicio técnico trabaja con órdenes de servicio). */
-export type TipoLocal = 'accesorios' | 'vidrios' | 'servicio_tecnico';
+export type TipoLocal = 'accesorios' | 'vidrios' | 'servicio_tecnico' | 'controles';
 
 /** Estado de la suscripción SaaS de un local. Solo ACTIVE (y no vencida) deja operar a sus empleados. */
 export type EstadoSuscripcion = 'ACTIVE' | 'SUSPENDED' | 'PAST_DUE';

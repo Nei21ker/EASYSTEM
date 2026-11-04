@@ -2,5 +2,5 @@
   "extends": "astro/tsconfigs/strict",
   "include": [".astro/types.d.ts", "**/*"],
   // El servidor (Workers) usa otros tipos globales que chocan con los del navegador: se revisa aparte (tsconfig.server.json)
-  "exclude": ["dist", "src/server", "src/pages/api", "tests"]
+  "exclude": ["dist", "src/server", "src/pages/api", "tests", "vitest.config.ts"]
 }
