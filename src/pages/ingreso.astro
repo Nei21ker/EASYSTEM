@@ -98,11 +98,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <p id="ig-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <p id="ig-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
           <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button id="ig-imprimir" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-              Imprimir etiquetas (computadora)
-            </button>
-            <button id="ig-compartir" type="button" title="Para impresoras Bluetooth desde el celular: entrega las etiquetas como imágenes a la app de la impresora (WePrint)" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
-              Impresora del celular (WePrint)
+            <button id="ig-compartir" type="button" title="Prepara las etiquetas como imágenes y las entrega a la app de tu impresora Bluetooth (WePrint)" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
+              Imprimir etiquetas
             </button>
             <button id="ig-registrar" type="button" class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
               Registrar ingreso
@@ -135,7 +132,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <div id="ig-previa" class="inline-block border border-slate-300 bg-white shadow-sm"></div>
         </div>
         <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-          En el diálogo de impresión elige tu impresora y deja el tamaño de papel y los márgenes como vienen (sin escala ni encabezados).
+          Al pulsar "Imprimir etiquetas" se preparan las etiquetas como imágenes de este tamaño y se entregan a la app de tu impresora (WePrint). En la app, deja el tamaño de papel de la etiqueta y sin escala.
         </p>
       </section>
     </aside>
@@ -179,7 +176,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     buscarTipoCodigo,
     FORMATO_ETIQUETA_POR_DEFECTO,
     htmlEtiqueta,
-    imprimirEtiquetas,
     paginasNecesarias,
     TIPO_CODIGO_POR_DEFECTO,
     TIPOS_CODIGO_ETIQUETA,
@@ -592,19 +588,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     return etiquetas;
   }
 
-  $('ig-imprimir').addEventListener('click', async () => {
-    const etiquetas = reunirEtiquetas();
-    if (!etiquetas) return;
-
-    imprimirEtiquetas(etiquetas, buscarFormatoEtiqueta(selectFormato.value), buscarTipoCodigo(selectTipo.value));
-    try {
-      await inventoryService.marcarEtiquetasImpresas(etiquetas.map((e) => e.codigo));
-      await cargarSinEtiqueta();
-    } catch {
-      /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
-    }
-  });
-
   // Impresora Bluetooth desde el celular (p. ej. NETUM G5 con la app WePrint): el iPhone no deja que una página hable con la
   // impresora, así que se preparan las etiquetas como imágenes, se muestran aquí y se entregan a WePrint con "Compartir"
   // (o se guardan en Fotos / Archivos para abrirlas desde WePrint).
@@ -734,7 +717,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     guardarLote();
     pintarLote();
     mostrarExito(
-      `Agregados ${productos} producto${productos === 1 ? '' : 's'} con ${unidades} unidad${unidades === 1 ? '' : 'es'} sin etiqueta. Elige "Imprimir etiquetas" o "Enviar a la impresora del celular" (se entregan 20 por vez).`
+      `Agregados ${productos} producto${productos === 1 ? '' : 's'} con ${unidades} unidad${unidades === 1 ? '' : 'es'} sin etiqueta. Pulsa "Imprimir etiquetas" (se preparan 20 por vez; al terminar, vuelve a pulsar para las siguientes).`
     );
   });
 
