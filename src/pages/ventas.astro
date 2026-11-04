@@ -93,7 +93,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     <!-- Carrito -->
     <div class="min-h-0 lg:col-span-2">
-      <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
+      <div id="pos-carrito-seccion" class="flex scroll-mt-4 flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
         <div class="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Carrito de venta</h2>
           <span id="pos-carrito-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</span>
@@ -126,11 +126,18 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   <!-- Barra inferior fija (solo móvil): total siempre visible + cobrar sin scrollear -->
   <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
-    <div class="min-w-0 flex-1">
+    <button id="pos-barra-ver" type="button" class="min-w-0 flex-1 text-left" aria-label="Ver el carrito para cambiar cantidades o quitar productos">
       <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
       <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">$0.00</p>
       <p id="pos-barra-total-bs" class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400"></p>
-    </div>
+    </button>
+    <button
+      id="pos-barra-carrito"
+      type="button"
+      class="shrink-0 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+    >
+      Ver carrito
+    </button>
     <button
       id="pos-barra-cobrar"
       type="button"
@@ -497,19 +504,26 @@ import { alCambiarDatos } from '../lib/realtime';
               .join('')}</div>`
           : '';
         return `
-          <li data-linea="${producto.id}" class="flex items-center justify-between gap-3 px-5 py-3">
-            ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-10 w-10')}
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)} c/u</p>
-              ${codigos}
+          <li data-linea="${producto.id}" class="px-4 py-3 sm:px-5">
+            <div class="flex items-start gap-3">
+              ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
+              <div class="min-w-0 flex-1">
+                <p class="text-sm font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)} c/u</p>
+                ${codigos}
+              </div>
+              <span class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
             </div>
-            <div class="flex shrink-0 items-center gap-2">
-              <button type="button" data-restar="${producto.id}" class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">−</button>
-              <span class="w-6 text-center text-sm text-slate-900 dark:text-white">${cantidad}</span>
-              <button type="button" data-sumar="${producto.id}" ${alMaximo ? 'disabled' : ''} class="h-6 w-6 rounded border border-slate-200 text-sm leading-none text-slate-600 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">+</button>
-              <span class="min-w-16 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
-              <button type="button" data-eliminar="${producto.id}" aria-label="Quitar" class="text-slate-400 hover:text-red-600">✕</button>
+            <div class="mt-2 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-1">
+                <button type="button" data-restar="${producto.id}" aria-label="Quitar una unidad" class="h-10 w-10 rounded-lg border border-slate-200 text-lg leading-none text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">−</button>
+                <span class="w-10 text-center text-base font-semibold text-slate-900 dark:text-white">${cantidad}</span>
+                <button type="button" data-sumar="${producto.id}" ${alMaximo ? 'disabled' : ''} aria-label="Agregar una unidad" class="h-10 w-10 rounded-lg border border-slate-200 text-lg leading-none text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">+</button>
+              </div>
+              <button type="button" data-eliminar="${producto.id}" aria-label="Quitar ${escaparHtml(producto.nombre)} del carrito" class="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 11v6m4-6v6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                Quitar
+              </button>
             </div>
           </li>
         `;
@@ -1324,6 +1338,11 @@ import { alCambiarDatos } from '../lib/realtime';
     cerrarEscaneo();
     pedirConfirmacion();
   });
+
+  // Móvil: el carrito queda debajo de los productos; estos botones llevan hasta él (para cambiar cantidades o quitar productos)
+  const irAlCarrito = () => document.getElementById('pos-carrito-seccion')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.getElementById('pos-barra-ver')?.addEventListener('click', irAlCarrito);
+  document.getElementById('pos-barra-carrito')?.addEventListener('click', irAlCarrito);
 
   botonProcesar.addEventListener('click', iniciarCobro);
   barraCobrar.addEventListener('click', iniciarCobro);
