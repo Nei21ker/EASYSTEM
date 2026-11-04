@@ -121,21 +121,21 @@ export async function actualizarUsuario(
 }
 
 export async function eliminarUsuario(env: Entorno, actor: Sesion, id: string): Promise<void> {
+  // Primero el permiso y después la existencia: quien no puede eliminar no debe poder averiguar qué ids existen
+  await exigirGestion(env, actor, 'No tienes permiso para eliminar a este usuario.');
   const objetivo = await perfilDe(env, id);
   if (id === actor.userId) throw sinPermiso('No puedes eliminar tu propio usuario.');
-  if (!esAdministrador(actor.rol)) {
-    await exigirGestion(env, actor, 'No tienes permiso para eliminar a este usuario.');
-    if (!ROLES_DE_LOCAL.includes(objetivo.rol)) throw sinPermiso('No tienes permiso para eliminar a este usuario.');
-  }
+  if (!esAdministrador(actor.rol) && !ROLES_DE_LOCAL.includes(objetivo.rol)) throw sinPermiso('No tienes permiso para eliminar a este usuario.');
   // El borrado en cascada quita cuenta, sesiones y perfil; las ventas y órdenes conservan el nombre y pierden el vínculo
   await env.DB.prepare('DELETE FROM user WHERE id = ?').bind(id).run();
   await avisarCambio(env.DB, ['perfiles']);
 }
 
 export async function cambiarClaveUsuario(env: Entorno, actor: Sesion, id: string, clave: string): Promise<void> {
+  // Primero el permiso y después la existencia: quien no puede cambiar contraseñas no debe poder averiguar qué ids existen
+  if (!esAdministrador(actor.rol)) await exigirGestion(env, actor, 'No tienes permiso para cambiar la contraseña de este usuario.');
   const objetivo = await perfilDe(env, id);
   if (!esAdministrador(actor.rol)) {
-    await exigirGestion(env, actor, 'No tienes permiso para cambiar la contraseña de este usuario.');
     if (id !== actor.userId && !ROLES_DE_LOCAL.includes(objetivo.rol)) {
       throw sinPermiso('No tienes permiso para cambiar la contraseña de este usuario.');
     }

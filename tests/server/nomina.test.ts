@@ -70,6 +70,13 @@ describe('acceso a la nómina', () => {
     expect(await listarEmpleados(env, sC)).toHaveLength(0);
     await rechazo(crearEmpleado(env, sG, fijo({ local_id: vidrios, cedula: 'V-99999999' })), 403);
   });
+
+  it('con TODOS los locales bloqueados, ni el gerente ni el contador pueden usar el catálogo de reventa; el administrador sí', async () => {
+    await env.DB.prepare("UPDATE locales SET subscription_status = 'PAST_DUE'").run();
+    await rechazo(catalogoReventa(env, sG, 'carg', 10), 403);
+    await rechazo(catalogoReventa(env, sC, 'carg', 10), 403);
+    await catalogoReventa(env, sA, 'carg', 10);
+  });
 });
 
 describe('empleados', () => {

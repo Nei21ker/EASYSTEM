@@ -149,6 +149,7 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
   await alcanceDe(env, sesion);
   if (filas.length > LIMITE_LOTE) throw new ErrorApi(400, `Se pueden crear hasta ${LIMITE_LOTE} productos por petición.`, 'lote_grande');
   filas.forEach((f) => validarProducto(f, true));
+  if (filas.length === 0) return [];
 
   const codigos = filas.map((f) => f.codigo_barras.trim());
   if (new Set(codigos).size !== codigos.length) throw new ErrorApi(400, 'Hay códigos de barras repetidos en el lote.', 'codigo_repetido');
@@ -206,6 +207,7 @@ export async function reemplazarCompatibilidadesLote(
   exigirGlobal(sesion);
   await alcanceDe(env, sesion);
   if (productoIds.length > LIMITE_LOTE || pares.length > 500) throw new ErrorApi(400, 'El lote de compatibilidades es demasiado grande.', 'lote_grande');
+  if (productoIds.length === 0 && pares.length === 0) return; // D1 rechaza un lote sin sentencias
   try {
     await env.DB.batch([
       ...(productoIds.length > 0
@@ -230,6 +232,7 @@ async function exigirInventarioLocal(env: Entorno, sesion: Sesion, localId: stri
 export async function asegurarEnLocal(env: Entorno, sesion: Sesion, localId: string, productoIds: string[]): Promise<void> {
   await exigirInventarioLocal(env, sesion, localId);
   if (productoIds.length > LIMITE_INVENTARIO) throw new ErrorApi(400, `Se pueden dar de alta hasta ${LIMITE_INVENTARIO} productos por petición.`, 'lote_grande');
+  if (productoIds.length === 0) return;
   try {
     await env.DB.batch(
       productoIds.map((id) =>
@@ -255,6 +258,7 @@ export async function fijarMinimosLote(
   if (filas.some((f) => !(Number.isInteger(f.stock_minimo) && f.stock_minimo >= 0))) {
     throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
   }
+  if (filas.length === 0) return;
   try {
     await env.DB.batch(
       filas.map((f) =>

@@ -172,6 +172,14 @@ describe('importación en lote', () => {
     await rechazo(crearProductosLote(env, await sesionDe(vendedor), filas(1)), 403);
   });
 
+  it('un lote vacío no es un error (no hay nada que hacer): importar sin filas, sin pares y sin productos responde bien', async () => {
+    const a = await sesionDe(admin);
+    expect(await crearProductosLote(env, a, [])).toEqual([]);
+    await reemplazarCompatibilidadesLote(env, a, [], []);
+    await asegurarEnLocal(env, a, accesorios, []);
+    await fijarMinimosLote(env, a, accesorios, []);
+  });
+
   it('un código ya existente rechaza TODO el lote (nada queda a medias)', async () => {
     const a = await sesionDe(admin);
     await crearProducto(env, a, { ...forro, codigo_barras: filas(2)[1].codigo_barras });

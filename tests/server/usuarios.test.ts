@@ -147,6 +147,13 @@ describe('actualizarUsuario', () => {
 });
 
 describe('eliminarUsuario', () => {
+  it('quien no puede eliminar recibe 403 aunque el usuario no exista (no se puede tantear qué ids existen)', async () => {
+    for (const u of [vendedor, encargado, contador]) {
+      await rechazo(eliminarUsuario(env, await sesionDe(u), 'no-existe'), 403);
+      await rechazo(eliminarUsuario(env, await sesionDe(u), admin.id), 403);
+    }
+  });
+
   it('el administrador elimina a otro y se borran su cuenta, sesiones y perfil', async () => {
     await eliminarUsuario(env, await sesionDe(admin), vendedor.id);
     for (const [tabla, columna] of [['user', 'id'], ['account', 'userId'], ['session', 'userId'], ['perfiles', 'id']] as const) {
@@ -183,6 +190,10 @@ describe('eliminarUsuario', () => {
 });
 
 describe('cambiarClaveUsuario', () => {
+  it('quien no puede cambiar contraseñas recibe 403 aunque el usuario no exista', async () => {
+    for (const u of [vendedor, encargado, contador]) await rechazo(cambiarClaveUsuario(env, await sesionDe(u), 'no-existe', 'Clave-valida-123'), 403);
+  });
+
   it('el administrador cambia la clave de otro: entra con la nueva y sus sesiones abiertas se cierran', async () => {
     await cambiarClaveUsuario(env, await sesionDe(admin), vendedor.id, 'Otra-clave-456');
     await rechazo(sesionDe(vendedor), 401);

@@ -3,7 +3,7 @@
 // vigente; encargado, vendedor y técnico, nada. Un pago PAGADO ya no se modifica ni se borra (trigger de la base de datos).
 // guardarPagoIndependiente reemplaza la función guardar_pago_independiente: valida, calcula la ganancia y guarda el día,
 // la lista y (si se pide) el pago, todo en UN lote atómico.
-import { alcanceNomina, condicionAlcance, exigirRol, type Alcance, type Sesion } from '../authz';
+import { alcanceNomina, condicionAlcance, type Alcance, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
@@ -345,7 +345,8 @@ export async function listarReventas(env: Entorno, sesion: Sesion, nominaIds: st
 
 /** Productos para armar la lista. Sirve también al contador, que no lee el catálogo: solo devuelve datos mínimos (nunca costos ni stock). */
 export async function catalogoReventa(env: Entorno, sesion: Sesion, busqueda: string, limite = 30): Promise<ProductoReventa[]> {
-  exigirRol(sesion, ['administrador', 'gerente', 'contador']);
+  // alcanceNomina valida el rol y, para gerente y contador, que haya algún local con suscripción vigente
+  await alcanceNomina(env, sesion);
   const buscado = busqueda.trim();
   if (!buscado) return [];
   const patron = `%${buscado.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
