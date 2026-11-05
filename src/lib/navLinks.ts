@@ -20,7 +20,7 @@ const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
 const CAJA: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor'];
 
 export const enlacesNav: EnlaceNav[] = [
-  { href: '/', etiqueta: 'Dashboard', icono: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10', roles: TODOS },
+  { href: '/', etiqueta: 'Página principal', icono: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10', roles: TODOS },
   {
     href: '/ventas',
     etiqueta: 'Nueva Venta (POS)',
