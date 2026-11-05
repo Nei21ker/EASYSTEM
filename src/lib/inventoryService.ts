@@ -58,6 +58,7 @@ import type {
   InventarioLocal,
   Local,
   MetodoPago,
+  ResultadoReseteoVentas,
   ModeloTelefono,
   MovimientoInventario,
   Producto,
@@ -1735,6 +1736,46 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
  * Devoluciones, más nuevas primero. El administrador ve todas; un vendedor, solo las de las ventas
  * que puede ver (lo exige la base de datos).
  */
+/**
+ * Resetear las ventas (solo el administrador): borra TODAS las ventas y devoluciones y devuelve al stock las piezas que quedaron
+ * vendidas (las de las ventas y las entregadas a cambio; las ya devueltas no se cuentan dos veces). Sirve para limpiar las ventas de
+ * prueba. Con `simular` solo cuenta lo que haría. Necesita conexión.
+ */
+export async function resetearVentas(opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoVentas> {
+  if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear las ventas.');
+  if (modoServidor) {
+    if (!obtenerEstadoConexion().online) throw new Error('Resetear las ventas necesita conexión a internet.');
+    return ventasDb.resetearVentas({ simular: opciones.simular });
+  }
+
+  // Modo demo (LocalStorage): mismas reglas que el servidor
+  const db = leerDB();
+  const ventas = db.ventas ?? [];
+  const devoluciones = db.devoluciones ?? [];
+  const codigos = new Set<string>();
+  for (const v of ventas) for (const i of v.items) for (const c of i.unidades ?? []) codigos.add(c);
+  for (const d of devoluciones) for (const i of d.items_nuevos) for (const c of i.unidades ?? []) codigos.add(c);
+  const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && codigos.has(u.codigo));
+  const resultado: ResultadoReseteoVentas = { ventas: ventas.length, devoluciones: devoluciones.length, piezas: vendidas.length, simulado: !!opciones.simular };
+  if (opciones.simular) return resultado;
+
+  const grupos = new Map<string, { producto_id: string; local_id: string; codigos: string[] }>();
+  for (const u of vendidas) {
+    const clave = `${u.producto_id}|${u.local_id}`;
+    const grupo = grupos.get(clave) ?? { producto_id: u.producto_id, local_id: u.local_id, codigos: [] };
+    grupo.codigos.push(u.codigo);
+    grupos.set(clave, grupo);
+  }
+  for (const g of grupos.values()) {
+    await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.codigos.length, motivo: 'Reseteo de ventas (restaura el stock)', local_id: g.local_id, unidad_codigos: g.codigos });
+  }
+  const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de vaciar los registros
+  despues.ventas = [];
+  despues.devoluciones = [];
+  guardarDB(despues);
+  return resultado;
+}
+
 export async function listarDevoluciones(opciones: { limite?: number; ventaId?: string; localId?: string } = {}): Promise<Devolucion[]> {
   const limite = opciones.limite ?? 2000;
   // Las de UNA venta se piden completas (aunque el local activo sea otro): hace falta para no devolver de más

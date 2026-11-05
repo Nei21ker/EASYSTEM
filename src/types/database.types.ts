@@ -441,3 +441,11 @@ export interface CuadreCaja {
   created_at: string;
   updated_at: string;
 }
+
+/** Lo que hizo (o haría, en una simulación) el reseteo de ventas: cuántas se borran y cuántas piezas vuelven al stock. */
+export interface ResultadoReseteoVentas {
+  ventas: number;
+  devoluciones: number;
+  piezas: number;
+  simulado: boolean;
+}

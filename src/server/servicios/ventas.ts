@@ -3,12 +3,13 @@
 //   · ver ventas: administrador, gerente y encargado las de sus locales; vendedor y técnico solo las suyas;
 //   · registrar una devolución: administrador, gerente y encargado del local de la venta; nadie edita ni borra.
 // El folio sale de la tabla `contadores` DENTRO del mismo lote que inserta la fila (no se repite ni con ventas simultáneas).
-import { alcanceDe, condicionAlcance, esGerencia, localAccesible, type Sesion } from '../authz';
+import { alcanceDe, condicionAlcance, esAdministrador, esGerencia, localAccesible, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId, redondear2 } from '../util';
 import { normalizarCedula, separarNombre } from './clientes';
+import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -182,3 +183,89 @@ export async function listarDevoluciones(
   return filas.results.map(aDevolucion);
 }
 
+
+// --- Resetear las ventas (solo el administrador) ----------------------------------------------------------------
+
+export interface ResultadoReseteo {
+  /** Ventas y devoluciones que se borraron (o que se borrarían, si fue una simulación) */
+  ventas: number;
+  devoluciones: number;
+  /** Piezas que estaban vendidas por esas ventas y vuelven al stock */
+  piezas: number;
+  simulado: boolean;
+}
+
+const MOTIVO_RESETEO = 'Reseteo de ventas (restaura el stock)';
+const PIEZAS_POR_TRAMO = 500; // tope de unidades por lote de movimientos
+const MOVIMIENTOS_POR_TRAMO = 50;
+
+/**
+ * Borra TODAS las ventas y devoluciones y devuelve al stock las piezas que esas ventas dejaron vendidas (las de la venta y las
+ * entregadas a cambio, menos las que ya se devolvieron). Es para limpiar las ventas de prueba: solo el administrador.
+ *
+ * Primero repone el stock (una ENTRADA "Reseteo de ventas" por producto y local, que reactiva las mismas piezas) y al final borra los
+ * registros. Si algo falla a medias, volver a ejecutarlo termina el trabajo: solo repone lo que sigue vendido. Las piezas vendidas
+ * por otro motivo (un repuesto de una orden de servicio) no se tocan. Con `simular` solo cuenta, sin cambiar nada.
+ */
+export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { simular?: boolean } = {}): Promise<ResultadoReseteo> {
+  if (!esAdministrador(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador puede resetear las ventas.', 'sin_permiso');
+  const db = env.DB;
+
+  const ventas = (await db.prepare('SELECT local_id, items FROM ventas').all<{ local_id: string; items: string }>()).results;
+  const devoluciones = (await db.prepare('SELECT local_id, items_nuevos FROM devoluciones').all<{ local_id: string; items_nuevos: string }>()).results;
+
+  // Piezas que estas ventas sacaron del stock: las de cada venta y las entregadas a cambio
+  const codigos = new Set<string>();
+  const juntar = (texto: string) => {
+    for (const item of JSON.parse(texto) as { unidades?: string[] }[]) for (const c of item.unidades ?? []) codigos.add(c);
+  };
+  for (const v of ventas) juntar(v.items);
+  for (const d of devoluciones) juntar(d.items_nuevos);
+
+  // De ellas, las que siguen vendidas (las devueltas ya están en el stock)
+  const porGrupo = new Map<string, { productoId: string; localId: string; codigos: string[] }>();
+  let piezas = 0;
+  for (const tramo of tramos([...codigos])) {
+    const filas = await db
+      .prepare(`SELECT codigo, producto_id, local_id FROM unidades_producto WHERE estado = 'VENDIDA' AND codigo IN (${marcas(tramo.length)})`)
+      .bind(...tramo)
+      .all<{ codigo: string; producto_id: string; local_id: string }>();
+    for (const f of filas.results) {
+      const clave = `${f.producto_id}|${f.local_id}`;
+      const grupo = porGrupo.get(clave) ?? { productoId: f.producto_id, localId: f.local_id, codigos: [] };
+      grupo.codigos.push(f.codigo);
+      porGrupo.set(clave, grupo);
+      piezas++;
+    }
+  }
+
+  const resultado: ResultadoReseteo = { ventas: ventas.length, devoluciones: devoluciones.length, piezas, simulado: !!opciones.simular };
+  if (opciones.simular || (ventas.length === 0 && devoluciones.length === 0 && piezas === 0)) return resultado;
+
+  // 1. Reponer el stock, por lotes que respetan los topes de movimientos y de piezas
+  let lote: EntradaMovimiento[] = [];
+  let enLote = 0;
+  const enviar = async () => {
+    if (lote.length > 0) await registrarMovimientos(env, sesion, lote);
+    lote = [];
+    enLote = 0;
+  };
+  for (const grupo of porGrupo.values()) {
+    for (let i = 0; i < grupo.codigos.length; i += PIEZAS_POR_TRAMO) {
+      const trozo = grupo.codigos.slice(i, i + PIEZAS_POR_TRAMO);
+      if (enLote + trozo.length > PIEZAS_POR_TRAMO || lote.length >= MOVIMIENTOS_POR_TRAMO) await enviar();
+      lote.push({ productoId: grupo.productoId, tipo: 'ENTRADA', cantidad: trozo.length, localId: grupo.localId, motivo: MOTIVO_RESETEO, unidadCodigos: trozo });
+      enLote += trozo.length;
+    }
+  }
+  await enviar();
+
+  // 2. Borrar los registros (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas
+  const locales = new Set([...ventas.map((v) => v.local_id), ...devoluciones.map((d) => d.local_id)]);
+  await db.batch([
+    db.prepare('DELETE FROM devoluciones'),
+    db.prepare('DELETE FROM ventas'),
+    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones'], localId)),
+  ]);
+  return resultado;
+}
