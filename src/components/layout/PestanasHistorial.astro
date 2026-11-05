@@ -1,0 +1,30 @@
+---
+// Pestañas del módulo "Historial": Ventas realizadas y Movimientos (cada una es su página, con sus filtros y su carga propia).
+// Solo la gerencia ve las dos; el técnico solo tiene Movimientos y no ve la barra.
+interface Props {
+  activa: 'ventas' | 'movimientos';
+}
+const { activa } = Astro.props;
+const clase = (esta: boolean) =>
+  `rounded-lg border px-4 py-2 text-center text-sm font-semibold transition ${
+    esta
+      ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+  }`;
+---
+
+<nav id="historial-pestanas" class="mb-4 hidden grid-cols-2 gap-2 sm:flex" aria-label="Historial">
+  <a href="/historial-ventas" class={clase(activa === 'ventas')} aria-current={activa === 'ventas' ? 'page' : undefined}>Ventas realizadas</a>
+  <a href="/movimientos" class={clase(activa === 'movimientos')} aria-current={activa === 'movimientos' ? 'page' : undefined}>Movimientos</a>
+</nav>
+
+<script>
+  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
+
+  void obtenerSesionActual().then((sesion) => {
+    if (!esGerencia(sesion?.rol)) return;
+    const barra = document.getElementById('historial-pestanas');
+    barra?.classList.remove('hidden');
+    barra?.classList.add('grid', 'sm:flex');
+  });
+</script>

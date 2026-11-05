@@ -37,3 +37,24 @@ describe('enlaceVisible: reglas que ya existían', () => {
     expect(enlaceVisible(st, 'administrador', null, true)).toBe(true);
   });
 });
+
+describe('Historial: ventas y movimientos en un solo módulo', () => {
+  const visibles = (rol: Parameters<typeof enlaceVisible>[1]) => enlacesNav.filter((e) => enlaceVisible(e, rol, 'accesorios', false)).map((e) => e.href);
+
+  it('el menú tiene un solo enlace "Historial" para la gerencia, que también queda activo en Movimientos', () => {
+    const historial = enlace('/historial-ventas');
+    expect(historial.etiqueta).toBe('Historial');
+    expect(historial.tambienActivoEn).toContain('/movimientos');
+    for (const rol of ['administrador', 'gerente', 'encargado'] as const) {
+      expect(visibles(rol)).toContain('/historial-ventas');
+      expect(visibles(rol)).not.toContain('/movimientos'); // ya no es un enlace aparte
+    }
+  });
+
+  it('el vendedor no ve ninguno de los dos y el técnico solo Movimientos', () => {
+    expect(visibles('vendedor')).not.toContain('/historial-ventas');
+    expect(visibles('vendedor')).not.toContain('/movimientos');
+    expect(visibles('tecnico')).toContain('/movimientos');
+    expect(visibles('tecnico')).not.toContain('/historial-ventas');
+  });
+});

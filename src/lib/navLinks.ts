@@ -11,11 +11,11 @@ export interface EnlaceNav {
   soloTipoLocal?: TipoLocal;
   /** Si se define, estos roles NO ven el enlace cuando su local es de ese tipo (administrador y gerente no están afectados salvo que se los nombre). */
   ocultoEnLocal?: { tipo: TipoLocal; roles: Rol[] };
+  /** Otras rutas que cuentan como "estar en este enlace" (resaltan el enlace del menú): las pestañas del mismo módulo. */
+  tambienActivoEn?: string[];
 }
 
 const TODOS: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
-/** Todo menos el vendedor (no ve Ventas realizadas ni Movimientos) */
-const SIN_VENDEDOR: Rol[] = ['administrador', 'gerente', 'encargado', 'tecnico'];
 const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
 const CAJA: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor'];
 
@@ -29,9 +29,10 @@ export const enlacesNav: EnlaceNav[] = [
   },
   {
     href: '/historial-ventas',
-    etiqueta: 'Ventas realizadas',
+    etiqueta: 'Historial',
     icono: 'M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 5h6M9 12h6M9 16h4',
     roles: GERENCIA,
+    tambienActivoEn: ['/movimientos'], // Historial = pestañas "Ventas realizadas" y "Movimientos"
   },
   {
     href: '/servicio-tecnico',
@@ -55,7 +56,8 @@ export const enlacesNav: EnlaceNav[] = [
     // El Local de controles no trabaja con forros/vidrios por modelo: su encargado y vendedores no lo necesitan
     ocultoEnLocal: { tipo: 'controles', roles: ['encargado', 'vendedor'] },
   },
-  { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: SIN_VENDEDOR },
+  // La gerencia llega a los movimientos desde las pestañas de "Historial"; el técnico (que no ve ventas) solo tiene este enlace
+  { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: ['tecnico'] },
   {
     href: '/reportes',
     etiqueta: 'Reportes y cuadre',

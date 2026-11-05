@@ -2,6 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import StatCard from '../components/dashboard/StatCard.astro';
 import DevolucionVenta from '../components/ventas/DevolucionVenta.astro';
+import PestanasHistorial from '../components/layout/PestanasHistorial.astro';
 import { METODOS_PAGO } from '../utils/pagos';
 
 const claseSelect =
@@ -13,6 +14,7 @@ const claseBotonSecundario =
 ---
 
 <DashboardLayout titulo="Ventas realizadas" subtitulo="Historial de ventas con cliente y tipo de cobro" roles={["administrador", "gerente", "encargado"]}>
+  <PestanasHistorial activa="ventas" />
   <div class="space-y-4">
     <p id="hv-aviso-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
 
