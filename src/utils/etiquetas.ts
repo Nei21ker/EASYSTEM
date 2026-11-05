@@ -112,6 +112,7 @@ export function estilosEtiqueta(): string {
 .etq .etq-qr svg{width:100%;height:100%}
 .etq .etq-texto{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:.8mm}
 .etq-fila .etq-nombre{text-align:center;-webkit-line-clamp:3}
+.etq .etq-codigo{font-weight:700;text-align:center;white-space:nowrap;letter-spacing:.04em}
 .etq .etq-sin-barras{font-size:7pt;font-weight:700;text-align:center;border:.3mm dashed #000;padding:1mm}
 `;
 }
@@ -120,16 +121,18 @@ export function estilosEtiqueta(): string {
 export function htmlEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = TIPO_CODIGO_POR_DEFECTO): string {
   const dimensiones = `width:${formato.anchoMm}mm;height:${formato.altoMm}mm`;
   const qr = tipo === 'qr' ? svgQr(e.codigo) : null;
+  // Debajo del nombre va escrito el código de la unidad (INF000014): es lo que dice el QR y se puede teclear si no se lee
+  const codigoEscrito = `<div class="etq-codigo" style="font-size:${formato.nombrePt * 1.3}pt">${escapar(e.codigo)}</div>`;
   // Con QR: el código a la izquierda y, a su lado, el nombre y el número. Si no se puede generar un QR, se cae a las barras.
   if (qr) {
-    return `<div class="etq etq-fila" style="${dimensiones}"><div class="etq-qr" style="width:${formato.qrMm}mm;height:${formato.qrMm}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt * 1.7}pt">${escapar(e.nombre)}</div></div></div>`;
+    return `<div class="etq etq-fila" style="${dimensiones}"><div class="etq-qr" style="width:${formato.qrMm}mm;height:${formato.qrMm}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt * 1.7}pt">${escapar(e.nombre)}</div>${codigoEscrito}</div></div>`;
   }
 
   const barras = svgCodigoBarras(e.codigo, 40);
   const cuerpo = barras
     ? `<div style="height:${formato.barrasMm}mm">${barras.replace('<svg ', '<svg style="height:100%" ')}</div>`
     : `<div class="etq-sin-barras">Código no imprimible en barras</div>`;
-  return `<div class="etq" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt * 1.5}pt">${escapar(e.nombre)}</div></div>`;
+  return `<div class="etq" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt * 1.5}pt">${escapar(e.nombre)}</div>${codigoEscrito}</div>`;
 }
 
 /** Cantidad total de etiquetas del pedido. */

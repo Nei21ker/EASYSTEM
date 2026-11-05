@@ -100,8 +100,8 @@ export function ajustarNombre(nombre: string, anchoPx: number, altoPx: number, t
 
 /**
  * SVG de UNA etiqueta (fondo blanco, tamaño exacto del formato a `DPI_IMAGEN`). Con QR: el código a la izquierda y el NOMBRE del
- * producto, grande y centrado, en el resto del ancho; con barras: barras arriba y el nombre grande y centrado debajo. La etiqueta no
- * imprime ningún número: el código vive en el QR / las barras. Si no se puede dibujar el código, deja un aviso.
+ * producto, grande y centrado, en el resto del ancho; con barras: barras arriba y el nombre grande y centrado debajo. Debajo del nombre va escrito el código de la
+ * unidad (INF000014), el mismo que dice el QR. Si no se puede dibujar el código, deja un aviso.
  */
 export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = 'qr'): string {
   const W = pixeles(formato.anchoMm);
@@ -117,6 +117,14 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
   const texto = (lineas: string[], tam: number, centroX: number, primeraY: number) =>
     lineas.map((linea, i) => `<text x="${centroX}" y="${Math.round(primeraY + i * tam * 1.15)}" font-size="${tam}" font-weight="700" text-anchor="middle" ${fuente}>${escapar(linea)}</text>`);
 
+  // El código de la unidad (INF000014) va escrito debajo del nombre: es lo que dice el QR y se puede teclear si no se lee
+  const codigoEscrito = (anchoPx: number) => {
+    const tam = Math.max(8, Math.min(Math.round(tamBase * 1.2), Math.floor(anchoPx / (Math.max(1, e.codigo.length) * 0.66))));
+    return { tam, alto: Math.round(tam * 1.5) };
+  };
+  const lineaCodigo = (tam: number, centroX: number, y: number) =>
+    `<text x="${centroX}" y="${Math.round(y)}" font-size="${tam}" font-weight="700" letter-spacing="${Math.round(tam * 0.04)}" text-anchor="middle" ${fuente}>${escapar(e.codigo)}</text>`;
+
   const qr = buscarTipoCodigo(tipo) === 'qr' ? svgQr(e.codigo) : null;
   if (qr) {
     // El QR un poco más chico que el del formato: así el nombre tiene más ancho y se imprime más grande (un QR de ~19 mm se lee bien)
@@ -125,9 +133,13 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
     contenido.push(qr.replace('<svg ', `<svg x="${margen}" y="${y}" width="${lado}" height="${lado}" `));
     const x = margen + lado + pixeles(1.5);
     const ancho = W - x - margen;
-    const { tam, lineas } = ajustarNombre(e.nombre, ancho, H - margen * 2, tamMin, tamMax, 3);
-    const altoBloque = lineas.length * tam * 1.15;
-    contenido.push(...texto(lineas, tam, Math.round(x + ancho / 2), (H - altoBloque) / 2 + tam * 0.85));
+    const centroX = Math.round(x + ancho / 2);
+    const codigo = codigoEscrito(ancho);
+    const { tam, lineas } = ajustarNombre(e.nombre, ancho, H - margen * 2 - codigo.alto, tamMin, tamMax, 3);
+    const altoNombre = lineas.length * tam * 1.15;
+    const arriba = (H - (altoNombre + codigo.alto)) / 2;
+    contenido.push(...texto(lineas, tam, centroX, arriba + tam * 0.85));
+    contenido.push(lineaCodigo(codigo.tam, centroX, arriba + altoNombre + codigo.tam * 1.05));
   } else {
     const barras = svgCodigoBarras(e.codigo, 40);
     if (barras) {
@@ -135,9 +147,12 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
       contenido.push(barras.replace('<svg ', `<svg x="${margen}" y="${margen}" width="${W - margen * 2}" height="${alto}" `));
       const inicio = margen + alto + pixeles(1);
       const disponible = H - inicio - margen;
-      const { tam, lineas } = ajustarNombre(e.nombre, W - margen * 2, disponible, tamMin, tamMax, 2);
-      const altoBloque = lineas.length * tam * 1.15;
-      contenido.push(...texto(lineas, tam, Math.round(W / 2), inicio + (disponible - altoBloque) / 2 + tam * 0.85));
+      const codigo = codigoEscrito(W - margen * 2);
+      const { tam, lineas } = ajustarNombre(e.nombre, W - margen * 2, disponible - codigo.alto, tamMin, tamMax, 2);
+      const altoNombre = lineas.length * tam * 1.15;
+      const arriba = inicio + (disponible - (altoNombre + codigo.alto)) / 2;
+      contenido.push(...texto(lineas, tam, Math.round(W / 2), arriba + tam * 0.85));
+      contenido.push(lineaCodigo(codigo.tam, Math.round(W / 2), arriba + altoNombre + codigo.tam * 1.05));
     } else {
       contenido.push(`<text x="${W / 2}" y="${H / 2}" font-size="${tamBase}" font-weight="700" text-anchor="middle" ${fuente}>Código no imprimible</text>`);
     }

@@ -29,19 +29,66 @@ export function esCodigoInterno(codigo: string): boolean {
   return PATRON_INTERNO.test(codigo) && digitoVerificadorEAN13(codigo.slice(0, 12)) === Number(codigo[12]);
 }
 
-// --- Códigos de UNIDAD (migración 0033) -----------------------------------------------------
-// Cada unidad física lleva su propio EAN-13 con prefijo 21 (los productos usan 20): así cualquier lector y la
-// cámara lo leen, y no se confunde con el código del producto. Misma regla que la función SQL ean13_unidad.
-const PATRON_UNIDAD = /^21\d{11}$/;
+// --- Códigos de UNIDAD ----------------------------------------------------------------------
+// Cada unidad física lleva su propio código: el PREFIJO de su producto (2 a 4 letras, normalmente 3 de la marca: INF, TEC…) y un
+// número de 6 dígitos consecutivo por prefijo: INF000001, INF000002… Es lo que dice el QR y lo que se imprime bajo el nombre, así
+// que si el QR no se lee basta escribirlo (incluso abreviado: "inf14" → INF000014). Los códigos de producto (EAN-13) no se parecen.
+const PATRON_UNIDAD = /^([A-Z]{2,4})(\d{6})$/;
+const PATRON_ESCRITO = /^([A-Z]{2,4})[-\s]?(\d{1,6})$/;
 
-export function construirCodigoUnidad(secuencia: number): string {
-  const base = `21${String(secuencia).padStart(10, '0')}`;
-  return `${base}${digitoVerificadorEAN13(base)}`;
+/** ¿Es un prefijo válido (2 a 4 letras A-Z mayúsculas)? */
+export function esPrefijoValido(prefijo: string): boolean {
+  return /^[A-Z]{2,4}$/.test(prefijo);
 }
 
-/** ¿Tiene forma de código de unidad (prefijo 21, 13 dígitos, verificador correcto)? */
+/** El código de la unidad número `numero` (1 a 999999) de ese prefijo: ('INF', 1) → 'INF000001'. */
+export function construirCodigoUnidad(prefijo: string, numero: number): string {
+  const p = prefijo.toUpperCase();
+  if (!esPrefijoValido(p)) throw new Error(`Prefijo de código inválido: "${prefijo}" (deben ser de 2 a 4 letras).`);
+  if (!Number.isInteger(numero) || numero < 1 || numero > 999_999) throw new Error(`Número de unidad fuera de rango: ${numero}.`);
+  return `${p}${String(numero).padStart(6, '0')}`;
+}
+
+/** ¿Tiene forma de código de unidad (2 a 4 letras mayúsculas y 6 dígitos)? */
 export function esCodigoUnidad(codigo: string): boolean {
-  return PATRON_UNIDAD.test(codigo) && digitoVerificadorEAN13(codigo.slice(0, 12)) === Number(codigo[12]);
+  return PATRON_UNIDAD.test(codigo);
+}
+
+/** Las letras (el prefijo) de un código de unidad válido; null si no lo es. */
+export function prefijoDelCodigo(codigo: string): string | null {
+  return PATRON_UNIDAD.exec(codigo)?.[1] ?? null;
+}
+
+/**
+ * Lo que alguien escribió o escaneó, como código de unidad: mayúsculas, sin espacios y con los ceros completados ("inf14" →
+ * "INF000014"). null si no tiene forma de código de unidad (un código de barras de producto, por ejemplo).
+ */
+export function normalizarCodigoUnidad(texto: string): string | null {
+  const m = PATRON_ESCRITO.exec(texto.trim().toUpperCase());
+  if (!m) return null;
+  const numero = Number(m[2]);
+  return numero > 0 ? `${m[1]}${String(numero).padStart(6, '0')}` : null;
+}
+
+const sinAcentos = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '');
+const soloLetras = (t: string) => sinAcentos(t).toUpperCase().replace(/[^A-Z]/g, '');
+
+/**
+ * El prefijo que se sugiere para un producto: las 3 primeras letras de la marca que aparece (como palabra entera) en su nombre; si
+ * no hay, las de su categoría; si tampoco, GEN. Es solo una sugerencia: se puede cambiar al crear el producto.
+ */
+export function sugerirPrefijo(nombre: string, categoria: string, marcas: string[]): string {
+  const nombreLimpio = sinAcentos(nombre).toLowerCase();
+  const escapar = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const comoPalabra = (palabra: string) => new RegExp(`(^|[^a-z0-9])${escapar(palabra)}([^a-z0-9]|$)`).test(nombreLimpio);
+  const encontradas = marcas.filter((m) => comoPalabra(sinAcentos(m).toLowerCase())).sort((a, b) => b.length - a.length);
+  // Un iPhone sin la marca escrita (el catálogo lo llama Apple) se codifica IPH, como lo hace la migración 0008
+  const iphone = encontradas.length === 0 && comoPalabra('iphone') ? ['iPhone'] : [];
+  for (const origen of [...encontradas.slice(0, 1), ...iphone, categoria]) {
+    const letras = soloLetras(origen).slice(0, 3);
+    if (letras.length >= 2) return letras;
+  }
+  return 'GEN';
 }
 
 function secuenciaMaxima(existentes: Iterable<string>): number {
@@ -57,23 +104,4 @@ function secuenciaMaxima(existentes: Iterable<string>): number {
 export function generarCodigosInternos(existentes: Iterable<string>, cantidad = 1): string[] {
   const inicio = secuenciaMaxima(existentes);
   return Array.from({ length: cantidad }, (_, i) => construirCodigoInterno(inicio + i + 1));
-}
-
-// --- Número corto de una unidad ---------------------------------------------------------------
-// El código completo de una unidad (13 dígitos) acaba en un dígito verificador que hace que dos unidades seguidas NO parezcan
-// seguidas (…074 y …081 son las unidades 7 y 8). En las etiquetas se imprime el NÚMERO de la unidad (7, 8…), corto y consecutivo; el
-// QR sigue llevando el código completo. Escribir ese número en el campo del lector del POS equivale a escanear la etiqueta.
-
-/** El número de la unidad (1, 2, 3…) de un código de unidad válido; null si no lo es. */
-export function numeroCortoUnidad(codigo: string): number | null {
-  const limpio = codigo.trim();
-  return esCodigoUnidad(limpio) ? Number(limpio.slice(2, 12)) : null;
-}
-
-/** Del número corto escrito por una persona ("7") al código completo de la unidad; null si no es un número de 1 a 7 cifras mayor a 0. */
-export function codigoDeNumeroCorto(texto: string): string | null {
-  const limpio = texto.trim();
-  if (!/^\d{1,7}$/.test(limpio)) return null;
-  const numero = Number(limpio);
-  return numero > 0 ? construirCodigoUnidad(numero) : null;
 }

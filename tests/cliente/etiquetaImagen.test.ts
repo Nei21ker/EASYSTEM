@@ -36,15 +36,16 @@ describe('svgEtiqueta', () => {
     expect(chica).toContain(`width="${mmAPx(40)}" height="${mmAPx(25)}"`);
   });
 
-  it('con QR lleva el código, el número y el nombre; con barras, las barras y los mismos textos', () => {
-    const e = { codigo: '2100000000012', nombre: 'Cargador Tecno doble usb' };
+  it('con QR lleva el QR, el nombre y debajo el código escrito; con barras, las barras y los mismos textos', () => {
+    const e = { codigo: 'INF000001', nombre: 'Cargador Tecno doble usb' };
     const conQr = svgEtiqueta(e, rollo50x30, 'qr');
     expect(conQr).not.toContain('>N.º');
-    expect(textoDe(conQr)).toBe('Cargador Tecno doble usb');
+    expect(textoDe(conQr)).toBe('Cargador Tecno doble usb INF000001');
     expect(conQr).toContain('<svg x='); // el QR va incrustado
     const conBarras = svgEtiqueta(e, rollo50x30, 'barras');
     expect(conBarras).not.toContain('>N.º');
-    expect(conBarras).toContain('aria-label="Código de barras 2100000000012"');
+    expect(conBarras).toContain('aria-label="Código de barras INF000001"');
+    expect(textoDe(conBarras)).toBe('Cargador Tecno doble usb INF000001');
     expect(conBarras).not.toBe(conQr);
   });
 
@@ -156,5 +157,29 @@ describe('formato de rollo 50 × 25 mm', () => {
     const f = FORMATOS_ETIQUETA.find((x) => x.id === 'rollo-50x25');
     expect(f).toMatchObject({ anchoMm: 50, altoMm: 25 });
     expect(FORMATOS_ETIQUETA[0].id).toBe('rollo-50x30');
+  });
+});
+
+describe('el código de la unidad se imprime bajo el nombre', () => {
+  const e = { codigo: 'INF000014', nombre: 'Cargador Infinix 20W' };
+  const textos = (svg: string) => [...svg.matchAll(/<text [^>]*y="([\d.]+)"[^>]*>([^<]*)<\/text>/g)].map((m) => ({ y: Number(m[1]), texto: m[2] }));
+
+  it('con QR y con barras el código sale DEBAJO del nombre y dentro de la etiqueta', () => {
+    for (const tipo of ['qr', 'barras'] as const) {
+      const lineas = textos(svgEtiqueta(e, rollo50x30, tipo));
+      const codigo = lineas.find((l) => l.texto === 'INF000014')!;
+      const nombre = lineas.filter((l) => l.texto !== 'INF000014');
+      expect(codigo).toBeDefined();
+      expect(nombre.length).toBeGreaterThan(0);
+      for (const l of nombre) expect(codigo.y).toBeGreaterThan(l.y);
+      expect(codigo.y).toBeLessThan(mmAPx(30));
+    }
+  });
+
+  it('también con un nombre largo y en el rollo más chico (50 × 25)', () => {
+    const chico = FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-50x25')!;
+    const svg = svgEtiqueta({ codigo: 'INF000014', nombre: 'Cargador Infinix doble usb Micro-USB reforzado 30W' }, chico, 'qr');
+    const codigo = textos(svg).find((l) => l.texto === 'INF000014')!;
+    expect(codigo.y).toBeLessThan(mmAPx(25));
   });
 });

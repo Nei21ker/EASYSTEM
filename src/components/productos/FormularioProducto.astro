@@ -61,6 +61,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
       </div>
 
+      <div>
+        <label for="fp-prefijo" class={claseEtiqueta}>Prefijo del código de cada pieza *</label>
+        <input id="fp-prefijo" type="text" maxlength="4" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="INF" class={claseCampo + ' w-28 font-mono uppercase tracking-wider'} />
+        <p id="fp-prefijo-ayuda" class="mt-1 text-xs text-slate-400">De 2 a 4 letras, normalmente la marca. Cada pieza tendrá un código como INF000001 (el que dice su QR y sale bajo el nombre en la etiqueta).</p>
+      </div>
+
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
           <label for="fp-precio-venta" class={claseEtiqueta}>Precio venta ($) *</label>
@@ -109,7 +115,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
-  import { generarCodigosInternos } from '../../utils/codigos';
+  import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
@@ -124,6 +130,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     nombre: $<HTMLInputElement>('fp-nombre'),
     categoria: $<HTMLInputElement>('fp-categoria'),
     codigo: $<HTMLInputElement>('fp-codigo'),
+    prefijo: $<HTMLInputElement>('fp-prefijo'),
     precioVenta: $<HTMLInputElement>('fp-precio-venta'),
     precioCompra: $<HTMLInputElement>('fp-precio-compra'),
     stock: $<HTMLInputElement>('fp-stock'),
@@ -142,6 +149,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let veCosto = true;
   const seleccion = new Set<string>();
 
+  const TEXTO_AYUDA_PREFIJO = $('fp-prefijo-ayuda').textContent ?? '';
   const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos'];
 
   function normalizar(t: string): string {
@@ -245,6 +253,19 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
   $('fp-generar').addEventListener('click', generarCodigo);
 
+  // El prefijo se sugiere solo (marca del nombre o categoría) mientras nadie lo haya escrito a mano
+  let prefijoManual = false;
+  function sugerirPrefijoActual() {
+    if (prefijoManual) return;
+    campos.prefijo.value = sugerirPrefijo(campos.nombre.value, campos.categoria.value, [...new Set(modelos.map((m) => m.marca))]);
+  }
+  campos.nombre.addEventListener('input', sugerirPrefijoActual);
+  campos.categoria.addEventListener('input', sugerirPrefijoActual);
+  campos.prefijo.addEventListener('input', () => {
+    prefijoManual = true;
+    campos.prefijo.value = campos.prefijo.value.toUpperCase().replace(/[^A-Z]/g, '');
+  });
+
   async function abrir(productoId?: string, sinStock = false, codigoInicial?: string) {
     error.classList.add('hidden');
     const sesion = await obtenerSesionActual();
@@ -274,6 +295,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.nombre.value = editando.nombre;
       campos.categoria.value = editando.categoria;
       campos.codigo.value = editando.codigo_barras;
+      campos.prefijo.value = editando.prefijo_codigo ?? sugerirPrefijo(editando.nombre, editando.categoria, [...new Set(modelos.map((m) => m.marca))]);
+      prefijoManual = true;
+      $('fp-prefijo-ayuda').textContent = 'Si lo cambias, solo afecta a las piezas que ingreses desde ahora: las que ya tienen código lo conservan.';
       campos.precioVenta.value = String(editando.precio_venta);
       campos.precioCompra.value = String(editando.precio_compra);
       campos.minimo.value = String(editando.stock_minimo);
@@ -285,6 +309,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.stock.value = '0';
       campos.minimo.value = '0';
       if (codigoInicial) campos.codigo.value = codigoInicial;
+      prefijoManual = false;
+      campos.prefijo.value = '';
+      $('fp-prefijo-ayuda').textContent = TEXTO_AYUDA_PREFIJO;
     }
 
     fotoNueva = null;
@@ -307,8 +334,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const stock = sinStockInicial ? 0 : Number(campos.stock.value || 0);
     const minimo = Number(campos.minimo.value || 0);
 
+    const prefijo = campos.prefijo.value.trim().toUpperCase();
     if (!nombre) return mostrarError('El nombre es obligatorio.');
     if (!categoria) return mostrarError('La categoría es obligatoria.');
+    if (!esPrefijoValido(prefijo)) return mostrarError('El prefijo del código debe tener de 2 a 4 letras (A-Z), por ejemplo INF.');
     if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
     if (!Number.isInteger(stock) || stock < 0) return mostrarError('El stock inicial debe ser un entero mayor o igual a 0.');
@@ -335,6 +364,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           nombre,
           categoria,
           codigo_barras: codigo,
+          prefijo_codigo: prefijo,
           precio_venta: precioVenta,
           ...(veCosto ? { precio_compra: precioCompra } : {}),
           stock_minimo: minimo,
@@ -347,6 +377,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           codigo_barras: codigo,
           nombre,
           categoria,
+          prefijo_codigo: prefijo,
           precio_venta: precioVenta,
           precio_compra: veCosto ? precioCompra : 0,
           stock_actual: 0,

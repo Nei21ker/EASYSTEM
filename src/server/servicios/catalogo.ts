@@ -12,6 +12,7 @@ import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
+import { esPrefijoValido, sugerirPrefijo } from '../../utils/codigos';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
 export type { ProductoConInventario } from '../repos/productos';
@@ -35,6 +36,20 @@ export interface DatosProducto {
   precio_venta?: number;
   stock_minimo?: number;
   imagen_url?: string | null;
+  /** Prefijo del código de sus unidades (2 a 4 letras). Si no se indica se sugiere por la marca del nombre o la categoría. */
+  prefijo_codigo?: string;
+}
+
+/** Pasa a mayúsculas el prefijo indicado y comprueba que sean 2 a 4 letras A-Z. */
+function prefijoIndicado(valor: string): string {
+  const prefijo = valor.trim().toUpperCase();
+  if (!esPrefijoValido(prefijo)) throw new ErrorApi(400, 'El prefijo del código debe tener de 2 a 4 letras (A-Z), por ejemplo INF.', 'datos_invalidos');
+  return prefijo;
+}
+
+async function marcasConocidas(env: Entorno): Promise<string[]> {
+  const filas = await env.DB.prepare('SELECT DISTINCT marca FROM modelos_telefono').all<{ marca: string }>();
+  return filas.results.map((f) => f.marca);
 }
 
 function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
@@ -49,6 +64,7 @@ function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
   if (d.stock_minimo !== undefined && !(Number.isInteger(d.stock_minimo) && d.stock_minimo >= 0)) {
     throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
   }
+  if (d.prefijo_codigo !== undefined) prefijoIndicado(d.prefijo_codigo);
 }
 
 const duplicado = (codigo: string) => new ErrorApi(409, `Ya existe un producto con el código de barras ${codigo}.`, 'codigo_repetido');
@@ -88,12 +104,13 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     precio_venta: redondear2(datos.precio_venta ?? 0),
     stock_minimo: datos.stock_minimo ?? 5,
     imagen_url: datos.imagen_url ?? null,
+    prefijo_codigo: datos.prefijo_codigo !== undefined ? prefijoIndicado(datos.prefijo_codigo) : sugerirPrefijo(datos.nombre.trim(), datos.categoria.trim(), await marcasConocidas(env)),
     created_at: ahoraISO(),
   };
   try {
     await env.DB
-      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.created_at)
+      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.created_at)
       .run();
   } catch (err) {
     if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
@@ -112,7 +129,7 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
   if (!actual) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
 
   // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
-  const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url'];
+  const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url', 'prefijo_codigo'];
   if (sesion.rol !== 'encargado') permitidos.push('precio_compra');
   const columnas: string[] = [];
   const valores: unknown[] = [];
@@ -120,7 +137,7 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
     if (cambios[campo] === undefined) continue;
     const valor = cambios[campo];
     columnas.push(`${campo} = ?`);
-    valores.push(typeof valor === 'string' ? valor.trim() : typeof valor === 'number' && campo.startsWith('precio') ? redondear2(valor) : valor);
+    valores.push(campo === 'prefijo_codigo' ? prefijoIndicado(String(valor)) : typeof valor === 'string' ? valor.trim() : typeof valor === 'number' && campo.startsWith('precio') ? redondear2(valor) : valor);
   }
   if (columnas.length > 0) {
     try {
@@ -161,14 +178,20 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
     if (existente) throw duplicado(existente.codigo_barras);
   }
 
-  const creados = filas.map((f) => ({ id: nuevoId(), codigo_barras: f.codigo_barras.trim(), f }));
+  const marcas = await marcasConocidas(env);
+  const creados = filas.map((f) => ({
+    id: nuevoId(),
+    codigo_barras: f.codigo_barras.trim(),
+    prefijo: f.prefijo_codigo !== undefined ? prefijoIndicado(f.prefijo_codigo) : sugerirPrefijo(f.nombre.trim(), f.categoria.trim(), marcas),
+    f,
+  }));
   const ahora = ahoraISO();
   try {
     await env.DB.batch(
-      creados.map(({ id, codigo_barras, f }) =>
+      creados.map(({ id, codigo_barras, prefijo, f }) =>
         env.DB
-          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, ahora)
+          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, ahora)
       )
     );
   } catch (err) {

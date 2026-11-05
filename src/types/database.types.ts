@@ -61,6 +61,8 @@ export interface Producto {
   stock_minimo: number;
   /** URL pública (Supabase Storage) o data URL (modo LocalStorage); opcional */
   imagen_url?: string | null;
+  /** 2 a 4 letras (INF, TEC…) con las que empiezan los códigos de sus unidades: INF000001… */
+  prefijo_codigo?: string;
   created_at: string;
 }
 

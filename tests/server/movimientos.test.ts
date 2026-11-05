@@ -70,11 +70,12 @@ describe('ENTRADA: una unidad con código por cada una', () => {
     expect((await una<{ s: number }>('SELECT stock_actual AS s FROM productos WHERE id = ?', P))?.s).toBe(5);
   });
 
-  it('los códigos siguen la secuencia global (un contador), sin repetirse entre productos ni locales', async () => {
+  it('los códigos no se repiten entre productos ni locales (un contador por prefijo)', async () => {
     const a = await entrada(P, accesorios, 3);
     const b = await entrada(Q, vidrios, 2);
     expect(new Set([...a.unidadCodigos, ...b.unidadCodigos]).size).toBe(5);
-    expect((await una<{ valor: number }>("SELECT valor FROM contadores WHERE nombre = 'unidades'"))?.valor).toBe(5);
+    const contadores = await env.DB.prepare("SELECT sum(valor) AS total FROM contadores WHERE nombre LIKE 'unidad:%'").first<{ total: number }>();
+    expect(contadores?.total).toBe(5);
   });
 
   it('cantidad inválida o producto inexistente se rechazan sin dejar nada', async () => {

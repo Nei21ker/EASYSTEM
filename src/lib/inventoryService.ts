@@ -37,7 +37,7 @@ import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
-import { construirCodigoUnidad } from '../utils/codigos';
+import { construirCodigoUnidad, esCodigoUnidad, esPrefijoValido, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl } from '../utils/imagenes';
@@ -119,6 +119,8 @@ interface LocalDB {
   /** Una fila por unidad física con su código único (la hace el trigger de D1) y el último número usado */
   unidades?: UnidadProducto[];
   unidadSeq?: number;
+  /** Último número usado por cada prefijo de código (INF → 14 quiere decir que el siguiente es INF000015) */
+  unidadSeqPorPrefijo?: Record<string, number>;
   /** Cuadres de caja diarios (las fotos van como data URL dentro de cada cuadre) */
   cuadres?: CuadreCaja[];
 }
@@ -161,13 +163,31 @@ function construirSeedInicial(): LocalDB {
 // aquí se replica la misma regla: una entrada crea una unidad por cada una, una salida marca VENDIDA las
 // unidades indicadas (y, si faltan, las más antiguas del local), una entrada con códigos reactiva esas.
 // ----------------------------------------------------------------------------
+/** El prefijo de los códigos del producto; si todavía no tiene (datos anteriores) se sugiere por su marca o categoría y se guarda. */
+function prefijoDeProductoLocal(db: LocalDB, producto: Producto): string {
+  if (!producto.prefijo_codigo) {
+    producto.prefijo_codigo = sugerirPrefijo(producto.nombre, producto.categoria, [...new Set(db.modelos.map((m) => m.marca))]);
+  }
+  return producto.prefijo_codigo;
+}
+
+/** Mayúsculas y validación del prefijo indicado a mano (modo LocalStorage; el servidor hace lo mismo). */
+function prefijoValidoODemo(valor: string): string {
+  const prefijo = valor.trim().toUpperCase();
+  if (!esPrefijoValido(prefijo)) throw new Error('El prefijo del código debe tener de 2 a 4 letras (A-Z), por ejemplo INF.');
+  return prefijo;
+}
+
 function nuevaUnidadLocal(db: LocalDB, producto_id: string, local_id: string): UnidadProducto {
-  db.unidadSeq = (db.unidadSeq ?? 0) + 1;
+  const producto = db.productos.find((p) => p.id === producto_id);
+  const prefijo = producto ? prefijoDeProductoLocal(db, producto) : 'GEN';
+  const secuencias = db.unidadSeqPorPrefijo ?? (db.unidadSeqPorPrefijo = {});
+  secuencias[prefijo] = (secuencias[prefijo] ?? 0) + 1;
   return {
     id: generarId(),
     producto_id,
     local_id,
-    codigo: construirCodigoUnidad(db.unidadSeq),
+    codigo: construirCodigoUnidad(prefijo, secuencias[prefijo]),
     estado: 'DISPONIBLE',
     created_at: new Date().toISOString(),
     vendida_en: null,
@@ -182,6 +202,28 @@ function migrarUnidades(db: LocalDB): boolean {
   for (const i of db.inventario ?? []) {
     for (let n = 0; n < i.stock_actual; n++) db.unidades.push(nuevaUnidadLocal(db, i.producto_id, i.local_id));
   }
+  return true;
+}
+
+/**
+ * Navegadores con códigos del formato anterior (EAN-13 numéricos): se renumeran al formato PREFIJO + 6 dígitos por orden de llegada,
+ * también en el historial guardado (ventas, movimientos, traslados…), para que las devoluciones sigan encontrando sus unidades.
+ */
+function migrarCodigosUnidad(db: LocalDB): boolean {
+  for (const p of db.productos) prefijoDeProductoLocal(db, p);
+  const viejas = (db.unidades ?? []).filter((u) => !esCodigoUnidad(u.codigo));
+  if (viejas.length === 0) return false;
+  const secuencias: Record<string, number> = db.unidadSeqPorPrefijo ?? {};
+  const mapa = new Map<string, string>();
+  for (const u of [...viejas].sort((a, b) => a.created_at.localeCompare(b.created_at))) {
+    const prefijo = db.productos.find((p) => p.id === u.producto_id)?.prefijo_codigo ?? 'GEN';
+    secuencias[prefijo] = (secuencias[prefijo] ?? 0) + 1;
+    mapa.set(u.codigo, construirCodigoUnidad(prefijo, secuencias[prefijo]));
+  }
+  // Los códigos viejos son cadenas de 13 dígitos: se cambian entre comillas en todo el historial guardado
+  const texto = JSON.stringify({ ...db, unidadSeqPorPrefijo: secuencias }).replace(/"(\d{13})"/g, (entero, codigo: string) => (mapa.has(codigo) ? `"${mapa.get(codigo)}"` : entero));
+  Object.assign(db, JSON.parse(texto) as LocalDB);
+  delete db.unidadSeq;
   return true;
 }
 
@@ -322,7 +364,7 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db), migrarUnidades(db)].some(Boolean);
+      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db), migrarUnidades(db), migrarCodigosUnidad(db)].some(Boolean);
       if (faltantes.length > 0) db.modelos.push(...faltantes);
       if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;
@@ -1125,6 +1167,8 @@ export async function crearProducto(
     created_at: new Date().toISOString(),
     ...input,
   };
+  producto.prefijo_codigo = input.prefijo_codigo ? prefijoValidoODemo(input.prefijo_codigo) : undefined;
+  prefijoDeProductoLocal(db, producto);
   db.productos.push(producto);
   if (localId) db.inventario.push({ local_id: localId, producto_id: producto.id, stock_actual: 0, stock_minimo: producto.stock_minimo });
   guardarDB(db);
@@ -1148,6 +1192,7 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   const db = leerDB();
   const producto = db.productos.find((p) => p.id === id);
   if (!producto) throw new Error('Producto no encontrado.');
+  if (cambios.prefijo_codigo !== undefined) cambios.prefijo_codigo = prefijoValidoODemo(cambios.prefijo_codigo);
   Object.assign(producto, cambios);
   if (localId && cambios.stock_minimo !== undefined) {
     const fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === id);

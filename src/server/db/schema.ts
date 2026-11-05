@@ -137,6 +137,7 @@ export const productos = sqliteTable('productos', {
   stock_actual: integer('stock_actual').notNull().default(0),
   stock_minimo: integer('stock_minimo').notNull().default(5),
   imagen_url: text('imagen_url'),
+  prefijo_codigo: text('prefijo_codigo').notNull().default('GEN'),
   created_at: marca('created_at'),
 });
 

@@ -106,9 +106,16 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
   // 1. Productos (existencia y nombre para los mensajes)
   const idsProducto = [...new Set(entradas.map((e) => e.productoId))];
   const nombres = new Map<string, string>();
+  const prefijos = new Map<string, string>();
   for (const tramo of tramos(idsProducto)) {
-    const filas = await db.prepare(`SELECT id, nombre FROM productos WHERE id IN (${marcas(tramo.length)})`).bind(...tramo).all<{ id: string; nombre: string }>();
-    for (const f of filas.results) nombres.set(f.id, f.nombre);
+    const filas = await db
+      .prepare(`SELECT id, nombre, prefijo_codigo FROM productos WHERE id IN (${marcas(tramo.length)})`)
+      .bind(...tramo)
+      .all<{ id: string; nombre: string; prefijo_codigo: string }>();
+    for (const f of filas.results) {
+      nombres.set(f.id, f.nombre);
+      prefijos.set(f.id, f.prefijo_codigo);
+    }
   }
   if (nombres.size !== idsProducto.length) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
 
@@ -149,15 +156,23 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     }
   }
 
-  // 4. Códigos nuevos: se reserva un rango del contador (cada petición recibe un rango propio)
-  const nuevasTotal = entradas.reduce((suma, e) => suma + (e.tipo === 'ENTRADA' ? e.cantidad - (e.unidadCodigos?.length ?? 0) : 0), 0);
-  let siguiente = 0;
-  if (nuevasTotal > 0) {
+  // 4. Códigos nuevos: cada prefijo (INF, TEC…) lleva su propia cuenta; se reserva un rango por prefijo (cada petición recibe uno propio)
+  const nuevasPorPrefijo = new Map<string, number>();
+  for (const e of entradas) {
+    if (e.tipo !== 'ENTRADA') continue;
+    const nuevas = e.cantidad - (e.unidadCodigos?.length ?? 0);
+    if (nuevas > 0) nuevasPorPrefijo.set(prefijos.get(e.productoId)!, (nuevasPorPrefijo.get(prefijos.get(e.productoId)!) ?? 0) + nuevas);
+  }
+  const siguientePorPrefijo = new Map<string, number>();
+  for (const [prefijo, nuevas] of nuevasPorPrefijo) {
     const fila = await db
-      .prepare("INSERT INTO contadores (nombre, valor) VALUES ('unidades', ?) ON CONFLICT (nombre) DO UPDATE SET valor = valor + excluded.valor RETURNING valor")
-      .bind(nuevasTotal)
+      .prepare('INSERT INTO contadores (nombre, valor) VALUES (?, ?) ON CONFLICT (nombre) DO UPDATE SET valor = valor + excluded.valor RETURNING valor')
+      .bind(`unidad:${prefijo}`, nuevas)
       .first<{ valor: number }>();
-    siguiente = fila!.valor - nuevasTotal + 1;
+    if (fila!.valor > 999_999) {
+      throw new ErrorApi(409, `Se agotaron los códigos del prefijo ${prefijo} (999999). Cambia el prefijo del producto para seguir ingresando.`, 'prefijo_agotado');
+    }
+    siguientePorPrefijo.set(prefijo, fila!.valor - nuevas + 1);
   }
 
   // 5. Se simula cada movimiento en orden y se arman las sentencias
@@ -182,7 +197,10 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
         sentenciasUnidades.push(db.prepare("UPDATE unidades_producto SET estado = 'DISPONIBLE', local_id = ?, vendida_en = NULL WHERE codigo = ?").bind(e.localId, codigo));
       }
       for (let i = indicadasMov.length; i < e.cantidad; i++) {
-        const codigo = construirCodigoUnidad(siguiente++);
+        const prefijo = prefijos.get(e.productoId)!;
+        const numero = siguientePorPrefijo.get(prefijo)!;
+        siguientePorPrefijo.set(prefijo, numero + 1);
+        const codigo = construirCodigoUnidad(prefijo, numero);
         unidades.set(codigo, { codigo, estado: 'DISPONIBLE', producto_id: e.productoId, local_id: e.localId });
         (colas.get(k) ?? colas.set(k, []).get(k)!).push(codigo);
         codigos.push(codigo);

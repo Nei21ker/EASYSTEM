@@ -173,7 +173,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import * as inventoryService from '../../lib/inventoryService';
   import { esGlobal, esGerencia } from '../../lib/auth';
   import { alCambiarDatos } from '../../lib/realtime';
-  import { esCodigoUnidad } from '../../utils/codigos';
+  import { esCodigoUnidad, normalizarCodigoUnidad } from '../../utils/codigos';
   import { escaparHtml } from '../../utils/productosUI';
   import { formatearFecha } from '../../utils/format';
   import { htmlHojaDespacho, imprimirHoja } from '../../utils/hojasImpresas';
@@ -277,7 +277,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   };
 
   async function agregarPieza(texto: string) {
-    const codigo = texto.trim();
+    const codigo = normalizarCodigoUnidad(texto) ?? texto.trim();
     if (!codigo) return;
     if (!origenId) {
       avisar('Elige primero el local del que sale la mercancía.', 'error');

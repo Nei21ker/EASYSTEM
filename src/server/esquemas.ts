@@ -9,6 +9,7 @@ export const esquemaProducto = z.object({
   precio_venta: z.number().optional(),
   stock_minimo: z.number().optional(),
   imagen_url: z.string().nullable().optional(),
+  prefijo_codigo: z.string().optional(),
 });
 
 export const esquemaMovimiento = z.object({

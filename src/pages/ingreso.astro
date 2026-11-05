@@ -252,7 +252,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia } from '../lib/auth';
-  import { esCodigoUnidad, construirCodigoUnidad } from '../utils/codigos';
+  import { esCodigoUnidad, normalizarCodigoUnidad } from '../utils/codigos';
   import {
     buscarFormatoEtiqueta,
     buscarTipoCodigo,
@@ -421,7 +421,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!q) return;
     const exacto = productos.find((p) => p.codigo_barras === q);
     if (exacto) return agregar(exacto.id);
-    if (esCodigoUnidad(q)) return void localizarPorUnidad(q);
+    const unidad = normalizarCodigoUnidad(q);
+    if (unidad) return void localizarPorUnidad(unidad);
     if (/^\d{6,}$/.test(q)) avisarCodigoNuevo(q);
   });
   resultados.addEventListener('click', (e) => {
@@ -957,8 +958,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const primeraLinea = lote.find((l) => producto(l.id));
     const primerProducto = primeraLinea ? producto(primeraLinea.id) : undefined;
     const codigoEjemplo = primeraLinea
-      ? (primeraLinea.unidades?.[0] ?? sinEtiqueta.get(primeraLinea.id)?.[0] ?? construirCodigoUnidad(1))
-      : construirCodigoUnidad(1);
+      ? (primeraLinea.unidades?.[0] ?? sinEtiqueta.get(primeraLinea.id)?.[0] ?? `${primerProducto?.prefijo_codigo ?? 'INF'}000001`)
+      : 'INF000001';
     const primera = { codigo: codigoEjemplo, nombre: primerProducto?.nombre ?? 'Forro silicona iPhone 13' };
     const tipo = buscarTipoCodigo(selectTipo.value);
     $('ig-previa').innerHTML = htmlEtiqueta(primera, formato, tipo);

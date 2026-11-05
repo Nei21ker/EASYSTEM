@@ -359,7 +359,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
-  import { codigoDeNumeroCorto, esCodigoUnidad } from '../utils/codigos';
+  import { esCodigoUnidad, normalizarCodigoUnidad } from '../utils/codigos';
   import { esErrorDeRed } from '../utils/red';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
   import { archivoDeTicket, copiarImagenAlPortapapeles } from '../utils/ticketImagen';
@@ -1090,8 +1090,8 @@ import { alCambiarDatos } from '../lib/realtime';
    */
   async function agregarPorCodigo(codigoCrudo: string, aceptarNumeroCorto = false): Promise<boolean> {
     limpiarError();
-    // En el campo del lector, escribir solo el número de la etiqueta ("N.º 7" → 7) equivale a escanearla
-    const codigo = (aceptarNumeroCorto ? codigoDeNumeroCorto(codigoCrudo) : null) ?? codigoCrudo.trim();
+    // En el campo del lector, escribir el código abreviado de la etiqueta ("inf14" → INF000014) equivale a escanearla
+    const codigo = (aceptarNumeroCorto ? normalizarCodigoUnidad(codigoCrudo) : null) ?? codigoCrudo.trim();
     if (!codigo) return false;
     if (!esCodigoUnidad(codigo)) {
       const antes = carrito.reduce((suma, l) => suma + l.cantidad, 0);
@@ -1107,6 +1107,13 @@ import { alCambiarDatos } from '../lib/realtime';
       return false;
     }
     if (!unidad) {
+      // Un código de fábrica puede parecerse al de una unidad (letras y números): si es de un producto, se agrega por el producto
+      const crudo = codigoCrudo.trim();
+      if (productos.some((p) => p.codigo_barras === crudo)) {
+        const antes = carrito.reduce((suma, l) => suma + l.cantidad, 0);
+        await buscarYAgregarPorCodigo(crudo);
+        return carrito.reduce((suma, l) => suma + l.cantidad, 0) > antes;
+      }
       mostrarError(`El código ${codigo} no corresponde a ninguna unidad registrada.`);
       return false;
     }
@@ -1352,7 +1359,7 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Un código escaneado (o escrito) durante este paso: debe ser de una unidad de lo que se está vendiendo y que aún no se escaneó. */
   async function registrarEscaneo(codigoCrudo: string): Promise<boolean> {
     errorEscaneo.classList.add('hidden');
-    const codigo = codigoDeNumeroCorto(codigoCrudo) ?? codigoCrudo.trim();
+    const codigo = normalizarCodigoUnidad(codigoCrudo) ?? codigoCrudo.trim();
     if (!codigo) return false;
     if (!esCodigoUnidad(codigo)) {
       errorDeEscaneo('Escanea el QR de la etiqueta de la unidad (no el código del empaque de fábrica).');
