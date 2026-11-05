@@ -16,6 +16,7 @@
 // sincronizarPendientes(). Ver ConnectionStatus.astro para el indicador de UI.
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
+import type { ResultadoEliminacion } from './db/productos';
 import * as productosDb from './db/productos';
 import * as modelosDb from './db/modelos';
 import * as movimientosDb from './db/movimientos';
@@ -1297,16 +1298,37 @@ export async function quitarImagenProducto(productoId: string): Promise<void> {
   guardarDB(db);
 }
 
-export async function eliminarProducto(id: string): Promise<void> {
-  if (modoServidor) return productosDb.eliminarProducto(id);
+const MOTIVO_CON_HISTORIAL =
+  'Ya tiene ventas, traslados, bajas u otros movimientos: borrarlo haría desaparecer ese historial. Retira su stock con una baja (Mercancía → Descargo).';
+
+/**
+ * Borra productos ingresados por error, con sus unidades, movimientos y stock (solo administrador y gerente; el servidor lo exige).
+ * Los que ya tienen historial (cualquier movimiento que no sea una ENTRADA, o piezas que ya no están disponibles) NO se tocan:
+ * vuelven en `bloqueados` con el motivo. Mismas reglas en modo servidor y en modo demo.
+ */
+export async function eliminarProductos(ids: string[]): Promise<ResultadoEliminacion> {
+  if (modoServidor) return productosDb.eliminarProductosLote(ids);
 
   const db = leerDB();
-  db.productos = db.productos.filter((p) => p.id !== id);
-  db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== id);
-  db.inventario = db.inventario.filter((i) => i.producto_id !== id);
-  db.movimientos = db.movimientos.filter((m) => m.producto_id !== id);
-  db.unidades = (db.unidades ?? []).filter((u) => u.producto_id !== id);
+  const resultado: ResultadoEliminacion = { eliminados: [], bloqueados: [] };
+  for (const id of new Set(ids)) {
+    const producto = db.productos.find((p) => p.id === id);
+    if (!producto) continue;
+    const conHistorial =
+      db.movimientos.some((m) => m.producto_id === id && m.tipo !== 'ENTRADA') || (db.unidades ?? []).some((u) => u.producto_id === id && u.estado !== 'DISPONIBLE');
+    if (conHistorial) {
+      resultado.bloqueados.push({ id, nombre: producto.nombre, motivo: MOTIVO_CON_HISTORIAL });
+      continue;
+    }
+    db.productos = db.productos.filter((p) => p.id !== id);
+    db.compatibilidades = db.compatibilidades.filter((c) => c.producto_id !== id);
+    db.inventario = db.inventario.filter((i) => i.producto_id !== id);
+    db.movimientos = db.movimientos.filter((m) => m.producto_id !== id);
+    db.unidades = (db.unidades ?? []).filter((u) => u.producto_id !== id);
+    resultado.eliminados.push(id);
+  }
   guardarDB(db);
+  return resultado;
 }
 
 export async function establecerCompatibilidades(productoId: string, modeloIds: string[]): Promise<void> {

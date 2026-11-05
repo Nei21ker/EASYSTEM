@@ -46,6 +46,7 @@ const claseSelect =
           <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
           <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
           <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
+          <button id="pr-seleccionar" type="button" class={claseBotonAdmin} title="Elegir productos para eliminarlos (por ejemplo, los de un ingreso equivocado)">Seleccionar</button>
           <!-- Ingreso de mercancía (producto nuevo, entradas de stock y etiquetas): módulo propio -->
           <a
             id="pr-ingreso"
@@ -80,6 +81,18 @@ const claseSelect =
         <p id="pr-resumen" class="ml-auto text-xs text-slate-500 dark:text-slate-400">Cargando...</p>
       </div>
     </div>
+
+    <!-- Selección para eliminar (administrador y gerente): aparece al pulsar "Seleccionar" -->
+    <div id="pr-barra-seleccion" class="hidden flex-col gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm sm:flex-row sm:items-center dark:border-red-500/30 dark:bg-red-500/10">
+      <p id="pr-seleccionados" class="font-semibold text-red-800 dark:text-red-300"></p>
+      <div class="flex flex-wrap gap-2 sm:ml-auto">
+        <button id="pr-sel-filtrados" type="button" class={claseBotonSecundario}></button>
+        <button id="pr-sel-ninguno" type="button" class={claseBotonSecundario}>Quitar selección</button>
+        <button id="pr-eliminar" type="button" class="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">Eliminar seleccionados</button>
+        <button id="pr-sel-cancelar" type="button" class={claseBotonSecundario}>Cancelar</button>
+      </div>
+    </div>
+    <p id="pr-mensaje" role="status" class="hidden rounded-lg px-3 py-2 text-xs"></p>
 
     <!-- Tabla -->
     <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -177,7 +190,7 @@ const claseSelect =
   // Precio de compra e importar CSV: administrador y gerente. Editar productos e ir al ingreso de mercancía: también el encargado.
   const COLUMNAS_COSTO = ['pr-th-costo', 'pr-col-costo'];
   const COLUMNAS_ACCIONES = ['pr-th-acciones', 'pr-col-acciones'];
-  const BOTONES_ADMIN = ['pr-importar'];
+  const BOTONES_ADMIN = ['pr-importar', 'pr-seleccionar'];
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
@@ -186,6 +199,9 @@ const claseSelect =
   let nombresLocales = new Map<string, string>();
   let categoriaActiva = '';
   let pagina = 1;
+  /** Modo "Seleccionar": casillas en cada fila para eliminar productos ingresados por error */
+  let modoSeleccion = false;
+  const seleccion = new Set<string>();
   /** id -> texto normalizado (nombre + código + categoría + modelos) para buscar rápido */
   const indice = new Map<string, string>();
 
@@ -254,7 +270,8 @@ const claseSelect =
     return `
       <tr class="align-middle text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
         <td class="px-4 py-3">
-          <div class="grid grid-cols-[auto_1fr] items-center gap-3">
+          <div class="grid ${modoSeleccion ? 'grid-cols-[auto_auto_1fr]' : 'grid-cols-[auto_1fr]'} items-center gap-3">
+            ${modoSeleccion ? `<input type="checkbox" data-sel="${escapar(p.id)}" ${seleccion.has(p.id) ? 'checked' : ''} aria-label="Seleccionar ${escapar(p.nombre)}" class="h-5 w-5 rounded border-slate-300 text-red-600 focus:ring-red-500" />` : ''}
             ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
             <div class="min-w-0">
               <p class="line-clamp-2 break-words font-medium leading-snug text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
@@ -287,6 +304,22 @@ const claseSelect =
       </tr>`;
   }
 
+  function pintarBarraSeleccion(lista: ProductoConRelaciones[]) {
+    const barra = $('pr-barra-seleccion');
+    barra.classList.toggle('hidden', !modoSeleccion);
+    barra.classList.toggle('flex', modoSeleccion);
+    if (!modoSeleccion) return;
+    $('pr-seleccionados').textContent = seleccion.size === 0 ? 'Marca los productos que quieres eliminar' : `${seleccion.size} seleccionado${seleccion.size === 1 ? '' : 's'}`;
+    $('pr-sel-filtrados').textContent = `Marcar los ${lista.length} de la lista`;
+    ($('pr-eliminar') as HTMLButtonElement).disabled = seleccion.size === 0;
+  }
+
+  function mostrarMensaje(texto: string, ok: boolean) {
+    const el = $('pr-mensaje');
+    el.textContent = texto;
+    el.className = `rounded-lg px-3 py-2 text-xs ${ok ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400' : 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`;
+  }
+
   function pintar() {
     const lista = filtrar();
     const porPagina = Number(selectPorPagina.value);
@@ -301,6 +334,7 @@ const claseSelect =
       ? `${lista.length} de ${productos.length} productos`
       : `${productos.length} productos · ${productos.filter((p) => p.stock_actual > 0).length} con stock`;
 
+    pintarBarraSeleccion(lista);
     sinResultados.classList.toggle('hidden', lista.length > 0);
     paginacion.classList.toggle('hidden', lista.length === 0);
     $('pr-rango').textContent = lista.length
@@ -387,6 +421,58 @@ const claseSelect =
   // escuchan estos eventos; esta página no depende de sus detalles internos).
   const abrir = (evento: string, detalle?: object) => window.dispatchEvent(new CustomEvent(evento, { detail: detalle }));
   $('pr-importar').addEventListener('click', () => abrir('easystem:abrir-importador'));
+
+  function alternarSeleccion(activo: boolean) {
+    modoSeleccion = activo;
+    seleccion.clear();
+    ($('pr-seleccionar') as HTMLButtonElement).textContent = activo ? 'Salir de selección' : 'Seleccionar';
+    pintar();
+  }
+  $('pr-seleccionar').addEventListener('click', () => alternarSeleccion(!modoSeleccion));
+  $('pr-sel-cancelar').addEventListener('click', () => alternarSeleccion(false));
+  $('pr-sel-ninguno').addEventListener('click', () => {
+    seleccion.clear();
+    pintar();
+  });
+  $('pr-sel-filtrados').addEventListener('click', () => {
+    for (const p of filtrar()) seleccion.add(p.id);
+    pintar();
+  });
+  filas.addEventListener('change', (e) => {
+    const casilla = (e.target as HTMLElement).closest<HTMLInputElement>('[data-sel]');
+    if (!casilla) return;
+    if (casilla.checked) seleccion.add(casilla.dataset.sel!);
+    else seleccion.delete(casilla.dataset.sel!);
+    pintarBarraSeleccion(filtrar());
+  });
+
+  $('pr-eliminar').addEventListener('click', async () => {
+    const elegidos = productos.filter((p) => seleccion.has(p.id));
+    if (elegidos.length === 0) return;
+    const stock = elegidos.reduce((suma, p) => suma + p.stock_actual, 0);
+    const nombres = elegidos.slice(0, 8).map((p) => `  · ${p.nombre}`).join('\n') + (elegidos.length > 8 ? `\n  … y ${elegidos.length - 8} más` : '');
+    const respuesta = prompt(
+      `Vas a ELIMINAR ${elegidos.length} producto${elegidos.length === 1 ? '' : 's'} con sus ${stock} unidad${stock === 1 ? '' : 'es'} en stock, de TODOS los locales:\n\n${nombres}\n\nNo se puede deshacer. Los que ya tengan ventas, traslados o bajas NO se borrarán.\n\nEscribe ELIMINAR para confirmar:`
+    );
+    if (respuesta === null) return;
+    if (respuesta.trim().toUpperCase() !== 'ELIMINAR') return mostrarMensaje('No se eliminó nada: la palabra de confirmación no coincidía.', false);
+    const boton = $('pr-eliminar') as HTMLButtonElement;
+    boton.disabled = true;
+    try {
+      const r = await inventoryService.eliminarProductos(elegidos.map((p) => p.id));
+      const aviso = r.bloqueados.length
+        ? ` No se borraron ${r.bloqueados.length} porque ya tienen historial (ventas, traslados o bajas): ${r.bloqueados.map((b) => b.nombre).join(', ')}. Para retirar su stock usa una baja en Mercancía → Descargo.`
+        : '';
+      mostrarMensaje(`Se eliminaron ${r.eliminados.length} producto${r.eliminados.length === 1 ? '' : 's'}.${aviso}`, r.bloqueados.length === 0);
+      seleccion.clear();
+      for (const b of r.bloqueados) seleccion.add(b.id); // los que no se pudieron borrar quedan marcados
+      await recargarProductos();
+    } catch (err) {
+      mostrarMensaje(err instanceof Error ? err.message : 'No se pudo eliminar.', false);
+    } finally {
+      boton.disabled = false;
+    }
+  });
 
   filas.addEventListener('click', (e) => {
     const objetivo = e.target as HTMLElement;

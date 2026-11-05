@@ -175,13 +175,66 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
   return (await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>())!;
 }
 
+const MOTIVO_CON_HISTORIAL = 'Ya tiene ventas, traslados, bajas u otros movimientos: borrarlo haría desaparecer ese historial. Retira su stock con una baja (Mercancía → Descargo).';
+
+/**
+ * Ids (de los pedidos) de productos que NO se pueden borrar porque dejarían historial perdido: los que tuvieron cualquier
+ * movimiento que no sea una ENTRADA (ventas, traslados, bajas, devoluciones…) o tienen piezas que ya no están disponibles.
+ * Un producto que solo tuvo ingresos (el caso de un ingreso equivocado) sí se puede borrar completo.
+ */
+async function conHistorial(env: Entorno, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const marcas = ids.map(() => '?').join(', ');
+  const filas = await env.DB
+    .prepare(
+      `SELECT producto_id FROM movimientos_inventario WHERE tipo <> 'ENTRADA' AND producto_id IN (${marcas})
+       UNION SELECT producto_id FROM unidades_producto WHERE estado <> 'DISPONIBLE' AND producto_id IN (${marcas})`
+    )
+    .bind(...ids, ...ids)
+    .all<{ producto_id: string }>();
+  return new Set(filas.results.map((f) => f.producto_id));
+}
+
+/** Borra un producto ingresado por error, con sus unidades, movimientos y stock (solo administrador y gerente; 409 si ya tiene historial). */
 export async function eliminarProducto(env: Entorno, sesion: Sesion, id: string): Promise<void> {
   exigirGlobal(sesion);
   await alcanceDe(env, sesion);
   const existe = await env.DB.prepare('SELECT 1 AS ok FROM productos WHERE id = ?').bind(id).first();
   if (!existe) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+  if ((await conHistorial(env, [id])).has(id)) throw new ErrorApi(409, MOTIVO_CON_HISTORIAL, 'producto_con_historial');
   await env.DB.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
-  await avisarCambio(env.DB, ['productos', 'inventario_local', 'compatibilidades']);
+  await avisarCambio(env.DB, ['productos', 'inventario_local', 'compatibilidades', 'unidades_producto']);
+}
+
+/**
+ * Borra varios productos de una vez (hasta 100): los que se pueden y avisa cuáles no, con el motivo, sin tocar esos.
+ * Los ids que no existen se ignoran (otro dispositivo pudo borrarlos antes).
+ */
+export async function eliminarProductosLote(
+  env: Entorno,
+  sesion: Sesion,
+  ids: string[]
+): Promise<{ eliminados: string[]; bloqueados: { id: string; nombre: string; motivo: string }[] }> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  if (ids.length > LIMITE_LOTE) throw new ErrorApi(400, `Se pueden eliminar hasta ${LIMITE_LOTE} productos por petición.`, 'lote_grande');
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0) return { eliminados: [], bloqueados: [] };
+
+  const filas = await env.DB
+    .prepare(`SELECT id, nombre FROM productos WHERE id IN (${unicos.map(() => '?').join(', ')})`)
+    .bind(...unicos)
+    .all<{ id: string; nombre: string }>();
+  const bloqueadosIds = await conHistorial(env, filas.results.map((f) => f.id));
+  const borrables = filas.results.filter((f) => !bloqueadosIds.has(f.id));
+  if (borrables.length > 0) {
+    await env.DB.batch(borrables.map((f) => env.DB.prepare('DELETE FROM productos WHERE id = ?').bind(f.id)));
+    await avisarCambio(env.DB, ['productos', 'inventario_local', 'compatibilidades', 'unidades_producto']);
+  }
+  return {
+    eliminados: borrables.map((f) => f.id),
+    bloqueados: filas.results.filter((f) => bloqueadosIds.has(f.id)).map((f) => ({ id: f.id, nombre: f.nombre, motivo: MOTIVO_CON_HISTORIAL })),
+  };
 }
 
 /** Importador CSV: crea productos nuevos (solo administrador y gerente). Hasta 100 por petición; todo o nada. */

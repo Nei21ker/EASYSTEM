@@ -39,6 +39,15 @@ export async function eliminarProducto(id: string) {
   await api.delete(`/api/productos/${encodeURIComponent(id)}`);
 }
 
+export interface ResultadoEliminacion {
+  eliminados: string[];
+  bloqueados: { id: string; nombre: string; motivo: string }[];
+}
+
+export async function eliminarProductosLote(ids: string[]): Promise<ResultadoEliminacion> {
+  return api.post<ResultadoEliminacion>('/api/productos/eliminar-lote', { ids });
+}
+
 /** Sube la foto (R2) y devuelve su URL; el servidor la sirve sin sesión para poder mostrarla en cualquier pantalla. */
 export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
   return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, imagen.type || 'image/jpeg');
