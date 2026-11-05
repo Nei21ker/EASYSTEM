@@ -20,6 +20,16 @@ describe('formatoPersonalizado', () => {
     expect(Math.abs(f.nombrePt - conocido.nombrePt)).toBeLessThanOrEqual(0.5);
   });
 
+  it('el formato fijo de 40 × 30 mm existe y coincide con lo que calcularía el tamaño personalizado', () => {
+    const fijo = FORMATOS_ETIQUETA.find((x) => x.id === 'rollo-40x30')!;
+    expect(fijo).toBeDefined();
+    expect([fijo.anchoMm, fijo.altoMm]).toEqual([40, 30]);
+    const calculado = formatoPersonalizado(40, 30);
+    expect(fijo.qrMm).toBe(calculado.qrMm);
+    expect(fijo.barrasMm).toBe(calculado.barrasMm);
+    expect(fijo.nombrePt).toBe(calculado.nombrePt);
+  });
+
   it('una etiqueta más grande lleva QR y letra más grandes', () => {
     const chica = formatoPersonalizado(40, 25);
     const grande = formatoPersonalizado(100, 60);

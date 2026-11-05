@@ -190,6 +190,28 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <p id="ig-galeria-cuenta" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div class="space-y-3 overflow-y-auto px-5 py-4 text-sm">
+        <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+          <label for="ig-galeria-formato" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Tamaño de la etiqueta</label>
+          <select id="ig-galeria-formato" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            {FORMATOS_ETIQUETA.map((f) => <option value={f.id}>{f.nombre}</option>)}
+            <option value={FORMATO_PERSONALIZADO_ID}>Otra medida (escribirla)…</option>
+          </select>
+          <div id="ig-galeria-personalizado" class="mt-2 hidden">
+            <div class="flex items-end gap-2">
+              <div>
+                <label for="ig-galeria-ancho" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Ancho (mm)</label>
+                <input id="ig-galeria-ancho" type="number" inputmode="decimal" step="0.5" min={LIMITES_FORMATO_PERSONALIZADO.anchoMin} max={LIMITES_FORMATO_PERSONALIZADO.anchoMax} class="mt-1 w-28 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              </div>
+              <span class="pb-3 text-slate-400">×</span>
+              <div>
+                <label for="ig-galeria-alto" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Alto (mm)</label>
+                <input id="ig-galeria-alto" type="number" inputmode="decimal" step="0.5" min={LIMITES_FORMATO_PERSONALIZADO.altoMin} max={LIMITES_FORMATO_PERSONALIZADO.altoMax} class="mt-1 w-28 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              </div>
+            </div>
+            <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Ancho {LIMITES_FORMATO_PERSONALIZADO.anchoMin}–{LIMITES_FORMATO_PERSONALIZADO.anchoMax} mm, alto {LIMITES_FORMATO_PERSONALIZADO.altoMin}–{LIMITES_FORMATO_PERSONALIZADO.altoMax} mm. Se recuerda en este equipo.</p>
+          </div>
+          <p id="ig-galeria-medida" class="mt-1.5 text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
         <div>
           <label for="ig-galeria-modo" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Cómo mandarlas a WePrint</label>
           <select id="ig-galeria-modo" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white">
@@ -751,8 +773,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         incluirSueltas ? prepararArchivosEtiquetas(galeriaEtiquetas, formato, tipo) : Promise.resolve(galeriaSueltas),
       ]);
       if (version !== galeriaVersion) return; // llegó otra petición más nueva
-      galeriaTira = new File([tira], 'etiquetas-tira.png', { type: 'image/png' });
-      galeriaPdf = new File([pdf], 'etiquetas.pdf', { type: 'application/pdf' });
+      const medida = `${formato.anchoMm}x${formato.altoMm}mm`;
+      galeriaTira = new File([tira], `etiquetas-tira-${medida}.png`, { type: 'image/png' });
+      galeriaPdf = new File([pdf], `etiquetas-${medida}.pdf`, { type: 'application/pdf' });
       galeriaSueltas = sueltas;
       if (incluirSueltas) {
         galeriaUrls.forEach((u) => URL.revokeObjectURL(u));
@@ -790,6 +813,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}`;
     galeriaModo.value = 'pdf';
     galeriaImagenes.innerHTML = '';
+    copiarMedidaAGaleria();
     galeria.showModal();
     await prepararGaleria(true);
   }
@@ -802,6 +826,48 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   galeriaModo.addEventListener('change', actualizarBotonesGaleria);
   galeriaSeparacion.addEventListener('change', () => void prepararGaleria(false));
+
+  // --- Medida de la etiqueta, dentro del mismo diálogo de impresión ---
+  // Es la MISMA medida del panel "Etiquetas" (se copia en ambos sentidos): se cambia justo al imprimir o reimprimir y los archivos
+  // (PDF, tira e imágenes) se vuelven a generar con el tamaño nuevo. Se recuerda para la próxima vez.
+  const galeriaFormato = $<HTMLSelectElement>('ig-galeria-formato');
+  const galeriaAncho = $<HTMLInputElement>('ig-galeria-ancho');
+  const galeriaAlto = $<HTMLInputElement>('ig-galeria-alto');
+
+  function mostrarMedidaGaleria() {
+    $('ig-galeria-personalizado').classList.toggle('hidden', galeriaFormato.value !== FORMATO_PERSONALIZADO_ID);
+    const f = buscarFormatoEtiqueta(galeriaFormato.value, { anchoMm: Number(galeriaAncho.value), altoMm: Number(galeriaAlto.value) });
+    $('ig-galeria-medida').textContent = f.hoja
+      ? `Hoja A4 con ${f.hoja.columnas * f.hoja.filas} etiquetas de ${f.anchoMm} × ${f.altoMm} mm.`
+      : `Cada página del PDF mide ${f.anchoMm} × ${f.altoMm} mm: en WePrint deja ese mismo tamaño de papel.`;
+  }
+
+  function copiarMedidaAGaleria() {
+    const f = formatoElegido();
+    galeriaFormato.value = selectFormato.value;
+    galeriaAncho.value = String(campoAncho.value || f.anchoMm);
+    galeriaAlto.value = String(campoAlto.value || f.altoMm);
+    mostrarMedidaGaleria();
+  }
+
+  galeriaFormato.addEventListener('change', () => {
+    selectFormato.value = galeriaFormato.value;
+    if (galeriaFormato.value === FORMATO_PERSONALIZADO_ID && !galeriaAncho.value) copiarMedidaAGaleria();
+    selectFormato.dispatchEvent(new Event('change')); // guarda, redibuja la vista previa y el resumen
+    mostrarMedidaGaleria();
+    void prepararGaleria(true);
+  });
+  for (const campo of [galeriaAncho, galeriaAlto]) {
+    campo.addEventListener('change', () => {
+      campoAncho.value = galeriaAncho.value;
+      campoAlto.value = galeriaAlto.value;
+      campoAncho.dispatchEvent(new Event('change')); // corrige a los límites y guarda
+      galeriaAncho.value = campoAncho.value;
+      galeriaAlto.value = campoAlto.value;
+      mostrarMedidaGaleria();
+      void prepararGaleria(true);
+    });
+  }
 
   // El menú "Compartir" exige que se abra con un toque del usuario: los archivos ya están listos antes de pulsar el botón
   $('ig-galeria-compartir').addEventListener('click', async () => {

@@ -43,6 +43,7 @@ export interface FormatoEtiqueta {
 export const FORMATOS_ETIQUETA: FormatoEtiqueta[] = [
   { id: 'rollo-50x30', nombre: 'Rollo de 50 × 30 mm (impresora térmica)', anchoMm: 50, altoMm: 30, barrasMm: 13, qrMm: 22, nombrePt: 7.5, numeroPt: 7 },
   { id: 'rollo-50x25', nombre: 'Rollo de 50 × 25 mm (impresora térmica)', anchoMm: 50, altoMm: 25, barrasMm: 11, qrMm: 19, nombrePt: 7, numeroPt: 6.5 },
+  { id: 'rollo-40x30', nombre: 'Rollo de 40 × 30 mm (impresora térmica)', anchoMm: 40, altoMm: 30, barrasMm: 12.9, qrMm: 20, nombrePt: 7.5, numeroPt: 7 },
   { id: 'rollo-40x25', nombre: 'Rollo de 40 × 25 mm (impresora térmica)', anchoMm: 40, altoMm: 25, barrasMm: 10, qrMm: 18, nombrePt: 6.5, numeroPt: 6 },
   { id: 'a4-3x8', nombre: 'Hoja A4 de 24 etiquetas (3 × 8, de 70 × 37 mm)', anchoMm: 70, altoMm: 37, barrasMm: 17, qrMm: 28, nombrePt: 9, numeroPt: 8, hoja: { columnas: 3, filas: 8 } },
 ];
