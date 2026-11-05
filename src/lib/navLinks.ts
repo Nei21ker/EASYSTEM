@@ -89,6 +89,12 @@ export const enlacesNav: EnlaceNav[] = [
     icono: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Zm-3.5-10 2.5 2.5 4.5-5',
     roles: ['administrador'],
   },
+  {
+    href: '/admin/monitoreo',
+    etiqueta: 'Tiempo real',
+    icono: 'M22 12h-4l-3 9L9 3l-3 9H2',
+    roles: ['administrador'],
+  },
 ];
 
 /**

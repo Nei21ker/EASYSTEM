@@ -12,6 +12,7 @@
     "astro": "astro",
     "backup": "node -e \"require('fs').mkdirSync('backups',{recursive:true})\" && wrangler d1 export easystem --remote --output backups/easystem.sql",
     "test": "vitest run",
+    "presencia:limpiar": "wrangler d1 execute easystem --remote --command \"DELETE FROM presencia WHERE last_seen_at < (strftime('%s','now') - 604800) * 1000\"",
     "test:watch": "vitest",
     "dev:cf": "astro build && wrangler dev",
     "db:local": "wrangler d1 migrations apply easystem --local",

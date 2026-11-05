@@ -8,6 +8,8 @@
 import { api, ErrorDeApi } from './api';
 import { modoServidor } from './modo';
 import { alCambiarDatos, iniciarTiempoReal } from './realtime';
+import { avisarSalida, iniciarLatidos, leerPresenciaLocal } from './presencia';
+import { calcularEstado, type EstadoPresencia, type ListaPresencia, type UsuarioPresencia } from '../utils/presencia';
 import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
 import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
 
@@ -249,6 +251,7 @@ function borrarCachesDeDatos() {
 }
 
 export async function cerrarSesion(): Promise<void> {
+  await avisarSalida(); // antes de cerrar: después ya no habría sesión con la que avisar
   invalidarCacheSesion();
   if (modoServidor) {
     localStorage.removeItem(LS_SESION_CACHE);
@@ -597,6 +600,7 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
 
   iniciarVigilanciaCuenta();
   iniciarTiempoReal();
+  iniciarLatidos();
   return sesion;
 }
 
@@ -676,6 +680,47 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
       last_force_logout_at: cierres[u.id] ?? null,
     };
   });
+}
+
+/**
+ * "Tiempo real": quién está conectado ahora (solo administrador). En modo demo se ven las pestañas del mismo navegador
+ * (la presencia vive en LocalStorage); con servidor, GET /api/admin/active-users.
+ */
+export async function listarUsuariosActivos(): Promise<ListaPresencia> {
+  await exigirAdministrador();
+  if (modoServidor) return api.get<ListaPresencia>('/api/admin/active-users');
+
+  const ahora = Date.now();
+  const usuarios = leerUsuariosLocales();
+  const locales = localesPorDefecto();
+  const lista: UsuarioPresencia[] = [];
+  for (const [id, p] of Object.entries(leerPresenciaLocal())) {
+    const u = usuarios.find((x) => x.id === id);
+    if (!u || ahora - p.last_seen_at > 24 * 3_600_000) continue;
+    const segundos = Math.max(0, Math.floor((ahora - p.last_seen_at) / 1000));
+    const sinLocal = u.rol === 'administrador' || u.rol === 'gerente' || u.rol === 'contador';
+    const localId = sinLocal ? p.local_id : u.local_id;
+    lista.push({
+      id,
+      nombre: u.nombre,
+      email: u.email,
+      rol: u.rol,
+      status: u.status ?? 'active',
+      local_id: localId,
+      local_nombre: localId ? (locales.find((l) => l.id === localId)?.nombre ?? null) : sinLocal ? 'Todos los locales' : null,
+      ip: 'este navegador (demo)',
+      dispositivo: 'Demo',
+      ruta: p.ruta,
+      ultimo_latido: new Date(p.last_seen_at).toISOString(),
+      segundos,
+      estado: calcularEstado(segundos, p.salio_en === null ? null : Math.max(0, Math.floor((ahora - p.salio_en) / 1000))),
+    });
+  }
+  const orden: Record<EstadoPresencia, number> = { en_linea: 0, inactivo: 1, desconectado: 2 };
+  lista.sort((a, b) => orden[a.estado] - orden[b.estado] || a.segundos - b.segundos);
+  const resumen: Record<EstadoPresencia, number> = { en_linea: 0, inactivo: 0, desconectado: 0 };
+  for (const u of lista) resumen[u.estado] += 1;
+  return { ahora: new Date(ahora).toISOString(), usuarios_activos: resumen.en_linea, resumen, usuarios: lista };
 }
 
 /** Cierra a la fuerza todas las sesiones de un usuario: el próximo chequeo (como máximo 1 minuto) lo saca al login. */

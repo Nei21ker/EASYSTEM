@@ -118,6 +118,9 @@ function casos(): Caso[] {
     { archivo: 'suscripciones/usuarios.ts', metodo: 'GET', url: '/api/suscripciones/usuarios', permitidos: ['administrador'] },
     { archivo: 'suscripciones/[localId]/index.ts', metodo: 'POST', url: `/api/suscripciones/${servicio}`, params: { localId: servicio }, cuerpo: { estado: 'SUSPENDED' }, permitidos: ['administrador'] },
     { archivo: 'suscripciones/[localId]/cerrar-sesiones.ts', metodo: 'POST', url: `/api/suscripciones/${servicio}/cerrar-sesiones`, params: { localId: servicio }, permitidos: ['administrador'] },
+    // Presencia ("Tiempo real"): todos mandan latidos; solo el administrador ve quién está conectado
+    { archivo: 'presence/heartbeat.ts', metodo: 'POST', url: '/api/presence/heartbeat', cuerpo: { ruta: '/' }, permitidos: TODOS },
+    { archivo: 'admin/active-users.ts', metodo: 'GET', url: '/api/admin/active-users', permitidos: ['administrador'] },
     // Nómina
     { archivo: 'nomina/empleados/index.ts', metodo: 'GET', url: '/api/nomina/empleados', permitidos: NOMINA },
     { archivo: 'nomina/empleados/index.ts', metodo: 'POST', url: '/api/nomina/empleados', cuerpo: { local_id: accesorios, nombre: 'Mat', apellido: 'Riz', cedula: 'V-7000001', cargo: 'Cajero', salario_base: 100 }, permitidos: NOMINA },

@@ -1,0 +1,238 @@
+---
+import DashboardLayout from '../../layouts/DashboardLayout.astro';
+---
+
+<DashboardLayout
+  titulo="Tiempo real"
+  subtitulo="Quién está usando el sistema ahora mismo"
+  tituloPestana="Tiempo real · EASYSTEM"
+  roles={['administrador']}
+>
+  <section aria-label="Resumen de conexiones" class="grid grid-cols-1 gap-4 sm:grid-cols-4">
+    <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:col-span-2 dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Usuarios activos ahora</p>
+      <p class="mt-1 flex items-baseline gap-3">
+        <span id="mo-activos" class="text-4xl font-bold tabular-nums text-slate-900 dark:text-white" aria-live="polite">–</span>
+        <span id="mo-actualizado" class="text-xs text-slate-400">Cargando…</span>
+      </p>
+      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+        Cada pestaña abierta avisa cada 30 s mientras se ve. Una pestaña en segundo plano pasa a <strong class="font-semibold">Inactivo</strong> y,
+        pasados 2 minutos sin avisar, a <strong class="font-semibold">Desconectado</strong>.
+      </p>
+    </div>
+    <button type="button" data-filtro="inactivo" class="rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-amber-300 dark:border-slate-800 dark:bg-slate-900">
+      <p class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <span class="h-2.5 w-2.5 rounded-full bg-amber-400" aria-hidden="true"></span> Inactivos
+      </p>
+      <p id="mo-n-inactivo" class="mt-1 text-3xl font-bold tabular-nums text-slate-900 dark:text-white">–</p>
+      <p class="mt-1 text-[11px] text-slate-400">45 s a 2 min sin avisar</p>
+    </button>
+    <button type="button" data-filtro="desconectado" class="rounded-xl border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-red-300 dark:border-slate-800 dark:bg-slate-900">
+      <p class="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <span class="h-2.5 w-2.5 rounded-full bg-red-500" aria-hidden="true"></span> Desconectados
+      </p>
+      <p id="mo-n-desconectado" class="mt-1 text-3xl font-bold tabular-nums text-slate-900 dark:text-white">–</p>
+      <p class="mt-1 text-[11px] text-slate-400">Vistos en las últimas 24 h</p>
+    </button>
+  </section>
+
+  <section aria-labelledby="mo-titulo" class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800">
+      <h2 id="mo-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Conexiones</h2>
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div id="mo-filtros" class="flex gap-1 text-xs" role="group" aria-label="Filtrar por estado">
+          <button type="button" data-filtro="" class="rounded-full border px-3 py-1.5 font-medium">Todos</button>
+          <button type="button" data-filtro="en_linea" class="rounded-full border px-3 py-1.5 font-medium">En línea</button>
+          <button type="button" data-filtro="inactivo" class="rounded-full border px-3 py-1.5 font-medium">Inactivo</button>
+          <button type="button" data-filtro="desconectado" class="rounded-full border px-3 py-1.5 font-medium">Desconectado</button>
+        </div>
+        <input
+          id="mo-buscar"
+          type="search"
+          placeholder="Buscar por nombre, correo, local o IP"
+          class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-base text-slate-900 sm:w-72 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+        />
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="tabla-tarjetas w-full text-left text-sm">
+        <thead>
+          <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <th class="px-5 py-3 font-medium">Estado</th>
+            <th class="px-5 py-3 font-medium">Usuario</th>
+            <th class="px-5 py-3 font-medium">Rol</th>
+            <th class="px-5 py-3 font-medium">Local / sede</th>
+            <th class="px-5 py-3 font-medium">Pantalla</th>
+            <th class="px-5 py-3 font-medium">Dispositivo · IP</th>
+            <th class="px-5 py-3 font-medium">Último latido</th>
+            <th class="px-5 py-3 font-medium"><span class="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody id="mo-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
+      </table>
+    </div>
+    <p id="mo-vacio" class="hidden px-5 py-8 text-center text-sm text-slate-500 dark:text-slate-400"></p>
+  </section>
+
+  <p id="mo-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+  <p id="mo-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+</DashboardLayout>
+
+<script>
+  import { cerrarSesionForzada, ETIQUETAS_ROL, listarUsuariosActivos, obtenerSesionActual, type Rol } from '../../lib/auth';
+  import { enlacesNav } from '../../lib/navLinks';
+  import { calcularEstado, textoHace, type EstadoPresencia, type ListaPresencia, type UsuarioPresencia } from '../../utils/presencia';
+  import { escaparHtml } from '../../utils/productosUI';
+  import { animarLista } from '../../utils/animaciones';
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const filas = $('mo-filas');
+  const vacio = $('mo-vacio');
+  const buscar = $<HTMLInputElement>('mo-buscar');
+  const error = $('mo-error');
+  const exito = $('mo-exito');
+
+  const ETIQUETA_ESTADO: Record<EstadoPresencia, string> = { en_linea: 'En línea', inactivo: 'Inactivo', desconectado: 'Desconectado' };
+  const PUNTO: Record<EstadoPresencia, string> = { en_linea: 'bg-emerald-500', inactivo: 'bg-amber-400', desconectado: 'bg-red-500' };
+  const TEXTO: Record<EstadoPresencia, string> = {
+    en_linea: 'text-emerald-700 dark:text-emerald-400',
+    inactivo: 'text-amber-700 dark:text-amber-400',
+    desconectado: 'text-red-700 dark:text-red-400',
+  };
+  const PANTALLAS = new Map<string, string>([...enlacesNav.map((e) => [e.href, e.etiqueta] as [string, string]), ['/login', 'Inicio de sesión'], ['/admin/monitoreo', 'Tiempo real']]);
+
+  let lista: ListaPresencia | null = null;
+  let recibidaEn = 0; // performance.now() al recibir la lista: los segundos se siguen contando en el navegador entre consultas
+  let filtro: '' | EstadoPresencia = '';
+  let miId = '';
+  let primeraCarga = true;
+
+  const pantalla = (ruta: string | null) => (ruta ? (PANTALLAS.get(ruta.replace(/\/$/, '') || '/') ?? ruta) : '—');
+
+  /** El estado ahora: lo que dijo el servidor, más viejo si pasó el tiempo desde la consulta (nunca más "vivo" que lo que dijo el servidor). */
+  function estadoVivo(u: UsuarioPresencia, pasados: number): EstadoPresencia {
+    if (u.estado === 'desconectado') return u.estado;
+    return calcularEstado(u.segundos + pasados);
+  }
+
+  function avisar(el: HTMLElement, texto: string) {
+    el.textContent = texto;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 6000);
+  }
+
+  function pintar() {
+    if (!lista) return;
+    const pasados = Math.floor((performance.now() - recibidaEn) / 1000);
+    const q = buscar.value.trim().toLowerCase();
+    const vivos = lista.usuarios.map((u) => ({ u, estado: estadoVivo(u, pasados), segundos: u.segundos + pasados }));
+
+    const cuenta: Record<EstadoPresencia, number> = { en_linea: 0, inactivo: 0, desconectado: 0 };
+    for (const v of vivos) cuenta[v.estado] += 1;
+    $('mo-activos').textContent = String(cuenta.en_linea);
+    $('mo-n-inactivo').textContent = String(cuenta.inactivo);
+    $('mo-n-desconectado').textContent = String(cuenta.desconectado);
+
+    for (const b of document.querySelectorAll<HTMLButtonElement>('#mo-filtros [data-filtro]')) {
+      const activo = b.dataset.filtro === filtro;
+      b.className = `rounded-full border px-3 py-1.5 font-medium transition ${
+        activo
+          ? 'border-brand-600 bg-brand-600 text-white'
+          : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+      }`;
+    }
+
+    const visibles = vivos.filter(
+      ({ u, estado }) =>
+        (!filtro || estado === filtro) &&
+        (!q || `${u.nombre} ${u.email} ${u.local_nombre ?? ''} ${u.ip ?? ''} ${u.dispositivo ?? ''}`.toLowerCase().includes(q))
+    );
+
+    filas.innerHTML = visibles
+      .map(({ u, estado, segundos }) => {
+        const yo = u.id === miId;
+        return `
+          <tr class="align-middle text-slate-700 dark:text-slate-300">
+            <td data-label="Estado" class="px-5 py-3">
+              <span class="inline-flex items-center gap-2 text-xs font-semibold ${TEXTO[estado]}">
+                <span class="h-2.5 w-2.5 rounded-full ${PUNTO[estado]}${estado === 'en_linea' ? ' animate-pulse' : ''}" aria-hidden="true"></span>${ETIQUETA_ESTADO[estado]}
+              </span>
+            </td>
+            <td class="px-5 py-3">
+              <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(u.nombre)}${yo ? ' <span class="text-xs font-normal text-slate-400">(tú)</span>' : ''}${u.status === 'inactive' ? ' <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800">Cuenta inactiva</span>' : ''}</p>
+              <p class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(u.email)}</p>
+            </td>
+            <td data-label="Rol" class="px-5 py-3">${escaparHtml(ETIQUETAS_ROL[u.rol as Rol] ?? u.rol)}</td>
+            <td data-label="Local / sede" class="px-5 py-3">${escaparHtml(u.local_nombre ?? '—')}</td>
+            <td data-label="Pantalla" class="px-5 py-3">${escaparHtml(pantalla(u.ruta))}</td>
+            <td data-label="Dispositivo · IP" class="px-5 py-3 text-xs">
+              <span class="block">${escaparHtml(u.dispositivo ?? '—')}</span>
+              <span class="block font-mono text-slate-500 dark:text-slate-400">${escaparHtml(u.ip ?? '—')}</span>
+            </td>
+            <td data-label="Último latido" class="px-5 py-3 text-xs text-slate-500 dark:text-slate-400" title="${escaparHtml(new Date(u.ultimo_latido).toLocaleString('es-VE'))}">${textoHace(segundos)}</td>
+            <td class="px-5 py-3 sm:text-right">
+              <button type="button" data-cerrar="${escaparHtml(u.id)}" class="whitespace-nowrap rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-500/30 dark:text-red-400 dark:hover:bg-red-500/10" ${yo ? 'disabled title="No puedes cerrar tu propia sesión desde aquí"' : ''}>
+                Cerrar sesión forzada
+              </button>
+            </td>
+          </tr>`;
+      })
+      .join('');
+
+    vacio.classList.toggle('hidden', visibles.length > 0);
+    vacio.textContent = lista.usuarios.length === 0 ? 'Todavía nadie ha avisado su presencia en las últimas 24 horas.' : 'Ninguna conexión coincide con el filtro.';
+    $('mo-actualizado').textContent = `Actualizado a las ${new Date().toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+  }
+
+  async function cargar() {
+    lista = await listarUsuariosActivos();
+    recibidaEn = performance.now();
+    pintar();
+    if (primeraCarga) animarLista(filas);
+    primeraCarga = false;
+  }
+
+  filas.addEventListener('click', async (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-cerrar]');
+    if (!boton || boton.disabled) return;
+    const usuario = lista?.usuarios.find((u) => u.id === boton.dataset.cerrar);
+    if (!usuario || !confirm(`¿Cerrar a la fuerza la sesión de ${usuario.nombre}? Saldrá al inicio de sesión en cuanto su pantalla lo verifique (máx. 1 minuto).`)) return;
+    boton.disabled = true;
+    try {
+      await cerrarSesionForzada(usuario.id);
+      avisar(exito, `Sesión de ${usuario.nombre} cerrada.`);
+      await cargar();
+    } catch (err) {
+      avisar(error, err instanceof Error ? err.message : 'No se pudo cerrar la sesión.');
+      boton.disabled = false;
+    }
+  });
+
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-filtro]')) {
+    b.addEventListener('click', () => {
+      const f = (b.dataset.filtro ?? '') as '' | EstadoPresencia;
+      filtro = f === filtro ? '' : f; // tocar el filtro activo lo quita
+      pintar();
+    });
+  }
+  buscar.addEventListener('input', pintar);
+
+  const consultar = () =>
+    cargar().catch((err) => avisar(error, err instanceof Error ? err.message : 'No se pudo cargar la lista de conexiones.'));
+
+  obtenerSesionActual().then((sesion) => {
+    miId = sesion?.id ?? '';
+    void consultar();
+    // Consulta cada 10 s mientras se ve la pantalla (no usa la tabla de cambios: los latidos no deben avisar a nadie)
+    setInterval(() => {
+      if (document.visibilityState === 'visible') void consultar();
+    }, 10_000);
+    // Entre consultas los segundos y los estados se siguen moviendo solos
+    setInterval(() => {
+      if (document.visibilityState === 'visible') pintar();
+    }, 3_000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void consultar();
+    });
+  });
+</script>

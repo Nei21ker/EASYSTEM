@@ -119,6 +119,17 @@ export const suscripcion_eventos = sqliteTable('suscripcion_eventos', {
   fecha: marca('fecha'),
 });
 
+// --- Presencia ("Tiempo real") -----------------------------------------------------------------------------------
+export const presencia = sqliteTable('presencia', {
+  user_id: text('user_id').primaryKey(),
+  last_seen_at: integer('last_seen_at').notNull(),
+  salio_en: integer('salio_en'),
+  ip: text('ip'),
+  dispositivo: text('dispositivo'),
+  local_id: text('local_id'),
+  ruta: text('ruta'),
+});
+
 // --- Catálogo -------------------------------------------------------------------------------------------------
 export const modelos_telefono = sqliteTable('modelos_telefono', {
   id: text('id').primaryKey(),
