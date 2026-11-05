@@ -59,6 +59,7 @@ import type {
   InventarioLocal,
   Local,
   MetodoPago,
+  ResultadoReseteoReportes,
   ResultadoReseteoVentas,
   ModeloTelefono,
   MovimientoInventario,
@@ -1880,6 +1881,35 @@ export async function resetearVentas(opciones: { simular?: boolean } = {}): Prom
   despues.ventas = [];
   despues.devoluciones = [];
   guardarDB(despues);
+  return resultado;
+}
+
+/**
+ * Resetear los reportes (solo el administrador): borra TODAS las ventas, devoluciones y movimientos de compra (ENTRADA) y venta
+ * (SALIDA), que es lo que alimenta los reportes. NO cambia el stock ni las piezas; las bajas y traslados se conservan. Con `simular`
+ * solo cuenta. Necesita conexión (modo servidor).
+ */
+export async function resetearReportes(opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoReportes> {
+  if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear los reportes.');
+  if (modoServidor) {
+    if (!obtenerEstadoConexion().online) throw new Error('Resetear los reportes necesita conexión a internet.');
+    return ventasDb.resetearReportes({ simular: opciones.simular });
+  }
+
+  // Modo demo (LocalStorage): mismas reglas que el servidor
+  const db = leerDB();
+  const cuentan = (m: { tipo: string }) => m.tipo === 'ENTRADA' || m.tipo === 'SALIDA';
+  const resultado: ResultadoReseteoReportes = {
+    ventas: (db.ventas ?? []).length,
+    devoluciones: (db.devoluciones ?? []).length,
+    movimientos: db.movimientos.filter(cuentan).length,
+    simulado: !!opciones.simular,
+  };
+  if (opciones.simular) return resultado;
+  db.ventas = [];
+  db.devoluciones = [];
+  db.movimientos = db.movimientos.filter((m) => !cuentan(m));
+  guardarDB(db);
   return resultado;
 }
 

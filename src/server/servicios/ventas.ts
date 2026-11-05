@@ -269,3 +269,45 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   ]);
   return resultado;
 }
+
+// --- Resetear los reportes (solo el administrador) --------------------------------------------------------------
+
+export interface ResultadoReseteoReportes {
+  ventas: number;
+  devoluciones: number;
+  /** Movimientos de compra (ENTRADA) y venta (SALIDA) que alimentan los ingresos, costos y rankings */
+  movimientos: number;
+  simulado: boolean;
+}
+
+/**
+ * Deja los reportes en cero: borra TODAS las ventas, las devoluciones y los movimientos ENTRADA/SALIDA (los únicos que los reportes
+ * cuentan). NO toca el stock ni las piezas: lo que está en los estantes sigue igual y lo vendido sigue vendido (para devolver al stock
+ * las piezas de ventas de prueba está "Resetear ventas"). El historial de bajas y traslados se conserva. Con `simular` solo cuenta.
+ * Solo el administrador. Un solo lote atómico: o se borra todo o no se borra nada.
+ */
+export async function resetearReportes(env: Entorno, sesion: Sesion, opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoReportes> {
+  if (!esAdministrador(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador puede resetear los reportes.', 'sin_permiso');
+  const db = env.DB;
+  const cuenta = async (sql: string) => (await db.prepare(sql).first<{ n: number }>())!.n;
+  const resultado: ResultadoReseteoReportes = {
+    ventas: await cuenta('SELECT count(*) AS n FROM ventas'),
+    devoluciones: await cuenta('SELECT count(*) AS n FROM devoluciones'),
+    movimientos: await cuenta("SELECT count(*) AS n FROM movimientos_inventario WHERE tipo IN ('ENTRADA','SALIDA')"),
+    simulado: !!opciones.simular,
+  };
+  if (opciones.simular || (resultado.ventas === 0 && resultado.devoluciones === 0 && resultado.movimientos === 0)) return resultado;
+
+  const locales = (
+    await db
+      .prepare('SELECT local_id FROM ventas UNION SELECT local_id FROM devoluciones UNION SELECT local_id FROM movimientos_inventario WHERE tipo IN (\'ENTRADA\',\'SALIDA\')')
+      .all<{ local_id: string }>()
+  ).results.map((f) => f.local_id);
+  await db.batch([
+    db.prepare('DELETE FROM devoluciones'), // primero: apuntan a las ventas
+    db.prepare('DELETE FROM ventas'),
+    db.prepare("DELETE FROM movimientos_inventario WHERE tipo IN ('ENTRADA','SALIDA')"),
+    ...locales.flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario'], localId)),
+  ]);
+  return resultado;
+}

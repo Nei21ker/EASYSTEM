@@ -90,6 +90,7 @@ function casos(): Caso[] {
     { archivo: 'ventas/index.ts', metodo: 'GET', url: '/api/ventas', permitidos: NEGOCIO },
     { archivo: 'ventas/index.ts', metodo: 'POST', url: '/api/ventas', cuerpo: venta, permitidos: NEGOCIO },
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
+    { archivo: 'reportes/resetear.ts', metodo: 'POST', url: '/api/reportes/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
     { archivo: 'ordenes/index.ts', metodo: 'POST', url: '/api/ordenes', cuerpo: orden, permitidos: NEGOCIO },
     { archivo: 'devoluciones/index.ts', metodo: 'GET', url: '/api/devoluciones', permitidos: NEGOCIO },
     { archivo: 'devoluciones/index.ts', metodo: 'POST', url: '/api/devoluciones', cuerpo: devolucion, permitidos: GERENCIA },

@@ -30,6 +30,10 @@ import CuadreCaja from '../components/reportes/CuadreCaja.astro';
         <button id="rp-imprimir" type="button" class="rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700">
           Generar reporte (PDF / Imprimir)
         </button>
+        <!-- Solo el administrador (se muestra desde el script) -->
+        <button id="rp-resetear" type="button" class="hidden rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10">
+          Resetear reportes
+        </button>
       </div>
     </div>
 
@@ -101,11 +105,34 @@ import CuadreCaja from '../components/reportes/CuadreCaja.astro';
   <div id="rp-imprimible" class="hidden print:block"></div>
 
   <CuadreCaja />
+
+  <dialog id="rp-reset-dialogo" class="m-auto w-[min(94vw,30rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div class="space-y-4 px-5 py-5 text-sm">
+      <h2 class="text-base font-semibold text-red-600 dark:text-red-400">Resetear los reportes</h2>
+      <p id="rp-reset-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-slate-700 dark:bg-slate-800 dark:text-slate-200">Calculando…</p>
+      <ul class="list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
+        <li>Se borran <strong>todas</strong> las ventas, devoluciones y movimientos de compra y venta de <strong>todos los locales y fechas</strong>: los reportes, el historial de ventas y Movimientos quedan en cero.</li>
+        <li>El <strong>stock no cambia</strong>: lo que hay en los estantes sigue igual y lo vendido sigue vendido. Para devolver al stock las piezas de ventas de prueba usa "Resetear ventas" en Historial.</li>
+        <li>Se conserva el historial de bajas y traslados, y los cuadres de caja ya guardados.</li>
+        <li><strong>No se puede deshacer.</strong> Haz una copia antes si tienes dudas.</li>
+      </ul>
+      <div>
+        <label for="rp-reset-confirmar" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Para confirmar, escribe <strong>RESETEAR</strong></label>
+        <input id="rp-reset-confirmar" type="text" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-red-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+      </div>
+      <p id="rp-reset-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300"></p>
+      <div class="flex justify-end gap-2">
+        <button id="rp-reset-cancelar" type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Cancelar</button>
+        <button id="rp-reset-ejecutar" type="button" disabled class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">Resetear reportes</button>
+      </div>
+    </div>
+  </dialog>
 </DashboardLayout>
 
 <script>
   import Chart from 'chart.js/auto';
   import * as inventoryService from '../lib/inventoryService';
+  import { obtenerSesionActual } from '../lib/auth';
   import { formatearBolivares, formatearMoneda } from '../utils/format';
 import { alCambiarDatos } from '../lib/realtime';
   import { esMetodoBolivares } from '../utils/pagos';
@@ -425,6 +452,66 @@ import { alCambiarDatos } from '../lib/realtime';
   inputHasta.addEventListener('change', () => rangoActual === 'personalizado' && actualizarReporte());
   document.getElementById('rp-imprimir')?.addEventListener('click', () => window.print());
   document.getElementById('rp-cuadre')?.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-cuadre')));
+
+  // --- Resetear los reportes (solo el administrador) ---
+  const dialogoReset = document.getElementById('rp-reset-dialogo') as HTMLDialogElement;
+  const confirmarReset = document.getElementById('rp-reset-confirmar') as HTMLInputElement;
+  const ejecutarReset = document.getElementById('rp-reset-ejecutar') as HTMLButtonElement;
+  const resumenReset = document.getElementById('rp-reset-resumen')!;
+  const errorReset = document.getElementById('rp-reset-error')!;
+  const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+  const textoBorrado = (r: { ventas: number; devoluciones: number; movimientos: number }) =>
+    `${plural(r.ventas, 'venta', 'ventas')}, ${plural(r.devoluciones, 'devolución', 'devoluciones')} y ${plural(r.movimientos, 'movimiento de compra o venta', 'movimientos de compra o venta')}`;
+
+  obtenerSesionActual().then((sesion) => {
+    if (sesion?.rol === 'administrador') document.getElementById('rp-resetear')?.classList.remove('hidden');
+  });
+  document.getElementById('rp-resetear')?.addEventListener('click', async () => {
+    confirmarReset.value = '';
+    ejecutarReset.disabled = true;
+    errorReset.classList.add('hidden');
+    resumenReset.textContent = 'Calculando…';
+    dialogoReset.showModal();
+    try {
+      const r = await inventoryService.resetearReportes({ simular: true });
+      resumenReset.textContent =
+        r.ventas === 0 && r.devoluciones === 0 && r.movimientos === 0 ? 'No hay datos de reportes que borrar.' : `Se borrarán ${textoBorrado(r)}.`;
+    } catch (err) {
+      resumenReset.textContent = '';
+      errorReset.textContent = err instanceof Error ? err.message : 'No se pudo calcular el reseteo.';
+      errorReset.classList.remove('hidden');
+    }
+  });
+  confirmarReset.addEventListener('input', () => {
+    ejecutarReset.disabled = confirmarReset.value.trim().toUpperCase() !== 'RESETEAR';
+  });
+  document.getElementById('rp-reset-cancelar')?.addEventListener('click', () => dialogoReset.close());
+  ejecutarReset.addEventListener('click', async () => {
+    if (confirmarReset.value.trim().toUpperCase() !== 'RESETEAR') return;
+    ejecutarReset.disabled = true;
+    ejecutarReset.textContent = 'Reseteando…';
+    errorReset.classList.add('hidden');
+    try {
+      const r = await inventoryService.resetearReportes();
+      dialogoReset.close();
+      await cargarReporte();
+      const aviso = document.getElementById('rp-metodos-error')!; // mismo aviso que usa el reporte para sus mensajes
+      aviso.textContent = `Reportes en cero: se borraron ${textoBorrado(r)}. El stock no cambió.`;
+      aviso.classList.remove('hidden', 'text-red-600', 'dark:text-red-400');
+      aviso.classList.add('text-emerald-600', 'dark:text-emerald-400');
+      setTimeout(() => {
+        aviso.classList.add('hidden');
+        aviso.classList.remove('text-emerald-600', 'dark:text-emerald-400');
+        aviso.classList.add('text-red-600', 'dark:text-red-400');
+      }, 10000);
+    } catch (err) {
+      errorReset.textContent = `${err instanceof Error ? err.message : 'No se pudo resetear.'} Puedes volver a intentarlo.`;
+      errorReset.classList.remove('hidden');
+      ejecutarReset.disabled = false;
+    } finally {
+      ejecutarReset.textContent = 'Resetear reportes';
+    }
+  });
 
   $tema.subscribe(() => repintarCharts());
 

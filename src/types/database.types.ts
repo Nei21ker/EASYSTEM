@@ -447,6 +447,14 @@ export interface CuadreCaja {
   updated_at: string;
 }
 
+/** Lo que hizo (o haría, en una simulación) el reseteo de reportes: ventas, devoluciones y movimientos de compra/venta que se borran. */
+export interface ResultadoReseteoReportes {
+  ventas: number;
+  devoluciones: number;
+  movimientos: number;
+  simulado: boolean;
+}
+
 /** Lo que hizo (o haría, en una simulación) el reseteo de ventas: cuántas se borran y cuántas piezas vuelven al stock. */
 export interface ResultadoReseteoVentas {
   ventas: number;
