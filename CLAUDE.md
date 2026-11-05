@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-EASYSTEM is an inventory/POS/service-orders/payroll/cash-reconciliation system for **Edward Accesorios** (4 locales). Astro (static site) + Tailwind v4 frontend; backend on **Cloudflare** (Worker + D1 + R2 + Better-Auth). It also runs with **zero configuration** in a LocalStorage demo mode when `PUBLIC_USAR_API` is not "true". Branch `cloudflare` holds the migration away from Vercel + Supabase (the old system stays on `main` until cutover; `supabase/` is an archive). The README is in Spanish.
+EASYSTEM is an inventory/POS/service-orders/payroll/cash-reconciliation system for **Edward Accesorios** (4 locales). Astro (static site) + Tailwind v4 frontend; backend on **Cloudflare** (Worker + D1 + R2 + Better-Auth). It also runs with **zero configuration** in a LocalStorage demo mode when `PUBLIC_USAR_API` is not "true". The migration away from Vercel + Supabase is DONE: `cloudflare` was merged into `main` and the `supabase/` folder was removed (it stays in git history before the merge commit `cb78c4d`). The README is in Spanish.
 
 ## Backend actual (Cloudflare) — lee esto primero
 
-Todo lo que dice más abajo sobre Supabase, RLS, funciones RPC o migraciones `00NN` describe el sistema anterior: **las reglas de negocio siguen vigentes, pero su implementación ahora es esta**:
+Todo lo que dice más abajo sobre Supabase (ya eliminado del repo; solo queda como referencia histórica de las reglas), RLS, funciones RPC o migraciones `00NN` describe el sistema anterior: **las reglas de negocio siguen vigentes, pero su implementación ahora es esta**:
 
 - **Datos**: D1 (SQLite). Esquema y triggers de seguridad en `migrations/0001_d1_schema.sql`; semilla (4 locales con ids fijos `…0001` a `…0004`, catálogo de modelos de teléfono) en `0002_seed.sql` (generada con `scripts/generar-seed.mjs`). No hay productos de ejemplo. Archivos en R2: `FOTOS_PUBLICAS` (se sirven sin sesión por `/api/archivos/publico/*`) y `FOTOS_PRIVADAS` (comprobantes de nómina y fotos de cuadre: solo con sesión y los mismos permisos que los datos).
 - **API**: `src/pages/api/**`. Cada archivo lleva `export const prerender = false` y se construye con `conSesion`, salvo `salud`, `auth/*`, `archivos/publico/*` y `cuenta/estado` (`tests/server/rutas-protegidas.test.ts` lo exige). Servicios en `src/server/servicios/`, lecturas en `src/server/repos/`.

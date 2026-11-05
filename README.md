@@ -53,7 +53,6 @@ src/server/            authz, servicios (ventas, movimientos, nómina…), repos
 src/lib/               Cliente: api.ts, auth.ts, inventoryService.ts (modo servidor o demo), db/* (llamadas a la API)
 scripts/               crear-admin, cargar-controles, generar-seed
 tests/                 server/ (workerd + D1 real), cliente/, scripts/
-supabase/              ARCHIVO del sistema anterior (Supabase); no se usa
 docs/superpowers/      Diseño, plan y recorrido manual de la migración
 ```
 
