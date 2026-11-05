@@ -9,6 +9,9 @@ import tailwindcss from '@tailwindcss/vite';
 // https://astro.build/config
 export default defineConfig({
   output: 'static',
+  // Páginas como ventas.html (no ventas/index.html): así /ventas se sirve directo. Con carpetas, Cloudflare respondía
+  // 307 hacia /ventas/ en CADA navegación del menú (un viaje de ida y vuelta de más en una red lenta).
+  build: { format: 'file' },
   // No usamos sesiones de Astro (la sesión es de Better-Auth): evita que el adaptador agregue un KV innecesario
   session: { driver: 'memory' },
   adapter: cloudflare({ imageService: 'passthrough' }),

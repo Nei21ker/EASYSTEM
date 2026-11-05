@@ -141,3 +141,46 @@ describe('jerarquía de roles al crear usuarios', () => {
     for (const rol of ['encargado', 'vendedor', 'tecnico', 'contador'] as const) expect(rolesAsignables(rol)).toEqual([]);
   });
 });
+
+describe('al entrar a una página se consulta el estado de la cuenta UNA sola vez', () => {
+  it('la respuesta que trae la sesión sirve también para el estado: no hay una segunda petición seguida', async () => {
+    const pedidas: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      pedidas.push(url);
+      return json({ acceso: true, motivo: 'ok', local_nombre: 'Local Accesorios', usuario });
+    }));
+    const { obtenerSesionActual, estadoDeEntrada } = await cargarAuth(true);
+    await obtenerSesionActual();
+    expect(await estadoDeEntrada()).toMatchObject({ acceso: true, motivo: 'ok', local_nombre: 'Local Accesorios' });
+    expect(pedidas).toEqual(['/api/cuenta/estado']);
+  });
+
+  it('la respuesta se usa una vez: la siguiente revisión (cada minuto) sí consulta al servidor', async () => {
+    const pedidas: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      pedidas.push(url);
+      return json({ acceso: true, motivo: 'ok', usuario });
+    }));
+    const { obtenerSesionActual, estadoDeEntrada, obtenerEstadoCuenta } = await cargarAuth(true);
+    await obtenerSesionActual();
+    await estadoDeEntrada();
+    await obtenerEstadoCuenta();
+    expect(pedidas.length).toBe(2);
+  });
+
+  it('un estado que bloquea (local suspendido) también se respeta sin pedirlo otra vez', async () => {
+    const fetchSimulado = vi.fn(async () => json({ acceso: false, motivo: 'local_suspendido', usuario }));
+    vi.stubGlobal('fetch', fetchSimulado);
+    const { obtenerSesionActual, estadoDeEntrada } = await cargarAuth(true);
+    await obtenerSesionActual();
+    expect(await estadoDeEntrada()).toMatchObject({ acceso: false, motivo: 'local_suspendido' });
+    expect(fetchSimulado).toHaveBeenCalledTimes(1);
+  });
+
+  it('sin respuesta guardada (modo demo, o sesión de otra carga) cae a la consulta normal', async () => {
+    const { obtenerSesionActual, estadoDeEntrada } = await cargarAuth(false);
+    localStorage.setItem('easystem:sesion', JSON.stringify({ id: 'u1', email: 'a@x.com', nombre: 'A', rol: 'administrador', local_id: null }));
+    await obtenerSesionActual();
+    await expect(estadoDeEntrada()).resolves.toBeDefined();
+  });
+});

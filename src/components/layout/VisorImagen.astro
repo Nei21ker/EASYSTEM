@@ -23,7 +23,8 @@
   const nombre = document.getElementById('visor-imagen-nombre') as HTMLElement;
 
   function abrir(origen: HTMLImageElement) {
-    foto.src = origen.currentSrc || origen.src;
+    // Las listas muestran la miniatura (data-grande = la foto completa): al ampliar se ve la completa
+    foto.src = origen.dataset.grande || origen.currentSrc || origen.src;
     foto.alt = origen.alt;
     nombre.textContent = origen.alt;
     if (!visor.open) visor.showModal();

@@ -300,7 +300,7 @@ export async function fijarMinimosLote(
 // --- Modelos de teléfono ------------------------------------------------------------------------------------------------
 export async function listarModelos(env: Entorno, sesion: Sesion): Promise<ModeloTelefono[]> {
   await alcanceDe(env, sesion);
-  const filas = await env.DB.prepare('SELECT id, marca, modelo, created_at FROM modelos_telefono ORDER BY marca, modelo').all<ModeloTelefono>();
+  const filas = await env.DB.prepare('SELECT id, marca, modelo FROM modelos_telefono ORDER BY marca, modelo').all<ModeloTelefono>();
   return filas.results;
 }
 

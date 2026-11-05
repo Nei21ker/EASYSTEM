@@ -11,7 +11,10 @@ const BYTES_MAXIMOS_ORIGINAL = 15 * 1024 * 1024;
  * Reduce una imagen a JPEG (por defecto de máx. 720 px por lado, suficiente para una miniatura). Para capturas de
  * pantalla con texto se pide `ladoMaximo: 1280`. Lanza un Error con mensaje para el usuario.
  */
-export async function reducirImagen(archivo: File, opciones: { ladoMaximo?: number } = {}): Promise<Blob> {
+export async function reducirImagen(
+  archivo: File,
+  opciones: { ladoMaximo?: number; /** WebP pesa ~30 % menos que JPEG; si el navegador no lo sabe crear, sale JPEG */ preferirWebp?: boolean; calidad?: number } = {}
+): Promise<Blob> {
   const ladoMaximo = opciones.ladoMaximo ?? LADO_MAXIMO;
   if (!TIPOS_PERMITIDOS.includes(archivo.type)) {
     throw new Error('Formato no admitido. Usa una foto JPG, PNG o WebP.');
@@ -40,9 +43,31 @@ export async function reducirImagen(archivo: File, opciones: { ladoMaximo?: numb
   ctx.drawImage(bitmap, 0, 0, ancho, alto);
   bitmap.close();
 
-  const blob = await new Promise<Blob | null>((resolve) => lienzo.toBlob(resolve, 'image/jpeg', CALIDAD));
+  const calidad = opciones.calidad ?? CALIDAD;
+  let blob: Blob | null = null;
+  if (opciones.preferirWebp) {
+    blob = await new Promise<Blob | null>((resolve) => lienzo.toBlob(resolve, 'image/webp', calidad));
+    if (blob && blob.type !== 'image/webp') blob = null; // el navegador no sabe crear WebP y devolvió otro formato
+  }
+  blob ??= await new Promise<Blob | null>((resolve) => lienzo.toBlob(resolve, 'image/jpeg', calidad));
   if (!blob) throw new Error('No se pudo comprimir la imagen.');
   return blob;
+}
+
+/** Lado mayor de la miniatura de las listas (se muestra a 40–48 px; con margen para pantallas de alta densidad). */
+export const LADO_MINIATURA = 192;
+
+/** La miniatura de una foto ya reducida: unos 190 px y calidad menor, del MISMO tipo (el servidor lo exige). Pesa unos pocos KB. */
+export function crearMiniatura(foto: Blob): Promise<Blob> {
+  return reducirImagen(new File([foto], 'foto', { type: foto.type }), { ladoMaximo: LADO_MINIATURA, calidad: 0.7, preferirWebp: foto.type === 'image/webp' });
+}
+
+const RUTA_FOTO_SERVIDOR = /^(\/api\/archivos\/publico\/productos\/[A-Za-z0-9-]{1,64}\/\d{10,16})(\.(?:jpg|png|webp))$/;
+
+/** La dirección de la miniatura de una foto subida al servidor; null si no es una (data:, otro sitio, ilustración o ya una miniatura). */
+export function urlMiniatura(url: string | null | undefined): string | null {
+  const partes = url ? RUTA_FOTO_SERVIDOR.exec(url) : null;
+  return partes ? `${partes[1]}-m${partes[2]}` : null;
 }
 
 export function blobADataUrl(blob: Blob): Promise<string> {
@@ -70,7 +95,11 @@ export function htmlMiniatura(url: string | null | undefined, alt: string, clase
   const base = `${clases} shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-slate-700 dark:bg-slate-800`;
   if (url && urlSegura(url)) {
     const seguraAlt = alt.replace(/"/g, '&quot;').replace(/</g, '&lt;');
-    return `<img src="${url.replace(/"/g, '&quot;')}" alt="${seguraAlt}" loading="lazy" decoding="async" class="${base} cursor-zoom-in object-cover" data-ampliable />`;
+    const original = url.replace(/"/g, '&quot;');
+    const miniatura = urlMiniatura(url);
+    // Las listas piden la miniatura (unos KB); si no existe (foto anterior a las miniaturas) caen a la foto grande, y al ampliar se ve la grande
+    const adicional = miniatura ? ` data-grande="${original}" onerror="this.onerror=null;this.src='${original}'"` : '';
+    return `<img src="${miniatura ?? original}" alt="${seguraAlt}" width="48" height="48" loading="lazy" decoding="async" class="${base} cursor-zoom-in object-cover" data-ampliable${adicional} />`;
   }
   return `<span class="${base} flex items-center justify-center text-slate-400 dark:text-slate-500" aria-hidden="true">${ICONO_CAJA}</span>`;
 }

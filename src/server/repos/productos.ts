@@ -12,7 +12,7 @@ async function ensamblar(env: Entorno, productos: Producto[], alcance: Alcance):
   const { sql, valores } = condicionAlcance(alcance, 'local_id');
   const [compatibles, inventario] = await Promise.all([
     env.DB
-      .prepare('SELECT c.producto_id, m.id, m.marca, m.modelo, m.created_at FROM compatibilidades c JOIN modelos_telefono m ON m.id = c.modelo_id')
+      .prepare('SELECT c.producto_id, m.id, m.marca, m.modelo FROM compatibilidades c JOIN modelos_telefono m ON m.id = c.modelo_id')
       .all<ModeloTelefono & { producto_id: string }>(),
     env.DB
       .prepare(`SELECT local_id, producto_id, stock_actual, stock_minimo FROM inventario_local WHERE ${sql}`)

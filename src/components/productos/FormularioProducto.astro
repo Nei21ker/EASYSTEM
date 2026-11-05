@@ -182,7 +182,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!archivo) return;
     error.classList.add('hidden');
     try {
-      fotoNueva = await reducirImagen(archivo);
+      fotoNueva = await reducirImagen(archivo, { preferirWebp: true });
       quitarFoto = false;
       await pintarFoto();
     } catch (err) {

@@ -62,6 +62,12 @@ const { titulo, subtitulo, roles, tituloPestana } = Astro.props;
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';
 
+      // Service worker (public/sw.js): archivos estáticos desde la caché y páginas con copia para abrir sin conexión.
+      // Solo en producción: en desarrollo (HMR) estorbaría.
+      if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+        window.addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      }
+
       const shell = document.getElementById('app-shell') as HTMLDivElement;
       const roles = (shell.dataset.roles ? shell.dataset.roles.split(',') : undefined) as Rol[] | undefined;
 

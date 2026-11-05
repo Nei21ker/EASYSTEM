@@ -1,0 +1,14 @@
+# Archivos sin hash en el nombre (no cambian casi nunca): una semana en el navegador, sin volver a preguntar en cada pantalla.
+/img/*
+  Cache-Control: public, max-age=604800
+/logo.png
+  Cache-Control: public, max-age=604800
+/favicon.ico
+  Cache-Control: public, max-age=604800
+/favicon-32.png
+  Cache-Control: public, max-age=604800
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800
+# El service worker se revisa siempre (así una versión nueva se activa al desplegar)
+/sw.js
+  Cache-Control: no-cache

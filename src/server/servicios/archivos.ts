@@ -9,8 +9,11 @@ import { ErrorApi } from '../errores';
 
 const MIME_PERMITIDOS = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_FOTO_PRODUCTO = 2 * 1024 * 1024;
+const MAX_MINIATURA = 100 * 1024;
 const MAX_ARCHIVO_PRIVADO = 5 * 1024 * 1024;
-const CLAVE_PRODUCTO = /^productos\/[A-Za-z0-9-]{1,64}\/\d{10,16}\.(jpg|png|webp)$/;
+// La miniatura de una foto lleva el mismo nombre con -m antes de la extensión (1730000000000-m.webp)
+const CLAVE_PRODUCTO = /^productos\/[A-Za-z0-9-]{1,64}\/\d{10,16}(-m)?\.(jpg|png|webp)$/;
+const CLAVE_FOTO = /^productos\/([A-Za-z0-9-]{1,64})\/(\d{10,16})\.(jpg|png|webp)$/;
 const RUTA_CUADRE = /^cuadres-caja\/([0-9a-f-]{36})\/(\d{4}-\d{2}-\d{2})\/[A-Z_]{3,16}-\d{1,16}-\d{1,6}\.(jpg|jpeg|png|webp)$/i;
 const RUTA_COMPROBANTE = /^comprobantes-nomina\/([0-9a-f-]{36})\/[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$/i;
 
@@ -48,20 +51,40 @@ export async function subirFotoProducto(env: Entorno, sesion: Sesion, productoId
   return `${env.URL_FOTOS_PUBLICAS}/${clave}`;
 }
 
+/**
+ * Sube la MINIATURA (unos 190 px, de unos pocos KB) de una foto ya subida, para que las listas no descarguen la foto grande en
+ * cada fila. Va con el mismo nombre más -m y la misma extensión. Devuelve su URL.
+ */
+export async function subirMiniaturaProducto(env: Entorno, sesion: Sesion, productoId: string, urlFoto: string, bytes: ArrayBuffer, tipoMime: string): Promise<string> {
+  await exigirGestionCatalogo(env, sesion);
+  validarImagen(bytes, tipoMime, MAX_MINIATURA);
+  const prefijo = `${env.URL_FOTOS_PUBLICAS}/`;
+  const clave = urlFoto.startsWith(prefijo) ? urlFoto.slice(prefijo.length) : '';
+  const partes = CLAVE_FOTO.exec(clave);
+  if (!partes || partes[1] !== productoId) throw new ErrorApi(400, 'La foto no corresponde a este producto.', 'datos_invalidos');
+  if (extensionDe(tipoMime) !== partes[3]) throw new ErrorApi(400, 'La miniatura debe ser del mismo tipo que la foto.', 'datos_invalidos');
+  if (!(await env.FOTOS_PUBLICAS.head(clave))) throw new ErrorApi(400, 'La foto no corresponde a este producto: ya no existe.', 'datos_invalidos');
+
+  const claveMiniatura = `productos/${productoId}/${partes[2]}-m.${partes[3]}`;
+  await env.FOTOS_PUBLICAS.put(claveMiniatura, bytes, { httpMetadata: { contentType: tipoMime } });
+  return `${prefijo}${claveMiniatura}`;
+}
+
 /** Borra el archivo al que apunta una URL de foto de producto (si es de nuestro almacenamiento; si no, no hace nada). */
 export async function eliminarFotoProducto(env: Entorno, sesion: Sesion, url: string): Promise<void> {
   await exigirGestionCatalogo(env, sesion);
   const prefijo = `${env.URL_FOTOS_PUBLICAS}/`;
   if (!url.startsWith(prefijo)) return;
   const clave = decodeURIComponent(url.slice(prefijo.length).split('?')[0]);
-  if (CLAVE_PRODUCTO.test(clave)) await env.FOTOS_PUBLICAS.delete(clave);
+  if (CLAVE_PRODUCTO.test(clave)) await env.FOTOS_PUBLICAS.delete([clave, clave.replace(/(-m)?(\.[a-z]+)$/, '-m$2')]); // la foto y su miniatura
 }
 
 /** Lectura sin sesión: SOLO fotos de producto. Cualquier otra clave responde 404. */
 export async function leerArchivoPublico(env: Entorno, clave: string): Promise<Response> {
   if (!CLAVE_PRODUCTO.test(clave)) return new Response('No encontrado', { status: 404 });
   const objeto = await env.FOTOS_PUBLICAS.get(clave);
-  if (!objeto) return new Response('No encontrado', { status: 404 });
+  // Las fotos anteriores a las miniaturas no la tienen: el cliente cae a la foto grande, y este 404 se recuerda una hora
+  if (!objeto) return new Response('No encontrado', { status: 404, headers: { 'cache-control': 'public, max-age=3600' } });
   return new Response(objeto.body, {
     headers: {
       'content-type': objeto.httpMetadata?.contentType ?? 'image/jpeg',

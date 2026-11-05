@@ -186,9 +186,13 @@ function guardarUsuariosLocales(usuarios: UsuarioLocal[]) {
 // llaman a obtenerSesionActual() de forma independiente; se memoiza dentro de
 // la misma carga de página para no repetir la consulta al servidor/localStorage.
 let sesionEnCache: Promise<SesionUsuario | null> | null = null;
+// El mismo /api/cuenta/estado que trae la sesión trae también el estado de la cuenta: se guarda para que protegerPagina no lo
+// pida otra vez justo después (una petición menos antes de que la página se vea). Se usa una sola vez.
+let estadoDeLaCarga: EstadoCuenta | null = null;
 
 function invalidarCacheSesion() {
   sesionEnCache = null;
+  estadoDeLaCarga = null;
 }
 
 /** Traduce los errores de Better-Auth (por código) a algo accionable para el usuario. */
@@ -272,11 +276,13 @@ interface RespuestaEstado extends EstadoCuenta {
 async function cargarSesionActual(): Promise<SesionUsuario | null> {
   if (modoServidor) {
     try {
-      const estado = await api.get<RespuestaEstado>('/api/cuenta/estado');
+      const { usuario, ...estadoCuenta } = await api.get<RespuestaEstado>('/api/cuenta/estado');
+      const estado = { usuario };
       if (!estado.usuario) {
         localStorage.removeItem(LS_SESION_CACHE);
         return null;
       }
+      estadoDeLaCarga = estadoCuenta;
       const sesion = sesionDesdePerfil(estado.usuario.id, estado.usuario);
       localStorage.setItem(LS_SESION_CACHE, JSON.stringify(sesion));
       return sesion;
@@ -462,6 +468,17 @@ export function leerSuscripcionesLocales(): SuscripcionesLS {
   return leerJsonLS<SuscripcionesLS>(LS_SUSCRIPCIONES, {});
 }
 
+/**
+ * Estado de la cuenta al ENTRAR a una página: reutiliza la respuesta que ya trajo la sesión (una sola vez) y, si no la hay (modo
+ * demo, o ya se usó), consulta como obtenerEstadoCuenta.
+ */
+export async function estadoDeEntrada(): Promise<EstadoCuenta> {
+  await obtenerSesionActual();
+  const guardado = estadoDeLaCarga;
+  estadoDeLaCarga = null;
+  return guardado ?? obtenerEstadoCuenta();
+}
+
 /** Estado de la cuenta del usuario con sesión: sin consultar caché (se llama al entrar a cada página y cada minuto). */
 export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
   const sesion = await obtenerSesionActual();
@@ -560,7 +577,7 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
     throw new Error('EASYSTEM_REDIRECT');
   }
 
-  const estado = await obtenerEstadoCuenta();
+  const estado = await estadoDeEntrada();
   if (!estado.acceso) {
     await redirigirPorBloqueo(estado.motivo);
     throw new Error('EASYSTEM_REDIRECT');

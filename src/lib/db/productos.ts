@@ -41,7 +41,12 @@ export async function eliminarProducto(id: string) {
 
 /** Sube la foto (R2) y devuelve su URL; el servidor la sirve sin sesión para poder mostrarla en cualquier pantalla. */
 export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
-  return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, 'image/jpeg');
+  return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, imagen.type || 'image/jpeg');
+}
+
+/** Sube la miniatura de una foto ya subida (la que se muestra en las listas) y devuelve su URL. */
+export async function subirMiniaturaProducto(productoId: string, urlFoto: string, miniatura: Blob): Promise<string> {
+  return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}?miniatura=${encodeURIComponent(urlFoto)}`, miniatura, miniatura.type || 'image/jpeg');
 }
 
 /** Borra del almacenamiento el archivo al que apunta una URL (si es de nuestro almacenamiento; si no, no hace nada). */

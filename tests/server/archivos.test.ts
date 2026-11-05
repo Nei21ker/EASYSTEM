@@ -4,7 +4,7 @@ import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { crearProducto } from '../../src/server/servicios/catalogo';
 import {
-  borrarArchivosPrivados, eliminarFotoProducto, leerArchivoPrivado, leerArchivoPublico, subirArchivoPrivado, subirFotoProducto,
+  borrarArchivosPrivados, eliminarFotoProducto, leerArchivoPrivado, leerArchivoPublico, subirArchivoPrivado, subirFotoProducto, subirMiniaturaProducto,
 } from '../../src/server/servicios/archivos';
 
 const env = crearEntornoDePrueba();
@@ -114,6 +114,54 @@ describe('fotos de producto (públicas)', () => {
     expect(await env.FOTOS_PUBLICAS.head(clave)).not.toBeNull();
     await eliminarFotoProducto(env, sE, url);
     expect(await env.FOTOS_PUBLICAS.head(clave)).toBeNull();
+  });
+});
+
+describe('miniatura de la foto de un producto', () => {
+  const claveDe = (url: string) => url.slice(env.URL_FOTOS_PUBLICAS.length + 1);
+
+  it('se guarda junto a la foto con el sufijo -m, con la misma extensión, y se lee sin sesión con caché de un año', async () => {
+    const url = await subirFotoProducto(env, sA, productoId, bytes(3000), 'image/webp');
+    const clave = claveDe(url);
+    expect(clave).toMatch(/.webp$/);
+    const miniatura = await subirMiniaturaProducto(env, sA, productoId, url, bytes(300), 'image/webp');
+    expect(miniatura).toBe(url.replace(/.webp$/, '-m.webp'));
+    const lectura = await leerArchivoPublico(env, claveDe(miniatura));
+    expect(lectura.status).toBe(200);
+    expect(lectura.headers.get('cache-control')).toContain('immutable');
+    expect(lectura.headers.get('content-type')).toBe('image/webp');
+  });
+
+  it('una miniatura que falta responde 404 con una caché corta (no se vuelve a pedir en cada fila)', async () => {
+    const url = await subirFotoProducto(env, sA, productoId, bytes(), 'image/jpeg');
+    const r = await leerArchivoPublico(env, claveDe(url).replace(/.jpg$/, '-m.jpg'));
+    expect(r.status).toBe(404);
+    expect(r.headers.get('cache-control')).toContain('max-age=3600');
+  });
+
+  it('quienes suben fotos pueden subirla; el vendedor no', async () => {
+    const url = await subirFotoProducto(env, sA, productoId, bytes(), 'image/jpeg');
+    for (const sesion of [sA, sG, sE]) await subirMiniaturaProducto(env, sesion, productoId, url, bytes(50), 'image/jpeg');
+    await rechazo(subirMiniaturaProducto(env, sV, productoId, url, bytes(50), 'image/jpeg'), 403);
+  });
+
+  it('solo se acepta de una foto de ESE producto que exista, del mismo tipo y pequeña', async () => {
+    const url = await subirFotoProducto(env, sA, productoId, bytes(), 'image/jpeg');
+    const otro = (await crearProducto(env, sA, { codigo_barras: '2000000000022', nombre: 'Cable', categoria: 'Cables', precio_venta: 3 })).id;
+    await rechazo(subirMiniaturaProducto(env, sA, otro, url, bytes(50), 'image/jpeg'), 400, /no corresponde/i);
+    await rechazo(subirMiniaturaProducto(env, sA, productoId, 'https://otro-sitio.com/x.jpg', bytes(50), 'image/jpeg'), 400, /no corresponde/i);
+    await rechazo(subirMiniaturaProducto(env, sA, productoId, `${env.URL_FOTOS_PUBLICAS}/productos/${productoId}/1730000000000.jpg`, bytes(50), 'image/jpeg'), 400, /no corresponde/i);
+    await rechazo(subirMiniaturaProducto(env, sA, productoId, url, bytes(50), 'image/png'), 400, /mismo tipo/i);
+    await rechazo(subirMiniaturaProducto(env, sA, productoId, url, bytes(100 * 1024 + 1), 'image/jpeg'), 400, /demasiado grande/);
+    await rechazo(subirMiniaturaProducto(env, sA, productoId, url, bytes(50), 'application/pdf'), 400, /JPG, PNG o WebP/);
+  });
+
+  it('eliminar la foto borra también su miniatura', async () => {
+    const url = await subirFotoProducto(env, sA, productoId, bytes(), 'image/jpeg');
+    const miniatura = await subirMiniaturaProducto(env, sA, productoId, url, bytes(50), 'image/jpeg');
+    await eliminarFotoProducto(env, sA, url);
+    expect(await env.FOTOS_PUBLICAS.head(claveDe(url))).toBeNull();
+    expect(await env.FOTOS_PUBLICAS.head(claveDe(miniatura))).toBeNull();
   });
 });
 

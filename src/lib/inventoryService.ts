@@ -40,7 +40,7 @@ import { imagenDemoParaProducto } from './imagenes-demo';
 import { construirCodigoUnidad, esCodigoUnidad, esPrefijoValido, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
-import { blobADataUrl } from '../utils/imagenes';
+import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
 import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
@@ -738,6 +738,8 @@ async function exigirLocal(accion: string): Promise<string> {
  * Productos del catálogo con su inventario en cada local (crudo). Las pantallas usan listarProductos(),
  * que lo proyecta al local activo.
  */
+let productosEnVuelo: Promise<ProductoConInventario[]> | null = null;
+
 async function listarProductosCrudos(): Promise<ProductoConInventario[]> {
   if (!modoServidor) {
     const db = leerDB();
@@ -745,9 +747,17 @@ async function listarProductosCrudos(): Promise<ProductoConInventario[]> {
   }
 
   try {
-    const productos = await productosDb.listarProductos();
-    guardarCache(LS_CACHE_PRODUCTOS, productos);
-    return aplicarPendientesAProductos(productos);
+    // Varias partes de una pantalla piden el catálogo a la vez (lista, diálogos, buscador): comparten UNA sola petición
+    productosEnVuelo ??= productosDb
+      .listarProductos()
+      .then((productos) => {
+        guardarCache(LS_CACHE_PRODUCTOS, productos);
+        return productos;
+      })
+      .finally(() => {
+        productosEnVuelo = null;
+      });
+    return aplicarPendientesAProductos(await productosEnVuelo);
   } catch (err) {
     if (!esErrorDeRed(err)) throw err;
     console.warn('[EASYSTEM] Sin conexión con el servidor; usando el catálogo guardado localmente.', err);
@@ -1223,6 +1233,12 @@ export async function guardarImagenProducto(productoId: string, imagen: Blob): P
   if (modoServidor) {
     const anterior = (await productosDb.obtenerProducto(productoId))?.imagen_url;
     const url = await productosDb.subirImagenProducto(productoId, imagen);
+    // La miniatura (unos KB) es para las listas; si no se puede subir no pasa nada: las listas caen a la foto completa
+    try {
+      await productosDb.subirMiniaturaProducto(productoId, url, await crearMiniatura(imagen));
+    } catch (err) {
+      console.warn('[EASYSTEM] No se pudo subir la miniatura de la foto.', err);
+    }
     await productosDb.actualizarProducto(productoId, { imagen_url: url });
     productosDb.eliminarImagenProducto(anterior).catch(() => {}); // limpieza best-effort
     return url;
