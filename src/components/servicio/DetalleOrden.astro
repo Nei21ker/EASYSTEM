@@ -192,7 +192,7 @@ const claseBotonSec =
     if (!q) return lista.classList.add('hidden');
     const yaUsados = new Set(orden!.repuestos.map((r) => r.producto_id));
     const coincidencias = catalogo
-      .filter((p) => p.stock_actual > 0 && !yaUsados.has(p.id) && normalizarTexto(`${p.nombre} ${p.codigo_barras} ${p.categoria}`).split(/\s+/).length > 0 && q.split(/\s+/).every((t) => normalizarTexto(`${p.nombre} ${p.codigo_barras} ${p.categoria}`).includes(t)))
+      .filter((p) => p.stock_actual > 0 && !yaUsados.has(p.id) && normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria}`).split(/\s+/).length > 0 && q.split(/\s+/).every((t) => normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria}`).includes(t)))
       .slice(0, 8);
     lista.classList.remove('hidden');
     lista.innerHTML = coincidencias.length

@@ -41,6 +41,7 @@
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { estadoStock } from '../../utils/format';
+  import { codigoVisible } from '../../utils/codigos';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
   import { alCambiarDatos } from '../../lib/realtime';
@@ -58,6 +59,7 @@
     descargarCSV(
       `easystem-pedido-proveedor-${new Date().toISOString().slice(0, 10)}.csv`,
       productosBajoStock.map((p) => ({
+        referencia: p.referencia ?? '',
         codigo_barras: p.codigo_barras,
         nombre: p.nombre,
         categoria: p.categoria,
@@ -101,7 +103,7 @@
         return `
           <tr class="text-slate-700 dark:text-slate-300">
             <td class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}${verLocal && producto.local_nombre ? `<span class="mt-0.5 block text-[11px] font-normal text-slate-500 dark:text-slate-400">${escaparHtml(producto.local_nombre)}</span>` : ''}</td>
-            <td data-label="Código" class="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</td>
+            <td data-label="Código" class="px-5 py-3 font-mono text-xs text-slate-500 dark:text-slate-400">${escaparHtml(codigoVisible(producto))}</td>
             <td data-label="Stock actual" class="px-5 py-3">${producto.stock_actual}</td>
             <td data-label="Mínimo" class="px-5 py-3">${producto.stock_minimo}</td>
             <td data-label="Estado" class="px-5 py-3">

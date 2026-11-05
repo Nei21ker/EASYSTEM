@@ -36,6 +36,7 @@
   import { estadoStock, htmlPrecioDual } from '../../utils/format';
   import { tasaActual } from '../../stores/tasa';
   import { htmlMiniatura } from '../../utils/imagenes';
+  import { codigoVisible } from '../../utils/codigos';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -76,7 +77,7 @@
         ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
-          <p class="truncate font-mono text-xs text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+          <p class="truncate font-mono text-xs text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}</p>
         </div>
         <div class="shrink-0 text-right">
           <div class="text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</div>

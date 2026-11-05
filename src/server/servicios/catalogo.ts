@@ -12,7 +12,7 @@ import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
-import { esPrefijoValido, sugerirPrefijo } from '../../utils/codigos';
+import { construirReferencia, esPrefijoValido, sugerirPrefijo } from '../../utils/codigos';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
 export type { ProductoConInventario } from '../repos/productos';
@@ -50,6 +50,28 @@ function prefijoIndicado(valor: string): string {
 async function marcasConocidas(env: Entorno): Promise<string[]> {
   const filas = await env.DB.prepare('SELECT DISTINCT marca FROM modelos_telefono').all<{ marca: string }>();
   return filas.results.map((f) => f.marca);
+}
+
+/**
+ * Reserva las referencias de varios productos nuevos (una por prefijo de la lista, en ese orden) con el contador
+ * `producto:<PREFIJO>`. Se reserva ANTES de insertar: si el insert falla queda un hueco en la numeración, nunca un repetido.
+ */
+async function reservarReferencias(env: Entorno, prefijos: string[]): Promise<string[]> {
+  const cuantos = new Map<string, number>();
+  for (const p of prefijos) cuantos.set(p, (cuantos.get(p) ?? 0) + 1);
+  const siguiente = new Map<string, number>();
+  for (const [prefijo, n] of cuantos) {
+    const fila = await env.DB
+      .prepare('INSERT INTO contadores (nombre, valor) VALUES (?, ?) ON CONFLICT (nombre) DO UPDATE SET valor = valor + excluded.valor RETURNING valor')
+      .bind(`producto:${prefijo}`, n)
+      .first<{ valor: number }>();
+    siguiente.set(prefijo, fila!.valor - n + 1);
+  }
+  return prefijos.map((p) => {
+    const numero = siguiente.get(p)!;
+    siguiente.set(p, numero + 1);
+    return construirReferencia(p, numero);
+  });
 }
 
 function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
@@ -105,12 +127,14 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     stock_minimo: datos.stock_minimo ?? 5,
     imagen_url: datos.imagen_url ?? null,
     prefijo_codigo: datos.prefijo_codigo !== undefined ? prefijoIndicado(datos.prefijo_codigo) : sugerirPrefijo(datos.nombre.trim(), datos.categoria.trim(), await marcasConocidas(env)),
+    referencia: '',
     created_at: ahoraISO(),
   };
+  fila.referencia = (await reservarReferencias(env, [fila.prefijo_codigo]))[0];
   try {
     await env.DB
-      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.created_at)
+      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.referencia, fila.created_at)
       .run();
   } catch (err) {
     if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
@@ -179,19 +203,22 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
   }
 
   const marcas = await marcasConocidas(env);
-  const creados = filas.map((f) => ({
+  const prefijos = filas.map((f) => (f.prefijo_codigo !== undefined ? prefijoIndicado(f.prefijo_codigo) : sugerirPrefijo(f.nombre.trim(), f.categoria.trim(), marcas)));
+  const referencias = await reservarReferencias(env, prefijos);
+  const creados = filas.map((f, i) => ({
     id: nuevoId(),
     codigo_barras: f.codigo_barras.trim(),
-    prefijo: f.prefijo_codigo !== undefined ? prefijoIndicado(f.prefijo_codigo) : sugerirPrefijo(f.nombre.trim(), f.categoria.trim(), marcas),
+    prefijo: prefijos[i],
+    referencia: referencias[i],
     f,
   }));
   const ahora = ahoraISO();
   try {
     await env.DB.batch(
-      creados.map(({ id, codigo_barras, prefijo, f }) =>
+      creados.map(({ id, codigo_barras, prefijo, referencia, f }) =>
         env.DB
-          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, ahora)
+          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, ahora)
       )
     );
   } catch (err) {

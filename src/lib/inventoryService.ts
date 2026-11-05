@@ -37,7 +37,7 @@ import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
-import { construirCodigoUnidad, esCodigoUnidad, esPrefijoValido, sugerirPrefijo } from '../utils/codigos';
+import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
@@ -121,6 +121,8 @@ interface LocalDB {
   unidadSeq?: number;
   /** Último número usado por cada prefijo de código (INF → 14 quiere decir que el siguiente es INF000015) */
   unidadSeqPorPrefijo?: Record<string, number>;
+  /** Último número de REFERENCIA de producto usado por cada prefijo (INF → 3 quiere decir que el siguiente producto es INF-004) */
+  referenciaSeqPorPrefijo?: Record<string, number>;
   /** Cuadres de caja diarios (las fotos van como data URL dentro de cada cuadre) */
   cuadres?: CuadreCaja[];
 }
@@ -169,6 +171,24 @@ function prefijoDeProductoLocal(db: LocalDB, producto: Producto): string {
     producto.prefijo_codigo = sugerirPrefijo(producto.nombre, producto.categoria, [...new Set(db.modelos.map((m) => m.marca))]);
   }
   return producto.prefijo_codigo;
+}
+
+/** Da al producto su referencia (INF-001…) si aún no la tiene: consecutiva por prefijo, como el servidor. No cambia después. */
+function asignarReferenciaLocal(db: LocalDB, producto: Producto): string {
+  if (!producto.referencia) {
+    const prefijo = prefijoDeProductoLocal(db, producto);
+    const secuencias = db.referenciaSeqPorPrefijo ?? (db.referenciaSeqPorPrefijo = {});
+    secuencias[prefijo] = (secuencias[prefijo] ?? 0) + 1;
+    producto.referencia = construirReferencia(prefijo, secuencias[prefijo]);
+  }
+  return producto.referencia;
+}
+
+/** Navegadores con productos sin referencia: se numeran por prefijo y por orden de creación (una sola vez). */
+function migrarReferencias(db: LocalDB): boolean {
+  const sin = db.productos.filter((p) => !p.referencia).sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const p of sin) asignarReferenciaLocal(db, p);
+  return sin.length > 0;
 }
 
 /** Mayúsculas y validación del prefijo indicado a mano (modo LocalStorage; el servidor hace lo mismo). */
@@ -364,7 +384,7 @@ function leerDB(): LocalDB {
       // falten sin tocar productos ni movimientos existentes.
       const existentes = new Set(db.modelos.map((m) => `${m.marca}|${m.modelo}`));
       const faltantes = modelosMock.filter((m) => !existentes.has(`${m.marca}|${m.modelo}`));
-      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db), migrarUnidades(db), migrarCodigosUnidad(db)].some(Boolean);
+      const migrado = [migrarAMultilocal(db), migrarNomina(db), migrarImagenesDemo(db), migrarUnidades(db), migrarCodigosUnidad(db), migrarReferencias(db)].some(Boolean);
       if (faltantes.length > 0) db.modelos.push(...faltantes);
       if (faltantes.length > 0 || migrado) guardarDB(db);
       return db;
@@ -373,6 +393,7 @@ function leerDB(): LocalDB {
     console.error('[EASYSTEM] No se pudo leer LocalStorage; se reinicia con datos de ejemplo.', err);
   }
   const inicial = construirSeedInicial();
+  migrarReferencias(inicial);
   guardarDB(inicial);
   return inicial;
 }
@@ -1129,6 +1150,7 @@ export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
         filas.push({
           id: p.id,
           codigo_barras: p.codigo_barras,
+          referencia: p.referencia,
           nombre: p.nombre,
           categoria: p.categoria,
           stock_actual: i.stock_actual,
@@ -1179,6 +1201,8 @@ export async function crearProducto(
   };
   producto.prefijo_codigo = input.prefijo_codigo ? prefijoValidoODemo(input.prefijo_codigo) : undefined;
   prefijoDeProductoLocal(db, producto);
+  producto.referencia = undefined; // la asigna el sistema, no el formulario
+  asignarReferenciaLocal(db, producto);
   db.productos.push(producto);
   if (localId) db.inventario.push({ local_id: localId, producto_id: producto.id, stock_actual: 0, stock_minimo: producto.stock_minimo });
   guardarDB(db);
@@ -1187,7 +1211,7 @@ export async function crearProducto(
 
 export async function actualizarProducto(id: string, cambiosCrudos: Partial<Producto>): Promise<Producto> {
   // El stock solo cambia mediante movimientos (kardex); nunca por edición directa.
-  const { stock_actual: _ignorado, id: _id, created_at: _creado, ...cambios } = cambiosCrudos;
+  const { stock_actual: _ignorado, id: _id, created_at: _creado, referencia: _referencia, ...cambios } = cambiosCrudos;
   // El stock mínimo es POR LOCAL: con un local elegido se guarda en su inventario
   const { localId } = await alcanceActual();
 
@@ -2278,6 +2302,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
         stock_minimo: f.stock_minimo ?? 0,
         created_at: ahora,
       };
+      asignarReferenciaLocal(db, producto);
       db.productos.push(producto);
       filaInventario(producto.id).stock_minimo = f.stock_minimo ?? 0;
       for (const modelo_id of f.modeloIds ?? []) db.compatibilidades.push({ id: generarId(), producto_id: producto.id, modelo_id });

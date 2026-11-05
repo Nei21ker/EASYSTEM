@@ -63,6 +63,8 @@ export interface Producto {
   imagen_url?: string | null;
   /** 2 a 4 letras (INF, TEC…) con las que empiezan los códigos de sus unidades: INF000001… */
   prefijo_codigo?: string;
+  /** Referencia corta para personas: el prefijo y un número consecutivo (INF-001). Se asigna al crear el producto y no cambia. */
+  referencia?: string | null;
   created_at: string;
 }
 
@@ -161,6 +163,7 @@ export interface ProductoConRelaciones extends Producto {
 export interface ProductoStockBajo {
   id: string;
   codigo_barras: string;
+  referencia?: string | null;
   nombre: string;
   categoria: string;
   stock_actual: number;

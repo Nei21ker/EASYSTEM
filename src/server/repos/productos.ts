@@ -62,7 +62,7 @@ export async function listarStockBajo(env: Entorno, alcance: Alcance): Promise<P
   const { sql, valores } = condicionAlcance(alcance, 'i.local_id');
   const filas = await env.DB
     .prepare(
-      `SELECT i.local_id, l.nombre AS local_nombre, p.id, p.codigo_barras, p.nombre, p.categoria, i.stock_actual, i.stock_minimo
+      `SELECT i.local_id, l.nombre AS local_nombre, p.id, p.codigo_barras, p.referencia, p.nombre, p.categoria, i.stock_actual, i.stock_minimo
        FROM inventario_local i
        JOIN productos p ON p.id = i.producto_id
        JOIN locales l ON l.id = i.local_id

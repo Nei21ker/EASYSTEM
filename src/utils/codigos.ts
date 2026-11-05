@@ -34,7 +34,9 @@ export function esCodigoInterno(codigo: string): boolean {
 // número de 6 dígitos consecutivo por prefijo: INF000001, INF000002… Es lo que dice el QR y lo que se imprime bajo el nombre, así
 // que si el QR no se lee basta escribirlo (incluso abreviado: "inf14" → INF000014). Los códigos de producto (EAN-13) no se parecen.
 const PATRON_UNIDAD = /^([A-Z]{2,4})(\d{6})$/;
-const PATRON_ESCRITO = /^([A-Z]{2,4})[-\s]?(\d{1,6})$/;
+const PATRON_ESCRITO = /^([A-Z]{2,4})(\d{1,6})$/;
+// Con guion (INF-014) es la REFERENCIA de un producto, no de una pieza: por eso aquí no se acepta guion ni espacio.
+const PATRON_REFERENCIA = /^([A-Z]{2,4})-(\d{1,})$/;
 
 /** ¿Es un prefijo válido (2 a 4 letras A-Z mayúsculas)? */
 export function esPrefijoValido(prefijo: string): boolean {
@@ -68,6 +70,22 @@ export function normalizarCodigoUnidad(texto: string): string | null {
   if (!m) return null;
   const numero = Number(m[2]);
   return numero > 0 ? `${m[1]}${String(numero).padStart(6, '0')}` : null;
+}
+
+/** Número de referencia de producto: 3 dígitos como mínimo (INF-007) y 4 o más pasado el 999. */
+export function construirReferencia(prefijo: string, numero: number): string {
+  const p = prefijo.toUpperCase();
+  if (!esPrefijoValido(p)) throw new Error(`Prefijo de código inválido: "${prefijo}" (deben ser de 2 a 4 letras).`);
+  if (!Number.isInteger(numero) || numero < 1) throw new Error(`Número de referencia fuera de rango: ${numero}.`);
+  return `${p}-${String(numero).padStart(3, '0')}`;
+}
+
+/** Lo escrito como referencia de producto ("inf-7" → "INF-007"); null si no tiene esa forma (INF-... con guion). */
+export function normalizarReferencia(texto: string): string | null {
+  const m = PATRON_REFERENCIA.exec(texto.trim().toUpperCase());
+  if (!m) return null;
+  const numero = Number(m[2]);
+  return numero > 0 ? construirReferencia(m[1], numero) : null;
 }
 
 const sinAcentos = (t: string) => t.normalize('NFD').replace(/\p{M}/gu, '');
@@ -104,4 +122,12 @@ function secuenciaMaxima(existentes: Iterable<string>): number {
 export function generarCodigosInternos(existentes: Iterable<string>, cantidad = 1): string[] {
   const inicio = secuenciaMaxima(existentes);
   return Array.from({ length: cantidad }, (_, i) => construirCodigoInterno(inicio + i + 1));
+}
+
+/**
+ * Lo que se muestra como "código" de un producto en listas y buscadores: su referencia corta (INF-001) y, si todavía no la
+ * tiene, su código de barras. El código de barras sigue existiendo (empaque de fábrica, productos repetidos) pero es largo.
+ */
+export function codigoVisible(p: { referencia?: string | null; codigo_barras: string }): string {
+  return p.referencia || p.codigo_barras;
 }

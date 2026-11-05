@@ -73,6 +73,7 @@
   import { animarLista } from '../../utils/animaciones';
   import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
+  import { codigoVisible } from '../../utils/codigos';
   import { alternarCompatibles, escaparHtml, htmlCompatibles, htmlPildoraStock } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
@@ -96,7 +97,7 @@
             ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
             <div class="min-w-0">
               <p class="line-clamp-2 break-words font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(producto.codigo_barras)}</p>
+              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(codigoVisible(producto))}</p>
             </div>
           </div>
         </td>
@@ -136,7 +137,8 @@
       const coincideTexto =
         !texto ||
         producto.nombre.toLowerCase().includes(texto) ||
-        producto.codigo_barras.toLowerCase().includes(texto);
+        producto.codigo_barras.toLowerCase().includes(texto) ||
+        (producto.referencia ?? '').toLowerCase().includes(texto);
       const coincideCategoria = !categoria || producto.categoria === categoria;
       const coincideModelo =
         !modelo || producto.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}` === modelo);

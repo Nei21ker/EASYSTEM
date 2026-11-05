@@ -359,7 +359,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
-  import { esCodigoUnidad, normalizarCodigoUnidad } from '../utils/codigos';
+  import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia } from '../utils/codigos';
   import { esErrorDeRed } from '../utils/red';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
   import { archivoDeTicket, copiarImagenAlPortapapeles } from '../utils/ticketImagen';
@@ -429,6 +429,7 @@ import { alCambiarDatos } from '../lib/realtime';
           (p) =>
             p.nombre.toLowerCase().includes(q) ||
             p.codigo_barras.toLowerCase().includes(q) ||
+            (p.referencia ?? '').toLowerCase().includes(q) ||
             p.categoria.toLowerCase().includes(q) ||
             p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
         );
@@ -465,7 +466,7 @@ import { alCambiarDatos } from '../lib/realtime';
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="truncate text-xs text-slate-500 dark:text-slate-400">
-                ${escaparHtml(producto.codigo_barras)} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
+                ${escaparHtml(codigoVisible(producto))} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
               </p>
               <p class="mt-1 text-xs">
                 <span class="rounded-full px-2 py-0.5 font-medium ${estilosBadge[estado]}">${disponible} disponible${disponible === 1 ? '' : 's'}</span>
@@ -1062,7 +1063,7 @@ import { alCambiarDatos } from '../lib/realtime';
 
   /** Busca un código de barras exacto (tecleado + Enter, lector físico USB, o cámara) y lo agrega al carrito. */
   async function buscarYAgregarPorCodigo(codigo: string) {
-    const coincidenciaLocal = productos.find((p) => p.codigo_barras === codigo);
+    const coincidenciaLocal = productos.find((p) => p.codigo_barras === codigo || (p.referencia ?? '') === normalizarReferencia(codigo));
     if (!coincidenciaLocal) {
       mostrarError(`No se encontró ningún producto con el código "${codigo}".`);
       return;
@@ -1109,7 +1110,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (!unidad) {
       // Un código de fábrica puede parecerse al de una unidad (letras y números): si es de un producto, se agrega por el producto
       const crudo = codigoCrudo.trim();
-      if (productos.some((p) => p.codigo_barras === crudo)) {
+      if (productos.some((p) => p.codigo_barras === crudo || (p.referencia ?? '') === normalizarReferencia(crudo))) {
         const antes = carrito.reduce((suma, l) => suma + l.cantidad, 0);
         await buscarYAgregarPorCodigo(crudo);
         return carrito.reduce((suma, l) => suma + l.cantidad, 0) > antes;

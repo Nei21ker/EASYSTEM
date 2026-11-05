@@ -252,7 +252,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia } from '../lib/auth';
-  import { esCodigoUnidad, normalizarCodigoUnidad } from '../utils/codigos';
+  import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia } from '../utils/codigos';
   import {
     buscarFormatoEtiqueta,
     buscarTipoCodigo,
@@ -383,6 +383,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         (p) =>
           normalizar(p.nombre).includes(q) ||
           p.codigo_barras.includes(q) ||
+          normalizar(p.referencia ?? '').includes(q) ||
           normalizar(p.categoria).includes(q) ||
           p.modelos_compatibles.some((m) => normalizar(`${m.marca} ${m.modelo}`).includes(q))
       )
@@ -397,7 +398,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <button type="button" data-agregar="${p.id}" class="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
               <span class="min-w-0">
                 <span class="block truncate text-sm font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</span>
-                <span class="block font-mono text-xs text-slate-500">${escapar(p.codigo_barras)}</span>
+                <span class="block font-mono text-xs text-slate-500">${escapar(codigoVisible(p))}</span>
               </span>
               <span class="shrink-0 text-xs text-slate-500">${p.stock_actual} u.</span>
             </button>
@@ -411,7 +412,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     aviso.classList.add('hidden');
     pintarResultados();
     // Un lector de código de barras escribe el código completo y pulsa Enter
-    const exacto = productos.find((p) => p.codigo_barras === buscar.value.trim());
+    const exacto = productos.find((p) => p.codigo_barras === buscar.value.trim() || (p.referencia ?? '') === normalizarReferencia(buscar.value));
     if (exacto) agregar(exacto.id);
   });
   buscar.addEventListener('keydown', (e) => {
@@ -419,7 +420,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     e.preventDefault();
     const q = buscar.value.trim();
     if (!q) return;
-    const exacto = productos.find((p) => p.codigo_barras === q);
+    const exacto = productos.find((p) => p.codigo_barras === q || (p.referencia ?? '') === normalizarReferencia(q));
     if (exacto) return agregar(exacto.id);
     const unidad = normalizarCodigoUnidad(q);
     if (unidad) return void localizarPorUnidad(unidad);
@@ -530,7 +531,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <tr class="text-slate-700 dark:text-slate-300" data-fila="${l.id}">
             <td class="px-4 py-3">
               <p class="font-medium text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
-              <p class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(p.codigo_barras)}</p>
+              <p class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}</p>
               <p data-pista="${l.id}" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${textoPista(l)}</p>
             </td>
             <td data-label="Stock" class="px-4 py-3 text-right tabular-nums" data-stock="${l.id}">${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}</td>

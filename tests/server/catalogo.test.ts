@@ -156,7 +156,7 @@ describe('alertas de stock bajo', () => {
     await fijarMinimosLote(env, a, vidrios, [{ producto_id: p.id, stock_minimo: 0 }]); // 0 = sin control
 
     const todos = await listarStockBajo(env, a);
-    expect(todos).toEqual([{ id: p.id, codigo_barras: forro.codigo_barras, nombre: forro.nombre, categoria: 'Forros', stock_actual: 2, stock_minimo: 3, local_id: accesorios, local_nombre: 'Local Accesorios' }]);
+    expect(todos).toEqual([{ id: p.id, codigo_barras: forro.codigo_barras, referencia: p.referencia, nombre: forro.nombre, categoria: 'Forros', stock_actual: 2, stock_minimo: 3, local_id: accesorios, local_nombre: 'Local Accesorios' }]);
     expect(await listarStockBajo(env, await sesionDe(encargado))).toEqual([]); // su local (vidrios) no tiene alertas
     expect((await listarStockBajo(env, await sesionDe(vendedor))).length).toBe(1);
   });

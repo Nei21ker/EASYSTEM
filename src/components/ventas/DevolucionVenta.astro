@@ -169,7 +169,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     const coincidencias = catalogo
       .filter((p) => {
         if (p.stock_actual <= 0 || reemplazos.has(p.id)) return false;
-        const texto = normalizarTexto(`${p.nombre} ${p.codigo_barras} ${p.categoria} ${p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(' ')}`);
+        const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria} ${p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(' ')}`);
         return q.split(/\s+/).every((t) => texto.includes(t));
       })
       .slice(0, 8);

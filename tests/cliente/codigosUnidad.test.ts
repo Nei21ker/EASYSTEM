@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { construirCodigoUnidad, esCodigoUnidad, esPrefijoValido, normalizarCodigoUnidad, prefijoDelCodigo, sugerirPrefijo } from '../../src/utils/codigos';
+import { codigoVisible, construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo, sugerirPrefijo } from '../../src/utils/codigos';
 
 describe('código de una unidad: prefijo + 6 dígitos', () => {
   it('se arma con el prefijo del producto y el número, con ceros a la izquierda', () => {
@@ -36,7 +36,9 @@ describe('normalizarCodigoUnidad: lo que se escribe o se escanea', () => {
   it('completa los ceros: inf14 → INF000014', () => {
     expect(normalizarCodigoUnidad('inf14')).toBe('INF000014');
     expect(normalizarCodigoUnidad('TEC7')).toBe('TEC000007');
-    expect(normalizarCodigoUnidad('inf-14')).toBe('INF000014');
+    // Con guion o espacio es la REFERENCIA de un producto (INF-014), no una pieza
+    expect(normalizarCodigoUnidad('inf-14')).toBeNull();
+    expect(normalizarCodigoUnidad('INF 14')).toBeNull();
   });
 
   it('no inventa nada con lo que no es un código de unidad', () => {
@@ -78,5 +80,29 @@ describe('prefijo del producto', () => {
 
   it('solo reconoce la marca como palabra entera', () => {
     expect(sugerirPrefijo('Cargador Honorable', 'Cargadores', ['Honor'])).toBe('CAR');
+  });
+});
+
+describe('referencia de producto (PREFIJO-NNN)', () => {
+  it('se arma con 3 dígitos como mínimo y crece pasado el 999', () => {
+    expect(construirReferencia('inf', 1)).toBe('INF-001');
+    expect(construirReferencia('TEC', 42)).toBe('TEC-042');
+    expect(construirReferencia('INF', 1000)).toBe('INF-1000');
+    expect(() => construirReferencia('I', 1)).toThrow();
+    expect(() => construirReferencia('INF', 0)).toThrow();
+  });
+
+  it('normalizarReferencia completa los ceros y exige el guion', () => {
+    expect(normalizarReferencia(' inf-7 ')).toBe('INF-007');
+    expect(normalizarReferencia('INF-007')).toBe('INF-007');
+    for (const malo of ['', 'inf7', 'inf000007', 'INF-0', 'INF-', '7', '2000000000015', 'INF 7']) expect(normalizarReferencia(malo)).toBeNull();
+  });
+});
+
+describe('codigoVisible', () => {
+  it('prefiere la referencia y cae al código de barras', () => {
+    expect(codigoVisible({ referencia: 'INF-001', codigo_barras: '2000000000015' })).toBe('INF-001');
+    expect(codigoVisible({ referencia: null, codigo_barras: '2000000000015' })).toBe('2000000000015');
+    expect(codigoVisible({ codigo_barras: '7501234567890' })).toBe('7501234567890');
   });
 });
