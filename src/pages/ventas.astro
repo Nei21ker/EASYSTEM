@@ -20,24 +20,24 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <!-- Buscador + resultados -->
     <div class="min-h-0 lg:col-span-3">
       <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
-        <div class="shrink-0 space-y-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <!-- 1. Código de la unidad: lector, cámara del teléfono o selección manual -->
+        <div class="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <!-- Un solo campo: escanear (lector o cámara), escribir el código de una etiqueta o buscar por nombre, categoría o modelo -->
           <div>
-            <label for="pos-codigo" class="text-sm font-semibold text-slate-900 dark:text-white">Código de la unidad</label>
-            <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-              Cada unidad tiene su propia etiqueta (código de barras o QR). Escanéala con el lector o la cámara del teléfono y se agrega esa unidad exacta.
-            </p>
-            <div class="relative mt-3">
+            <div class="relative">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
                 <path d="M4 5v14M8 5v14M12 5v14M17 5v14M20 5v14" stroke-linecap="round" />
               </svg>
               <input
                 id="pos-codigo"
                 type="text"
-                inputmode="numeric"
+                enterkeyhint="search"
                 autocomplete="off"
-                placeholder="Escanea o escribe el código..."
-                class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 font-mono text-base text-slate-900 placeholder:font-sans placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                aria-label="Escanear el código de una etiqueta o buscar por nombre, categoría o modelo"
+                placeholder="Escanea o busca por nombre..."
+                class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
               <button
                 type="button"
@@ -55,6 +55,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <button
               id="pos-seleccionar-codigo"
               type="button"
+              title="Si no puedes escanear: elige el producto y escoge la unidad de la lista"
               class="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4" aria-hidden="true">
@@ -62,24 +63,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
               </svg>
               Seleccionar código
             </button>
-            <p class="mt-1 text-center text-[11px] text-slate-500 dark:text-slate-400">Si no puedes escanear, elige el producto y escoge la unidad de la lista.</p>
-          </div>
-
-          <!-- 2. Búsqueda por nombre o modelo -->
-          <div class="border-t border-slate-100 pt-3 dark:border-slate-800">
-            <label for="pos-buscador" class="block text-xs font-medium text-slate-600 dark:text-slate-400">O busca por nombre o modelo de teléfono compatible</label>
-            <div class="relative mt-1">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
-                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
-              </svg>
-              <input
-                id="pos-buscador"
-                type="text"
-                autocomplete="off"
-                placeholder="Nombre, categoría o modelo..."
-                class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
           </div>
         </div>
 
@@ -101,7 +84,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
         <ul id="pos-carrito" class="empty:hidden max-h-96 divide-y divide-slate-100 overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 dark:divide-slate-800"></ul>
         <p id="pos-carrito-vacio" class="px-5 py-6 text-sm lg:flex-1 text-slate-500 dark:text-slate-400">
-          Agrega productos desde el buscador para iniciar una venta.
+          Escanea o busca un producto para iniciar una venta.
         </p>
 
         <div class="shrink-0 space-y-3 border-t border-slate-200 px-5 py-4 lg:mt-auto dark:border-slate-800">
@@ -399,7 +382,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura, reducirImagen } from '../utils/imagenes';
-  import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia } from '../utils/codigos';
+  import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo } from '../utils/codigos';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
@@ -418,8 +401,9 @@ import { alCambiarDatos } from '../lib/realtime';
   let carrito: LineaCarrito[] = [];
   let localActivoId = '';
 
-  const buscador = document.getElementById('pos-buscador') as HTMLInputElement;
   const campoCodigo = document.getElementById('pos-codigo') as HTMLInputElement;
+  // Un solo campo para escanear, escribir un código o buscar por nombre: `buscador` es el mismo elemento
+  const buscador = campoCodigo;
   const resultados = document.getElementById('pos-resultados') as HTMLUListElement;
   const cargando = document.getElementById('pos-cargando') as HTMLParagraphElement;
   const sinResultados = document.getElementById('pos-sin-resultados') as HTMLParagraphElement;
@@ -1190,7 +1174,11 @@ import { alCambiarDatos } from '../lib/realtime';
     else if (eliminar?.dataset.eliminar) eliminarDelCarrito(eliminar.dataset.eliminar);
   });
 
-  buscador.addEventListener('input', () => renderResultados(buscador.value));
+  let pausaBusqueda: ReturnType<typeof setTimeout> | undefined;
+  buscador.addEventListener('input', () => {
+    clearTimeout(pausaBusqueda);
+    pausaBusqueda = setTimeout(() => renderResultados(buscador.value), 120);
+  });
 
   /** Busca un código de barras exacto (tecleado + Enter, lector físico USB, o cámara) y lo agrega al carrito. */
   async function buscarYAgregarPorCodigo(codigo: string) {
@@ -1209,12 +1197,6 @@ import { alCambiarDatos } from '../lib/realtime';
       renderResultados('');
     }
   }
-
-  buscador.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    const codigo = buscador.value.trim();
-    if (codigo) void agregarPorCodigo(codigo).then((agregado) => agregado && (buscador.value = ''));
-  });
 
   /**
    * Agrega lo que identifica un código: el de UNA unidad (etiqueta propia: se agrega esa unidad exacta) o, como
@@ -1271,13 +1253,34 @@ import { alCambiarDatos } from '../lib/realtime';
     return agregarUnidad(producto, codigo);
   }
 
+  /**
+   * ¿Lo escrito es un código (de una etiqueta o de fábrica) y no una búsqueda por nombre? El código completo de una etiqueta
+   * (INF000026), un código de barras largo o la referencia/código exacto de un producto lo son siempre. El abreviado ("inf14") solo
+   * si no coincide con ningún nombre, categoría o modelo (para que "note13" no se confunda con una pieza).
+   */
+  function pareceCodigo(texto: string): boolean {
+    const t = texto.trim();
+    if (!t) return false;
+    if (esCodigoUnidad(t.toUpperCase()) || /^\d{6,}$/.test(t)) return true;
+    if (productos.some((p) => p.codigo_barras === t || (p.referencia ?? '') === normalizarReferencia(t))) return true;
+    const abreviado = normalizarCodigoUnidad(t);
+    if (abreviado === null || filtrarProductos(t).length > 0) return false;
+    // Solo si ese prefijo existe en algún producto ("note13" no es una pieza: es una búsqueda mal escrita)
+    const prefijo = prefijoDelCodigo(abreviado);
+    return productos.some((p) => p.prefijo_codigo === prefijo || (p.referencia ?? '').startsWith(prefijo + '-'));
+  }
+
   campoCodigo.addEventListener('keydown', (e) => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    const codigo = campoCodigo.value;
-    if (!codigo.trim()) return;
-    void agregarPorCodigo(codigo, true).then((agregado) => {
-      if (agregado) campoCodigo.value = '';
+    const texto = campoCodigo.value;
+    if (!pareceCodigo(texto)) return; // es una búsqueda por nombre: la lista ya está filtrada
+    void agregarPorCodigo(texto, true).then((agregado) => {
+      if (agregado) {
+        campoCodigo.value = '';
+        clearTimeout(pausaBusqueda);
+        renderResultados('');
+      }
       campoCodigo.select();
     });
   });
