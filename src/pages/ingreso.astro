@@ -792,6 +792,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let galeriaCodigos: string[] = [];
   /** La galería abierta es una reimpresión: al terminar se anota como reimpresión y no cambia la fecha de la primera impresión */
   let galeriaEsReimpresion = false;
+  /** Las etiquetas de esta galería ya se anotaron como impresas (al descargar o al pulsar Listo; solo una vez por galería) */
+  let galeriaAnotada = false;
   /** Las últimas etiquetas que se dieron por impresas (para ofrecer reimprimirlas si alguna salió mal) */
   let ultimasImpresas: { codigo: string; nombre: string }[] = [];
   let galeriaEtiquetas: { codigo: string; nombre: string }[] = [];
@@ -858,6 +860,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   async function abrirGaleria(etiquetas: { codigo: string; nombre: string }[], esReimpresion: boolean) {
     const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
     galeriaEsReimpresion = esReimpresion;
+    galeriaAnotada = false;
     galeriaEtiquetas = envio.map((e) => ({ codigo: e.codigo, nombre: e.nombre }));
     galeriaCodigos = envio.map((e) => e.codigo);
     const restantes = etiquetas.length - envio.length;
@@ -923,7 +926,26 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     });
   }
 
-  $('ig-galeria-descargar').addEventListener('click', () => descargarArchivos(archivosDelModo()));
+  /**
+   * Anota las etiquetas de esta galería como impresas (o reimpresas). Se hace al DESCARGAR y también con "Listo", pero una sola vez:
+   * antes solo se anotaba con "Listo", y quien descargaba el PDF, imprimía desde la app de la impresora y cerraba con "Cerrar"
+   * dejaba etiquetas ya pegadas marcadas como "sin etiqueta impresa" (y el cobro del POS las advertía).
+   */
+  async function anotarImpresas() {
+    if (galeriaAnotada || galeriaCodigos.length === 0) return;
+    galeriaAnotada = true;
+    try {
+      await inventoryService.marcarEtiquetasImpresas(galeriaCodigos, { reimpresion: galeriaEsReimpresion });
+      await cargarSinEtiqueta();
+    } catch {
+      galeriaAnotada = false; // sin red: se vuelve a intentar al pulsar Listo
+    }
+  }
+
+  $('ig-galeria-descargar').addEventListener('click', () => {
+    descargarArchivos(archivosDelModo());
+    void anotarImpresas();
+  });
   $('ig-galeria-cerrar').addEventListener('click', cerrarGaleria);
   $('ig-galeria-listo').addEventListener('click', async () => {
     const codigos = galeriaCodigos;
@@ -940,12 +962,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('ig-reimprimir-ultimas').classList.remove('hidden');
     $('ig-reimprimir-ultimas').classList.add('flex');
     // Las unidades impresas ya no se vuelven a ofrecer como "sin etiqueta"
-    try {
-      await inventoryService.marcarEtiquetasImpresas(codigos, { reimpresion: esReimpresion });
-      await cargarSinEtiqueta();
-    } catch {
-      /* si no se pudo anotar, esas unidades se vuelven a ofrecer como "sin etiqueta" */
-    }
+    await anotarImpresas(); // si ya se anotó al descargar, no vuelve a contar (una reimpresión no se suma dos veces)
   });
 
   // --- Reimprimir etiquetas ---------------------------------------------------------------
