@@ -31,15 +31,22 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div class="mt-1 flex items-center gap-3">
           <div id="fp-foto-previa"></div>
           <div class="flex flex-wrap gap-2">
-            <label class="cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 focus-within:ring-2 focus-within:ring-brand-500 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
-              <input id="fp-foto" type="file" accept="image/jpeg,image/png,image/webp" class="sr-only" />
-              <span id="fp-foto-etiqueta">Tomar o elegir foto</span>
-            </label>
+            <!-- Dos botones que abren el selector con un toque directo (más fiable en iPhone y Android que un <label> con el campo escondido):
+                 uno abre la cámara y el otro la galería o los archivos -->
+            <button type="button" id="fp-foto-tomar" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+              Tomar foto
+            </button>
+            <button type="button" id="fp-foto-elegir" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+              Elegir de la galería
+            </button>
             <button type="button" id="fp-foto-quitar" class="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 dark:border-slate-700 dark:text-red-400 dark:hover:bg-red-500/10">
               Quitar foto
             </button>
           </div>
         </div>
+        <input id="fp-foto" type="file" accept="image/*" capture="environment" hidden />
+        <input id="fp-foto-galeria" type="file" accept="image/jpeg,image/png,image/webp" hidden />
+        <p id="fp-foto-error" role="alert" class="mt-2 hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
         <p class="mt-1 text-xs text-slate-400">La foto se reduce sola (máx. 720 px) para que cargue rápido.</p>
       </div>
 
@@ -178,24 +185,37 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     else if (!quitarFoto) url = editando?.imagen_url ?? null;
     $('fp-foto-previa').innerHTML = htmlMiniatura(url, 'Foto del producto', 'h-16 w-16');
     botonQuitarFoto.classList.toggle('hidden', !url);
-    $('fp-foto-etiqueta').textContent = url ? 'Cambiar foto' : 'Tomar o elegir foto';
   }
 
-  inputFoto.addEventListener('change', async () => {
-    const archivo = inputFoto.files?.[0];
+  // Los avisos de la foto salen JUNTO a la foto (el aviso general queda al final del formulario, fuera de la pantalla del teléfono)
+  const errorFoto = $('fp-foto-error');
+  const inputGaleria = $<HTMLInputElement>('fp-foto-galeria');
+
+  async function alElegirFoto(input: HTMLInputElement) {
+    const archivo = input.files?.[0];
     if (!archivo) return;
-    error.classList.add('hidden');
+    errorFoto.classList.add('hidden');
     try {
       fotoNueva = await reducirImagen(archivo, { preferirWebp: true });
       quitarFoto = false;
       await pintarFoto();
     } catch (err) {
-      fotoNueva = null;
-      mostrarError(err instanceof Error ? err.message : 'No se pudo usar esa imagen.');
+      errorFoto.textContent = err instanceof Error ? err.message : 'No se pudo usar esa imagen.';
+      errorFoto.classList.remove('hidden');
     } finally {
-      inputFoto.value = ''; // permite volver a elegir el mismo archivo
+      input.value = ''; // permite volver a elegir el mismo archivo
     }
-  });
+  }
+  inputFoto.addEventListener('change', () => void alElegirFoto(inputFoto));
+  inputGaleria.addEventListener('change', () => void alElegirFoto(inputGaleria));
+
+  // Se vacía el campo ANTES de abrir el selector: así el cambio se detecta siempre, aunque la foto nueva tenga el mismo nombre que la anterior
+  for (const [boton, input] of [['fp-foto-tomar', inputFoto], ['fp-foto-elegir', inputGaleria]] as const) {
+    $(boton).addEventListener('click', () => {
+      input.value = '';
+      input.click();
+    });
+  }
 
   botonQuitarFoto.addEventListener('click', () => {
     fotoNueva = null;
@@ -322,6 +342,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     fotoNueva = null;
     quitarFoto = false;
+    errorFoto.classList.add('hidden');
     await pintarFoto();
     pintarModelos();
     buscarModelo.dispatchEvent(new Event('input'));
