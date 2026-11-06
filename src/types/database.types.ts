@@ -238,6 +238,8 @@ export interface NuevaVenta {
   tasa_cambio?: number | null;
   /** Bolívares cobrados (suma de los pagos en Bs); null si no se cobró nada en Bs */
   total_bs?: number | null;
+  /** Captura del comprobante del pago móvil (obligatoria si algún cobro es BS_PAGO_MOVIL): ruta en el almacenamiento privado, o una imagen data: en la demo */
+  comprobante_path?: string | null;
 }
 
 export interface Venta extends NuevaVenta {

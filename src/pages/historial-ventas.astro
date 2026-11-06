@@ -264,6 +264,19 @@ import { alCambiarDatos } from '../lib/realtime';
       </div>`;
   }
 
+  /** Dirección de la captura: en el servidor es un archivo privado (se entrega con la sesión); en la demo es una imagen guardada en el navegador. */
+  const hrefComprobante = (ruta: string) => (ruta.startsWith('data:') ? '#' : `/api/archivos/privado/${encodeURI(ruta)}`);
+
+  /** Una imagen data: no se abre en una pestaña nueva: se pasa a un enlace de objeto. */
+  function abrirImagenLocal(dataUrl: string) {
+    const [cabecera, datos] = dataUrl.split(',');
+    const tipo = /data:([^;]+)/.exec(cabecera)?.[1] ?? 'image/jpeg';
+    const binario = atob(datos);
+    const bytes = new Uint8Array(binario.length);
+    for (let i = 0; i < binario.length; i++) bytes[i] = binario.charCodeAt(i);
+    window.open(URL.createObjectURL(new Blob([bytes], { type: tipo })), '_blank', 'noopener');
+  }
+
   function filaHtml(v: VentaRegistrada): string {
     const unidades = v.items.reduce((suma, i) => suma + i.cantidad, 0);
     const pagos = pagosDeVenta(v);
@@ -293,6 +306,7 @@ import { alCambiarDatos } from '../lib/realtime';
         <td data-label="Tipo de cobro" class="px-4 py-3">
           <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${estiloMetodo(v.metodo_pago)}">${escaparHtml(etiquetaMetodoPago(v.metodo_pago))}</span>
           ${v.vuelto ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Vuelto: ${v.vuelto.monto_bs != null ? formatearBolivares(v.vuelto.monto_bs) : formatearMoneda(v.vuelto.monto_usd)} (${escaparHtml(etiquetaMetodoPago(v.vuelto.metodo))})</p>` : ''}
+          ${esAdministrador && v.comprobante_path ? `<a href="${hrefComprobante(v.comprobante_path)}" target="_blank" rel="noopener" data-comprobante="${escaparHtml(v.comprobante_path.startsWith('data:') ? 'local' : 'servidor')}" data-ruta-comprobante="${escaparHtml(v.id)}" class="mt-1.5 inline-block text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300">Ver comprobante</a>` : ''}
           ${pagos.length > 1 ? `<ul class="mt-1.5 space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">${pagos.map((p) => `<li class="flex justify-between gap-3"><span>${escaparHtml(etiquetaMetodoPago(p.metodo))}</span><span class="shrink-0 tabular-nums">${p.monto_bs != null ? formatearBolivares(p.monto_bs) : formatearMoneda(p.monto_usd)}</span></li>`).join('')}</ul>` : ''}
         </td>
         <td data-label="Productos" class="px-4 py-3">
@@ -441,6 +455,13 @@ import { alCambiarDatos } from '../lib/realtime';
   });
 
   filas.addEventListener('click', (e) => {
+    const enlace = (e.target as HTMLElement).closest<HTMLElement>('[data-comprobante="local"]');
+    if (enlace) {
+      e.preventDefault();
+      const captura = ventas.find((v) => v.id === enlace.dataset.rutaComprobante)?.comprobante_path;
+      if (captura) abrirImagenLocal(captura);
+      return;
+    }
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-devolver-venta]')?.dataset.devolverVenta;
     const venta = ventas.find((v) => v.id === id);
     if (venta) window.dispatchEvent(new CustomEvent('easystem:abrir-devolucion', { detail: { venta } }));

@@ -42,7 +42,7 @@ import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoVa
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
-import { esMetodoBolivares, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
+import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
 import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
 import type {
@@ -1601,6 +1601,8 @@ export interface DatosVenta {
   /** Bs por $ del día; se guarda en la venta */
   tasa_cambio: number;
   vendedor_nombre?: string;
+  /** Captura (ya reducida) del comprobante del pago móvil: obligatoria si algún pago es BS_PAGO_MOVIL */
+  comprobante?: Blob | null;
 }
 
 /** Venta ya guardada. `pendienteSincronizar`: se hizo sin conexión y el folio se asignará al sincronizar (folio = 0). */
@@ -1701,6 +1703,21 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   }
   if (!(datos.tasa_cambio > 0)) throw new Error('Falta la tasa del dólar del día. Regístrala e inténtalo de nuevo.');
 
+  // Pago móvil = captura del comprobante ANTES de tocar el inventario: si no se puede subir, la venta no empieza
+  const conPagoMovil = incluyePagoMovil(datos.pagos);
+  if (conPagoMovil && !datos.comprobante) throw new Error('Adjunta la captura del comprobante del pago móvil antes de procesar la venta.');
+  let comprobante_path: string | null = null;
+  if (conPagoMovil && datos.comprobante) {
+    try {
+      comprobante_path = modoServidor ? await ventasDb.subirComprobantePagoMovil(local_id, datos.comprobante) : await blobADataUrl(datos.comprobante);
+    } catch (err) {
+      throw new Error(`No se pudo guardar la captura del pago móvil: ${err instanceof Error ? err.message : 'inténtalo de nuevo'}. Revisa la conexión y vuelve a intentarlo.`);
+    }
+  }
+  const soltarCaptura = () => {
+    if (modoServidor && comprobante_path) ventasDb.eliminarComprobantePagoMovil(comprobante_path).catch(() => {});
+  };
+
   const registradas: VentaItem[] = [];
   let fallo: unknown = null;
   for (const item of items) {
@@ -1721,7 +1738,10 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
       break;
     }
   }
-  if (registradas.length === 0) throw fallo; // nada salió del inventario: se puede reintentar tal cual
+  if (registradas.length === 0) {
+    soltarCaptura(); // nada salió del inventario: la captura subida no respalda ninguna venta
+    throw fallo; // se puede reintentar tal cual
+  }
 
   const totalUsd = Math.round(registradas.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
   // Si solo se alcanzaron a registrar algunas líneas, los pagos se reparten en proporción al nuevo total.
@@ -1744,6 +1764,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     items: registradas,
     vendedor_nombre: datos.vendedor_nombre ?? null,
     tasa_cambio: datos.tasa_cambio,
+    comprobante_path,
     // Bolívares netos: lo recibido en Bs menos el vuelto entregado en Bs
     total_bs:
       pagos.some((p) => p.monto_bs != null) || vuelto?.monto_bs != null

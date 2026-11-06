@@ -91,6 +91,11 @@ export class FormularioPagos {
     return Number(el.closest<HTMLElement>('[data-fila]')!.dataset.fila);
   }
 
+  /** Los tipos de cobro elegidos ahora (sin repetir). La página escucha el evento `easystem:pagos-cambiaron` de su contenedor para reaccionar. */
+  metodosElegidos(): MetodoPago[] {
+    return this.filas.map((f) => f.metodo).filter((m): m is MetodoPago => m !== '');
+  }
+
   /** Fija el total a pagar. Si cambió desde la última vez, las filas se reinician. */
   establecerTotal(usd: number) {
     this.total = usd;
@@ -184,6 +189,7 @@ export class FormularioPagos {
       <div data-vuelto class="mt-2 rounded-lg border border-slate-200 p-2.5 dark:border-slate-700"></div>
       <p data-pagos-resumen class="mt-2 rounded-lg px-3 py-2 text-sm font-medium"></p>`;
     this.pintarVuelto();
+    this.raiz.dispatchEvent(new CustomEvent('easystem:pagos-cambiaron', { bubbles: true }));
   }
 
   /** Bloque "¿Se debe dar vuelto?" (se repinta solo, sin tocar las filas de pago). */

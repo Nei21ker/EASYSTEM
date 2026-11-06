@@ -12,6 +12,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 ---
 
 <style is:global set:html={estilosEtiqueta()}></style>
+<style is:global>
+  /* Sin productos en el lote no hay nada que registrar: el pie se oculta, salvo que haya un aviso que mostrar (p. ej. "Reimprimir estas") */
+  #ig-pie[data-vacio="true"]:not(:has(#ig-error:not(.hidden), #ig-exito:not(.hidden), #ig-reimprimir-ultimas:not(.hidden))) {
+    display: none;
+  }
+  #ig-pie[data-vacio="true"] #ig-bloque-motivo,
+  #ig-pie[data-vacio="true"] #ig-resumen,
+  #ig-pie[data-vacio="true"] #ig-botones {
+    display: none;
+  }
+</style>
 
 <DashboardLayout
   titulo="Mercancía"
@@ -98,8 +109,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           </table>
         </div>
 
-        <div class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
-          <div>
+        <div id="ig-pie" class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div id="ig-bloque-motivo">
             <label for="ig-motivo" class={claseEtiqueta}>Motivo del ingreso</label>
             <input id="ig-motivo" type="text" list="ig-motivos" value="Compra a proveedor" class={`mt-1 ${claseCampo}`} />
             <datalist id="ig-motivos">
@@ -116,8 +127,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <p>¿Alguna etiqueta salió mal o se dañó? Puedes volver a imprimir estas mismas.</p>
             <button id="ig-reimprimir-estas" type="button" class="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold hover:bg-amber-100 dark:border-amber-500/50 dark:hover:bg-amber-500/20">Reimprimir estas</button>
           </div>
-          <div class="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button id="ig-compartir" type="button" title="Prepara las etiquetas como imágenes y las entrega a la app de tu impresora Bluetooth (WePrint)" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
+          <div id="ig-botones" class="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <button id="ig-compartir" type="button" title="Prepara las etiquetas como PDF o imágenes para descargarlas e imprimirlas" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
               Imprimir etiquetas
             </button>
             <button id="ig-registrar" type="button" class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
@@ -167,7 +178,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <div id="ig-previa" class="inline-block border border-slate-300 bg-white shadow-sm"></div>
         </div>
         <p class="mt-3 text-xs text-slate-500 dark:text-slate-400">
-          Al pulsar "Imprimir etiquetas" se preparan las etiquetas como imágenes de este tamaño y se entregan a la app de tu impresora (WePrint). En la app, deja el tamaño de papel de la etiqueta y sin escala.
+          Al pulsar "Imprimir etiquetas" se preparan las etiquetas como imágenes de este tamaño para descargarlas y abrirlas en la app de tu impresora (WePrint). En la app, deja el tamaño de papel de la etiqueta y sin escala.
         </p>
       </section>
     </aside>
@@ -227,8 +238,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <span class="ml-2 text-xs text-slate-500 dark:text-slate-400">Déjala en 0; si al imprimir la tira las etiquetas se van corriendo, pon el espacio que hay entre etiquetas en tu rollo (por ejemplo 2 o 3).</span>
         </div>
         <ol class="list-decimal space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
-          <li>Pulsa <strong>Compartir con WePrint</strong> y elige WePrint en el menú. En WePrint deja el papel en el tamaño de la etiqueta.</li>
-          <li>Si WePrint no aparece en el menú, pulsa <strong>Descargar</strong> (queda en la app Archivos) o mantén el dedo sobre una etiqueta y elige <strong>Guardar en Fotos</strong>, y ábrela desde WePrint.</li>
+          <li>Pulsa <strong>Descargar</strong> (queda en la app Archivos) o mantén el dedo sobre una etiqueta y elige <strong>Guardar en Fotos</strong>.</li>
+          <li>Ábrela desde WePrint y deja el papel en el tamaño de la etiqueta.</li>
           <li>Cuando las hayas impreso, pulsa <strong>Ya las imprimí</strong>.</li>
         </ol>
         <div id="ig-galeria-imagenes" class="grid grid-cols-2 gap-2"></div>
@@ -237,7 +248,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:justify-end">
         <button id="ig-galeria-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar</button>
         <button id="ig-galeria-descargar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar</button>
-        <button id="ig-galeria-compartir" type="button" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">Compartir con WePrint</button>
         <button id="ig-galeria-listo" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Ya las imprimí</button>
       </div>
     </div>
@@ -287,12 +297,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     totalEtiquetas,
   } from '../utils/etiquetas';
   import {
-    compartirArchivos,
     descargarArchivos,
     etiquetasComoPdf,
     MAX_ETIQUETAS_POR_TIRA,
     prepararArchivosEtiquetas,
-    puedeCompartirArchivos,
     tiraComoPng,
   } from '../utils/etiquetaImagen';
   import { animarLista, reanimar } from '../utils/animaciones';
@@ -541,6 +549,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('ig-vacio').classList.toggle('hidden', visibles.length > 0);
     $('ig-tabla').classList.toggle('hidden', visibles.length === 0);
     $('ig-vaciar').classList.toggle('hidden', visibles.length === 0);
+    $('ig-pie').dataset.vacio = String(visibles.length === 0);
     $('ig-titulo-lote').textContent = visibles.length ? `Lote de ingreso (${visibles.length} producto${visibles.length === 1 ? '' : 's'})` : 'Lote de ingreso';
 
     const campo =
@@ -752,9 +761,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const archivos = archivosDelModo();
     $('ig-galeria-ayuda').textContent = AYUDA_MODO[galeriaModo.value] ?? '';
     $('ig-galeria-separacion-caja').classList.toggle('hidden', galeriaModo.value !== 'tira');
-    ($('ig-galeria-compartir') as HTMLButtonElement).disabled = archivos.length === 0;
     ($('ig-galeria-descargar') as HTMLButtonElement).disabled = archivos.length === 0;
-    $('ig-galeria-compartir').classList.toggle('hidden', archivos.length > 0 && !puedeCompartirArchivos(archivos));
   }
 
   /** Genera la tira y el PDF (y las imágenes sueltas la primera vez); se vuelve a llamar si cambia la separación. */
@@ -869,16 +876,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     });
   }
 
-  // El menú "Compartir" exige que se abra con un toque del usuario: los archivos ya están listos antes de pulsar el botón
-  $('ig-galeria-compartir').addEventListener('click', async () => {
-    galeriaError.classList.add('hidden');
-    try {
-      await compartirArchivos(archivosDelModo());
-    } catch (err) {
-      galeriaError.textContent = err instanceof Error ? `No se pudo abrir el menú Compartir (${err.message}). Usa "Descargar" o guarda las etiquetas en Fotos.` : 'No se pudo abrir el menú Compartir.';
-      galeriaError.classList.remove('hidden');
-    }
-  });
   $('ig-galeria-descargar').addEventListener('click', () => descargarArchivos(archivosDelModo()));
   $('ig-galeria-cerrar').addEventListener('click', cerrarGaleria);
   $('ig-galeria-listo').addEventListener('click', async () => {

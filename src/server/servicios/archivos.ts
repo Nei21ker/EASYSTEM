@@ -1,6 +1,6 @@
 // Archivos en R2.
 //   · FOTOS_PUBLICAS: fotos de producto (se sirven sin sesión, con caché de un año: cada foto tiene un nombre único).
-//   · FOTOS_PRIVADAS: comprobantes de nómina y fotos de cuadre de caja. NUNCA públicas: cada lectura/escritura pasa por
+//   · FOTOS_PRIVADAS: comprobantes de nómina, capturas del pago móvil de las ventas y fotos de cuadre de caja. NUNCA públicas: cada lectura/escritura pasa por
 //     las mismas reglas de acceso que los datos a los que respaldan (comprobante_accesible, cuadre_foto_accesible,
 //     cuadre_foto_editable de Postgres).
 import { alcanceDe, alcanceNomina, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
@@ -15,6 +15,8 @@ const MAX_ARCHIVO_PRIVADO = 5 * 1024 * 1024;
 const CLAVE_PRODUCTO = /^productos\/[A-Za-z0-9-]{1,64}\/\d{10,16}(-m)?\.(jpg|png|webp)$/;
 const CLAVE_FOTO = /^productos\/([A-Za-z0-9-]{1,64})\/(\d{10,16})\.(jpg|png|webp)$/;
 const RUTA_CUADRE = /^cuadres-caja\/([0-9a-f-]{36})\/(\d{4}-\d{2}-\d{2})\/[A-Z_]{3,16}-\d{1,16}-\d{1,6}\.(jpg|jpeg|png|webp)$/i;
+// Captura del pago móvil de una venta del POS: comprobantes-pago-movil/<local>/<hora>-<n>.jpg
+const RUTA_PAGO_MOVIL = /^comprobantes-pago-movil\/([0-9a-f-]{36})\/\d{10,16}-\d{1,8}\.(jpg|jpeg|png|webp)$/i;
 const RUTA_COMPROBANTE = /^comprobantes-nomina\/([0-9a-f-]{36})\/[A-Za-z0-9._-]{1,120}\.(jpg|jpeg|png|webp)$/i;
 
 const sinPermiso = (mensaje = 'No tienes permiso para ver este archivo.') => new ErrorApi(403, mensaje, 'sin_permiso');
@@ -110,6 +112,14 @@ async function autorizarRuta(env: Entorno, sesion: Sesion, ruta: string, accion:
     }
     return;
   }
+  const pagoMovil = RUTA_PAGO_MOVIL.exec(ruta);
+  if (pagoMovil) {
+    const localId = pagoMovil[1];
+    // Subir (o borrar una subida que no se usó): quien vende en ese local. Ver la captura: solo la gerencia de ese local
+    if (accion === 'leer' ? !esGerencia(sesion.rol) : sesion.rol === 'contador') throw sinPermiso();
+    if (!(await localAccesible(env, sesion, localId))) throw sinPermiso();
+    return;
+  }
   const comprobante = RUTA_COMPROBANTE.exec(ruta);
   if (comprobante) {
     try {
@@ -153,5 +163,18 @@ export async function borrarArchivosPrivados(env: Entorno, sesion: Sesion, rutas
       .first();
     if (ligado) throw new ErrorApi(409, 'Esa captura pertenece a un pago ya registrado como PAGADO y no se puede borrar.', 'pago_pagado');
   }
+  // La captura de una venta registrada es su respaldo: solo se borra una que no llegó a usarse (el POS la quita si falló la venta)
+  const capturasDeVenta = rutas.filter((r) => RUTA_PAGO_MOVIL.test(r));
+  if (capturasDeVenta.length > 0) {
+    const marcas = capturasDeVenta.map(() => '?').join(', ');
+    const ligada = await env.DB.prepare(`SELECT 1 AS ok FROM ventas WHERE comprobante_path IN (${marcas}) LIMIT 1`).bind(...capturasDeVenta).first();
+    if (ligada) throw new ErrorApi(409, 'Esa captura pertenece a una venta ya registrada y no se puede borrar.', 'comprobante_en_uso');
+  }
   if (rutas.length > 0) await env.FOTOS_PRIVADAS.delete(rutas);
+}
+
+/** ¿Es una ruta de captura de pago móvil de ESE local? (las ventas solo aceptan capturas subidas a su propio local) */
+export function esRutaPagoMovilDeLocal(ruta: string, localId: string): boolean {
+  const partes = RUTA_PAGO_MOVIL.exec(ruta);
+  return partes !== null && partes[1] === localId;
 }

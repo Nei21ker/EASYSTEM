@@ -48,6 +48,7 @@ export const esquemaVenta = z.object({
   vendedor_nombre: z.string().nullable().optional(),
   tasa_cambio: z.number().nullable().optional(),
   total_bs: z.number().nullable().optional(),
+  comprobante_path: z.string().max(300).nullable().optional(),
 });
 
 export const esquemaDevolucion = z.object({

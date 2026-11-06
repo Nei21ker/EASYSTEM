@@ -21,6 +21,11 @@ export function etiquetaMetodoPago(valor: string): string {
 }
 
 /** ¿Se cobra en bolívares? (pago móvil, punto de venta o efectivo en Bs). Dólares efectivo y Binance USDT se cobran en $. */
+/** ¿Alguno de los cobros es "Bs pago móvil"? Entonces la venta exige la captura del comprobante. */
+export function incluyePagoMovil(pagos: Pick<PagoVenta, 'metodo'>[]): boolean {
+  return pagos.some((p) => p.metodo === 'BS_PAGO_MOVIL');
+}
+
 export function esMetodoBolivares(valor: string): boolean {
   return valor.startsWith('BS_');
 }

@@ -96,7 +96,7 @@ describe('guardarVenta', () => {
       env, sV,
       venta(accesorios, {
         metodo_pago: 'MIXTO',
-        pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 10, monto_bs: null }, { metodo: 'BS_PAGO_MOVIL', monto_usd: 5, monto_bs: 182.5 }],
+        pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 10, monto_bs: null }, { metodo: 'BS_PUNTO_VENTA', monto_usd: 5, monto_bs: 182.5 }],
         vuelto: { metodo: 'USD_EFECTIVO', monto_usd: 3, monto_bs: null },
         total: 12,
         total_bs: 182.5,

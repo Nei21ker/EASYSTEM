@@ -243,6 +243,7 @@ export const ventas = sqliteTable('ventas', {
   total_bs: real('total_bs'),
   vendedor_id: text('vendedor_id'),
   vendedor_nombre: text('vendedor_nombre'),
+  comprobante_path: text('comprobante_path'),
 });
 
 export const devoluciones = sqliteTable('devoluciones', {

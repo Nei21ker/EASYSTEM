@@ -8,6 +8,7 @@ import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId, redondear2 } from '../util';
+import { esRutaPagoMovilDeLocal } from './archivos';
 import { normalizarCedula, separarNombre } from './clientes';
 import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
@@ -27,6 +28,7 @@ function aVenta(f: Record<string, unknown>): Venta {
     total_bs: (f.total_bs as number | null) ?? null,
     vendedor_id: (f.vendedor_id as string | null) ?? null,
     vendedor_nombre: (f.vendedor_nombre as string | null) ?? null,
+    comprobante_path: (f.comprobante_path as string | null) ?? null,
   };
 }
 
@@ -51,6 +53,23 @@ function fechaValida(fecha: string, mensaje: string): string {
 }
 
 // --- Ventas ---------------------------------------------------------------------------------------------------
+/**
+ * Un cobro por pago móvil exige la captura del comprobante: debe estar ya subida al almacenamiento privado, ser de ESTE local y no
+ * estar usada por otra venta (una misma captura no respalda dos ventas). Devuelve la ruta a guardar (null si no hay pago móvil: en ese
+ * caso cualquier captura enviada se ignora).
+ */
+async function validarComprobantePagoMovil(env: Entorno, datos: NuevaVenta): Promise<string | null> {
+  const conPagoMovil = datos.metodo_pago === 'BS_PAGO_MOVIL' || (datos.pagos ?? []).some((p) => p.metodo === 'BS_PAGO_MOVIL');
+  if (!conPagoMovil) return null;
+  const ruta = (datos.comprobante_path ?? '').trim();
+  if (!ruta) throw new ErrorApi(400, 'Adjunta la captura del comprobante del pago móvil para registrar la venta.', 'comprobante_requerido');
+  if (!esRutaPagoMovilDeLocal(ruta, datos.local_id)) throw new ErrorApi(400, 'La captura del pago móvil no es válida para este local.', 'comprobante_invalido');
+  if (!(await env.FOTOS_PRIVADAS.head(ruta))) throw new ErrorApi(400, 'La captura del pago móvil no se subió. Vuelve a adjuntarla.', 'comprobante_invalido');
+  const usada = await env.DB.prepare('SELECT 1 AS ok FROM ventas WHERE comprobante_path = ?').bind(ruta).first();
+  if (usada) throw new ErrorApi(409, 'Esa captura ya respalda otra venta. Adjunta la del pago de esta venta.', 'comprobante_en_uso');
+  return ruta;
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -64,6 +83,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   if (!Number.isFinite(datos.total) || datos.total < 0) throw new ErrorApi(400, 'El total de la venta no es válido.', 'datos_invalidos');
   if (!METODOS.includes(datos.metodo_pago)) throw new ErrorApi(400, 'Tipo de cobro inválido.', 'datos_invalidos');
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
+  const comprobante = await validarComprobantePagoMovil(env, datos);
 
   const id = nuevoId();
   const db = env.DB;
@@ -72,12 +92,12 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('ventas', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
     db
       .prepare(
-        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre)
-         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(datos.items),
-        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre
+        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante
       ),
     // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
     db
