@@ -2,6 +2,7 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
 import FormularioProducto from '../components/productos/FormularioProducto.astro';
+import AltaRapida from '../components/ingreso/AltaRapida.astro';
 import Descargo from '../components/mercancia/Descargo.astro';
 import Inventario from '../components/mercancia/Inventario.astro';
 import { FORMATOS_ETIQUETA, FORMATO_PERSONALIZADO_ID, LIMITES_FORMATO_PERSONALIZADO, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
@@ -60,9 +61,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             </div>
             <ul id="ig-resultados" class="absolute z-10 mt-1 hidden max-h-64 w-full divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900"></ul>
           </div>
-          <button id="ig-nuevo" type="button" class="bg-marca w-full shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:mt-5 sm:w-auto sm:py-2">
-            + Nuevo producto
-          </button>
+          <div class="flex shrink-0 flex-col gap-2 sm:mt-5 sm:flex-row">
+            <button id="ig-alta-rapida" type="button" class="bg-marca w-full rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:w-auto sm:py-2">
+              Crear varios productos
+            </button>
+            <button id="ig-nuevo" type="button" class="w-full rounded-lg border border-brand-300 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-slate-800 sm:w-auto sm:py-2">
+              + Un producto
+            </button>
+          </div>
         </div>
         <div class="mt-3 flex flex-col gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2.5 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300 sm:flex-row sm:items-center sm:justify-between">
           <p>¿Ya tienes mercancía en el sistema y solo faltan las etiquetas? No hace falta ingresar nada.</p>
@@ -131,8 +137,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <button id="ig-compartir" type="button" title="Prepara las etiquetas como PDF o imágenes para descargarlas e imprimirlas" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
               Imprimir etiquetas
             </button>
-            <button id="ig-registrar" type="button" class="bg-marca rounded-lg px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">
-              Registrar ingreso
+            <button id="ig-registrar" type="button" class="rounded-lg border border-brand-300 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-slate-800">
+              Solo registrar ingreso
+            </button>
+            <button id="ig-registrar-imprimir" type="button" class="bg-marca rounded-lg px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:py-2.5">
+              Registrar e imprimir etiquetas
             </button>
           </div>
         </div>
@@ -279,6 +288,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   <CamaraEscaner />
   <FormularioProducto />
+  <AltaRapida />
 </DashboardLayout>
 
 <script>
@@ -318,6 +328,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const resumen = $('ig-resumen');
   const motivo = $<HTMLInputElement>('ig-motivo');
   const botonRegistrar = $<HTMLButtonElement>('ig-registrar');
+  const botonRegistrarImprimir = $<HTMLButtonElement>('ig-registrar-imprimir');
   const selectFormato = $<HTMLSelectElement>('ig-formato');
   const campoAncho = $<HTMLInputElement>('ig-ancho');
   const campoAlto = $<HTMLInputElement>('ig-alto');
@@ -642,53 +653,89 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   // --- Registrar ingreso --------------------------------------------------------------
-  botonRegistrar.addEventListener('click', async () => {
+  /**
+   * Registra TODO el lote de una vez (una sola petición atómica por tanda, ver registrarIngresoLote). Si alguna línea falla se queda
+   * en el lote con su motivo y las demás sí quedan registradas. Con `imprimir`, al terminar sin fallos abre directo las etiquetas.
+   */
+  async function registrar(imprimir: boolean) {
     error.classList.add('hidden');
     exito.classList.add('hidden');
 
     const aRegistrar = lote.filter((l) => l.cantidad > 0 && producto(l.id));
-    if (aRegistrar.length === 0) return mostrarError('Pon al menos un producto con cantidad mayor a 0 para registrar el ingreso.');
+    if (aRegistrar.length === 0) {
+      // Nada que ingresar: con "imprimir" solo se sacan las etiquetas que ya existen
+      if (imprimir) {
+        const etiquetas = reunirEtiquetas();
+        if (etiquetas) await abrirGaleria(etiquetas, false);
+        return;
+      }
+      return mostrarError('Pon al menos un producto con cantidad mayor a 0 para registrar el ingreso.');
+    }
     if (!hayLocal) return mostrarError('Elige un local en el selector del encabezado: el ingreso se registra en un local concreto.');
 
-    botonRegistrar.disabled = true;
-    botonRegistrar.textContent = 'Registrando...';
-    const texto = motivo.value.trim() || 'Reabastecimiento';
+    const botones = [botonRegistrar, botonRegistrarImprimir];
+    const textos = botones.map((b) => b.textContent);
+    botones.forEach((b) => (b.disabled = true));
+    (imprimir ? botonRegistrarImprimir : botonRegistrar).textContent = 'Registrando...';
+
     let unidades = 0;
     const fallos: string[] = [];
-
-    // Una entrada por producto, en orden. Si una falla, las demás siguen y esa se queda en el lote.
-    for (const linea of aRegistrar) {
-      const p = producto(linea.id)!;
-      try {
-        const movimiento = await inventoryService.registrarMovimiento({ producto_id: p.id, tipo: 'ENTRADA', cantidad: linea.cantidad, motivo: texto });
-        unidades += linea.cantidad;
-        linea.cantidad = 0; // ya está en el stock
-        // Cada unidad nueva tiene su código: las etiquetas a imprimir son exactamente esas
-        linea.unidades = [...(linea.unidades ?? []), ...(movimiento.unidad_codigos ?? [])];
-        linea.copias = linea.unidades.length;
-        linea.manual = false;
-      } catch (err) {
-        fallos.push(`${p.nombre}: ${err instanceof Error ? err.message : 'no se pudo registrar'}`);
-      }
+    try {
+      const resultados = await inventoryService.registrarIngresoLote(
+        aRegistrar.map((l) => ({ producto_id: l.id, cantidad: l.cantidad })),
+        motivo.value
+      );
+      aRegistrar.forEach((linea, i) => {
+        const r = resultados[i];
+        if (r?.ok) {
+          unidades += linea.cantidad;
+          linea.cantidad = 0; // ya está en el stock
+          // Cada unidad nueva tiene su código: las etiquetas a imprimir son exactamente esas
+          linea.unidades = [...(linea.unidades ?? []), ...r.codigos];
+          linea.copias = linea.unidades.length;
+          linea.manual = false;
+        } else {
+          fallos.push(`${producto(linea.id)?.nombre ?? 'Producto'}: ${r?.ok === false ? r.mensaje : 'no se pudo registrar'}`);
+        }
+      });
+    } catch (err) {
+      fallos.push(err instanceof Error ? err.message : 'no se pudo registrar');
     }
 
     guardarLote();
-    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
-    await cargarSinEtiqueta();
+    try {
+      productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+      await cargarSinEtiqueta();
+    } catch {
+      /* sin red: se muestran las existencias de antes; el registro ya está hecho */
+    }
     pintarLote();
-    botonRegistrar.disabled = false;
-    botonRegistrar.textContent = 'Registrar ingreso';
+    botones.forEach((b, i) => {
+      b.disabled = false;
+      b.textContent = textos[i];
+    });
 
     const registrados = aRegistrar.length - fallos.length;
     if (registrados > 0) {
-      mostrarExito(`Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}, cada una con su código. Ya puedes imprimir las etiquetas.`);
+      mostrarExito(
+        `Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}, cada una con su código.${imprimir ? '' : ' Ya puedes imprimir las etiquetas.'}`
+      );
     }
     if (fallos.length) {
       mostrarError(`No se pudo registrar (siguen en el lote): ${fallos.join(' · ')}`);
       if (registrados > 0) exito.classList.remove('hidden');
+      if (imprimir) avisar('No se abrieron las etiquetas porque algunas líneas fallaron: corrige y vuelve a pulsar "Registrar e imprimir etiquetas".');
     }
     window.dispatchEvent(new Event('easystem:productos-cambiaron'));
-  });
+
+    if (imprimir && fallos.length === 0) {
+      const etiquetas = reunirEtiquetas();
+      if (etiquetas) await abrirGaleria(etiquetas, false);
+    }
+  }
+
+  botonRegistrar.addEventListener('click', () => void registrar(false));
+  botonRegistrarImprimir.addEventListener('click', () => void registrar(true));
 
   // --- Etiquetas -------------------------------------------------------------------------
   /** Las etiquetas a sacar (una por unidad: primero las de este ingreso y después las más antiguas sin etiqueta), o null si falta algo. */
@@ -1115,6 +1162,36 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     ultimoCodigoDesconocido = '';
     aviso.classList.add('hidden');
   });
+
+  $('ig-alta-rapida').addEventListener('click', () => {
+    aviso.classList.add('hidden');
+    window.dispatchEvent(new Event('easystem:abrir-alta-rapida'));
+  });
+
+  // Productos creados (o ya existentes) desde "Crear varios productos": entran al lote con su cantidad
+  window.addEventListener('easystem:alta-rapida-creada', (async (e: CustomEvent<{ items: { productoId: string; cantidad: number }[]; nuevos: number }>) => {
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    let agregados = 0;
+    for (const { productoId, cantidad } of e.detail.items) {
+      if (!producto(productoId)) continue;
+      const existente = lote.find((l) => l.id === productoId);
+      if (existente) {
+        existente.cantidad += cantidad;
+        if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
+      } else {
+        lote.push({ id: productoId, cantidad, copias: cantidad, manual: false });
+      }
+      agregados++;
+    }
+    guardarLote();
+    await cargarSinEtiqueta();
+    pintarLote();
+    const { nuevos } = e.detail;
+    mostrarExito(
+      `${nuevos} producto${nuevos === 1 ? '' : 's'} creado${nuevos === 1 ? '' : 's'}${agregados > nuevos ? ` y ${agregados - nuevos} que ya existía${agregados - nuevos === 1 ? '' : 'n'}` : ''}, ${agregados === 1 ? 'agregado' : 'agregados'} al lote. Revisa las cantidades y pulsa "Registrar e imprimir etiquetas".`
+    );
+    $('ig-titulo-lote').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }) as unknown as EventListener);
 
   window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean }>) => {
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });

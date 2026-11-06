@@ -16,6 +16,8 @@
 // sincronizarPendientes(). Ver ConnectionStatus.astro para el indicador de UI.
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
+import { ErrorDeApi } from './api';
+import { partirEnTandas } from '../utils/tandas';
 import type { ResultadoEliminacion } from './db/productos';
 import * as productosDb from './db/productos';
 import * as modelosDb from './db/modelos';
@@ -38,7 +40,7 @@ import type { MovimientoConProducto } from './db/movimientos';
 import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
-import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, sugerirPrefijo } from '../utils/codigos';
+import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
@@ -55,6 +57,7 @@ import type {
   Empleado,
   EsperadoCuadre,
   EstadoOrdenServicio,
+  FilaAltaRapida,
   FotoCuadre,
   InventarioLocal,
   Local,
@@ -65,6 +68,7 @@ import type {
   MovimientoInventario,
   Producto,
   ProductoConRelaciones,
+  ProductoCreadoRapido,
   NuevaDevolucion,
   NuevaOrdenServicio,
   NuevaTasa,
@@ -1211,6 +1215,38 @@ export async function crearProducto(
   return producto;
 }
 
+/**
+ * Alta rápida: crea de una vez muchos productos con solo nombre, categoría y precio (el código de barras interno, la referencia y el
+ * stock mínimo 0 los pone el sistema). El local activo pasa a manejarlos; su stock llega después con el ingreso.
+ */
+export async function crearProductosRapidos(filas: FilaAltaRapida[]): Promise<ProductoCreadoRapido[]> {
+  if (filas.length === 0) return [];
+  const { localId } = await alcanceActual();
+
+  if (modoServidor) {
+    const creados = await productosDb.crearProductosRapidos(filas);
+    if (localId && creados.length > 0) await productosDb.asegurarEnLocal(localId, creados.map((c) => c.id));
+    return creados;
+  }
+
+  const db = leerDB();
+  const codigos = generarCodigosInternos(db.productos.map((p) => p.codigo_barras), filas.length);
+  const creados: ProductoCreadoRapido[] = [];
+  for (const [i, f] of filas.entries()) {
+    const p = await crearProducto({
+      codigo_barras: codigos[i],
+      nombre: f.nombre.trim(),
+      categoria: f.categoria.trim(),
+      precio_venta: f.precio_venta,
+      precio_compra: f.precio_compra ?? 0,
+      stock_minimo: 0,
+      prefijo_codigo: f.prefijo_codigo?.trim() || undefined,
+    });
+    creados.push({ id: p.id, nombre: p.nombre, codigo_barras: p.codigo_barras, referencia: p.referencia ?? undefined, prefijo_codigo: p.prefijo_codigo ?? undefined });
+  }
+  return creados;
+}
+
 export async function actualizarProducto(id: string, cambiosCrudos: Partial<Producto>): Promise<Producto> {
   // El stock solo cambia mediante movimientos (kardex); nunca por edición directa.
   const { stock_actual: _ignorado, id: _id, created_at: _creado, referencia: _referencia, ...cambios } = cambiosCrudos;
@@ -1495,6 +1531,53 @@ export async function listarMovimientos(limite = 100): Promise<MovimientoConProd
  * Mueve el stock de UN local. Si no se indica local_id se usa el local activo (en la vista "Todos los
  * locales" hay que indicarlo o elegir uno antes).
  */
+export type ResultadoLineaIngreso = { ok: true; codigos: string[] } | { ok: false; mensaje: string };
+
+/**
+ * Registra el ingreso de varios productos de una vez: con el servidor van TODOS en una sola petición atómica (en tandas de 50 líneas /
+ * 500 unidades), en vez de una petición por producto; con 40 productos y una red débil es la diferencia entre esperar uno o muchos
+ * viajes. Si el servidor rechaza una tanda, se reintenta línea por línea para que solo falle la que tiene el problema (esas líneas
+ * se quedan en el lote). Devuelve un resultado por línea, en el mismo orden.
+ */
+export async function registrarIngresoLote(lineas: { producto_id: string; cantidad: number }[], motivo: string): Promise<ResultadoLineaIngreso[]> {
+  const resultados: ResultadoLineaIngreso[] = new Array(lineas.length);
+  const motivoFinal = motivo.trim() || 'Reabastecimiento';
+  const una = async (i: number) => {
+    try {
+      const m = await registrarMovimiento({ producto_id: lineas[i].producto_id, tipo: 'ENTRADA', cantidad: lineas[i].cantidad, motivo: motivoFinal });
+      resultados[i] = { ok: true, codigos: m.unidad_codigos ?? [] };
+    } catch (err) {
+      resultados[i] = { ok: false, mensaje: err instanceof Error ? err.message : 'no se pudo registrar' };
+    }
+  };
+
+  if (!modoServidor) {
+    for (let i = 0; i < lineas.length; i++) await una(i);
+    return resultados;
+  }
+
+  const local_id = await exigirLocal('registrar el ingreso');
+  for (const tanda of partirEnTandas(lineas.map((l) => l.cantidad))) {
+    try {
+      const codigos = await movimientosDb.registrarEntradasLote(
+        tanda.map((i) => ({ producto_id: lineas[i].producto_id, cantidad: lineas[i].cantidad, local_id, motivo: motivoFinal }))
+      );
+      tanda.forEach((i, k) => (resultados[i] = { ok: true, codigos: codigos[k] ?? [] }));
+    } catch (err) {
+      const rechazadaPorElServidor = err instanceof ErrorDeApi && err.status >= 400 && err.status < 500;
+      if (rechazadaPorElServidor) {
+        // Nada se aplicó (la tanda es atómica): se prueba una por una para saber cuál es la que falla
+        for (const i of tanda) await una(i);
+      } else {
+        // Sin conexión o error del servidor: no se sabe si llegó a aplicarse; reintentar a ciegas podría ingresar dos veces
+        const mensaje = `No se pudo confirmar el registro (${err instanceof Error ? err.message : 'error de conexión'}). Revisa el stock del producto antes de volver a intentarlo.`;
+        for (const i of tanda) resultados[i] = { ok: false, mensaje };
+      }
+    }
+  }
+  return resultados;
+}
+
 export async function registrarMovimiento(input: {
   producto_id: string;
   tipo: TipoMovimientoManual;

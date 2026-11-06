@@ -1,0 +1,294 @@
+---
+// Alta rápida de productos nuevos (administrador, gerente y encargado): en vez de llenar un formulario por producto, se escribe UN
+// PRODUCTO POR LÍNEA y la categoría, el prefijo, el precio y la cantidad se ponen una sola vez. En el teléfono ocupa toda la pantalla.
+// Se abre con el evento window "easystem:abrir-alta-rapida" y, al crear, avisa con "easystem:alta-rapida-creada"
+// ({ items: [{ productoId, cantidad }] }) para que la página los meta al lote; también avisa "easystem:productos-cambiaron".
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:py-2.5 sm:text-sm';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<dialog
+  id="ar-dialogo"
+  class="anim-escalar m-auto h-[100dvh] max-h-none w-full max-w-none origin-center overflow-hidden rounded-none border-0 border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 sm:h-auto sm:max-h-[92vh] sm:w-[min(44rem,calc(100vw-1.5rem))] sm:rounded-2xl sm:border"
+>
+  <form id="ar-form" class="flex h-full max-h-[100dvh] flex-col sm:max-h-[92vh]" novalidate>
+    <header class="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-800 sm:px-5 sm:py-4">
+      <div>
+        <h2 class="text-base font-semibold">Crear varios productos</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Un producto por línea; lo común se escribe una sola vez.</p>
+      </div>
+      <button type="button" id="ar-cerrar" aria-label="Cerrar" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5">
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="col-span-2 sm:col-span-2">
+          <label for="ar-categoria" class={claseEtiqueta}>Categoría de todos *</label>
+          <input id="ar-categoria" type="text" list="ar-categorias" autocomplete="off" enterkeyhint="next" placeholder="Ej: Controles" class={claseCampo} />
+          <datalist id="ar-categorias"></datalist>
+        </div>
+        <div>
+          <label for="ar-prefijo" class={claseEtiqueta}>Prefijo del código</label>
+          <input id="ar-prefijo" type="text" maxlength="4" autocapitalize="characters" autocomplete="off" enterkeyhint="next" placeholder="CTL" class={`${claseCampo} uppercase`} />
+        </div>
+        <div>
+          <label for="ar-cantidad" class={claseEtiqueta}>Cantidad c/u</label>
+          <input id="ar-cantidad" type="number" inputmode="numeric" min="0" max="999" step="1" value="1" enterkeyhint="next" class={claseCampo} />
+        </div>
+        <div>
+          <label for="ar-precio" class={claseEtiqueta}>Precio venta ($)</label>
+          <input id="ar-precio" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="0,00" class={claseCampo} />
+        </div>
+        <div id="ar-grupo-compra">
+          <label for="ar-compra" class={claseEtiqueta}>Precio compra ($)</label>
+          <input id="ar-compra" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="0,00" class={claseCampo} />
+        </div>
+      </div>
+      <p id="ar-prefijo-ayuda" class="-mt-2 text-xs text-slate-400">
+        El prefijo (2 a 4 letras) arma el código de cada pieza: CTL → CTL000001. Vacío = el sistema lo sugiere por la marca o la categoría.
+      </p>
+
+      <div>
+        <label for="ar-texto" class={claseEtiqueta}>Productos (uno por línea) *</label>
+        <textarea
+          id="ar-texto"
+          rows="8"
+          autocomplete="off"
+          autocapitalize="sentences"
+          spellcheck="false"
+          placeholder={'Control A/C Samsung\nControl A/C LG x3\nControl convertidor Roku $12'}
+          class={`${claseCampo} font-mono leading-relaxed`}></textarea>
+        <p class="mt-1 text-xs text-slate-400">
+          Al final de una línea puedes poner <strong>x3</strong> (cuántas unidades entran) y/o <strong>$12</strong> (su precio, si es distinto). Repetir un nombre suma las cantidades; lo que ya existe no se duplica: solo se agrega al lote.
+        </p>
+      </div>
+
+      <div id="ar-vista" class="hidden">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Vista previa</h3>
+          <span id="ar-conteo" class="text-xs text-slate-500 dark:text-slate-400"></span>
+        </div>
+        <ul id="ar-lista" class="mt-2 divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+      </div>
+
+      <p id="ar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+
+    <footer class="flex flex-col-reverse gap-2 border-t border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 sm:flex-row sm:justify-end sm:px-5">
+      <button type="button" id="ar-cancelar" class="rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2.5">
+        Cancelar
+      </button>
+      <button type="submit" id="ar-crear" class="bg-marca rounded-lg px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:py-2.5">
+        Crear y agregar al lote
+      </button>
+    </footer>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
+  import { esPrefijoValido } from '../../utils/codigos';
+  import { leerPrecio, normalizarNombre, parsearAltaRapida, problemaDeAlta, MAX_LINEAS_ALTA } from '../../utils/altaRapida';
+  import { reanimar } from '../../utils/animaciones';
+  import type { FilaAltaRapida, ProductoConRelaciones } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('ar-dialogo');
+  const form = $<HTMLFormElement>('ar-form');
+  const campoCategoria = $<HTMLInputElement>('ar-categoria');
+  const campoPrefijo = $<HTMLInputElement>('ar-prefijo');
+  const campoCantidad = $<HTMLInputElement>('ar-cantidad');
+  const campoPrecio = $<HTMLInputElement>('ar-precio');
+  const campoCompra = $<HTMLInputElement>('ar-compra');
+  const campoTexto = $<HTMLTextAreaElement>('ar-texto');
+  const vista = $('ar-vista');
+  const lista = $('ar-lista');
+  const conteo = $('ar-conteo');
+  const error = $('ar-error');
+  const botonCrear = $<HTMLButtonElement>('ar-crear');
+
+  const LS = 'easystem:alta-rapida';
+  const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos', 'Controles'];
+
+  let catalogo: ProductoConRelaciones[] = [];
+  let porNombre = new Map<string, ProductoConRelaciones>();
+  let veCosto = false;
+  let ocupado = false;
+
+  const escapar = (t: string) => {
+    const d = document.createElement('div');
+    d.textContent = t;
+    return d.innerHTML;
+  };
+
+  function guardarBorrador() {
+    try {
+      localStorage.setItem(
+        LS,
+        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, compra: campoCompra.value, texto: campoTexto.value })
+      );
+    } catch {
+      /* sin almacenamiento: no se recuerda nada */
+    }
+  }
+
+  function leerBorrador() {
+    try {
+      const b = JSON.parse(localStorage.getItem(LS) ?? 'null') as Record<string, string> | null;
+      if (!b) return;
+      campoCategoria.value = b.categoria ?? '';
+      campoPrefijo.value = b.prefijo ?? '';
+      campoCantidad.value = b.cantidad ?? '1';
+      campoPrecio.value = b.precio ?? '';
+      campoCompra.value = b.compra ?? '';
+      campoTexto.value = b.texto ?? '';
+    } catch {
+      /* borrador ilegible: se empieza en blanco */
+    }
+  }
+
+  function mostrarError(texto: string) {
+    error.textContent = texto;
+    error.classList.remove('hidden');
+    reanimar(error, 'anim-sacudir');
+  }
+
+  function defectos() {
+    const cantidad = Math.floor(Number(campoCantidad.value));
+    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecio(campoPrecio.value) : null };
+  }
+
+  function pintarVista(limpiarError = true) {
+    guardarBorrador();
+    if (limpiarError) error.classList.add('hidden');
+    const lineas = parsearAltaRapida(campoTexto.value, defectos());
+    vista.classList.toggle('hidden', lineas.length === 0);
+    if (lineas.length === 0) return;
+    const nuevas = lineas.filter((l) => !l.error && !porNombre.has(normalizarNombre(l.nombre))).length;
+    const existentes = lineas.filter((l) => !l.error && porNombre.has(normalizarNombre(l.nombre))).length;
+    const malas = lineas.filter((l) => l.error).length;
+    conteo.textContent = [`${nuevas} nuevo${nuevas === 1 ? '' : 's'}`, existentes ? `${existentes} ya existe${existentes === 1 ? '' : 'n'}` : '', malas ? `${malas} con error` : ''].filter(Boolean).join(' · ');
+    lista.innerHTML = lineas
+      .map((l) => {
+        const existe = !l.error && porNombre.has(normalizarNombre(l.nombre));
+        const etiqueta = l.error
+          ? `<span class="text-xs text-red-600 dark:text-red-400">${escapar(l.error)}</span>`
+          : existe
+            ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">Ya existe: se suma al lote</span>'
+            : '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">Nuevo</span>';
+        const detalle = l.error ? '' : `<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${l.cantidad} u.${!existe && l.precio !== null ? ` · $${l.precio}` : ''}</span>`;
+        return `<li class="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+          <span class="min-w-0 break-words font-medium">${escapar(l.nombre) || '<em class="text-slate-400">(vacío)</em>'}</span>
+          <span class="flex shrink-0 items-center gap-2">${detalle}${etiqueta}</span>
+        </li>`;
+      })
+      .join('');
+  }
+
+  async function abrir() {
+    const sesion = await obtenerSesionActual();
+    if (!esGerencia(sesion?.rol)) return;
+    veCosto = esGlobal(sesion?.rol);
+    $('ar-grupo-compra').classList.toggle('hidden', !veCosto);
+    catalogo = await inventoryService.listarProductos({ catalogoCompleto: true });
+    porNombre = new Map(catalogo.map((p) => [normalizarNombre(p.nombre), p]));
+    const categorias = [...new Set([...CATEGORIAS_BASE, ...catalogo.map((p) => p.categoria)])].sort();
+    $('ar-categorias').innerHTML = categorias.map((c) => `<option value="${escapar(c)}"></option>`).join('');
+    leerBorrador();
+    error.classList.add('hidden');
+    pintarVista();
+    if (!dialogo.open) dialogo.showModal();
+    (campoCategoria.value ? campoTexto : campoCategoria).focus();
+  }
+
+  function cerrar() {
+    if (ocupado) return;
+    dialogo.close();
+  }
+
+  // Enter en un campo pasa al siguiente (el teclado del teléfono muestra "Siguiente"); en el texto, Enter es salto de línea
+  const orden = [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto];
+  for (const [i, campo] of orden.entries()) {
+    if (campo === campoTexto) continue;
+    campo.addEventListener('keydown', (ev: Event) => {
+      const e = ev as KeyboardEvent;
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      const siguiente = orden.slice(i + 1).find((c) => !c.closest('.hidden'));
+      (siguiente ?? campoTexto).focus();
+    });
+  }
+  campoPrefijo.addEventListener('input', () => {
+    campoPrefijo.value = campoPrefijo.value.toUpperCase().replace(/[^A-Z]/g, '');
+  });
+  for (const campo of [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto]) campo.addEventListener('input', () => pintarVista());
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (ocupado) return;
+    error.classList.add('hidden');
+
+    const categoria = campoCategoria.value.trim();
+    if (!categoria) return mostrarError('Escribe la categoría (por ejemplo, Controles).');
+    const prefijo = campoPrefijo.value.trim().toUpperCase();
+    if (prefijo && !esPrefijoValido(prefijo)) return mostrarError('El prefijo debe tener de 2 a 4 letras (A–Z).');
+    const compra = veCosto && campoCompra.value.trim() ? leerPrecio(campoCompra.value) : 0;
+    if (compra === null) return mostrarError('El precio de compra no es válido.');
+
+    const lineas = parsearAltaRapida(campoTexto.value, defectos());
+    const problema = problemaDeAlta(lineas);
+    if (problema) return mostrarError(problema);
+
+    const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
+    if (aCrear.length > MAX_LINEAS_ALTA) return mostrarError(`Son demasiados productos nuevos de una vez (máximo ${MAX_LINEAS_ALTA}).`);
+
+    ocupado = true;
+    botonCrear.disabled = true;
+    botonCrear.textContent = 'Creando...';
+    try {
+      const filas: FilaAltaRapida[] = aCrear.map((l) => ({
+        nombre: l.nombre,
+        categoria,
+        precio_venta: l.precio ?? 0,
+        precio_compra: compra ?? 0,
+        prefijo_codigo: prefijo || undefined,
+      }));
+      const creados = filas.length > 0 ? await inventoryService.crearProductosRapidos(filas) : [];
+      const idCreado = new Map(creados.map((c) => [normalizarNombre(c.nombre), c.id]));
+
+      const items = lineas.map((l) => {
+        const clave = normalizarNombre(l.nombre);
+        return { productoId: porNombre.get(clave)?.id ?? idCreado.get(clave) ?? '', cantidad: l.cantidad };
+      });
+      if (items.some((i) => !i.productoId)) throw new Error('Se crearon los productos pero no se pudieron ubicar todos: busca los que falten en el lote.');
+
+      campoTexto.value = '';
+      guardarBorrador();
+      dialogo.close();
+      window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+      window.dispatchEvent(new CustomEvent('easystem:alta-rapida-creada', { detail: { items, nuevos: creados.length } }));
+    } catch (err) {
+      // El texto se conserva: se corrige y se vuelve a intentar sin retipear
+      mostrarError(err instanceof Error ? err.message : 'No se pudieron crear los productos.');
+      // Por si algo sí se creó antes del fallo, la próxima vez se detecta como "ya existe" y no se duplica
+      void inventoryService.listarProductos({ catalogoCompleto: true }).then((p) => {
+        catalogo = p;
+        porNombre = new Map(p.map((x) => [normalizarNombre(x.nombre), x]));
+        pintarVista(false);
+      });
+    } finally {
+      ocupado = false;
+      botonCrear.disabled = false;
+      botonCrear.textContent = 'Crear y agregar al lote';
+    }
+  });
+
+  $('ar-cerrar').addEventListener('click', cerrar);
+  $('ar-cancelar').addEventListener('click', cerrar);
+  dialogo.addEventListener('cancel', (e) => {
+    if (ocupado) e.preventDefault();
+  });
+  window.addEventListener('easystem:abrir-alta-rapida', () => void abrir());
+</script>

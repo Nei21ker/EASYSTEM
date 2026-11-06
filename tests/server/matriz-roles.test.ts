@@ -66,6 +66,7 @@ function casos(): Caso[] {
     { archivo: 'productos/[id]/compatibilidades.ts', metodo: 'PUT', url: `/api/productos/${p}/compatibilidades`, params: { id: p }, cuerpo: { modeloIds: [] }, permitidos: GERENCIA },
     { archivo: 'productos/eliminar-lote.ts', metodo: 'POST', url: '/api/productos/eliminar-lote', cuerpo: { ids: [] }, permitidos: GLOBAL },
     { archivo: 'productos/lote.ts', metodo: 'POST', url: '/api/productos/lote', cuerpo: { filas: [] }, permitidos: GLOBAL },
+    { archivo: 'productos/rapido.ts', metodo: 'POST', url: '/api/productos/rapido', cuerpo: { filas: [] }, permitidos: GERENCIA },
     { archivo: 'productos/compatibilidades-lote.ts', metodo: 'POST', url: '/api/productos/compatibilidades-lote', cuerpo: { pares: [], productoIds: [] }, permitidos: GLOBAL },
     { archivo: 'productos/por-codigo/[codigo].ts', metodo: 'GET', url: '/api/productos/por-codigo/2000000000015', params: { codigo: '2000000000015' }, permitidos: NEGOCIO },
     { archivo: 'productos/stock-bajo.ts', metodo: 'GET', url: '/api/productos/stock-bajo', permitidos: NEGOCIO },

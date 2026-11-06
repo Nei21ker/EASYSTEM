@@ -12,7 +12,7 @@ import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
-import { construirReferencia, esPrefijoValido, sugerirPrefijo } from '../../utils/codigos';
+import { construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
 export type { ProductoConInventario } from '../repos/productos';
@@ -255,6 +255,11 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
     if (existente) throw duplicado(existente.codigo_barras);
   }
 
+  return insertarProductosNuevos(env, sesion, filas);
+}
+
+/** Inserta productos nuevos en UN lote atómico (referencia y prefijo incluidos). Quien llama ya validó permisos, datos y códigos repetidos. */
+async function insertarProductosNuevos(env: Entorno, sesion: Sesion, filas: DatosProducto[]): Promise<{ id: string; codigo_barras: string; nombre: string; referencia: string; prefijo_codigo: string }[]> {
   const marcas = await marcasConocidas(env);
   const prefijos = filas.map((f) => (f.prefijo_codigo !== undefined ? prefijoIndicado(f.prefijo_codigo) : sugerirPrefijo(f.nombre.trim(), f.categoria.trim(), marcas)));
   const referencias = await reservarReferencias(env, prefijos);
@@ -271,7 +276,8 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
       creados.map(({ id, codigo_barras, prefijo, referencia, f }) =>
         env.DB
           .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, ahora)
+          // El encargado no ve ni fija el precio de compra
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, ahora)
       )
     );
   } catch (err) {
@@ -279,7 +285,56 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
     throw err;
   }
   await avisarCambio(env.DB, ['productos']);
-  return creados.map(({ id, codigo_barras }) => ({ id, codigo_barras }));
+  return creados.map(({ id, codigo_barras, prefijo, referencia, f }) => ({ id, codigo_barras, nombre: f.nombre.trim(), referencia, prefijo_codigo: prefijo }));
+}
+
+export interface FilaAltaRapida {
+  nombre: string;
+  categoria: string;
+  precio_venta: number;
+  /** Solo lo toman administrador y gerente; para el encargado se guarda 0 */
+  precio_compra?: number;
+  /** Si no se indica se sugiere por la marca del nombre o la categoría */
+  prefijo_codigo?: string;
+}
+
+const MAX_NOMBRE_ALTA = 120;
+
+/**
+ * Alta rápida: crea hasta 100 productos de una vez a partir de lo mínimo (nombre, categoría, precio). El código de barras interno
+ * se genera aquí (a continuación del mayor existente) y el stock mínimo queda en 0 (sin alertas); el stock llega después por el
+ * ingreso. Lo puede usar quien crea productos (administrador, gerente y encargado). Todo o nada.
+ */
+export async function crearProductosRapidos(env: Entorno, sesion: Sesion, filas: FilaAltaRapida[]) {
+  exigirGerencia(sesion);
+  await alcanceDe(env, sesion);
+  if (filas.length === 0) return [];
+  if (filas.length > LIMITE_LOTE) throw new ErrorApi(400, `Se pueden crear hasta ${LIMITE_LOTE} productos por petición.`, 'lote_grande');
+  for (const f of filas) {
+    if (f.nombre.trim().length > MAX_NOMBRE_ALTA) throw new ErrorApi(400, `El nombre "${f.nombre.trim().slice(0, 30)}…" es demasiado largo (máximo ${MAX_NOMBRE_ALTA} letras).`, 'datos_invalidos');
+  }
+
+  // Dos personas dando de alta a la vez pueden elegir el mismo código interno: la segunda se reintenta con los siguientes
+  for (let intento = 1; ; intento++) {
+    const existentes = await env.DB.prepare("SELECT codigo_barras FROM productos WHERE length(codigo_barras) = 13 AND codigo_barras LIKE '20%'").all<{ codigo_barras: string }>();
+    const codigos = generarCodigosInternos(existentes.results.map((f) => f.codigo_barras), filas.length);
+    const completas: DatosProducto[] = filas.map((f, i) => ({
+      codigo_barras: codigos[i],
+      nombre: f.nombre,
+      categoria: f.categoria,
+      precio_venta: f.precio_venta,
+      precio_compra: f.precio_compra,
+      stock_minimo: 0,
+      prefijo_codigo: f.prefijo_codigo?.trim() ? f.prefijo_codigo : undefined,
+    }));
+    completas.forEach((f) => validarProducto(f, true));
+    try {
+      return await insertarProductosNuevos(env, sesion, completas);
+    } catch (err) {
+      if (err instanceof ErrorApi && err.codigo === 'codigo_repetido' && intento < 3) continue;
+      throw err;
+    }
+  }
 }
 
 // --- Compatibilidades ----------------------------------------------------------------------------------------------

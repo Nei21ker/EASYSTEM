@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { InventarioLocal, Producto, ProductoConRelaciones, ProductoStockBajo } from '../../types/database.types';
+import type { FilaAltaRapida, InventarioLocal, Producto, ProductoCreadoRapido, ProductoConRelaciones, ProductoStockBajo } from '../../types/database.types';
 
 /** Producto del catálogo con su stock en cada local que lo maneja (el servidor entrega solo los locales del usuario). */
 export type ProductoConInventario = ProductoConRelaciones & { inventario: InventarioLocal[] };
@@ -69,6 +69,15 @@ export async function crearProductosLote(filas: DatosProducto[]): Promise<{ id: 
   const creados: { id: string; codigo_barras: string }[] = [];
   for (let i = 0; i < filas.length; i += PRODUCTOS_POR_LOTE) {
     creados.push(...(await api.post<{ id: string; codigo_barras: string }[]>('/api/productos/lote', { filas: filas.slice(i, i + PRODUCTOS_POR_LOTE) })));
+  }
+  return creados;
+}
+
+/** Alta rápida: crea productos con solo nombre, categoría y precio (el servidor pone el código y la referencia). De 100 en 100, cada tanda atómica. */
+export async function crearProductosRapidos(filas: FilaAltaRapida[]): Promise<ProductoCreadoRapido[]> {
+  const creados: ProductoCreadoRapido[] = [];
+  for (let i = 0; i < filas.length; i += PRODUCTOS_POR_LOTE) {
+    creados.push(...(await api.post<ProductoCreadoRapido[]>('/api/productos/rapido', { filas: filas.slice(i, i + PRODUCTOS_POR_LOTE) })));
   }
   return creados;
 }

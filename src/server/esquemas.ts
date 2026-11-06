@@ -12,6 +12,14 @@ export const esquemaProducto = z.object({
   prefijo_codigo: z.string().optional(),
 });
 
+export const esquemaProductoRapido = z.object({
+  nombre: z.string(),
+  categoria: z.string(),
+  precio_venta: z.number(),
+  precio_compra: z.number().optional(),
+  prefijo_codigo: z.string().optional(),
+});
+
 export const esquemaMovimiento = z.object({
   productoId: z.string(),
   tipo: z.enum(['ENTRADA', 'SALIDA']),

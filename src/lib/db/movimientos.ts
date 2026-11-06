@@ -41,6 +41,14 @@ export async function registrarMovimiento(input: {
   return { ...r.movimiento, unidad_codigos: r.unidadCodigos };
 }
 
+/** Registra ENTRADAS de varios productos en UN solo lote atómico (todo o nada) y devuelve los códigos de unidad de cada una, en el mismo orden. Máx. 50 y 500 unidades: la página las parte antes (utils/tandas.ts). */
+export async function registrarEntradasLote(filas: { producto_id: string; cantidad: number; local_id: string; motivo?: string }[]): Promise<string[][]> {
+  const respuesta = await api.post<ResultadoMovimiento[]>('/api/movimientos/lote', {
+    movimientos: filas.map((f) => ({ productoId: f.producto_id, tipo: 'ENTRADA', cantidad: f.cantidad, localId: f.local_id, motivo: f.motivo })),
+  });
+  return respuesta.map((r) => r.unidadCodigos ?? []);
+}
+
 type FilaLote = { producto_id: string; tipo: TipoMovimiento; cantidad: number; local_id: string; motivo?: string };
 
 /**

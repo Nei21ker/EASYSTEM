@@ -216,6 +216,25 @@ export interface ClienteVenta {
 }
 
 /** Lo que el POS envía al registrar una venta (el folio lo asigna el sistema). */
+/** Alta rápida de productos: lo mínimo de cada uno (el código de barras interno y el stock mínimo los pone el sistema). */
+export interface FilaAltaRapida {
+  nombre: string;
+  categoria: string;
+  precio_venta: number;
+  /** Solo lo toman administrador y gerente; para el encargado queda en 0 */
+  precio_compra?: number;
+  /** 2 a 4 letras; vacío = el sistema lo sugiere por la marca o la categoría */
+  prefijo_codigo?: string;
+}
+
+export interface ProductoCreadoRapido {
+  id: string;
+  nombre: string;
+  codigo_barras: string;
+  referencia?: string;
+  prefijo_codigo?: string;
+}
+
 export interface NuevaVenta {
   fecha: string;
   /** Local donde se hizo la venta */
