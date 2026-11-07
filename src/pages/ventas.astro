@@ -511,8 +511,8 @@ import { alCambiarDatos } from '../lib/realtime';
           <li class="flex items-center justify-between gap-3 px-5 py-3">
             ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="truncate text-xs text-slate-500 dark:text-slate-400">
+              <p class="break-words text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
+              <p class="line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
                 ${escaparHtml(codigoVisible(producto))} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
               </p>
               <p class="mt-1 text-xs">
@@ -943,7 +943,7 @@ import { alCambiarDatos } from '../lib/realtime';
       .map(
         ({ producto, cantidad }) => `
           <li class="flex items-center justify-between gap-3 px-3 py-2">
-            <span class="min-w-0 flex-1 truncate text-slate-700 dark:text-slate-300">${cantidad} × ${escaparHtml(producto.nombre)}</span>
+            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${cantidad} × ${escaparHtml(producto.nombre)}</span>
             <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(producto.precio_venta * cantidad)}</span>
           </li>`
       )
@@ -1314,8 +1314,8 @@ import { alCambiarDatos } from '../lib/realtime';
             <button type="button" data-sel-producto="${p.id}" class="flex w-full items-center gap-3 px-5 py-3 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
               ${htmlMiniatura(p.imagen_url, p.nombre, 'h-10 w-10')}
               <span class="min-w-0 flex-1">
-                <span class="block truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</span>
-                <span class="block truncate text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.categoria)} · ${precioEnLinea(p.precio_venta)}</span>
+                <span class="block break-words text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</span>
+                <span class="block break-words text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.categoria)} · ${precioEnLinea(p.precio_venta)}</span>
               </span>
               <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${p.stock_actual} u.</span>
             </button>
