@@ -92,6 +92,7 @@ function casos(): Caso[] {
     { archivo: 'ventas/index.ts', metodo: 'POST', url: '/api/ventas', cuerpo: venta, permitidos: NEGOCIO },
     // (con un promotor inexistente: los roles con permiso reciben 400 antes de tocar contraseñas; el resto, 403)
     { archivo: 'ventas/autorizar-precio.ts', metodo: 'POST', url: '/api/ventas/autorizar-precio', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, promotor_id: 'no-existe', lineas: [{ producto_id: p, precio: 9 }] }, permitidos: NEGOCIO },
+    { archivo: 'ventas/autorizar-codigo.ts', metodo: 'POST', url: '/api/ventas/autorizar-codigo', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, producto_id: 'no-existe' }, permitidos: NEGOCIO },
     { archivo: 'promotores.ts', metodo: 'GET', url: `/api/promotores?localId=${accesorios}`, permitidos: NEGOCIO },
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
     { archivo: 'reportes/resetear.ts', metodo: 'POST', url: '/api/reportes/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },

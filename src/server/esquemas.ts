@@ -38,6 +38,16 @@ export const esquemaItemVenta = z.object({
   precio_unitario: z.number(),
   precio_lista: z.number().optional(),
   unidades: z.array(z.string()).optional(),
+  codigos_manuales: z.array(z.string()).max(500).optional(),
+  autorizacion_codigo: z.string().max(2000).optional(),
+});
+
+/** Pedido de autorización para elegir a mano el código de una unidad: un supervisor teclea su correo y contraseña */
+export const esquemaAutorizarCodigo = z.object({
+  email: z.string().min(3).max(200),
+  clave: z.string().min(1).max(200),
+  local_id: z.string(),
+  producto_id: z.string(),
 });
 export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 export const esquemaDinero = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });

@@ -10,7 +10,7 @@ import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId, redondear2 } from '../util';
 import { esRutaPagoMovilDeLocal } from './archivos';
 import { normalizarCedula, separarNombre } from './clientes';
-import { verificarPrecioPromotor, type PrecioPromotorVerificado } from './autorizaciones';
+import { verificarCodigoManual, verificarPrecioPromotor, type PrecioPromotorVerificado } from './autorizaciones';
 import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
@@ -118,6 +118,26 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   return { items, comision, promotor };
 }
 
+/**
+ * Las unidades que quien vende eligió a mano (la etiqueta no se leía) exigen la autorización firmada de un supervisor para ESE producto.
+ * Se guardan marcadas y con quién las autorizó; la autorización en sí no se guarda. Las líneas sin selección manual salen limpias.
+ */
+async function aplicarSeleccionManual(env: Entorno, sesion: Sesion, localId: string, items: VentaItem[]): Promise<VentaItem[]> {
+  const resultado: VentaItem[] = [];
+  for (const item of items) {
+    const { codigos_manuales: manuales, autorizacion_codigo: token, seleccion_manual: _ignorada, ...limpio } = item;
+    if (!manuales?.length) {
+      resultado.push(limpio);
+      continue;
+    }
+    const propias = new Set(item.unidades ?? []);
+    if (manuales.some((c) => !propias.has(c))) throw new ErrorApi(400, 'Un código elegido a mano no es de las unidades de esa línea.', 'datos_invalidos');
+    const aut = await verificarCodigoManual(env, sesion, localId, item.producto_id, token ?? '');
+    resultado.push({ ...limpio, seleccion_manual: { codigos: [...new Set(manuales)], autorizado_por: aut.autorizado_por, autorizado_nombre: aut.autorizado_nombre } });
+  }
+  return resultado;
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -133,6 +153,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
   const comprobante = await validarComprobantePagoMovil(env, datos);
   const precios = await aplicarPrecioPromotor(env, sesion, datos);
+  const itemsGuardados = await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items);
 
   const id = nuevoId();
   const db = env.DB;
@@ -146,7 +167,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
          VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
-        id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(precios.items),
+        id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(itemsGuardados),
         json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante,
         precios.promotor?.promotor_id ?? null, precios.promotor?.promotor_nombre ?? null, precios.comision,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null

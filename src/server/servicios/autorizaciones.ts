@@ -56,15 +56,31 @@ async function claveFirma(env: Entorno): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', new TextEncoder().encode(`autorizacion-precio:${env.BETTER_AUTH_SECRET}`), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
 }
 
-export async function firmarAutorizacion(env: Entorno, carga: CargaAutorizacion): Promise<string> {
+/** Autorización para elegir a mano el código de una unidad (la etiqueta no se puede leer): atada a quien vende, el local y el producto. */
+export interface CargaCodigoManual {
+  v: 1;
+  k: 'codigo';
+  u: string;
+  a: string;
+  an: string;
+  l: string;
+  /** Producto cuyas unidades se pueden elegir a mano */
+  pr: string;
+  exp: number;
+}
+
+async function firmarCarga(env: Entorno, carga: object): Promise<string> {
   const cuerpo = aBase64Url(new TextEncoder().encode(JSON.stringify(carga)));
   const firma = await crypto.subtle.sign('HMAC', await claveFirma(env), new TextEncoder().encode(cuerpo));
   return `${cuerpo}.${aBase64Url(new Uint8Array(firma))}`;
 }
 
-export type ResultadoVerificacion = { ok: true; carga: CargaAutorizacion } | { ok: false; motivo: 'invalida' | 'vencida' };
+export const firmarAutorizacion = (env: Entorno, carga: CargaAutorizacion): Promise<string> => firmarCarga(env, carga);
 
-export async function verificarAutorizacion(env: Entorno, token: string): Promise<ResultadoVerificacion> {
+type ResultadoCarga = { ok: true; carga: Record<string, unknown> } | { ok: false; motivo: 'invalida' | 'vencida' };
+
+/** Comprueba la firma y la vigencia; el llamador revisa que la carga sea del tipo que espera. */
+async function leerCargaFirmada(env: Entorno, token: string): Promise<ResultadoCarga> {
   const [cuerpo, firma, sobra] = token.split('.');
   if (!cuerpo || !firma || sobra !== undefined) return { ok: false, motivo: 'invalida' };
   const firmaBytes = deBase64Url(firma);
@@ -73,15 +89,25 @@ export async function verificarAutorizacion(env: Entorno, token: string): Promis
   if (!valida) return { ok: false, motivo: 'invalida' };
   const bytes = deBase64Url(cuerpo);
   if (!bytes) return { ok: false, motivo: 'invalida' };
-  let carga: CargaAutorizacion;
+  let carga: Record<string, unknown>;
   try {
-    carga = JSON.parse(new TextDecoder().decode(bytes)) as CargaAutorizacion;
+    carga = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
   } catch {
     return { ok: false, motivo: 'invalida' };
   }
-  if (carga.v !== 1 || !Array.isArray(carga.ln) || typeof carga.exp !== 'number') return { ok: false, motivo: 'invalida' };
+  if (carga.v !== 1 || typeof carga.exp !== 'number') return { ok: false, motivo: 'invalida' };
   if (carga.exp < Date.now()) return { ok: false, motivo: 'vencida' };
   return { ok: true, carga };
+}
+
+export type ResultadoVerificacion = { ok: true; carga: CargaAutorizacion } | { ok: false; motivo: 'invalida' | 'vencida' };
+
+/** Autorización de PRECIO de promotor (una de código manual no sirve aquí). */
+export async function verificarAutorizacion(env: Entorno, token: string): Promise<ResultadoVerificacion> {
+  const r = await leerCargaFirmada(env, token);
+  if (!r.ok) return r;
+  if (r.carga.k !== undefined || !Array.isArray(r.carga.ln)) return { ok: false, motivo: 'invalida' };
+  return { ok: true, carga: r.carga as unknown as CargaAutorizacion };
 }
 
 // --- Promotores ----------------------------------------------------------------------------------------------
@@ -120,7 +146,7 @@ interface FilaSupervisor {
   password: string | null;
 }
 
-const credencialesInvalidas = () => new ErrorApi(403, 'Correo o contraseña no válidos, o esa persona no puede autorizar precios en este local.', 'autorizador_invalido');
+const credencialesInvalidas = () => new ErrorApi(403, 'Correo o contraseña no válidos, o esa persona no puede autorizar en este local.', 'autorizador_invalido');
 
 /** ¿Puede esta persona autorizar precios en ese local? Encargado del local, gerente o administrador, con la cuenta activa. */
 function puedeAutorizar(f: Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>, localId: string): boolean {
@@ -141,7 +167,7 @@ const claveIntentos = (userId: string) => `precio-auth:${userId}`;
 async function exigirIntentosDisponibles(env: Entorno, userId: string): Promise<void> {
   const fila = await env.DB.prepare('SELECT count, lastRequest FROM rateLimit WHERE key = ?').bind(claveIntentos(userId)).first<{ count: number; lastRequest: number }>();
   if (fila && fila.count >= MAX_FALLOS && Date.now() - fila.lastRequest < VENTANA_FALLOS_MS) {
-    throw new ErrorApi(429, 'Demasiados intentos fallidos. Espera unos minutos o pídele al encargado que cambie el precio.', 'demasiados_intentos');
+    throw new ErrorApi(429, 'Demasiados intentos fallidos. Espera unos minutos o pídele al encargado que lo haga él.', 'demasiados_intentos');
   }
 }
 
@@ -163,7 +189,73 @@ async function borrarFallos(env: Entorno, userId: string): Promise<void> {
   await env.DB.prepare('DELETE FROM rateLimit WHERE key = ?').bind(claveIntentos(userId)).run();
 }
 
-// --- Pedir la autorización -----------------------------------------------------------------------------------
+/**
+ * La persona que autoriza, por su correo y contraseña. Toda falla (correo desconocido, clave mala, rol sin permiso) da el MISMO mensaje
+ * y cuenta un intento de quien vende; tras 5 seguidos se bloquea. Un acierto borra los fallos.
+ */
+async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string, clave: string, localId: string): Promise<FilaSupervisor> {
+  await exigirIntentosDisponibles(env, sesion.userId);
+  const supervisor = await env.DB
+    .prepare(
+      `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
+         FROM perfiles p LEFT JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
+        WHERE lower(p.email) = ?`
+    )
+    .bind(email.trim().toLowerCase())
+    .first<FilaSupervisor>();
+  // Sin cuenta se hace igual el cálculo del hash, para no delatar por el tiempo qué correos existen
+  const claveCorrecta = supervisor?.password ? await verificarClave(clave, supervisor.password) : (await hashearClave(clave), false);
+  if (!supervisor || !claveCorrecta || !puedeAutorizar(supervisor, localId)) {
+    await anotarFallo(env, sesion.userId);
+    throw credencialesInvalidas();
+  }
+  await borrarFallos(env, sesion.userId);
+  return supervisor;
+}
+
+// --- Elegir a mano el código de una unidad (la etiqueta no se lee) --------------------------------------------
+export interface AutorizacionCodigo {
+  token: string;
+  vence_en: number;
+  autorizado_por: string;
+}
+
+/** Un supervisor autoriza que, de ESTE producto, quien vende elija a mano el código de las unidades (por 20 minutos). */
+export async function autorizarCodigoManual(
+  env: Entorno,
+  sesion: Sesion,
+  pedido: { email: string; clave: string; local_id: string; producto_id: string }
+): Promise<AutorizacionCodigo> {
+  if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+  const producto = await env.DB.prepare('SELECT id FROM productos WHERE id = ?').bind(pedido.producto_id).first();
+  if (!producto) throw new ErrorApi(400, 'El producto no existe en el catálogo.', 'datos_invalidos');
+  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id);
+  const vence = Date.now() + VIDA_AUTORIZACION_MS;
+  const token = await firmarCarga(env, { v: 1, k: 'codigo', u: sesion.userId, a: supervisor.id, an: supervisor.nombre, l: pedido.local_id, pr: pedido.producto_id, exp: vence } satisfies CargaCodigoManual);
+  return { token, vence_en: vence, autorizado_por: supervisor.nombre };
+}
+
+const sinAutorizacionCodigo = (detalle: string) => new ErrorApi(400, `La selección manual del código no está autorizada. ${detalle}`, 'codigo_no_autorizado');
+
+/** Comprueba, al registrar la venta, la autorización de los códigos elegidos a mano de un producto. Devuelve quién la dio. */
+export async function verificarCodigoManual(
+  env: Entorno,
+  sesion: Sesion,
+  localId: string,
+  productoId: string,
+  token: string
+): Promise<{ autorizado_por: string; autorizado_nombre: string }> {
+  if (!token) throw sinAutorizacionCodigo('Pídela a un encargado, gerente o administrador.');
+  const r = await leerCargaFirmada(env, token);
+  if (!r.ok) throw sinAutorizacionCodigo(r.motivo === 'vencida' ? 'Venció (dura 20 minutos). Vuelve a pedirla.' : 'No es válida. Vuelve a pedirla.');
+  const c = r.carga as unknown as Partial<CargaCodigoManual>;
+  if (c.k !== 'codigo') throw sinAutorizacionCodigo('No es válida. Vuelve a pedirla.');
+  if (c.u !== sesion.userId || c.l !== localId || c.pr !== productoId || !c.a || !c.an) throw sinAutorizacionCodigo('Es de otra venta, vendedor o producto. Vuelve a pedirla.');
+  if (!(await supervisorSigueVigente(env, c.a, localId))) throw sinAutorizacionCodigo('Quien la dio ya no puede hacerlo. Vuelve a pedirla.');
+  return { autorizado_por: c.a, autorizado_nombre: c.an };
+}
+
+// --- Pedir la autorización de precio --------------------------------------------------------------------------
 export interface PedidoAutorizacion {
   email: string;
   clave: string;
@@ -198,24 +290,7 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     }
   }
 
-  // Luego, la persona que autoriza. Toda falla (correo desconocido, clave mala, rol sin permiso) da el MISMO mensaje y cuenta un intento.
-  await exigirIntentosDisponibles(env, sesion.userId);
-  const correo = pedido.email.trim().toLowerCase();
-  const supervisor = await env.DB
-    .prepare(
-      `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
-         FROM perfiles p LEFT JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
-        WHERE lower(p.email) = ?`
-    )
-    .bind(correo)
-    .first<FilaSupervisor>();
-  // Sin cuenta se hace igual el cálculo del hash, para no delatar por el tiempo qué correos existen
-  const claveCorrecta = supervisor?.password ? await verificarClave(pedido.clave, supervisor.password) : (await hashearClave(pedido.clave), false);
-  if (!supervisor || !claveCorrecta || !puedeAutorizar(supervisor, pedido.local_id)) {
-    await anotarFallo(env, sesion.userId);
-    throw credencialesInvalidas();
-  }
-  await borrarFallos(env, sesion.userId);
+  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id);
 
   const vence = Date.now() + VIDA_AUTORIZACION_MS;
   const token = await firmarAutorizacion(env, {

@@ -251,7 +251,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <section data-paso="escaneo" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
           <div>
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Escanea lo que vas a vender</p>
-            <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Escanea el QR de la etiqueta de cada unidad: así queda registrado exactamente cuál se vendió.</p>
           </div>
           <ul id="pos-escaneo-lista" class="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
           <div class="relative">
@@ -365,6 +364,36 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <div class="shrink-0 border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-800/40">
         <button id="pos-selector-listo" type="button" class="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700">Listo</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- Elegir a mano el código de una unidad (la etiqueta no se lee): lista de sus códigos disponibles; exige la contraseña de un supervisor -->
+  <dialog
+    id="pos-manual"
+    aria-labelledby="pos-manual-titulo"
+    class="anim-escalar m-auto w-[min(28rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <div class="flex max-h-[90dvh] flex-col">
+      <div class="shrink-0 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h2 id="pos-manual-titulo" class="text-base font-semibold">Elegir código a mano</h2>
+            <p id="pos-manual-producto" class="mt-0.5 break-words text-sm text-slate-600 dark:text-slate-300"></p>
+          </div>
+          <button id="pos-manual-cerrar" type="button" aria-label="Cerrar" class="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
+        </div>
+      </div>
+      <div class="shrink-0 space-y-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
+        <div id="pos-manual-clave-bloque" class="space-y-2">
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Autoriza un encargado, gerente o administrador</p>
+          <input id="pos-manual-email" type="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="Correo de quien autoriza" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <input id="pos-manual-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+        <p id="pos-manual-autorizado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
+        <p id="pos-manual-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+        <input id="pos-manual-buscar" type="search" inputmode="numeric" autocomplete="off" placeholder="Filtrar por código (ej. los últimos dígitos)..." class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+      </div>
+      <ul id="pos-manual-lista" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
     </div>
   </dialog>
 
@@ -1070,7 +1099,7 @@ import { alCambiarDatos } from '../lib/realtime';
   async function procesarVenta(datos: { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null }) {
     if (carrito.length === 0) return;
     limpiarError();
-    if (autorizacionVencida()) return;
+    if (autorizacionVencida() || autorizacionesManualesVencidas()) return;
     const tasa = tasaActual.get();
     if (!tasa) {
       mostrarError('Falta la tasa del dólar del día. Regístrala para poder vender.');
@@ -1091,6 +1120,12 @@ import { alCambiarDatos } from '../lib/realtime';
         // El precio de catálogo solo se anota en las líneas con precio de promotor (el servidor lo vuelve a leer del catálogo)
         precio_lista: l.precioPromotor !== undefined ? l.producto.precio_venta : undefined,
         unidades: l.unidades.length ? [...l.unidades] : undefined,
+        // Las unidades elegidas a mano (la etiqueta no se leía) viajan con la autorización del supervisor que las permitió
+        ...(() => {
+          const a = manualPorProducto.get(l.producto.id);
+          const codigos = a ? [...a.codigos].filter((c) => l.unidades.includes(c)) : [];
+          return codigos.length && a ? { codigos_manuales: codigos, autorizacion_codigo: a.token } : {};
+        })(),
       }));
       const sesion = await obtenerSesionActual();
       const venta = await inventoryService.registrarVenta(items, {
@@ -1102,6 +1137,7 @@ import { alCambiarDatos } from '../lib/realtime';
       });
       mostrarTicket(venta);
       carrito = [];
+      manualPorProducto.clear();
       limpiarDatosCliente();
       await cargarProductos();
     } catch (err) {
@@ -1629,7 +1665,7 @@ import { alCambiarDatos } from '../lib/realtime';
         const hecho = l.unidades.length >= l.cantidad;
         const chips = l.unidades.map((c) => `<span class="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">${escaparHtml(c)}</span>`).join(' ');
         return `<li class="flex items-center justify-between gap-3 px-3 py-2">
-          <div class="min-w-0"><p class="font-medium">${escaparHtml(l.producto.nombre)}</p><div class="mt-1 flex flex-wrap gap-1">${chips}</div></div>
+          <div class="min-w-0"><p class="font-medium">${escaparHtml(l.producto.nombre)}</p><div class="mt-1 flex flex-wrap gap-1">${chips}</div>${hecho ? '' : `<button type="button" data-manual="${l.producto.id}" class="mt-1.5 text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">No lee el código</button>`}</div>
           <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${hecho ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'}">${hecho ? 'Listo' : `${l.unidades.length} de ${l.cantidad}`}</span>
         </li>`;
       })
@@ -1758,6 +1794,142 @@ import { alCambiarDatos } from '../lib/realtime';
   });
   // Sin conexión no se puede reconocer cada unidad: se deja vender y el sistema asigna las unidades más antiguas (como antes)
   botonSinConexion.addEventListener('click', () => avanzar());
+
+  // --- "No lee el código": elegir a mano la unidad, con la contraseña de un supervisor ------------------------------
+  // La etiqueta está dañada o el lector no la reconoce: se ve la lista de códigos disponibles del producto y se elige el que corresponde.
+  // Un encargado/gerente/administrador lo autoriza con su correo y contraseña (vale 20 minutos para ese producto); la venta guarda
+  // cuáles códigos se eligieron a mano y quién lo autorizó.
+  const dialogoManual = document.getElementById('pos-manual') as HTMLDialogElement;
+  const manualBuscar = document.getElementById('pos-manual-buscar') as HTMLInputElement;
+  const manualLista = document.getElementById('pos-manual-lista') as HTMLUListElement;
+  const manualError = document.getElementById('pos-manual-error') as HTMLParagraphElement;
+  const manualEmail = document.getElementById('pos-manual-email') as HTMLInputElement;
+  const manualClave = document.getElementById('pos-manual-clave') as HTMLInputElement;
+  const manualBloqueClave = document.getElementById('pos-manual-clave-bloque') as HTMLDivElement;
+  const manualAutorizado = document.getElementById('pos-manual-autorizado') as HTMLParagraphElement;
+  let manualProducto: ProductoConRelaciones | null = null;
+  let manualUnidades: UnidadProducto[] = [];
+  /** Por producto: la autorización vigente y los códigos que se eligieron a mano en esta venta */
+  const manualPorProducto = new Map<string, { token: string; nombre: string; vence_en: number; codigos: Set<string> }>();
+
+  const autorizacionManualVigente = (productoId: string) => {
+    const a = manualPorProducto.get(productoId);
+    return a && a.vence_en > Date.now() + 15_000 ? a : null;
+  };
+
+  function errorManual(mensaje: string) {
+    manualError.textContent = mensaje;
+    manualError.classList.remove('hidden');
+  }
+
+  function pintarManual() {
+    if (!manualProducto) return;
+    const linea = carrito.find((l) => l.producto.id === manualProducto!.id);
+    const faltan = linea ? linea.cantidad - linea.unidades.length : 0;
+    document.getElementById('pos-manual-producto')!.textContent = `${manualProducto.nombre} · faltan ${faltan} por elegir`;
+    const aut = autorizacionManualVigente(manualProducto.id);
+    manualBloqueClave.classList.toggle('hidden', !!aut);
+    manualAutorizado.classList.toggle('hidden', !aut);
+    if (aut) manualAutorizado.textContent = `Autorizado por ${aut.nombre}`;
+    const q = manualBuscar.value.trim();
+    const enCarrito = new Set(carrito.flatMap((l) => l.unidades));
+    const lista = manualUnidades.filter((u) => !q || u.codigo.includes(q));
+    manualLista.innerHTML = lista.length
+      ? lista
+          .map((u) => {
+            const tomada = enCarrito.has(u.codigo);
+            return `<li class="flex items-center justify-between gap-3 px-5 py-2.5">
+              <span class="font-mono text-sm text-slate-900 dark:text-white">${escaparHtml(u.codigo)}</span>
+              <button type="button" data-manual-unidad="${escaparHtml(u.codigo)}" ${tomada ? 'disabled' : ''} class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:dark:bg-slate-700">${tomada ? 'En la venta' : 'Elegir'}</button>
+            </li>`;
+          })
+          .join('')
+      : `<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">${manualUnidades.length ? 'Ningún código coincide.' : 'Este producto no tiene unidades disponibles.'}</li>`;
+  }
+
+  async function abrirManual(productoId: string) {
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    if (!linea) return;
+    manualProducto = linea.producto;
+    manualUnidades = [];
+    manualBuscar.value = '';
+    manualEmail.value = '';
+    manualClave.value = '';
+    manualError.classList.add('hidden');
+    manualLista.innerHTML = '<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando códigos...</li>';
+    pintarManual();
+    dialogoManual.showModal();
+    try {
+      manualUnidades = await inventoryService.listarUnidades({ productoId, estado: 'DISPONIBLE' });
+    } catch {
+      manualLista.innerHTML = '<li class="px-5 py-6 text-sm text-red-600 dark:text-red-400">No se pudieron cargar los códigos (¿sin conexión?).</li>';
+      return;
+    }
+    pintarManual();
+  }
+
+  async function elegirManual(codigo: string, boton: HTMLButtonElement) {
+    const linea = carrito.find((l) => l.producto.id === manualProducto?.id);
+    if (!linea || !manualProducto) return;
+    manualError.classList.add('hidden');
+    let aut = autorizacionManualVigente(manualProducto.id);
+    if (!aut) {
+      if (!manualEmail.value.trim() || !manualClave.value) return errorManual('Quien autoriza debe escribir su correo y su contraseña.');
+      boton.disabled = true;
+      try {
+        const r = await inventoryService.autorizarCodigoManual({ email: manualEmail.value.trim(), clave: manualClave.value, producto_id: manualProducto.id });
+        aut = { token: r.token, nombre: r.autorizado_por, vence_en: r.vence_en, codigos: manualPorProducto.get(manualProducto.id)?.codigos ?? new Set<string>() };
+        manualPorProducto.set(manualProducto.id, aut);
+      } catch (err) {
+        manualClave.value = ''; // la contraseña de quien autoriza no se queda escrita
+        boton.disabled = false;
+        return errorManual(err instanceof Error ? err.message : 'No se pudo verificar la autorización.');
+      }
+      manualClave.value = '';
+    }
+    if (linea.unidades.length >= linea.cantidad || carrito.some((l) => l.unidades.includes(codigo))) return pintarManual();
+    linea.unidades.push(codigo);
+    aut.codigos.add(codigo);
+    const completo = linea.unidades.length >= linea.cantidad;
+    if (completo) dialogoManual.close();
+    else pintarManual();
+    terminarEscaneoSiCompleto(); // refresca la lista del paso y, si ya está todo escaneado, pasa a los datos del cliente
+  }
+
+  /** Si la autorización de algún producto venció antes de cobrar, esas unidades elegidas a mano se sueltan (hay que volver a elegirlas). */
+  function autorizacionesManualesVencidas(): boolean {
+    let huboVencidas = false;
+    for (const [productoId, a] of [...manualPorProducto]) {
+      if (a.vence_en > Date.now() + 15_000) continue;
+      const linea = carrito.find((l) => l.producto.id === productoId);
+      if (linea) linea.unidades = linea.unidades.filter((c) => !a.codigos.has(c));
+      manualPorProducto.delete(productoId);
+      huboVencidas = true;
+    }
+    if (huboVencidas) {
+      renderCarrito();
+      mostrarError('Venció la autorización de los códigos elegidos a mano (dura 20 minutos). Toca Procesar venta y elígelos de nuevo.');
+    }
+    return huboVencidas;
+  }
+
+  listaEscaneo.addEventListener('click', (e) => {
+    const productoId = (e.target as HTMLElement).closest<HTMLElement>('[data-manual]')?.dataset.manual;
+    if (productoId) void abrirManual(productoId);
+  });
+  manualLista.addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-manual-unidad]');
+    if (boton?.dataset.manualUnidad) void elegirManual(boton.dataset.manualUnidad, boton);
+  });
+  manualBuscar.addEventListener('input', pintarManual);
+  document.getElementById('pos-manual-cerrar')!.addEventListener('click', () => dialogoManual.close());
+  dialogoManual.addEventListener('click', (e) => {
+    if (e.target === dialogoManual) dialogoManual.close();
+  });
+  dialogoManual.addEventListener('close', () => {
+    manualClave.value = '';
+    if (escaneoAbierto()) campoEscaneo.focus();
+  });
 
   // Móvil: el carrito queda debajo de los productos; estos botones llevan hasta él (para cambiar cantidades o quitar productos)
   const irAlCarrito = () => document.getElementById('pos-carrito-seccion')?.scrollIntoView({ behavior: 'smooth', block: 'start' });

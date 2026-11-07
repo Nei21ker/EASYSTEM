@@ -48,6 +48,7 @@ import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, M
 import type { FilaImportacion } from './importador';
 import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
 import type {
+  AutorizacionCodigo,
   AutorizacionPrecio,
   Promotor,
   ClienteVenta,
@@ -1746,6 +1747,25 @@ export async function autorizarPrecioVenta(pedido: { email: string; clave: strin
   return { token, vence_en, autorizado_por: supervisor.nombre, promotor: `${promotor.nombre} ${promotor.apellido}`.trim() };
 }
 
+// Modo demo: autorizaciones de selección manual de código, en memoria
+const codigosManualesDemo = new Map<string, { producto_id: string; supervisor_id: string; supervisor_nombre: string; vence_en: number }>();
+
+/**
+ * Un encargado (de este local), gerente o administrador autoriza, con SU correo y contraseña, que se elija a mano el código de las
+ * unidades de un producto (la etiqueta no se lee). Dura 20 minutos. Con el servidor la verifica el servidor.
+ */
+export async function autorizarCodigoManual(pedido: { email: string; clave: string; producto_id: string }): Promise<AutorizacionCodigo> {
+  const local_id = await exigirLocal('vender');
+  if (modoServidor) return ventasDb.autorizarCodigoManual({ ...pedido, local_id });
+  if (!leerDB().productos.some((p) => p.id === pedido.producto_id)) throw new Error('El producto no existe en el catálogo.');
+  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id);
+  if (!supervisor) throw new Error('Correo o contraseña no válidos, o esa persona no puede autorizar en este local.');
+  const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
+  const token = `demo-codigo-${generarId()}`;
+  codigosManualesDemo.set(token, { producto_id: pedido.producto_id, supervisor_id: supervisor.id, supervisor_nombre: supervisor.nombre, vence_en });
+  return { token, vence_en, autorizado_por: supervisor.nombre };
+}
+
 /** Venta ya guardada. `pendienteSincronizar`: se hizo sin conexión y el folio se asignará al sincronizar (folio = 0). */
 export type VentaRegistrada = Venta & { pendienteSincronizar?: boolean };
 
@@ -1771,6 +1791,13 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
         precio_autorizado_nombre: aut.supervisor_nombre,
       };
     }
+    // Códigos elegidos a mano: se guardan marcados y con quién los autorizó (nunca la autorización en sí), como hace el servidor
+    base.items = base.items.map((item) => {
+      const { codigos_manuales, autorizacion_codigo, ...limpio } = item;
+      const aut = autorizacion_codigo ? codigosManualesDemo.get(autorizacion_codigo) : undefined;
+      if (!codigos_manuales?.length || !aut) return limpio;
+      return { ...limpio, seleccion_manual: { codigos: codigos_manuales, autorizado_por: aut.supervisor_id, autorizado_nombre: aut.supervisor_nombre } };
+    });
     const venta: Venta = { ...base, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
     ventas.unshift(venta);
     guardarDB(db);
@@ -1872,6 +1899,18 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
       throw new Error('Para vender con precio de promotor necesitas conexión: la autorización se comprueba en el servidor.');
     }
     if (!modoServidor && !autorizacionesDemo.has(pp.autorizacion.token)) throw new Error('La autorización del precio no es válida. Vuelve a pedirla.');
+  }
+
+  // Códigos elegidos a mano: cada línea necesita su autorización vigente, y se comprueba ANTES de mover el inventario
+  for (const item of items) {
+    if (!item.codigos_manuales?.length) continue;
+    const aut = item.autorizacion_codigo ? codigosManualesDemo.get(item.autorizacion_codigo) : undefined;
+    if (!item.autorizacion_codigo || (!modoServidor && (!aut || aut.vence_en < Date.now() || aut.producto_id !== item.producto_id))) {
+      throw new Error('La selección manual del código no está autorizada o la autorización venció. Vuelve a pedirla.');
+    }
+    if (modoServidor && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('Para elegir códigos a mano necesitas conexión: la autorización se comprueba en el servidor.');
+    }
   }
 
   // Pago móvil = captura del comprobante ANTES de tocar el inventario: si no se puede subir, la venta no empieza

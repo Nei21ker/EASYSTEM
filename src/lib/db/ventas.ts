@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { AutorizacionPrecio, NuevaVenta, Promotor, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
+import type { AutorizacionCodigo, AutorizacionPrecio, NuevaVenta, Promotor, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
 
 /** Guarda el registro de una venta. El folio y el vendedor los pone el servidor (el vendedor sale de la sesión). */
 export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
@@ -15,6 +15,11 @@ export async function autorizarPrecio(pedido: {
   lineas: { producto_id: string; precio: number }[];
 }): Promise<AutorizacionPrecio> {
   return api.post<AutorizacionPrecio>('/api/ventas/autorizar-precio', pedido);
+}
+
+/** Pide la autorización de un supervisor (correo + contraseña) para elegir a mano el código de las unidades de un producto. */
+export async function autorizarCodigoManual(pedido: { email: string; clave: string; local_id: string; producto_id: string }): Promise<AutorizacionCodigo> {
+  return api.post<AutorizacionCodigo>('/api/ventas/autorizar-codigo', pedido);
 }
 
 /** Promotores activos (trabajadores independientes) de un local. */

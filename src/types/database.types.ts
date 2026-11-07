@@ -206,6 +206,11 @@ export interface VentaItem {
   precio_lista?: number;
   /** Códigos de las unidades concretas que salieron (migración 0033); las ventas anteriores no lo traen */
   unidades?: string[];
+  /** Solo al enviar la venta: cuáles de esas unidades se eligieron a mano (la etiqueta no se leía) y la autorización firmada de un supervisor */
+  codigos_manuales?: string[];
+  autorizacion_codigo?: string;
+  /** Lo que queda guardado: los códigos elegidos a mano y quién lo autorizó (lo pone el servidor) */
+  seleccion_manual?: { codigos: string[]; autorizado_por: string; autorizado_nombre: string };
 }
 
 export interface ClienteVenta {
@@ -285,6 +290,13 @@ export interface AutorizacionPrecio {
   vence_en: number;
   autorizado_por: string;
   promotor: string;
+}
+
+/** Respuesta de pedir la autorización para elegir a mano el código de las unidades de un producto */
+export interface AutorizacionCodigo {
+  token: string;
+  vence_en: number;
+  autorizado_por: string;
 }
 
 export interface Promotor {
