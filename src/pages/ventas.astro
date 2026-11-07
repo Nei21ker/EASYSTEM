@@ -108,7 +108,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   </div>
 
   <!-- Barra inferior fija (solo móvil): total siempre visible + cobrar sin scrollear -->
-  <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
+  <div id="pos-barra-movil" class="fixed inset-x-0 bottom-0 z-20 mb-0 flex items-center gap-3 border-t border-slate-200 bg-white px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] lg:hidden print:hidden dark:border-slate-800 dark:bg-slate-900">
     <button id="pos-barra-ver" type="button" class="min-w-0 flex-1 text-left" aria-label="Ver el carrito para cambiar cantidades o quitar productos">
       <p id="pos-barra-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</p>
       <p id="pos-barra-total" class="origin-left text-lg font-semibold text-slate-900 dark:text-white">$0.00</p>
@@ -307,7 +307,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <!-- Captura del pago móvil: obligatoria si algún cobro es "Bs pago móvil" (se muestra solo entonces) -->
           <div id="pos-comprobante" class="hidden space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
             <p class="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Comprobante del pago móvil *</p>
-            <p class="text-xs text-amber-800 dark:text-amber-300">Toma una foto o elige la captura del pago que te muestra el cliente. Sin ella no se puede procesar la venta.</p>
+            <p class="text-xs text-amber-800 dark:text-amber-300">Elige cómo respaldar el pago. Sin esto no se puede procesar la venta.</p>
+            <div class="grid grid-cols-2 gap-1 rounded-lg bg-amber-100 p-1 dark:bg-amber-500/15" role="group" aria-label="Cómo respaldar el pago móvil">
+              <button id="pos-comprobante-modo-foto" type="button" data-modo-comprobante="foto" aria-pressed="true" class="rounded-md px-3 py-2 text-sm font-semibold text-amber-900 aria-pressed:bg-white aria-pressed:shadow-sm dark:text-amber-200 dark:aria-pressed:bg-slate-800">Foto del pago</button>
+              <button id="pos-comprobante-modo-ref" type="button" data-modo-comprobante="referencia" aria-pressed="false" class="rounded-md px-3 py-2 text-sm font-semibold text-amber-900 aria-pressed:bg-white aria-pressed:shadow-sm dark:text-amber-200 dark:aria-pressed:bg-slate-800">Referencia</button>
+            </div>
+            <div id="pos-comprobante-panel-ref" class="hidden space-y-1.5">
+              <label for="pos-comprobante-ref" class="block text-xs text-amber-800 dark:text-amber-300">Escribe los <strong>4 últimos dígitos</strong> de la referencia del pago móvil</label>
+              <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            </div>
+            <div id="pos-comprobante-panel-foto" class="space-y-2">
+            <p class="text-xs text-amber-800 dark:text-amber-300">Toma una foto o elige la captura del pago que te muestra el cliente.</p>
             <div class="flex flex-wrap gap-2">
               <button id="pos-comprobante-foto" type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Tomar foto</button>
               <button id="pos-comprobante-galeria" type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Elegir de la galería</button>
@@ -320,6 +330,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
                 <p class="font-semibold text-emerald-700 dark:text-emerald-400">✓ Captura adjunta</p>
                 <button id="pos-comprobante-quitar" type="button" class="mt-1 font-medium text-red-600 hover:underline dark:text-red-400">Quitar</button>
               </div>
+            </div>
             </div>
             <p id="pos-comprobante-error" role="alert" class="hidden text-xs text-red-700 dark:text-red-400"></p>
           </div>
@@ -919,12 +930,20 @@ import { alCambiarDatos } from '../lib/realtime';
   const errorComprobante = document.getElementById('pos-comprobante-error')!;
   const inputFotoComprobante = document.getElementById('pos-comprobante-input-foto') as HTMLInputElement;
   const inputGaleriaComprobante = document.getElementById('pos-comprobante-input-galeria') as HTMLInputElement;
+  const panelFotoComprobante = document.getElementById('pos-comprobante-panel-foto')!;
+  const panelRefComprobante = document.getElementById('pos-comprobante-panel-ref')!;
+  const campoReferencia = document.getElementById('pos-comprobante-ref') as HTMLInputElement;
   let comprobante: Blob | null = null;
   let comprobanteUrl: string | null = null;
+  /** Cómo se respalda el pago móvil: con la captura o con la referencia (4 dígitos); solo se usa lo del modo elegido */
+  let modoComprobante: 'foto' | 'referencia' = 'foto';
 
   function pintarComprobante() {
     const pedido = formPagos.metodosElegidos().includes('BS_PAGO_MOVIL');
     bloqueComprobante.classList.toggle('hidden', !pedido);
+    panelFotoComprobante.classList.toggle('hidden', modoComprobante !== 'foto');
+    panelRefComprobante.classList.toggle('hidden', modoComprobante !== 'referencia');
+    for (const b of bloqueComprobante.querySelectorAll<HTMLButtonElement>('[data-modo-comprobante]')) b.setAttribute('aria-pressed', String(b.dataset.modoComprobante === modoComprobante));
     vistaComprobante.classList.toggle('hidden', !comprobante);
     vistaComprobante.classList.toggle('flex', !!comprobante);
     if (comprobante && comprobanteUrl) imgComprobante.src = comprobanteUrl;
@@ -934,9 +953,24 @@ import { alCambiarDatos } from '../lib/realtime';
     comprobante = null;
     comprobanteUrl = null;
     imgComprobante.removeAttribute('src');
+    campoReferencia.value = '';
+    modoComprobante = 'foto';
     errorComprobante.classList.add('hidden');
     pintarComprobante();
   }
+  for (const b of bloqueComprobante.querySelectorAll<HTMLButtonElement>('[data-modo-comprobante]')) {
+    b.addEventListener('click', () => {
+      modoComprobante = b.dataset.modoComprobante === 'referencia' ? 'referencia' : 'foto';
+      errorComprobante.classList.add('hidden');
+      pintarComprobante();
+      if (modoComprobante === 'referencia') campoReferencia.focus();
+    });
+  }
+  campoReferencia.addEventListener('input', () => {
+    campoReferencia.value = campoReferencia.value.replace(/\D/g, '').slice(0, 4); // solo dígitos, máximo 4
+    errorComprobante.classList.add('hidden');
+    errorConfirmar.classList.add('hidden');
+  });
   async function elegirComprobante(input: HTMLInputElement) {
     const archivo = input.files?.[0];
     input.value = '';
@@ -1071,11 +1105,15 @@ import { alCambiarDatos } from '../lib/realtime';
     const datos = leerDatosCliente();
     if (!datos) return;
     // Pago móvil: sin la captura del comprobante no se procesa (el diálogo sigue abierto para adjuntarla)
-    if (incluyePagoMovil(datos.pagos) && !comprobante) {
-      errorComprobante.textContent = 'Adjunta la captura del comprobante del pago móvil para procesar la venta.';
-      errorComprobante.classList.remove('hidden');
-      bloqueComprobante.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return fallar('Falta el comprobante del pago móvil: toma una foto o elige la captura del pago.', document.getElementById('pos-comprobante-foto'));
+    if (incluyePagoMovil(datos.pagos)) {
+      const faltaReferencia = modoComprobante === 'referencia' && !/^\d{4}$/.test(campoReferencia.value);
+      const faltaFoto = modoComprobante === 'foto' && !comprobante;
+      if (faltaReferencia || faltaFoto) {
+        errorComprobante.textContent = faltaReferencia ? 'Escribe los 4 dígitos de la referencia del pago móvil (solo números).' : 'Adjunta la captura del comprobante del pago móvil o elige "Referencia" y escribe sus 4 dígitos.';
+        errorComprobante.classList.remove('hidden');
+        bloqueComprobante.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return fallar(faltaReferencia ? 'Falta la referencia del pago móvil (4 dígitos).' : 'Falta el comprobante del pago móvil: toma una foto, elige la captura o escribe la referencia.', faltaReferencia ? campoReferencia : document.getElementById('pos-comprobante-foto'));
+      }
     }
     dialogoConfirmar.close();
     procesarVenta(datos);
@@ -1117,7 +1155,8 @@ import { alCambiarDatos } from '../lib/realtime';
         ...datos,
         tasa_cambio: tasa,
         vendedor_nombre: sesion?.nombre,
-        comprobante: incluyePagoMovil(datos.pagos) ? comprobante : null,
+        comprobante: incluyePagoMovil(datos.pagos) && modoComprobante === 'foto' ? comprobante : null,
+        referenciaPagoMovil: incluyePagoMovil(datos.pagos) && modoComprobante === 'referencia' ? campoReferencia.value : null,
         precioPromotor: promotorVenta && autorizacionPrecio ? { promotor_id: promotorVenta.id, autorizacion: autorizacionPrecio } : null,
       });
       mostrarTicket(venta);

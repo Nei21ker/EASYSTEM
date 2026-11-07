@@ -266,6 +266,8 @@ export interface NuevaVenta {
   total_bs?: number | null;
   /** Captura del comprobante del pago móvil (obligatoria si algún cobro es BS_PAGO_MOVIL): ruta en el almacenamiento privado, o una imagen data: en la demo */
   comprobante_path?: string | null;
+  /** Referencia del pago móvil (exactamente 4 dígitos): respalda la venta en lugar de la captura, o además de ella (migración 0014) */
+  referencia_pago_movil?: string | null;
   /** Venta con precio de promotor (migración 0013): el trabajador independiente que la trajo. La comisión la calcula el servidor. */
   promotor_id?: string | null;
   /** Autorización firmada de un supervisor para vender a un precio distinto al del catálogo (se pide con `autorizarPrecio`) */

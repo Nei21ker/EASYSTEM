@@ -68,6 +68,7 @@ export const esquemaVenta = z.object({
   tasa_cambio: z.number().nullable().optional(),
   total_bs: z.number().nullable().optional(),
   comprobante_path: z.string().max(300).nullable().optional(),
+  referencia_pago_movil: z.string().regex(/^\d{4}$/, 'La referencia debe tener exactamente 4 dígitos.').nullable().optional(),
   promotor_id: z.string().max(100).nullable().optional(),
   autorizacion_precio: z.string().max(2000).nullable().optional(),
 });

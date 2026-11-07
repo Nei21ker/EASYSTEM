@@ -115,6 +115,34 @@ describe('guardarVenta con pago móvil: la captura es obligatoria', () => {
   });
 });
 
+describe('guardarVenta con pago móvil: la referencia de 4 dígitos respalda en lugar de la captura', () => {
+  it('con solo la referencia se registra y queda guardada (sin captura)', async () => {
+    const guardada = await guardarVenta(env, sV, ventaPagoMovil({ referencia_pago_movil: '4821' }));
+    expect(guardada.referencia_pago_movil).toBe('4821');
+    expect(guardada.comprobante_path).toBeNull();
+    expect((await listarVentas(env, sA, {}))[0].referencia_pago_movil).toBe('4821');
+  });
+
+  it('la referencia debe tener exactamente 4 dígitos', async () => {
+    for (const mala of ['123', '12345', '12a4', ' ', 'abcd']) {
+      await rechazo(guardarVenta(env, sV, ventaPagoMovil({ referencia_pago_movil: mala })), 400);
+    }
+    expect(await listarVentas(env, sA, {})).toEqual([]);
+  });
+
+  it('se pueden guardar la captura y la referencia a la vez', async () => {
+    const ruta = await subir(sV);
+    const guardada = await guardarVenta(env, sV, ventaPagoMovil({ comprobante_path: ruta, referencia_pago_movil: '0007' }));
+    expect(guardada.comprobante_path).toBe(ruta);
+    expect(guardada.referencia_pago_movil).toBe('0007');
+  });
+
+  it('sin pago móvil la referencia enviada se ignora', async () => {
+    const efectivo = ventaPagoMovil({ metodo_pago: 'USD_EFECTIVO', pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 12, monto_bs: null }], total_bs: null, referencia_pago_movil: '1234' });
+    expect((await guardarVenta(env, sV, efectivo)).referencia_pago_movil).toBeNull();
+  });
+});
+
 describe('archivos privados: capturas del pago móvil', () => {
   it('quien vende en el local sube la captura; el vendedor NO puede verla después', async () => {
     const ruta = await subir(sV);

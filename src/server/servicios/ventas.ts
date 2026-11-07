@@ -30,6 +30,7 @@ function aVenta(f: Record<string, unknown>): Venta {
     vendedor_id: (f.vendedor_id as string | null) ?? null,
     vendedor_nombre: (f.vendedor_nombre as string | null) ?? null,
     comprobante_path: (f.comprobante_path as string | null) ?? null,
+    referencia_pago_movil: (f.referencia_pago_movil as string | null) ?? null,
     promotor_id: (f.promotor_id as string | null) ?? null,
     promotor_nombre: (f.promotor_nombre as string | null) ?? null,
     comision: (f.comision as number | null) ?? 0,
@@ -60,20 +61,25 @@ function fechaValida(fecha: string, mensaje: string): string {
 
 // --- Ventas ---------------------------------------------------------------------------------------------------
 /**
- * Un cobro por pago móvil exige la captura del comprobante: debe estar ya subida al almacenamiento privado, ser de ESTE local y no
- * estar usada por otra venta (una misma captura no respalda dos ventas). Devuelve la ruta a guardar (null si no hay pago móvil: en ese
- * caso cualquier captura enviada se ignora).
+ * Un cobro por pago móvil exige un respaldo: la captura del comprobante O la referencia del pago (4 dígitos), o ambas. La captura debe
+ * estar ya subida al almacenamiento privado, ser de ESTE local y no estar usada por otra venta (una misma captura no respalda dos
+ * ventas). Devuelve lo que se guarda (todo null si no hay pago móvil: en ese caso cualquier captura o referencia enviada se ignora).
  */
-async function validarComprobantePagoMovil(env: Entorno, datos: NuevaVenta): Promise<string | null> {
+async function validarComprobantePagoMovil(env: Entorno, datos: NuevaVenta): Promise<{ ruta: string | null; referencia: string | null }> {
   const conPagoMovil = datos.metodo_pago === 'BS_PAGO_MOVIL' || (datos.pagos ?? []).some((p) => p.metodo === 'BS_PAGO_MOVIL');
-  if (!conPagoMovil) return null;
+  if (!conPagoMovil) return { ruta: null, referencia: null };
   const ruta = (datos.comprobante_path ?? '').trim();
-  if (!ruta) throw new ErrorApi(400, 'Adjunta la captura del comprobante del pago móvil para registrar la venta.', 'comprobante_requerido');
+  const referencia = (datos.referencia_pago_movil ?? '').trim();
+  if (referencia && !/^\d{4}$/.test(referencia)) throw new ErrorApi(400, 'La referencia del pago móvil debe tener exactamente 4 dígitos.', 'referencia_invalida');
+  if (!ruta && !referencia) {
+    throw new ErrorApi(400, 'Adjunta la captura del comprobante del pago móvil o escribe su referencia (4 dígitos) para registrar la venta.', 'comprobante_requerido');
+  }
+  if (!ruta) return { ruta: null, referencia };
   if (!esRutaPagoMovilDeLocal(ruta, datos.local_id)) throw new ErrorApi(400, 'La captura del pago móvil no es válida para este local.', 'comprobante_invalido');
   if (!(await env.FOTOS_PRIVADAS.head(ruta))) throw new ErrorApi(400, 'La captura del pago móvil no se subió. Vuelve a adjuntarla.', 'comprobante_invalido');
   const usada = await env.DB.prepare('SELECT 1 AS ok FROM ventas WHERE comprobante_path = ?').bind(ruta).first();
   if (usada) throw new ErrorApi(409, 'Esa captura ya respalda otra venta. Adjunta la del pago de esta venta.', 'comprobante_en_uso');
-  return ruta;
+  return { ruta, referencia: referencia || null };
 }
 
 interface PrecioPromotorDeVenta {
@@ -162,13 +168,13 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('ventas', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
     db
       .prepare(
-        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path,
+        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path, referencia_pago_movil,
                              promotor_id, promotor_nombre, comision, precio_autorizado_por, precio_autorizado_nombre)
-         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(itemsGuardados),
-        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante,
+        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante.ruta, comprobante.referencia,
         precios.promotor?.promotor_id ?? null, precios.promotor?.promotor_nombre ?? null, precios.comision,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),

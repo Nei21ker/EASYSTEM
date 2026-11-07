@@ -1689,6 +1689,8 @@ export interface DatosVenta {
   vendedor_nombre?: string;
   /** Captura (ya reducida) del comprobante del pago móvil: obligatoria si algún pago es BS_PAGO_MOVIL */
   comprobante?: Blob | null;
+  /** Referencia del pago móvil (4 dígitos): respalda la venta en lugar de la captura, o además de ella */
+  referenciaPagoMovil?: string | null;
   /**
    * Precio de promotor: obligatorio si alguna línea se cobra más cara que el catálogo (`precio_lista` en el item). El promotor y la
    * autorización de un supervisor salen de `autorizarPrecioVenta`; el servidor la vuelve a comprobar y calcula la comisión.
@@ -1915,7 +1917,9 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
 
   // Pago móvil = captura del comprobante ANTES de tocar el inventario: si no se puede subir, la venta no empieza
   const conPagoMovil = incluyePagoMovil(datos.pagos);
-  if (conPagoMovil && !datos.comprobante) throw new Error('Adjunta la captura del comprobante del pago móvil antes de procesar la venta.');
+  const referenciaPagoMovil = conPagoMovil ? (datos.referenciaPagoMovil ?? '').trim() : '';
+  if (referenciaPagoMovil && !/^\d{4}$/.test(referenciaPagoMovil)) throw new Error('La referencia del pago móvil debe tener exactamente 4 dígitos.');
+  if (conPagoMovil && !datos.comprobante && !referenciaPagoMovil) throw new Error('Adjunta la captura del comprobante del pago móvil o escribe su referencia (4 dígitos) antes de procesar la venta.');
   let comprobante_path: string | null = null;
   if (conPagoMovil && datos.comprobante) {
     try {
@@ -1975,6 +1979,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     vendedor_nombre: datos.vendedor_nombre ?? null,
     tasa_cambio: datos.tasa_cambio,
     comprobante_path,
+    referencia_pago_movil: referenciaPagoMovil || null,
     ...(conPrecioPromotor && datos.precioPromotor
       ? { promotor_id: datos.precioPromotor.promotor_id, autorizacion_precio: datos.precioPromotor.autorizacion.token }
       : {}),

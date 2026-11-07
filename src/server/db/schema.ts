@@ -244,6 +244,8 @@ export const ventas = sqliteTable('ventas', {
   vendedor_id: text('vendedor_id'),
   vendedor_nombre: text('vendedor_nombre'),
   comprobante_path: text('comprobante_path'),
+  // Últimos 4 dígitos de la referencia del pago móvil (migración 0014)
+  referencia_pago_movil: text('referencia_pago_movil'),
   // Venta con precio de promotor (migración 0013)
   promotor_id: text('promotor_id'),
   promotor_nombre: text('promotor_nombre'),
