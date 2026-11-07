@@ -1720,7 +1720,7 @@ export async function listarPromotores(): Promise<Promotor[]> {
  * Un encargado (de este local), gerente o administrador autoriza vender a precios mayores al del catálogo tecleando SU correo y
  * contraseña. `lineas` = los productos con su nuevo precio. Devuelve la autorización que se manda con la venta (dura 20 minutos).
  */
-export async function autorizarPrecioVenta(pedido: { email: string; clave: string; promotor_id: string; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
+export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor_id: string; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarPrecio({ ...pedido, local_id });
 
@@ -1734,7 +1734,7 @@ export async function autorizarPrecioVenta(pedido: { email: string; clave: strin
     if (!(l.precio >= producto.precio_venta - 0.005)) throw new Error(`El precio de «${producto.nombre}» no puede ser menor al precio de lista ($${producto.precio_venta.toFixed(2)}).`);
   }
   const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id);
-  if (!supervisor) throw new Error('Correo o contraseña no válidos, o esa persona no puede autorizar precios en este local.');
+  if (!supervisor) throw new Error('Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-${generarId()}`;
   autorizacionesDemo.set(token, {
@@ -1754,12 +1754,12 @@ const codigosManualesDemo = new Map<string, { producto_id: string; supervisor_id
  * Un encargado (de este local), gerente o administrador autoriza, con SU correo y contraseña, que se elija a mano el código de las
  * unidades de un producto (la etiqueta no se lee). Dura 20 minutos. Con el servidor la verifica el servidor.
  */
-export async function autorizarCodigoManual(pedido: { email: string; clave: string; producto_id: string }): Promise<AutorizacionCodigo> {
+export async function autorizarCodigoManual(pedido: { email?: string; clave: string; producto_id: string }): Promise<AutorizacionCodigo> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarCodigoManual({ ...pedido, local_id });
   if (!leerDB().productos.some((p) => p.id === pedido.producto_id)) throw new Error('El producto no existe en el catálogo.');
   const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id);
-  if (!supervisor) throw new Error('Correo o contraseña no válidos, o esa persona no puede autorizar en este local.');
+  if (!supervisor) throw new Error('Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-codigo-${generarId()}`;
   codigosManualesDemo.set(token, { producto_id: pedido.producto_id, supervisor_id: supervisor.id, supervisor_nombre: supervisor.nombre, vence_en });

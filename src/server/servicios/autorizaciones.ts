@@ -146,7 +146,7 @@ interface FilaSupervisor {
   password: string | null;
 }
 
-const credencialesInvalidas = () => new ErrorApi(403, 'Correo o contraseña no válidos, o esa persona no puede autorizar en este local.', 'autorizador_invalido');
+const credencialesInvalidas = () => new ErrorApi(403, 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.', 'autorizador_invalido');
 
 /** ¿Puede esta persona autorizar precios en ese local? Encargado del local, gerente o administrador, con la cuenta activa. */
 function puedeAutorizar(f: Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>, localId: string): boolean {
@@ -193,19 +193,46 @@ async function borrarFallos(env: Entorno, userId: string): Promise<void> {
  * La persona que autoriza, por su correo y contraseña. Toda falla (correo desconocido, clave mala, rol sin permiso) da el MISMO mensaje
  * y cuenta un intento de quien vende; tras 5 seguidos se bloquea. Un acierto borra los fallos.
  */
-async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string, clave: string, localId: string): Promise<FilaSupervisor> {
+async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string | undefined, clave: string, localId: string): Promise<FilaSupervisor> {
   await exigirIntentosDisponibles(env, sesion.userId);
-  const supervisor = await env.DB
-    .prepare(
-      `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
-         FROM perfiles p LEFT JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
-        WHERE lower(p.email) = ?`
-    )
-    .bind(email.trim().toLowerCase())
-    .first<FilaSupervisor>();
-  // Sin cuenta se hace igual el cálculo del hash, para no delatar por el tiempo qué correos existen
-  const claveCorrecta = supervisor?.password ? await verificarClave(clave, supervisor.password) : (await hashearClave(clave), false);
-  if (!supervisor || !claveCorrecta || !puedeAutorizar(supervisor, localId)) {
+  const correo = (email ?? '').trim().toLowerCase();
+  let supervisor: FilaSupervisor | null = null;
+
+  if (correo) {
+    // Con correo (clientes anteriores y pruebas): se busca a esa persona y se comprueba su contraseña
+    const fila = await env.DB
+      .prepare(
+        `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
+           FROM perfiles p LEFT JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
+          WHERE lower(p.email) = ?`
+      )
+      .bind(correo)
+      .first<FilaSupervisor>();
+    // Sin cuenta se hace igual el cálculo del hash, para no delatar por el tiempo qué correos existen
+    const claveCorrecta = fila?.password ? await verificarClave(clave, fila.password) : (await hashearClave(clave), false);
+    if (fila && claveCorrecta && puedeAutorizar(fila, localId)) supervisor = fila;
+  } else {
+    // Solo con la contraseña: la tiene que tener alguien que pueda autorizar en ESTE local (encargado de ese local, gerentes y
+    // administradores activos: unas pocas personas). El tope de 5 fallos por quien vende sigue protegiendo contra adivinarla.
+    const candidatos = await env.DB
+      .prepare(
+        `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
+           FROM perfiles p JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
+          WHERE p.status = 'active' AND (p.rol IN ('administrador', 'gerente') OR (p.rol = 'encargado' AND p.local_id = ?))
+          ORDER BY p.id`
+      )
+      .bind(localId)
+      .all<FilaSupervisor>();
+    for (const c of candidatos.results) {
+      if (c.password && (await verificarClave(clave, c.password))) {
+        supervisor = c;
+        break;
+      }
+    }
+    if (candidatos.results.length === 0) await hashearClave(clave);
+  }
+
+  if (!supervisor) {
     await anotarFallo(env, sesion.userId);
     throw credencialesInvalidas();
   }
@@ -224,7 +251,7 @@ export interface AutorizacionCodigo {
 export async function autorizarCodigoManual(
   env: Entorno,
   sesion: Sesion,
-  pedido: { email: string; clave: string; local_id: string; producto_id: string }
+  pedido: { email?: string; clave: string; local_id: string; producto_id: string }
 ): Promise<AutorizacionCodigo> {
   if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
   const producto = await env.DB.prepare('SELECT id FROM productos WHERE id = ?').bind(pedido.producto_id).first();
@@ -257,7 +284,8 @@ export async function verificarCodigoManual(
 
 // --- Pedir la autorización de precio --------------------------------------------------------------------------
 export interface PedidoAutorizacion {
-  email: string;
+  /** Opcional: con solo la contraseña se identifica al supervisor entre quienes pueden autorizar en el local */
+  email?: string;
   clave: string;
   local_id: string;
   promotor_id: string;

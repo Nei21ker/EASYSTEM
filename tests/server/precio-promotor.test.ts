@@ -22,13 +22,13 @@ const PROMOTOR = 'promotor-1';
 beforeEach(async () => {
   await reiniciarBase(env.DB);
   await sembrarLocales(env.DB);
-  admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null, nombre: 'Ada Admin' });
-  gerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null, nombre: 'Gaby Gerente' });
-  encargadoAcc = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: accesorios, nombre: 'Ema Encargada' });
-  encargadoVid = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: vidrios, nombre: 'Eli Vidrios' });
-  vendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Vera Vendedora' });
-  otroVendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Otto Vendedor' });
-  contador = await crearUsuarioDePrueba(env, { rol: 'contador', localId: null });
+  admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null, nombre: 'Ada Admin', clave: 'Clave-administrador-null-123' });
+  gerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null, nombre: 'Gaby Gerente', clave: 'Clave-gerente-null-123' });
+  encargadoAcc = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: accesorios, nombre: 'Ema Encargada', clave: 'Clave-encargado-accesorios-123' });
+  encargadoVid = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: vidrios, nombre: 'Eli Vidrios', clave: 'Clave-encargado-vidrios-123' });
+  vendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Vera Vendedora', clave: 'Clave-vendedor-accesorios-123' });
+  otroVendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Otto Vendedor', clave: 'Clave-vendedor-accesorios-123' });
+  contador = await crearUsuarioDePrueba(env, { rol: 'contador', localId: null, clave: 'Clave-contador-null-123' });
   [sV, sV2, sA, sC] = await Promise.all([vendedor, otroVendedor, admin, contador].map(sesionDe));
   await env.DB.batch([
     env.DB.prepare("INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo) VALUES (?, '2000000000015', 'Control A/C Samsung', 'Controles', 8, 12, 0)").bind(PRODUCTO),
@@ -94,20 +94,20 @@ describe('autorizarPrecio: quién puede autorizar', () => {
   });
 
   it('una contraseña equivocada, un correo desconocido o un vendedor como "supervisor" dan el mismo 403', async () => {
-    const a = await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { clave: 'incorrecta-123' })), 403, /no válid/i);
-    const b = await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { email: 'nadie@prueba.com' })), 403, /no válid/i);
-    const c = await rechazo(autorizarPrecio(env, sV, pedido(otroVendedor)), 403, /no válid/i);
+    const a = await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { clave: 'incorrecta-123' })), 403, /contraseña incorrecta/i);
+    const b = await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { email: 'nadie@prueba.com' })), 403, /contraseña incorrecta/i);
+    const c = await rechazo(autorizarPrecio(env, sV, pedido(otroVendedor)), 403, /contraseña incorrecta/i);
     expect(a.message).toBe(b.message);
     expect(b.message).toBe(c.message);
   });
 
   it('el encargado de OTRO local no puede autorizar en este', async () => {
-    await rechazo(autorizarPrecio(env, sV, pedido(encargadoVid)), 403, /no válid/i);
+    await rechazo(autorizarPrecio(env, sV, pedido(encargadoVid)), 403, /contraseña incorrecta/i);
   });
 
   it('un supervisor inactivo no autoriza', async () => {
     await env.DB.prepare("UPDATE perfiles SET status = 'inactive' WHERE id = ?").bind(encargadoAcc.id).run();
-    await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc)), 403, /no válid/i);
+    await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc)), 403, /contraseña incorrecta/i);
   });
 
   it('tras 5 contraseñas equivocadas seguidas se bloquea (429), aunque después se acierte', async () => {
@@ -127,6 +127,30 @@ describe('autorizarPrecio: quién puede autorizar', () => {
   it('el contador no puede usarlo y nadie autoriza en un local al que no accede', async () => {
     await rechazo(autorizarPrecio(env, sC, pedido(admin)), 403);
     await rechazo(autorizarPrecio(env, sV, pedido(admin, { local_id: vidrios, promotor_id: 'promotor-vidrios' })), 403);
+  });
+});
+
+describe('autorizarPrecio: solo con la contraseña (sin correo)', () => {
+  const sinCorreo = (s: UsuarioDePrueba, extra: Record<string, unknown> = {}) => pedido(s, { email: undefined, ...extra });
+
+  it('reconoce por su contraseña al encargado del local, al gerente y al administrador', async () => {
+    for (const [supervisor, nombre] of [[encargadoAcc, 'Ema Encargada'], [gerente, 'Gaby Gerente'], [admin, 'Ada Admin']] as const) {
+      const r = await autorizarPrecio(env, sV, sinCorreo(supervisor));
+      expect(r.autorizado_por).toBe(nombre);
+    }
+  });
+
+  it('la contraseña de un vendedor, del encargado de otro local, de un inactivo o inventada da el mismo 403', async () => {
+    await env.DB.prepare("UPDATE perfiles SET status = 'inactive' WHERE id = ?").bind(gerente.id).run();
+    const mensajes = new Set<string>();
+    for (const s of [otroVendedor, encargadoVid, gerente]) mensajes.add((await rechazo(autorizarPrecio(env, sV2, sinCorreo(s)), 403, /contraseña incorrecta/i)).message);
+    mensajes.add((await rechazo(autorizarPrecio(env, sV2, sinCorreo(admin, { clave: 'inventada-123' })), 403)).message);
+    expect(mensajes.size).toBe(1);
+  });
+
+  it('adivinar contraseñas a ciegas también se bloquea a los 5 fallos (429)', async () => {
+    for (let i = 0; i < 5; i++) await rechazo(autorizarPrecio(env, sV, sinCorreo(admin, { clave: `mala-clave-${i}-x` })), 403);
+    await rechazo(autorizarPrecio(env, sV, sinCorreo(admin)), 429, /intentos/i);
   });
 });
 

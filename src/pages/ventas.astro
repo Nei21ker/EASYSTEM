@@ -243,9 +243,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <ul id="pos-confirmar-lineas" class="hidden max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
           <div class="mt-3 flex items-center justify-between text-base font-semibold">
             <span>Total a cobrar</span>
-            <span id="pos-confirmar-total"></span>
+            <button id="pos-confirmar-total-btn" type="button" title="Modificar el precio" aria-label="Modificar el precio de la venta" class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -mr-1.5 decoration-dotted underline-offset-4 hover:bg-slate-100 hover:underline dark:hover:bg-slate-800">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5 text-slate-400" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              <span id="pos-confirmar-total"></span>
+            </button>
           </div>
           <p id="pos-confirmar-total-bs" class="text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
+          <p id="pos-confirmar-precio-nota" class="text-right text-[11px] text-slate-400 dark:text-slate-500">Toca el total para modificar el precio</p>
         </div>
 
         <section data-paso="escaneo" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
@@ -385,8 +389,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       </div>
       <div class="shrink-0 space-y-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
         <div id="pos-manual-clave-bloque" class="space-y-2">
-          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Autoriza un encargado, gerente o administrador</p>
-          <input id="pos-manual-email" type="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="Correo de quien autoriza" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
           <input id="pos-manual-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <p id="pos-manual-autorizado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
@@ -397,32 +400,28 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </div>
   </dialog>
 
-  <!-- Precio de promotor: el cliente paga más que el catálogo y la diferencia es la comisión del promotor; lo autoriza un encargado con su contraseña -->
+  <!-- Modificar el precio de la venta (precio de promotor): el cliente paga más que el catálogo y la diferencia es la comisión del promotor.
+       Se abre tocando el total en el cobro; lo autoriza SOLO con su contraseña un encargado de este local, un gerente o un administrador -->
   <dialog
     id="pos-precio"
     aria-labelledby="pos-precio-titulo"
     class="anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
   >
-    <form id="pos-precio-form" class="flex max-h-[90dvh] flex-col" autocomplete="off">
+    <form id="pos-precio-form" class="flex max-h-[90dvh] flex-col" autocomplete="off" novalidate>
       <div class="shrink-0 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800">
-        <h2 id="pos-precio-titulo" class="text-base font-semibold">Precio de promotor</h2>
-        <p id="pos-precio-producto" class="mt-0.5 break-words text-sm text-slate-600 dark:text-slate-300"></p>
-        <p id="pos-precio-lista" class="text-xs text-slate-500 dark:text-slate-400"></p>
+        <h2 id="pos-precio-titulo" class="text-base font-semibold">¿Modificar el precio?</h2>
+        <p class="mt-0.5 text-sm text-slate-600 dark:text-slate-300">Escribe el precio al que paga el cliente. La diferencia con el catálogo es la comisión del promotor.</p>
       </div>
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
-        <label class="block">
-          <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Precio al que paga el cliente ($ c/u)</span>
-          <input id="pos-precio-valor" type="text" inputmode="decimal" required class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-        </label>
+        <ul id="pos-precio-lineas" class="space-y-3"></ul>
         <p id="pos-precio-comision" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
         <label class="block">
           <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor</span>
-          <select id="pos-precio-promotor" required class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
+          <select id="pos-precio-promotor" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
         </label>
         <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Autoriza un encargado, gerente o administrador</p>
-          <input id="pos-precio-email" type="email" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Correo de quien autoriza" required class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-          <input id="pos-precio-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" required class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
+          <input id="pos-precio-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <p id="pos-precio-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
       </div>
@@ -655,7 +654,7 @@ import { alCambiarDatos } from '../lib/realtime';
               ${
                 conPromotor
                   ? `<button type="button" data-quitar-precio="${producto.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar precio de promotor</button>`
-                  : `<button type="button" data-precio-promotor="${producto.id}" class="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Precio de promotor</button>`
+                  : `<button type="button" data-precio-promotor="${producto.id}" class="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Modificar precio</button>`
               }
             </div>
             <div class="mt-2 flex items-center justify-between gap-3">
@@ -1024,24 +1023,10 @@ import { alCambiarDatos } from '../lib/realtime';
     if (carrito.length === 0 || dialogoConfirmar.open) return;
     if (autorizacionVencida()) return;
     const unidades = carrito.reduce((suma, l) => suma + l.cantidad, 0);
-    const total = totalDelCarrito();
 
     document.getElementById('pos-confirmar-resumen')!.textContent =
       `${carrito.length} línea${carrito.length === 1 ? '' : 's'} · ${unidades} unidad${unidades === 1 ? '' : 'es'}`;
-    document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
-    totalAConfirmar = total;
-    formPagos.establecerTotal(total);
-    const tasaDia = tasaActual.get();
-    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(total, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
-    document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
-      .map(
-        (linea) => `
-          <li class="flex items-center justify-between gap-3 px-3 py-2">
-            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}</span>
-            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(precioDe(linea) * linea.cantidad)}</span>
-          </li>`
-      )
-      .join('');
+    pintarResumenConfirmar();
 
     errorConfirmar.classList.add('hidden');
     // Pasos: si falta escanear alguna unidad, primero eso; después los datos del cliente y, al final, el cobro
@@ -1290,26 +1275,35 @@ import { alCambiarDatos } from '../lib/realtime';
 
   // --- Precio de promotor ---------------------------------------------------------------------------------------
   // El cliente paga más que el catálogo (p. ej. $15 por un control de $12) y la diferencia es la comisión del promotor, que la tienda
-  // le paga aparte. Un encargado/gerente/administrador lo autoriza con su correo y contraseña; el servidor lo vuelve a comprobar.
+  // le paga aparte. Se abre tocando el total del cobro; un encargado de este local, un gerente o un administrador lo autoriza con SU
+  // contraseña (sin correo: el servidor la reconoce entre quienes pueden autorizar aquí) y el servidor lo vuelve a comprobar.
   const dialogoPrecio = document.getElementById('pos-precio') as HTMLDialogElement;
   const formPrecio = document.getElementById('pos-precio-form') as HTMLFormElement;
-  const campoPrecio = document.getElementById('pos-precio-valor') as HTMLInputElement;
+  const listaPrecio = document.getElementById('pos-precio-lineas') as HTMLUListElement;
   const selectPromotor = document.getElementById('pos-precio-promotor') as HTMLSelectElement;
-  const campoSupervisor = document.getElementById('pos-precio-email') as HTMLInputElement;
   const campoClaveSupervisor = document.getElementById('pos-precio-clave') as HTMLInputElement;
   const errorPrecio = document.getElementById('pos-precio-error') as HTMLParagraphElement;
   const botonAutorizar = document.getElementById('pos-precio-guardar') as HTMLButtonElement;
-  let productoDelPrecio: string | null = null;
 
   const numeroEscrito = (texto: string): number => Number(texto.trim().replace(',', '.'));
+  const camposPrecio = () => [...listaPrecio.querySelectorAll<HTMLInputElement>('input[data-precio-de]')];
+
+  /** Precios escritos que superan al del catálogo: [línea, precio]. Los campos vacíos o iguales al catálogo no cuentan. */
+  function preciosEscritos(): { linea: LineaCarrito; precio: number }[] {
+    const resultado: { linea: LineaCarrito; precio: number }[] = [];
+    for (const campo of camposPrecio()) {
+      const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
+      const precio = Math.round(numeroEscrito(campo.value) * 100) / 100;
+      if (linea && campo.value.trim() !== '' && Number.isFinite(precio) && precio > linea.producto.precio_venta + 0.005) resultado.push({ linea, precio });
+    }
+    return resultado;
+  }
 
   function textoComision() {
-    const linea = carrito.find((l) => l.producto.id === productoDelPrecio);
-    const precio = numeroEscrito(campoPrecio.value);
-    const comision = linea && precio > linea.producto.precio_venta ? (precio - linea.producto.precio_venta) * linea.cantidad : 0;
+    const comision = preciosEscritos().reduce((suma, { linea, precio }) => suma + (precio - linea.producto.precio_venta) * linea.cantidad, 0);
     document.getElementById('pos-precio-comision')!.textContent =
       comision > 0
-        ? `El cliente paga ${formatearMoneda(precio * (linea?.cantidad ?? 1))} y la tienda le paga ${formatearMoneda(comision)} al promotor.`
+        ? `La tienda le paga ${formatearMoneda(comision)} de comisión al promotor.`
         : 'El precio debe ser mayor al del catálogo: la diferencia es la comisión del promotor.';
   }
 
@@ -1318,15 +1312,39 @@ import { alCambiarDatos } from '../lib/realtime';
     errorPrecio.classList.remove('hidden');
   }
 
-  async function abrirPrecioPromotor(productoId: string) {
-    const linea = carrito.find((l) => l.producto.id === productoId);
-    if (!linea) return;
+  /** Vuelve a pintar el resumen del cobro (líneas, total, equivalente en Bs. y pagos) cuando cambia algún precio. */
+  function pintarResumenConfirmar() {
+    const total = totalDelCarrito();
+    document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
+    totalAConfirmar = total;
+    formPagos.establecerTotal(total);
+    const tasaDia = tasaActual.get();
+    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(total, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
+    document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
+      .map(
+        (linea) => `
+          <li class="flex items-center justify-between gap-3 px-3 py-2">
+            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>' : ''}</span>
+            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(precioDe(linea) * linea.cantidad)}</span>
+          </li>`
+      )
+      .join('');
+  }
+
+  async function abrirPrecioPromotor(productoDestacado?: string) {
+    if (carrito.length === 0) return;
     limpiarError();
-    productoDelPrecio = productoId;
-    document.getElementById('pos-precio-producto')!.textContent = `${linea.cantidad} × ${linea.producto.nombre}`;
-    document.getElementById('pos-precio-lista')!.textContent = `Precio de catálogo: ${formatearMoneda(linea.producto.precio_venta)} c/u`;
-    campoPrecio.value = '';
-    campoSupervisor.value = '';
+    listaPrecio.innerHTML = carrito
+      .map(
+        (l) => `<li>
+          <label class="block">
+            <span class="block break-words text-sm font-medium text-slate-800 dark:text-slate-100">${l.cantidad} × ${escaparHtml(l.producto.nombre)}</span>
+            <span class="text-xs text-slate-500 dark:text-slate-400">Catálogo: ${formatearMoneda(l.producto.precio_venta)} c/u</span>
+            <input data-precio-de="${escaparHtml(l.producto.id)}" type="text" inputmode="decimal" placeholder="${l.producto.precio_venta.toFixed(2)}" value="${l.precioPromotor !== undefined ? l.precioPromotor.toFixed(2) : ''}" aria-label="Precio al que paga el cliente por cada uno, en dólares" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </label>
+        </li>`
+      )
+      .join('');
     campoClaveSupervisor.value = '';
     errorPrecio.classList.add('hidden');
     botonAutorizar.disabled = true;
@@ -1348,7 +1366,8 @@ import { alCambiarDatos } from '../lib/realtime';
         selectPromotor.disabled = false;
       }
       botonAutorizar.disabled = false;
-      campoPrecio.focus();
+      const destacado = productoDestacado ? camposPrecio().find((c) => c.dataset.precioDe === productoDestacado) : undefined;
+      (destacado ?? camposPrecio()[0])?.focus();
     } catch (err) {
       selectPromotor.innerHTML = '<option value="">No se pudo cargar</option>';
       errorDePrecio(err instanceof Error ? err.message : 'No se pudo cargar la lista de promotores.');
@@ -1360,36 +1379,55 @@ import { alCambiarDatos } from '../lib/realtime';
     dialogoPrecio.close();
   }
 
-  campoPrecio.addEventListener('input', textoComision);
+  listaPrecio.addEventListener('input', textoComision);
   document.getElementById('pos-precio-cancelar')!.addEventListener('click', cerrarPrecioPromotor);
   dialogoPrecio.addEventListener('close', () => (campoClaveSupervisor.value = ''));
+  document.getElementById('pos-confirmar-total-btn')!.addEventListener('click', () => void abrirPrecioPromotor());
 
   formPrecio.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const linea = carrito.find((l) => l.producto.id === productoDelPrecio);
-    if (!linea) return cerrarPrecioPromotor();
-    const precio = Math.round(numeroEscrito(campoPrecio.value) * 100) / 100;
+    // Un precio menor al del catálogo no se acepta nunca
+    for (const campo of camposPrecio()) {
+      const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
+      if (!linea || campo.value.trim() === '') continue;
+      const valor = numeroEscrito(campo.value);
+      if (!Number.isFinite(valor) || valor <= 0) return errorDePrecio(`El precio de «${linea.producto.nombre}» no es válido.`);
+      if (valor < linea.producto.precio_venta - 0.005) return errorDePrecio(`El precio de «${linea.producto.nombre}» no puede ser menor al del catálogo (${formatearMoneda(linea.producto.precio_venta)}).`);
+    }
+    const cambios = preciosEscritos();
+
+    // Sin ningún precio mayor al catálogo: todo vuelve al precio normal (no hace falta contraseña para cobrar menos)
+    if (cambios.length === 0) {
+      if (!carrito.some((l) => l.precioPromotor !== undefined)) return errorDePrecio('Escribe un precio mayor al del catálogo en alguno de los productos.');
+      for (const l of carrito) delete l.precioPromotor;
+      promotorVenta = null;
+      autorizacionPrecio = null;
+      cerrarPrecioPromotor();
+      renderCarrito();
+      pintarResumenConfirmar();
+      return;
+    }
+
     const promotorId = promotorVenta?.id ?? selectPromotor.value;
-    if (!(precio > linea.producto.precio_venta)) return errorDePrecio(`El precio debe ser mayor a ${formatearMoneda(linea.producto.precio_venta)} (el del catálogo).`);
     if (!promotorId) return errorDePrecio('Elige el promotor.');
-    if (!campoSupervisor.value.trim() || !campoClaveSupervisor.value) return errorDePrecio('Quien autoriza debe escribir su correo y su contraseña.');
+    if (!campoClaveSupervisor.value) return errorDePrecio('Escribe la contraseña de un encargado, gerente o administrador.');
 
     errorPrecio.classList.add('hidden');
     botonAutorizar.disabled = true;
     botonAutorizar.textContent = 'Verificando...';
     try {
-      // La autorización cubre las líneas que ya tenían precio de promotor y esta
-      const lineas = [
-        ...carrito.filter((l) => l.precioPromotor !== undefined && l !== linea).map((l) => ({ producto_id: l.producto.id, precio: l.precioPromotor as number })),
-        { producto_id: linea.producto.id, precio },
-      ];
-      const aut = await inventoryService.autorizarPrecioVenta({ email: campoSupervisor.value.trim(), clave: campoClaveSupervisor.value, promotor_id: promotorId, lineas });
-      linea.precioPromotor = precio;
+      const aut = await inventoryService.autorizarPrecioVenta({
+        clave: campoClaveSupervisor.value,
+        promotor_id: promotorId,
+        lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),
+      });
+      for (const l of carrito) delete l.precioPromotor;
+      for (const { linea, precio } of cambios) linea.precioPromotor = precio;
       promotorVenta = { id: promotorId, nombre: aut.promotor };
       autorizacionPrecio = aut;
       cerrarPrecioPromotor();
       renderCarrito();
-      destacarLinea(linea.producto.id);
+      pintarResumenConfirmar();
     } catch (err) {
       campoClaveSupervisor.value = '';
       errorDePrecio(err instanceof Error ? err.message : 'No se pudo autorizar el precio.');
@@ -1404,8 +1442,13 @@ import { alCambiarDatos } from '../lib/realtime';
     const linea = carrito.find((l) => l.producto.id === productoId);
     if (!linea) return;
     delete linea.precioPromotor;
+    if (!carrito.some((l) => l.precioPromotor !== undefined)) {
+      promotorVenta = null;
+      autorizacionPrecio = null;
+    }
     limpiarError();
     renderCarrito();
+    if (dialogoConfirmar.open) pintarResumenConfirmar();
   }
 
   /** Si la autorización venció (dura 20 minutos), las líneas vuelven al precio de catálogo y se avisa; devuelve si venció. */
@@ -1797,13 +1840,12 @@ import { alCambiarDatos } from '../lib/realtime';
 
   // --- "No lee el código": elegir a mano la unidad, con la contraseña de un supervisor ------------------------------
   // La etiqueta está dañada o el lector no la reconoce: se ve la lista de códigos disponibles del producto y se elige el que corresponde.
-  // Un encargado/gerente/administrador lo autoriza con su correo y contraseña (vale 20 minutos para ese producto); la venta guarda
+  // Un encargado/gerente/administrador lo autoriza con su contraseña (vale 20 minutos para ese producto); la venta guarda
   // cuáles códigos se eligieron a mano y quién lo autorizó.
   const dialogoManual = document.getElementById('pos-manual') as HTMLDialogElement;
   const manualBuscar = document.getElementById('pos-manual-buscar') as HTMLInputElement;
   const manualLista = document.getElementById('pos-manual-lista') as HTMLUListElement;
   const manualError = document.getElementById('pos-manual-error') as HTMLParagraphElement;
-  const manualEmail = document.getElementById('pos-manual-email') as HTMLInputElement;
   const manualClave = document.getElementById('pos-manual-clave') as HTMLInputElement;
   const manualBloqueClave = document.getElementById('pos-manual-clave-bloque') as HTMLDivElement;
   const manualAutorizado = document.getElementById('pos-manual-autorizado') as HTMLParagraphElement;
@@ -1853,7 +1895,6 @@ import { alCambiarDatos } from '../lib/realtime';
     manualProducto = linea.producto;
     manualUnidades = [];
     manualBuscar.value = '';
-    manualEmail.value = '';
     manualClave.value = '';
     manualError.classList.add('hidden');
     manualLista.innerHTML = '<li class="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">Cargando códigos...</li>';
@@ -1874,10 +1915,10 @@ import { alCambiarDatos } from '../lib/realtime';
     manualError.classList.add('hidden');
     let aut = autorizacionManualVigente(manualProducto.id);
     if (!aut) {
-      if (!manualEmail.value.trim() || !manualClave.value) return errorManual('Quien autoriza debe escribir su correo y su contraseña.');
+      if (!manualClave.value) return errorManual('Escribe la contraseña de un encargado, gerente o administrador.');
       boton.disabled = true;
       try {
-        const r = await inventoryService.autorizarCodigoManual({ email: manualEmail.value.trim(), clave: manualClave.value, producto_id: manualProducto.id });
+        const r = await inventoryService.autorizarCodigoManual({ clave: manualClave.value, producto_id: manualProducto.id });
         aut = { token: r.token, nombre: r.autorizado_por, vence_en: r.vence_en, codigos: manualPorProducto.get(manualProducto.id)?.codigos ?? new Set<string>() };
         manualPorProducto.set(manualProducto.id, aut);
       } catch (err) {

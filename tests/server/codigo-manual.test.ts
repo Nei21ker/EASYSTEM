@@ -19,12 +19,12 @@ const Q = 'p-dos';
 beforeEach(async () => {
   await reiniciarBase(env.DB);
   await sembrarLocales(env.DB);
-  admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null, nombre: 'Ada Admin' });
-  encargadoAcc = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: accesorios, nombre: 'Ema Encargada' });
-  encargadoVid = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: vidrios, nombre: 'Eli Vidrios' });
-  vendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Vera Vendedora' });
-  otroVendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Otto Vendedor' });
-  contador = await crearUsuarioDePrueba(env, { rol: 'contador', localId: null });
+  admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null, nombre: 'Ada Admin', clave: 'Clave-administrador-null-123' });
+  encargadoAcc = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: accesorios, nombre: 'Ema Encargada', clave: 'Clave-encargado-accesorios-123' });
+  encargadoVid = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: vidrios, nombre: 'Eli Vidrios', clave: 'Clave-encargado-vidrios-123' });
+  vendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Vera Vendedora', clave: 'Clave-vendedor-accesorios-123' });
+  otroVendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios, nombre: 'Otto Vendedor', clave: 'Clave-vendedor-accesorios-123' });
+  contador = await crearUsuarioDePrueba(env, { rol: 'contador', localId: null, clave: 'Clave-contador-null-123' });
   [sV, sV2, sC] = await Promise.all([vendedor, otroVendedor, contador].map(sesionDe));
   await env.DB.batch([
     env.DB.prepare("INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo) VALUES ('p-uno', '2000000000015', 'Control A', 'Controles', 8, 12, 0)"),
@@ -70,11 +70,18 @@ describe('autorizarCodigoManual', () => {
     }
   });
 
+  it('con solo la contraseña (sin correo) reconoce a quien puede autorizar en este local', async () => {
+    expect((await autorizarCodigoManual(env, sV, pedido(encargadoAcc, { email: undefined }))).autorizado_por).toBe('Ema Encargada');
+    expect((await autorizarCodigoManual(env, sV, pedido(admin, { email: undefined }))).autorizado_por).toBe('Ada Admin');
+    await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoVid, { email: undefined })), 403, /contraseña incorrecta/i);
+    await rechazo(autorizarCodigoManual(env, sV, pedido(otroVendedor, { email: undefined })), 403, /contraseña incorrecta/i);
+  });
+
   it('clave equivocada, correo desconocido, vendedor o encargado de otro local: el mismo 403', async () => {
-    const a = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc, { clave: 'incorrecta-123' })), 403, /no válid/i);
-    const b = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc, { email: 'nadie@prueba.com' })), 403, /no válid/i);
-    const c = await rechazo(autorizarCodigoManual(env, sV, pedido(otroVendedor)), 403, /no válid/i);
-    const d = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoVid)), 403, /no válid/i);
+    const a = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc, { clave: 'incorrecta-123' })), 403, /contraseña incorrecta/i);
+    const b = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc, { email: 'nadie@prueba.com' })), 403, /contraseña incorrecta/i);
+    const c = await rechazo(autorizarCodigoManual(env, sV, pedido(otroVendedor)), 403, /contraseña incorrecta/i);
+    const d = await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoVid)), 403, /contraseña incorrecta/i);
     expect(new Set([a.message, b.message, c.message, d.message]).size).toBe(1);
   });
 

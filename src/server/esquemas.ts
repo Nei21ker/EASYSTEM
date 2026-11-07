@@ -44,7 +44,7 @@ export const esquemaItemVenta = z.object({
 
 /** Pedido de autorización para elegir a mano el código de una unidad: un supervisor teclea su correo y contraseña */
 export const esquemaAutorizarCodigo = z.object({
-  email: z.string().min(3).max(200),
+  email: z.string().min(3).max(200).optional(),
   clave: z.string().min(1).max(200),
   local_id: z.string(),
   producto_id: z.string(),
@@ -74,7 +74,7 @@ export const esquemaVenta = z.object({
 
 /** Pedido de autorización de precio: un supervisor teclea su correo y contraseña en el equipo de quien vende */
 export const esquemaAutorizarPrecio = z.object({
-  email: z.string().min(3).max(200),
+  email: z.string().min(3).max(200).optional(),
   clave: z.string().min(1).max(200),
   local_id: z.string(),
   promotor_id: z.string(),

@@ -8,7 +8,7 @@ export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
 
 /** Pide la autorización de un supervisor (correo + contraseña) para vender a un precio mayor al del catálogo (precio de promotor). */
 export async function autorizarPrecio(pedido: {
-  email: string;
+  email?: string;
   clave: string;
   local_id: string;
   promotor_id: string;
@@ -18,7 +18,7 @@ export async function autorizarPrecio(pedido: {
 }
 
 /** Pide la autorización de un supervisor (correo + contraseña) para elegir a mano el código de las unidades de un producto. */
-export async function autorizarCodigoManual(pedido: { email: string; clave: string; local_id: string; producto_id: string }): Promise<AutorizacionCodigo> {
+export async function autorizarCodigoManual(pedido: { email?: string; clave: string; local_id: string; producto_id: string }): Promise<AutorizacionCodigo> {
   return api.post<AutorizacionCodigo>('/api/ventas/autorizar-codigo', pedido);
 }
 

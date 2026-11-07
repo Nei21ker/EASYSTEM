@@ -57,12 +57,12 @@ export interface UsuarioDePrueba {
 /** Crea un usuario con el rol y local indicados e inicia su sesión (devuelve su cookie). */
 export async function crearUsuarioDePrueba(
   entorno: Entorno,
-  opciones: { rol: Rol; localId: string | null; nombre?: string }
+  opciones: { rol: Rol; localId: string | null; nombre?: string; clave?: string }
 ): Promise<UsuarioDePrueba> {
   const { crearAuth, crearUsuarioInterno } = await import('../../src/server/auth');
   contadorUsuarios += 1;
   const email = `${opciones.rol}${contadorUsuarios}@prueba.com`;
-  const clave = 'Clave-de-prueba-123';
+  const clave = opciones.clave ?? 'Clave-de-prueba-123';
   const id = await crearUsuarioInterno(entorno, { email, nombre: opciones.nombre ?? `Usuario ${opciones.rol}`, clave, rol: opciones.rol, localId: opciones.localId });
   const respuesta = await crearAuth(entorno, ORIGEN_PRUEBAS).handler(
     new Request(`${ORIGEN_PRUEBAS}/api/auth/sign-in/email`, {
