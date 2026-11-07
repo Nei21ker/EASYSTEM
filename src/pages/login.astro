@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import FondoAnimado from '../components/login/FondoAnimado.astro';
+import AvisoNavegador from '../components/layout/AvisoNavegador.astro';
 
 // Con el modo servidor activo no se muestran las credenciales de demostración
 const modoServidor = import.meta.env.PUBLIC_USAR_API === 'true';
@@ -25,6 +26,7 @@ const modoServidor = import.meta.env.PUBLIC_USAR_API === 'true';
     </script>
   </head>
   <body class="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-50 px-4 dark:bg-slate-950">
+    <AvisoNavegador />
     <FondoAnimado />
 
     <div class="relative w-full max-w-sm">

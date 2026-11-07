@@ -1,0 +1,82 @@
+---
+// Diagnóstico para teléfonos viejos o con el navegador sin actualizar: si falta algo que el sistema necesita, o si una pantalla
+// falla con un error, lo muestra EN la pantalla (versión del navegador y mensaje) para poder mandar una captura.
+// Va en JavaScript antiguo y con estilos en línea a propósito: tiene que funcionar justo cuando el resto no lo hace.
+---
+
+<script is:inline>
+  (function () {
+    var yaMostrado = false;
+
+    function versionNavegador() {
+      var m = /(Chrome|CriOS|Firefox|FxiOS|Version|MiuiBrowser|SamsungBrowser)\/([\d.]+)/.exec(navigator.userAgent);
+      return m ? m[1] + ' ' + m[2] : 'desconocido';
+    }
+
+    function cosasQueFaltan() {
+      var faltan = [];
+      try {
+        if (!(window.CSS && CSS.supports && CSS.supports('color', 'color-mix(in srgb, red, blue)'))) faltan.push('colores modernos (color-mix)');
+        if (!(window.CSS && CSS.supports && CSS.supports('color', 'oklch(0.5 0.1 200)'))) faltan.push('colores oklch');
+        if (!(window.CSS && CSS.supports && CSS.supports('height', '1dvh'))) faltan.push('altura de pantalla (dvh)');
+      } catch (e) {}
+      if (!window.HTMLDialogElement) faltan.push('ventanas (dialog)');
+      if (!Array.prototype.at) faltan.push('Array.at');
+      if (!Object.hasOwn) faltan.push('Object.hasOwn');
+      if (!window.structuredClone) faltan.push('structuredClone');
+      if (!(window.crypto && window.crypto.randomUUID)) faltan.push('crypto.randomUUID');
+      return faltan;
+    }
+
+    function mostrar(titulo, detalle) {
+      if (yaMostrado || !document.body) return;
+      yaMostrado = true;
+      var caja = document.createElement('div');
+      caja.setAttribute('role', 'alert');
+      caja.style.cssText =
+        'position:fixed;left:8px;right:8px;top:8px;z-index:2147483647;background:#fffbeb;color:#78350f;border:2px solid #f59e0b;' +
+        'border-radius:10px;padding:10px 12px;font:13px/1.35 system-ui,sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.3);max-height:60vh;overflow:auto';
+      var t = document.createElement('div');
+      t.style.cssText = 'font-weight:700;margin-bottom:4px';
+      t.appendChild(document.createTextNode(titulo));
+      var d = document.createElement('div');
+      d.style.cssText = 'word-break:break-word';
+      d.appendChild(document.createTextNode(detalle));
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.appendChild(document.createTextNode('Cerrar aviso'));
+      b.style.cssText = 'margin-top:8px;padding:6px 12px;border:1px solid #b45309;border-radius:8px;background:#fff;color:#78350f;font:600 13px system-ui,sans-serif';
+      b.onclick = function () {
+        if (caja.parentNode) caja.parentNode.removeChild(caja);
+      };
+      caja.appendChild(t);
+      caja.appendChild(d);
+      caja.appendChild(b);
+      document.body.appendChild(caja);
+    }
+
+    function revisarNavegador() {
+      var faltan = cosasQueFaltan();
+      if (faltan.length === 0) return;
+      mostrar(
+        'Tu navegador es antiguo y puede fallar',
+        'Navegador: ' + versionNavegador() + '. Le falta: ' + faltan.join(', ') + '. Abre el sistema con Google Chrome y actualiza Chrome y «Android System WebView» desde la tienda Play Store.'
+      );
+    }
+
+    window.addEventListener('error', function (e) {
+      var donde = e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '';
+      mostrar('Ocurrió un error en esta pantalla', (e.message || 'Error desconocido') + donde + ' · Navegador: ' + versionNavegador());
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var r = e.reason;
+      var msg = r && r.message ? String(r.message) : String(r);
+      // Las fallas de red ya las maneja el sistema (modo sin conexión): no se avisan
+      if (/fetch|network|load failed|conexi/i.test(msg)) return;
+      mostrar('Ocurrió un error en esta pantalla', msg + ' · Navegador: ' + versionNavegador());
+    });
+
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', revisarNavegador);
+    else revisarNavegador();
+  })();
+</script>

@@ -268,3 +268,17 @@ button:not(:disabled):active { scale: 0.96; }
     scroll-behavior: auto !important;
   }
 }
+
+/* Navegadores sin la unidad `dvh` (Chrome/WebView anteriores a 108, típico de teléfonos sin actualizar): sin esto las ventanas de
+   venta, ingreso, etc. quedan más altas que la pantalla y sus botones de abajo no se alcanzan. Se usa `vh` como respaldo. */
+@supports not (height: 1dvh) {
+  .h-\[100dvh\] { height: 100vh; }
+  .max-h-\[100dvh\] { max-height: 100vh; }
+  .max-h-\[88dvh\] { max-height: 88vh; }
+  .max-h-\[90dvh\] { max-height: 90vh; }
+  .max-h-\[92dvh\] { max-height: 92vh; }
+  .max-h-\[94dvh\] { max-height: 94vh; }
+  @media (min-width: 1024px) {
+    .lg\:h-\[calc\(100dvh-10rem\)\] { height: calc(100vh - 10rem); }
+  }
+}
