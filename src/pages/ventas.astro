@@ -426,10 +426,18 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <ul id="pos-precio-lineas" class="space-y-3"></ul>
         <p id="pos-precio-comision" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
-        <label class="block">
-          <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor</span>
-          <select id="pos-precio-promotor" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"></select>
-        </label>
+        <fieldset class="space-y-2">
+          <legend class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor <span class="font-normal text-slate-400">(opcional)</span></legend>
+          <div class="flex gap-2">
+            <select id="pos-promotor-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
+            <input id="pos-promotor-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="pos-promotor-nombre" type="text" autocomplete="off" placeholder="Nombre" aria-label="Nombre del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <input id="pos-promotor-apellido" type="text" autocomplete="off" placeholder="Apellido" aria-label="Apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          </div>
+          <input id="pos-promotor-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="Teléfono (ej. 0414-1234567)" aria-label="Teléfono del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </fieldset>
         <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
           <input id="pos-precio-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
@@ -458,12 +466,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura, reducirImagen } from '../utils/imagenes';
   import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo } from '../utils/codigos';
+  import { normalizarPromotor } from '../utils/promotor';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
   import { archivoDeTicket, copiarImagenAlPortapapeles } from '../utils/ticketImagen';
   import { compartirArchivos, descargarArchivos, puedeCompartirArchivos } from '../utils/etiquetaImagen';
-  import type { AutorizacionPrecio, ClienteVenta, DineroEntregado, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
+  import type { AutorizacionPrecio, ClienteVenta, DatosPromotor, DineroEntregado, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
     producto: ProductoConRelaciones;
@@ -477,7 +486,7 @@ import { alCambiarDatos } from '../lib/realtime';
   let productos: ProductoConRelaciones[] = [];
   let carrito: LineaCarrito[] = [];
   // Precio de promotor: UN promotor por venta y la autorización firmada que cubre los precios de las líneas modificadas
-  let promotorVenta: { id: string; nombre: string } | null = null;
+  let promotorVenta: { datos: DatosPromotor; nombre: string } | null = null;
   let autorizacionPrecio: AutorizacionPrecio | null = null;
   /** Lo que se cobra por unidad de esa línea (el del catálogo, o el de promotor si lo autorizó un supervisor) */
   const precioDe = (l: LineaCarrito): number => l.precioPromotor ?? l.producto.precio_venta;
@@ -638,7 +647,7 @@ import { alCambiarDatos } from '../lib/realtime';
         const alMaximo = cantidad >= producto.stock_actual;
         const conPromotor = linea.precioPromotor !== undefined;
         const detallePrecio = conPromotor
-          ? `<p class="text-xs font-medium text-amber-700 dark:text-amber-400">Precio de promotor${promotorVenta ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
+          ? `<p class="text-xs font-medium text-amber-700 dark:text-amber-400">Precio de promotor${promotorVenta?.nombre ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
              <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · comisión ${formatearMoneda((precio - producto.precio_venta) * cantidad)}</p>`
           : '';
         const codigos = unidades.length
@@ -1157,7 +1166,7 @@ import { alCambiarDatos } from '../lib/realtime';
         vendedor_nombre: sesion?.nombre,
         comprobante: incluyePagoMovil(datos.pagos) && modoComprobante === 'foto' ? comprobante : null,
         referenciaPagoMovil: incluyePagoMovil(datos.pagos) && modoComprobante === 'referencia' ? campoReferencia.value : null,
-        precioPromotor: promotorVenta && autorizacionPrecio ? { promotor_id: promotorVenta.id, autorizacion: autorizacionPrecio } : null,
+        precioPromotor: autorizacionPrecio ? { promotor: promotorVenta?.datos ?? null, autorizacion: autorizacionPrecio } : null,
       });
       mostrarTicket(venta);
       carrito = [];
@@ -1319,7 +1328,11 @@ import { alCambiarDatos } from '../lib/realtime';
   const dialogoPrecio = document.getElementById('pos-precio') as HTMLDialogElement;
   const formPrecio = document.getElementById('pos-precio-form') as HTMLFormElement;
   const listaPrecio = document.getElementById('pos-precio-lineas') as HTMLUListElement;
-  const selectPromotor = document.getElementById('pos-precio-promotor') as HTMLSelectElement;
+  const promotorNac = document.getElementById('pos-promotor-nac') as HTMLSelectElement;
+  const promotorCedula = document.getElementById('pos-promotor-cedula') as HTMLInputElement;
+  const promotorNombre = document.getElementById('pos-promotor-nombre') as HTMLInputElement;
+  const promotorApellido = document.getElementById('pos-promotor-apellido') as HTMLInputElement;
+  const promotorTelefono = document.getElementById('pos-promotor-telefono') as HTMLInputElement;
   const campoClaveSupervisor = document.getElementById('pos-precio-clave') as HTMLInputElement;
   const errorPrecio = document.getElementById('pos-precio-error') as HTMLParagraphElement;
   const botonAutorizar = document.getElementById('pos-precio-guardar') as HTMLButtonElement;
@@ -1386,31 +1399,31 @@ import { alCambiarDatos } from '../lib/realtime';
       .join('');
     campoClaveSupervisor.value = '';
     errorPrecio.classList.add('hidden');
-    botonAutorizar.disabled = true;
-    selectPromotor.innerHTML = '<option value="">Cargando promotores...</option>';
-    selectPromotor.disabled = true;
+    // Un solo promotor por venta: si ya se anotó, sus datos quedan para corregirlos
+    const previo = promotorVenta?.datos;
+    const cedulaPrevia = (previo?.cedula ?? '').toUpperCase().match(/^([VE])-?(\d+)$/);
+    promotorNac.value = cedulaPrevia?.[1] ?? 'V';
+    promotorCedula.value = cedulaPrevia?.[2] ?? '';
+    promotorNombre.value = previo?.nombre ?? '';
+    promotorApellido.value = previo?.apellido ?? '';
+    promotorTelefono.value = previo?.telefono ?? '';
+    botonAutorizar.disabled = false;
     textoComision();
     dialogoPrecio.showModal();
-    try {
-      const lista = await inventoryService.listarPromotores();
-      if (promotorVenta) {
-        // Un solo promotor por venta: las demás líneas con precio de promotor son del mismo
-        selectPromotor.innerHTML = `<option value="${escaparHtml(promotorVenta.id)}">${escaparHtml(promotorVenta.nombre)}</option>`;
-      } else if (lista.length === 0) {
-        selectPromotor.innerHTML = '<option value="">No hay promotores en este local</option>';
-        errorDePrecio('No hay promotores activos en este local. Pídele al gerente que los registre en Nómina → Trabajadores independientes.');
-        return;
-      } else {
-        selectPromotor.innerHTML = '<option value="">Elige el promotor...</option>' + lista.map((p) => `<option value="${escaparHtml(p.id)}">${escaparHtml(p.nombre)}</option>`).join('');
-        selectPromotor.disabled = false;
-      }
-      botonAutorizar.disabled = false;
-      const destacado = productoDestacado ? camposPrecio().find((c) => c.dataset.precioDe === productoDestacado) : undefined;
-      (destacado ?? camposPrecio()[0])?.focus();
-    } catch (err) {
-      selectPromotor.innerHTML = '<option value="">No se pudo cargar</option>';
-      errorDePrecio(err instanceof Error ? err.message : 'No se pudo cargar la lista de promotores.');
-    }
+    const destacado = productoDestacado ? camposPrecio().find((c) => c.dataset.precioDe === productoDestacado) : undefined;
+    (destacado ?? camposPrecio()[0])?.focus();
+  }
+
+  /** Datos que se anotaron del promotor (todo opcional); null y un mensaje si algo está mal escrito. */
+  function leerPromotor(): { datos: DatosPromotor } | { error: string } {
+    const datos: DatosPromotor = {
+      cedula: promotorCedula.value.trim() ? `${promotorNac.value}-${promotorCedula.value.trim()}` : null,
+      nombre: promotorNombre.value,
+      apellido: promotorApellido.value,
+      telefono: promotorTelefono.value,
+    };
+    const r = normalizarPromotor(datos);
+    return r.ok ? { datos } : { error: r.mensaje };
   }
 
   function cerrarPrecioPromotor() {
@@ -1418,6 +1431,7 @@ import { alCambiarDatos } from '../lib/realtime';
     dialogoPrecio.close();
   }
 
+  promotorCedula.addEventListener('input', () => (promotorCedula.value = promotorCedula.value.replace(/\D/g, '')));
   listaPrecio.addEventListener('input', textoComision);
   document.getElementById('pos-precio-cancelar')!.addEventListener('click', cerrarPrecioPromotor);
   dialogoPrecio.addEventListener('close', () => (campoClaveSupervisor.value = ''));
@@ -1447,8 +1461,8 @@ import { alCambiarDatos } from '../lib/realtime';
       return;
     }
 
-    const promotorId = promotorVenta?.id ?? selectPromotor.value;
-    if (!promotorId) return errorDePrecio('Elige el promotor.');
+    const promotor = leerPromotor();
+    if ('error' in promotor) return errorDePrecio(promotor.error);
     if (!campoClaveSupervisor.value) return errorDePrecio('Escribe la contraseña de un encargado, gerente o administrador.');
 
     errorPrecio.classList.add('hidden');
@@ -1457,12 +1471,12 @@ import { alCambiarDatos } from '../lib/realtime';
     try {
       const aut = await inventoryService.autorizarPrecioVenta({
         clave: campoClaveSupervisor.value,
-        promotor_id: promotorId,
+        promotor: promotor.datos,
         lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),
       });
       for (const l of carrito) delete l.precioPromotor;
       for (const { linea, precio } of cambios) linea.precioPromotor = precio;
-      promotorVenta = { id: promotorId, nombre: aut.promotor };
+      promotorVenta = { datos: promotor.datos, nombre: aut.promotor };
       autorizacionPrecio = aut;
       cerrarPrecioPromotor();
       renderCarrito();

@@ -268,8 +268,8 @@ export interface NuevaVenta {
   comprobante_path?: string | null;
   /** Referencia del pago móvil (exactamente 4 dígitos): respalda la venta en lugar de la captura, o además de ella (migración 0014) */
   referencia_pago_movil?: string | null;
-  /** Venta con precio de promotor (migración 0013): el trabajador independiente que la trajo. La comisión la calcula el servidor. */
-  promotor_id?: string | null;
+  /** Venta con precio de promotor: los datos (opcionales) de quien la trajo. La comisión la calcula el servidor. */
+  promotor?: DatosPromotor | null;
   /** Autorización firmada de un supervisor para vender a un precio distinto al del catálogo (se pide con `autorizarPrecio`) */
   autorizacion_precio?: string | null;
 }
@@ -278,7 +278,12 @@ export interface Venta extends NuevaVenta {
   id: string;
   folio: number;
   vendedor_id?: string | null;
+  /** Antes se elegía un empleado independiente; las ventas nuevas dejan esto en null */
+  promotor_id?: string | null;
+  /** Nombre y apellido del promotor, tal como los anotó quien vendió (opcional) */
   promotor_nombre?: string | null;
+  promotor_cedula?: string | null;
+  promotor_telefono?: string | null;
   /** Lo que se le paga al promotor: Σ cantidad × (precio cobrado − precio de lista). 0 si no hubo promotor. */
   comision?: number;
   precio_autorizado_por?: string | null;
@@ -301,9 +306,12 @@ export interface AutorizacionCodigo {
   autorizado_por: string;
 }
 
-export interface Promotor {
-  id: string;
-  nombre: string;
+/** Lo que quien vende anota del promotor al cobrar con precio de promotor: todo es opcional (no es un usuario ni un empleado registrado) */
+export interface DatosPromotor {
+  cedula?: string | null;
+  nombre?: string | null;
+  apellido?: string | null;
+  telefono?: string | null;
 }
 
 /** Tasa del dólar: bolívares por 1 USD. Cada cambio es una fila (historial); la vigente es la última. */

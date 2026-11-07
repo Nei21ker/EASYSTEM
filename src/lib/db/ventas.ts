@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { AutorizacionCodigo, AutorizacionPrecio, NuevaVenta, Promotor, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
+import type { AutorizacionCodigo, AutorizacionPrecio, DatosPromotor, NuevaVenta, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
 
 /** Guarda el registro de una venta. El folio y el vendedor los pone el servidor (el vendedor sale de la sesión). */
 export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
@@ -11,7 +11,7 @@ export async function autorizarPrecio(pedido: {
   email?: string;
   clave: string;
   local_id: string;
-  promotor_id: string;
+  promotor?: DatosPromotor | null;
   lineas: { producto_id: string; precio: number }[];
 }): Promise<AutorizacionPrecio> {
   return api.post<AutorizacionPrecio>('/api/ventas/autorizar-precio', pedido);
@@ -20,11 +20,6 @@ export async function autorizarPrecio(pedido: {
 /** Pide la autorización de un supervisor (correo + contraseña) para elegir a mano el código de las unidades de un producto. */
 export async function autorizarCodigoManual(pedido: { email?: string; clave: string; local_id: string; producto_id: string }): Promise<AutorizacionCodigo> {
   return api.post<AutorizacionCodigo>('/api/ventas/autorizar-codigo', pedido);
-}
-
-/** Promotores activos (trabajadores independientes) de un local. */
-export async function listarPromotores(localId: string): Promise<Promotor[]> {
-  return api.get<Promotor[]>('/api/promotores', { localId });
 }
 
 /** Sube la captura del pago móvil al almacenamiento privado ("comprobantes-pago-movil/<local>/<hora>-<n>.jpg"). Devuelve la ruta. */

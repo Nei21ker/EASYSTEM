@@ -49,6 +49,13 @@ export const esquemaAutorizarCodigo = z.object({
   local_id: z.string(),
   producto_id: z.string(),
 });
+/** Datos opcionales del promotor (el formato se valida en `normalizarPromotor`) */
+export const esquemaPromotor = z.object({
+  cedula: z.string().max(30).nullable().optional(),
+  nombre: z.string().max(80).nullable().optional(),
+  apellido: z.string().max(80).nullable().optional(),
+  telefono: z.string().max(30).nullable().optional(),
+});
 export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 export const esquemaDinero = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 
@@ -69,7 +76,7 @@ export const esquemaVenta = z.object({
   total_bs: z.number().nullable().optional(),
   comprobante_path: z.string().max(300).nullable().optional(),
   referencia_pago_movil: z.string().regex(/^\d{4}$/, 'La referencia debe tener exactamente 4 dígitos.').nullable().optional(),
-  promotor_id: z.string().max(100).nullable().optional(),
+  promotor: esquemaPromotor.nullable().optional(),
   autorizacion_precio: z.string().max(2000).nullable().optional(),
 });
 
@@ -78,7 +85,7 @@ export const esquemaAutorizarPrecio = z.object({
   email: z.string().min(3).max(200).optional(),
   clave: z.string().min(1).max(200),
   local_id: z.string(),
-  promotor_id: z.string(),
+  promotor: esquemaPromotor.nullable().optional(),
   lineas: z.array(z.object({ producto_id: z.string(), precio: z.number() })).min(1).max(100),
 });
 

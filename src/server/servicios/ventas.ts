@@ -33,6 +33,8 @@ function aVenta(f: Record<string, unknown>): Venta {
     referencia_pago_movil: (f.referencia_pago_movil as string | null) ?? null,
     promotor_id: (f.promotor_id as string | null) ?? null,
     promotor_nombre: (f.promotor_nombre as string | null) ?? null,
+    promotor_cedula: (f.promotor_cedula as string | null) ?? null,
+    promotor_telefono: (f.promotor_telefono as string | null) ?? null,
     comision: (f.comision as number | null) ?? 0,
     precio_autorizado_por: (f.precio_autorizado_por as string | null) ?? null,
     precio_autorizado_nombre: (f.precio_autorizado_nombre as string | null) ?? null,
@@ -169,13 +171,13 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     db
       .prepare(
         `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path, referencia_pago_movil,
-                             promotor_id, promotor_nombre, comision, precio_autorizado_por, precio_autorizado_nombre)
-         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             promotor_id, promotor_nombre, promotor_cedula, promotor_telefono, comision, precio_autorizado_por, precio_autorizado_nombre)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(itemsGuardados),
         json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante.ruta, comprobante.referencia,
-        precios.promotor?.promotor_id ?? null, precios.promotor?.promotor_nombre ?? null, precios.comision,
+        null, precios.promotor?.promotor_nombre ?? null, precios.promotor?.promotor_cedula ?? null, precios.promotor?.promotor_telefono ?? null, precios.comision,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),
     // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda

@@ -16,6 +16,7 @@
 // sincronizarPendientes(). Ver ConnectionStatus.astro para el indicador de UI.
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
+import { normalizarPromotor } from '../utils/promotor';
 import { ErrorDeApi } from './api';
 import { partirEnTandas } from '../utils/tandas';
 import type { ResultadoEliminacion } from './db/productos';
@@ -50,7 +51,7 @@ import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
 import type {
   AutorizacionCodigo,
   AutorizacionPrecio,
-  Promotor,
+  DatosPromotor,
   ClienteVenta,
   Compatibilidad,
   ContadoCuadre,
@@ -1695,7 +1696,7 @@ export interface DatosVenta {
    * Precio de promotor: obligatorio si alguna línea se cobra más cara que el catálogo (`precio_lista` en el item). El promotor y la
    * autorización de un supervisor salen de `autorizarPrecioVenta`; el servidor la vuelve a comprobar y calcula la comisión.
    */
-  precioPromotor?: { promotor_id: string; autorizacion: AutorizacionPrecio } | null;
+  precioPromotor?: { promotor?: DatosPromotor | null; autorizacion: AutorizacionPrecio } | null;
 }
 
 /** ¿Alguna línea se cobra más cara que el precio de catálogo? (el POS pone `precio_lista` en las líneas con precio de promotor) */
@@ -1706,29 +1707,21 @@ export const comisionDePromotor = (items: VentaItem[]): number =>
   Math.round(items.reduce((s, i) => s + (i.precio_lista !== undefined && i.precio_unitario > i.precio_lista ? i.cantidad * (i.precio_unitario - i.precio_lista) : 0), 0) * 100) / 100;
 
 // Modo demo: las autorizaciones viven en memoria (no hay servidor que las firme); se pierden al recargar la página
-const autorizacionesDemo = new Map<string, { promotor_id: string; supervisor_id: string; supervisor_nombre: string; vence_en: number; lineas: Map<string, number> }>();
+const autorizacionesDemo = new Map<string, { promotor_clave: string; supervisor_id: string; supervisor_nombre: string; vence_en: number; lineas: Map<string, number> }>();
 const VIDA_AUTORIZACION_DEMO_MS = 20 * 60_000;
-
-/** Promotores activos (trabajadores independientes) del local donde se vende; es lo que se elige al cobrar con precio de promotor. */
-export async function listarPromotores(): Promise<Promotor[]> {
-  const local_id = await exigirLocal('vender');
-  if (modoServidor) return ventasDb.listarPromotores(local_id);
-  return (leerDB().empleados ?? [])
-    .filter((e) => e.tipo === 'INDEPENDIENTE' && e.estado === 'ACTIVO' && e.local_id === local_id)
-    .map((e) => ({ id: e.id, nombre: `${e.nombre} ${e.apellido}`.trim() }));
-}
 
 /**
  * Un encargado (de este local), gerente o administrador autoriza vender a precios mayores al del catálogo tecleando SU correo y
  * contraseña. `lineas` = los productos con su nuevo precio. Devuelve la autorización que se manda con la venta (dura 20 minutos).
  */
-export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor_id: string; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
+export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor?: DatosPromotor | null; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarPrecio({ ...pedido, local_id });
 
   const db = leerDB();
-  const promotor = (db.empleados ?? []).find((e) => e.id === pedido.promotor_id && e.local_id === local_id && e.tipo === 'INDEPENDIENTE' && e.estado === 'ACTIVO');
-  if (!promotor) throw new Error('Elige un promotor activo de este local.');
+  const datosPromotor = normalizarPromotor(pedido.promotor);
+  if (!datosPromotor.ok) throw new Error(datosPromotor.mensaje);
+  const promotor = datosPromotor.promotor;
   if (pedido.lineas.length === 0) throw new Error('No hay precios que autorizar.');
   for (const l of pedido.lineas) {
     const producto = db.productos.find((p) => p.id === l.producto_id);
@@ -1740,13 +1733,13 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave: stri
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-${generarId()}`;
   autorizacionesDemo.set(token, {
-    promotor_id: promotor.id,
+    promotor_clave: promotor.clave,
     supervisor_id: supervisor.id,
     supervisor_nombre: supervisor.nombre,
     vence_en,
     lineas: new Map(pedido.lineas.map((l) => [l.producto_id, l.precio])),
   });
-  return { token, vence_en, autorizado_por: supervisor.nombre, promotor: `${promotor.nombre} ${promotor.apellido}`.trim() };
+  return { token, vence_en, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
 }
 
 // Modo demo: autorizaciones de selección manual de código, en memoria
@@ -1781,13 +1774,16 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     if (tienePrecioDePromotor(registro.items)) {
       const aut = autorizacion_precio ? autorizacionesDemo.get(autorizacion_precio) : undefined;
       const desviadas = registro.items.filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista + 0.005);
-      if (!aut || aut.vence_en < Date.now() || aut.promotor_id !== registro.promotor_id || desviadas.some((i) => Math.abs((aut.lineas.get(i.producto_id) ?? -1) - i.precio_unitario) > 0.005)) {
+      const promotorVenta = normalizarPromotor(registro.promotor);
+      if (!promotorVenta.ok) throw new Error(promotorVenta.mensaje);
+      if (!aut || aut.vence_en < Date.now() || aut.promotor_clave !== promotorVenta.promotor.clave || desviadas.some((i) => Math.abs((aut.lineas.get(i.producto_id) ?? -1) - i.precio_unitario) > 0.005)) {
         throw new Error('El precio no está autorizado o la autorización venció. Vuelve a pedirla.');
       }
-      const empleado = (db.empleados ?? []).find((e) => e.id === aut.promotor_id);
       promotorDeLaVenta = {
-        promotor_id: aut.promotor_id,
-        promotor_nombre: empleado ? `${empleado.nombre} ${empleado.apellido}`.trim() : null,
+        promotor_id: null,
+        promotor_nombre: promotorVenta.promotor.nombre,
+        promotor_cedula: promotorVenta.promotor.cedula,
+        promotor_telefono: promotorVenta.promotor.telefono,
         comision: comisionDePromotor(registro.items),
         precio_autorizado_por: aut.supervisor_id,
         precio_autorizado_nombre: aut.supervisor_nombre,
@@ -1800,7 +1796,8 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
       if (!codigos_manuales?.length || !aut) return limpio;
       return { ...limpio, seleccion_manual: { codigos: codigos_manuales, autorizado_por: aut.supervisor_id, autorizado_nombre: aut.supervisor_nombre } };
     });
-    const venta: Venta = { ...base, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
+    const { promotor: _anotado, ...baseSinPromotor } = base;
+    const venta: Venta = { ...baseSinPromotor, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
     ventas.unshift(venta);
     guardarDB(db);
     return venta;
@@ -1895,7 +1892,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   const conPrecioPromotor = tienePrecioDePromotor(items);
   if (conPrecioPromotor) {
     const pp = datos.precioPromotor;
-    if (!pp) throw new Error('Hay productos con precio distinto al del catálogo: elige el promotor y pide la autorización de un encargado.');
+    if (!pp) throw new Error('Hay productos con precio distinto al del catálogo: pide la autorización de un encargado.');
     if (pp.autorizacion.vence_en < Date.now() + 15_000) throw new Error('La autorización del precio venció. Vuelve a pedirla.');
     if (modoServidor && typeof navigator !== 'undefined' && navigator.onLine === false) {
       throw new Error('Para vender con precio de promotor necesitas conexión: la autorización se comprueba en el servidor.');
@@ -1981,7 +1978,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     comprobante_path,
     referencia_pago_movil: referenciaPagoMovil || null,
     ...(conPrecioPromotor && datos.precioPromotor
-      ? { promotor_id: datos.precioPromotor.promotor_id, autorizacion_precio: datos.precioPromotor.autorizacion.token }
+      ? { promotor: datos.precioPromotor.promotor ?? null, autorizacion_precio: datos.precioPromotor.autorizacion.token }
       : {}),
     // Bolívares netos: lo recibido en Bs menos el vuelto entregado en Bs
     total_bs:

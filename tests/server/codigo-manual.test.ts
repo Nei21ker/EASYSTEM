@@ -88,7 +88,7 @@ describe('autorizarCodigoManual', () => {
   it('5 fallos seguidos bloquean (429) y comparten el tope con la autorización de precio', async () => {
     for (let i = 0; i < 5; i++) await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc, { clave: `mala-clave-${i}-x` })), 403);
     await rechazo(autorizarCodigoManual(env, sV, pedido(encargadoAcc)), 429, /intentos/i);
-    await rechazo(autorizarPrecio(env, sV, { email: encargadoAcc.email, clave: encargadoAcc.clave, local_id: accesorios, promotor_id: 'x', lineas: [{ producto_id: P, precio: 20 }] }), 400); // promotor inválido: ni siquiera llega a la clave
+    await rechazo(autorizarPrecio(env, sV, { email: encargadoAcc.email, clave: encargadoAcc.clave, local_id: accesorios, lineas: [{ producto_id: P, precio: 0 }] }), 400); // precio inválido: ni siquiera llega a la clave
     expect((await autorizarCodigoManual(env, sV2, pedido(encargadoAcc))).token).toBeTruthy();
   });
 

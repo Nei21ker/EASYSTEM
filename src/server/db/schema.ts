@@ -249,6 +249,9 @@ export const ventas = sqliteTable('ventas', {
   // Venta con precio de promotor (migración 0013)
   promotor_id: text('promotor_id'),
   promotor_nombre: text('promotor_nombre'),
+  // Datos opcionales del promotor, anotados al vender (migración 0015)
+  promotor_cedula: text('promotor_cedula'),
+  promotor_telefono: text('promotor_telefono'),
   comision: real('comision').notNull().default(0),
   precio_autorizado_por: text('precio_autorizado_por'),
   precio_autorizado_nombre: text('precio_autorizado_nombre'),

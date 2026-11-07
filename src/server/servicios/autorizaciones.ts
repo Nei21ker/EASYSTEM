@@ -12,7 +12,8 @@ import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { hashearClave, verificarClave } from '../password';
 import { redondear2 } from '../util';
-import type { AutorizacionPrecio, Promotor } from '../../types/database.types';
+import type { AutorizacionPrecio, DatosPromotor } from '../../types/database.types';
+import { normalizarPromotor, type PromotorNormalizado } from '../../utils/promotor';
 
 export const VIDA_AUTORIZACION_MS = 20 * 60_000;
 const MAX_FALLOS = 5;
@@ -29,7 +30,7 @@ export interface CargaAutorizacion {
   an: string;
   /** Local */
   l: string;
-  /** Promotor: id y nombre */
+  /** Promotor: texto canónico de los datos que se anotaron (cédula, nombre, teléfono) y su nombre; ambos pueden ir vacíos */
   p: string;
   pn: string;
   /** [producto_id, precio autorizado] */
@@ -110,30 +111,12 @@ export async function verificarAutorizacion(env: Entorno, token: string): Promis
   return { ok: true, carga: r.carga as unknown as CargaAutorizacion };
 }
 
-// --- Promotores ----------------------------------------------------------------------------------------------
-interface FilaPromotor {
-  id: string;
-  nombre: string;
-}
-
-/** Promotores de un local: los trabajadores independientes ACTIVOS. Los ve quien vende (la nómina completa es solo de gerencia/contador). */
-export async function listarPromotores(env: Entorno, sesion: Sesion, localId: string): Promise<Promotor[]> {
-  if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
-  const filas = await env.DB
-    .prepare("SELECT id, trim(nombre || ' ' || apellido) AS nombre FROM empleados WHERE local_id = ? AND tipo = 'INDEPENDIENTE' AND estado = 'ACTIVO' ORDER BY nombre COLLATE NOCASE")
-    .bind(localId)
-    .all<FilaPromotor>();
-  return filas.results.map((f) => ({ id: f.id, nombre: f.nombre }));
-}
-
-/** El promotor debe ser un trabajador independiente activo de ESE local; devuelve su nombre. */
-export async function validarPromotor(env: Entorno, promotorId: string, localId: string): Promise<string> {
-  const fila = await env.DB
-    .prepare("SELECT trim(nombre || ' ' || apellido) AS nombre FROM empleados WHERE id = ? AND local_id = ? AND tipo = 'INDEPENDIENTE' AND estado = 'ACTIVO'")
-    .bind(promotorId, localId)
-    .first<{ nombre: string }>();
-  if (!fila) throw new ErrorApi(400, 'Elige un promotor activo de este local.', 'promotor_invalido');
-  return fila.nombre;
+// --- Promotor --------------------------------------------------------------------------------------------------
+/** Datos opcionales del promotor, validados con las mismas reglas que el POS. */
+export function promotorValido(datos: DatosPromotor | null | undefined): PromotorNormalizado {
+  const r = normalizarPromotor(datos);
+  if (!r.ok) throw new ErrorApi(400, r.mensaje, 'promotor_invalido');
+  return r.promotor;
 }
 
 // --- Supervisor ----------------------------------------------------------------------------------------------
@@ -288,7 +271,7 @@ export interface PedidoAutorizacion {
   email?: string;
   clave: string;
   local_id: string;
-  promotor_id: string;
+  promotor?: DatosPromotor | null;
   lineas: { producto_id: string; precio: number }[];
 }
 
@@ -296,7 +279,7 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
   if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
   // Primero lo que se pide (no cuenta como intento fallido): el promotor y los precios
-  const promotor = await validarPromotor(env, pedido.promotor_id, pedido.local_id);
+  const promotor = promotorValido(pedido.promotor);
   if (!Array.isArray(pedido.lineas) || pedido.lineas.length === 0) throw new ErrorApi(400, 'No hay precios que autorizar.', 'datos_invalidos');
   const vistos = new Set<string>();
   for (const l of pedido.lineas) {
@@ -327,18 +310,19 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     a: supervisor.id,
     an: supervisor.nombre,
     l: pedido.local_id,
-    p: pedido.promotor_id,
-    pn: promotor,
+    p: promotor.clave,
+    pn: promotor.nombre ?? '',
     ln: pedido.lineas.map((l) => [l.producto_id, redondear2(l.precio)]),
     exp: vence,
   });
-  return { token, vence_en: vence, autorizado_por: supervisor.nombre, promotor };
+  return { token, vence_en: vence, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
 }
 
 // --- Usar la autorización al registrar la venta --------------------------------------------------------------
 export interface PrecioPromotorVerificado {
-  promotor_id: string;
-  promotor_nombre: string;
+  promotor_nombre: string | null;
+  promotor_cedula: string | null;
+  promotor_telefono: string | null;
   autorizado_por: string;
   autorizado_nombre: string;
 }
@@ -353,12 +337,12 @@ const sinAutorizacion = (detalle = 'Pide la autorización de un encargado, geren
 export async function verificarPrecioPromotor(
   env: Entorno,
   sesion: Sesion,
-  datos: { local_id: string; promotor_id?: string | null; autorizacion_precio?: string | null },
+  datos: { local_id: string; promotor?: DatosPromotor | null; autorizacion_precio?: string | null },
   desviadas: [string, number][]
 ): Promise<PrecioPromotorVerificado> {
   const token = (datos.autorizacion_precio ?? '').trim();
   if (!token) throw sinAutorizacion();
-  if (!datos.promotor_id) throw new ErrorApi(400, 'Elige el promotor de esta venta.', 'promotor_requerido');
+  const promotor = promotorValido(datos.promotor);
 
   const r = await verificarAutorizacion(env, token);
   if (!r.ok) {
@@ -367,7 +351,7 @@ export async function verificarPrecioPromotor(
       : sinAutorizacion('La autorización no es válida. Vuelve a pedirla.');
   }
   const c = r.carga;
-  if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== datos.promotor_id) {
+  if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== promotor.clave) {
     throw sinAutorizacion('Esa autorización es de otra venta, vendedor o promotor. Vuelve a pedirla.');
   }
   const autorizados = new Map(c.ln);
@@ -378,6 +362,5 @@ export async function verificarPrecioPromotor(
     }
   }
   if (!(await supervisorSigueVigente(env, c.a, datos.local_id))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
-  const promotorNombre = await validarPromotor(env, datos.promotor_id, datos.local_id);
-  return { promotor_id: datos.promotor_id, promotor_nombre: promotorNombre, autorizado_por: c.a, autorizado_nombre: c.an };
+  return { promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, autorizado_por: c.a, autorizado_nombre: c.an };
 }
