@@ -36,6 +36,7 @@ export const esquemaItemVenta = z.object({
   codigo_barras: z.string(),
   cantidad: z.number(),
   precio_unitario: z.number(),
+  precio_lista: z.number().optional(),
   unidades: z.array(z.string()).optional(),
 });
 export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
@@ -57,6 +58,17 @@ export const esquemaVenta = z.object({
   tasa_cambio: z.number().nullable().optional(),
   total_bs: z.number().nullable().optional(),
   comprobante_path: z.string().max(300).nullable().optional(),
+  promotor_id: z.string().max(100).nullable().optional(),
+  autorizacion_precio: z.string().max(2000).nullable().optional(),
+});
+
+/** Pedido de autorización de precio: un supervisor teclea su correo y contraseña en el equipo de quien vende */
+export const esquemaAutorizarPrecio = z.object({
+  email: z.string().min(3).max(200),
+  clave: z.string().min(1).max(200),
+  local_id: z.string(),
+  promotor_id: z.string(),
+  lineas: z.array(z.object({ producto_id: z.string(), precio: z.number() })).min(1).max(100),
 });
 
 export const esquemaDevolucion = z.object({

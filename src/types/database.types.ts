@@ -202,6 +202,8 @@ export interface VentaItem {
   cantidad: number;
   /** Precio de venta vigente al momento de la venta */
   precio_unitario: number;
+  /** Precio de catálogo al momento de la venta; solo se guarda en las ventas de promotor, donde `precio_unitario` (lo que pagó el cliente) es mayor */
+  precio_lista?: number;
   /** Códigos de las unidades concretas que salieron (migración 0033); las ventas anteriores no lo traen */
   unidades?: string[];
 }
@@ -259,12 +261,35 @@ export interface NuevaVenta {
   total_bs?: number | null;
   /** Captura del comprobante del pago móvil (obligatoria si algún cobro es BS_PAGO_MOVIL): ruta en el almacenamiento privado, o una imagen data: en la demo */
   comprobante_path?: string | null;
+  /** Venta con precio de promotor (migración 0013): el trabajador independiente que la trajo. La comisión la calcula el servidor. */
+  promotor_id?: string | null;
+  /** Autorización firmada de un supervisor para vender a un precio distinto al del catálogo (se pide con `autorizarPrecio`) */
+  autorizacion_precio?: string | null;
 }
 
 export interface Venta extends NuevaVenta {
   id: string;
   folio: number;
   vendedor_id?: string | null;
+  promotor_nombre?: string | null;
+  /** Lo que se le paga al promotor: Σ cantidad × (precio cobrado − precio de lista). 0 si no hubo promotor. */
+  comision?: number;
+  precio_autorizado_por?: string | null;
+  precio_autorizado_nombre?: string | null;
+}
+
+/** Respuesta de pedir la autorización de precio (supervisor + contraseña) */
+export interface AutorizacionPrecio {
+  token: string;
+  /** Milisegundos desde 1970 en que deja de valer */
+  vence_en: number;
+  autorizado_por: string;
+  promotor: string;
+}
+
+export interface Promotor {
+  id: string;
+  nombre: string;
 }
 
 /** Tasa del dólar: bolívares por 1 USD. Cada cambio es una fila (historial); la vigente es la última. */

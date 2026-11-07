@@ -210,6 +210,17 @@ function traducirErrorAuth(err: unknown): string {
 /** Mínimo de la contraseña: el servidor exige 8; el modo demo sigue aceptando 6. */
 export const MIN_CLAVE = modoServidor ? 8 : 6;
 
+/**
+ * Solo modo demo (LocalStorage): ¿este correo y contraseña son de alguien que puede autorizar precios en ese local (encargado de ese
+ * local, gerente o administrador)? Con el servidor lo decide el servidor (`POST /api/ventas/autorizar-precio`). No cambia la sesión.
+ */
+export function verificarSupervisorDemo(email: string, clave: string, localId: string): { id: string; nombre: string } | null {
+  const u = leerUsuariosLocales().find((x) => x.email.toLowerCase() === email.trim().toLowerCase() && x.password === clave);
+  if (!u || (u.status ?? 'active') !== 'active') return null;
+  const puede = u.rol === 'administrador' || u.rol === 'gerente' || (u.rol === 'encargado' && u.local_id === localId);
+  return puede ? { id: u.id, nombre: u.nombre } : null;
+}
+
 export async function iniciarSesion(email: string, password: string): Promise<SesionUsuario> {
   if (modoServidor) {
     try {

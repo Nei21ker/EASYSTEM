@@ -54,10 +54,12 @@ const entrada = async (productoId: string, localId: string, cantidad: number) =>
 /** Vende de verdad: la salida de stock (con sus piezas) y el registro de la venta, como hace el punto de venta. */
 async function vender(productoId: string, localId: string, cantidad: number, sesion: Sesion = sV): Promise<{ id: string; folio: number; codigos: string[] }> {
   const { unidadCodigos } = await registrarMovimiento(env, sesion, { productoId, tipo: 'SALIDA', cantidad, localId, motivo: 'Venta POS' });
-  const item: VentaItem = { producto_id: productoId, nombre: 'Producto', codigo_barras: '2000000000015', cantidad, precio_unitario: 6, unidades: unidadCodigos };
+  // Se cobra el precio de catálogo del producto (el servidor rechaza cualquier otro precio sin autorización de un supervisor)
+  const precio = productoId === Q ? 5 : 6;
+  const item: VentaItem = { producto_id: productoId, nombre: 'Producto', codigo_barras: '2000000000015', cantidad, precio_unitario: precio, unidades: unidadCodigos };
   const datos: NuevaVenta = {
     fecha: '2026-11-03T15:00:00.000Z', local_id: localId, cliente_cedula: 'V-12345678', cliente_nombre: 'Ana Pérez', cliente_telefono: '0414-1234567',
-    metodo_pago: 'USD_EFECTIVO', pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 6 * cantidad, monto_bs: null }], vuelto: null, total: 6 * cantidad, items: [item], tasa_cambio: 36.5, total_bs: null,
+    metodo_pago: 'USD_EFECTIVO', pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: precio * cantidad, monto_bs: null }], vuelto: null, total: precio * cantidad, items: [item], tasa_cambio: 36.5, total_bs: null,
   };
   const v = await guardarVenta(env, sesion, datos);
   return { id: v.id, folio: v.folio, codigos: unidadCodigos };

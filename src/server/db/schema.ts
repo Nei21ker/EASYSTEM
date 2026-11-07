@@ -244,6 +244,12 @@ export const ventas = sqliteTable('ventas', {
   vendedor_id: text('vendedor_id'),
   vendedor_nombre: text('vendedor_nombre'),
   comprobante_path: text('comprobante_path'),
+  // Venta con precio de promotor (migración 0013)
+  promotor_id: text('promotor_id'),
+  promotor_nombre: text('promotor_nombre'),
+  comision: real('comision').notNull().default(0),
+  precio_autorizado_por: text('precio_autorizado_por'),
+  precio_autorizado_nombre: text('precio_autorizado_nombre'),
 });
 
 export const devoluciones = sqliteTable('devoluciones', {

@@ -10,8 +10,9 @@ import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId, redondear2 } from '../util';
 import { esRutaPagoMovilDeLocal } from './archivos';
 import { normalizarCedula, separarNombre } from './clientes';
+import { verificarPrecioPromotor, type PrecioPromotorVerificado } from './autorizaciones';
 import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
-import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta } from '../../types/database.types';
+import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
 
@@ -29,6 +30,11 @@ function aVenta(f: Record<string, unknown>): Venta {
     vendedor_id: (f.vendedor_id as string | null) ?? null,
     vendedor_nombre: (f.vendedor_nombre as string | null) ?? null,
     comprobante_path: (f.comprobante_path as string | null) ?? null,
+    promotor_id: (f.promotor_id as string | null) ?? null,
+    promotor_nombre: (f.promotor_nombre as string | null) ?? null,
+    comision: (f.comision as number | null) ?? 0,
+    precio_autorizado_por: (f.precio_autorizado_por as string | null) ?? null,
+    precio_autorizado_nombre: (f.precio_autorizado_nombre as string | null) ?? null,
   };
 }
 
@@ -70,6 +76,48 @@ async function validarComprobantePagoMovil(env: Entorno, datos: NuevaVenta): Pro
   return ruta;
 }
 
+interface PrecioPromotorDeVenta {
+  /** Líneas de la venta, con `precio_lista` en las que se cobraron más caras que el catálogo */
+  items: VentaItem[];
+  comision: number;
+  promotor: PrecioPromotorVerificado | null;
+}
+
+/**
+ * Compara lo cobrado en cada línea con el precio de catálogo. Una línea más barata que la lista se rechaza; una más cara exige la
+ * autorización firmada de un supervisor y un promotor, y su diferencia es la comisión. Los productos que no están en el catálogo se
+ * dejan pasar (no hay con qué comparar).
+ */
+async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<PrecioPromotorDeVenta> {
+  const ids = [...new Set(datos.items.map((i) => i.producto_id))];
+  const precios = new Map<string, number>();
+  for (const grupo of tramos(ids)) {
+    const filas = await env.DB
+      .prepare(`SELECT id, precio_venta FROM productos WHERE id IN (${marcas(grupo.length)})`)
+      .bind(...grupo)
+      .all<{ id: string; precio_venta: number }>();
+    for (const f of filas.results) precios.set(f.id, f.precio_venta);
+  }
+
+  const desviadas: [string, number][] = [];
+  const items = datos.items.map((item): VentaItem => {
+    const lista = precios.get(item.producto_id);
+    if (lista === undefined) return item;
+    const { precio_lista: _ignorado, ...limpio } = item;
+    if (item.precio_unitario < lista - 0.005) {
+      throw new ErrorApi(400, `«${item.nombre}» no puede venderse por debajo del precio de lista ($${lista.toFixed(2)}).`, 'precio_bajo_lista');
+    }
+    if (item.precio_unitario <= lista + 0.005) return limpio;
+    desviadas.push([item.producto_id, item.precio_unitario]);
+    return { ...limpio, precio_lista: lista };
+  });
+  if (desviadas.length === 0) return { items, comision: 0, promotor: null };
+
+  const promotor = await verificarPrecioPromotor(env, sesion, datos, desviadas);
+  const comision = redondear2(items.reduce((s, i) => s + (i.precio_lista === undefined ? 0 : i.cantidad * (i.precio_unitario - i.precio_lista)), 0));
+  return { items, comision, promotor };
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -84,6 +132,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   if (!METODOS.includes(datos.metodo_pago)) throw new ErrorApi(400, 'Tipo de cobro inválido.', 'datos_invalidos');
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
   const comprobante = await validarComprobantePagoMovil(env, datos);
+  const precios = await aplicarPrecioPromotor(env, sesion, datos);
 
   const id = nuevoId();
   const db = env.DB;
@@ -92,12 +141,15 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     db.prepare("INSERT INTO contadores (nombre, valor) VALUES ('ventas', 1) ON CONFLICT (nombre) DO UPDATE SET valor = valor + 1 RETURNING valor"),
     db
       .prepare(
-        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path)
-         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path,
+                             promotor_id, promotor_nombre, comision, precio_autorizado_por, precio_autorizado_nombre)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
-        id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(datos.items),
-        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante
+        id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(precios.items),
+        json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante,
+        precios.promotor?.promotor_id ?? null, precios.promotor?.promotor_nombre ?? null, precios.comision,
+        precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),
     // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
     db
