@@ -1,9 +1,9 @@
-// Precio de promotor: autorización de un supervisor para vender a un precio MAYOR al del catálogo.
+// Precio modificado: autorización de un supervisor para vender a un precio MAYOR (precio de promotor) o MENOR (descuento) al del catálogo.
 //
 // El cliente paga, por ejemplo, $15 por un control de lista $12; los $3 de diferencia son la comisión del promotor (un trabajador
 // independiente) y la tienda se la paga aparte. La venta guarda lo que de verdad se cobró ($15), el precio de lista ($12) y la comisión.
 //
-// Quien puede autorizar: encargado del local, gerente y administrador, con SU contraseña de ingreso al sistema (se teclea en el equipo
+// Quien puede autorizar: un precio mayor, el encargado del local, el gerente y el administrador; un precio MENOR, solo el gerente y el administrador. Con SU contraseña de ingreso al sistema (se teclea en el equipo
 // de quien vende). El servidor la verifica y devuelve una autorización firmada (HMAC, 20 minutos) atada a quien vende, el local, el
 // promotor y los precios exactos: no sirve para otro vendedor, otro precio ni otro promotor, y no se puede alterar. `guardarVenta` la
 // exige para cualquier línea cuyo precio no sea el del catálogo.
@@ -129,18 +129,29 @@ interface FilaSupervisor {
   password: string | null;
 }
 
-const credencialesInvalidas = () => new ErrorApi(403, 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.', 'autorizador_invalido');
+const credencialesInvalidas = (soloGlobal = false) =>
+  new ErrorApi(
+    403,
+    soloGlobal
+      ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.'
+      : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.',
+    'autorizador_invalido'
+  );
 
-/** ¿Puede esta persona autorizar precios en ese local? Encargado del local, gerente o administrador, con la cuenta activa. */
-function puedeAutorizar(f: Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>, localId: string): boolean {
+/**
+ * ¿Puede esta persona autorizar en ese local? Encargado del local, gerente o administrador, con la cuenta activa. Con `soloGlobal`
+ * (un precio MENOR al del catálogo, es decir un descuento) solo gerente o administrador: el encargado solo autoriza precios mayores.
+ */
+function puedeAutorizar(f: Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>, localId: string, soloGlobal = false): boolean {
   if (f.status !== 'active') return false;
-  return f.rol === 'administrador' || f.rol === 'gerente' || (f.rol === 'encargado' && f.local_id === localId);
+  if (f.rol === 'administrador' || f.rol === 'gerente') return true;
+  return !soloGlobal && f.rol === 'encargado' && f.local_id === localId;
 }
 
 /** Vuelve a mirar, al cobrar, que quien autorizó siga pudiendo hacerlo (no lo desactivaron ni lo cambiaron de local en esos minutos). */
-async function supervisorSigueVigente(env: Entorno, supervisorId: string, localId: string): Promise<boolean> {
+async function supervisorSigueVigente(env: Entorno, supervisorId: string, localId: string, soloGlobal = false): Promise<boolean> {
   const f = await env.DB.prepare('SELECT rol, local_id, status FROM perfiles WHERE id = ?').bind(supervisorId).first<Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>>();
-  return !!f && puedeAutorizar(f, localId);
+  return !!f && puedeAutorizar(f, localId, soloGlobal);
 }
 
 // --- Tope de intentos ----------------------------------------------------------------------------------------
@@ -176,7 +187,7 @@ async function borrarFallos(env: Entorno, userId: string): Promise<void> {
  * La persona que autoriza, por su correo y contraseña. Toda falla (correo desconocido, clave mala, rol sin permiso) da el MISMO mensaje
  * y cuenta un intento de quien vende; tras 5 seguidos se bloquea. Un acierto borra los fallos.
  */
-async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string | undefined, clave: string, localId: string): Promise<FilaSupervisor> {
+async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string | undefined, clave: string, localId: string, soloGlobal = false): Promise<FilaSupervisor> {
   await exigirIntentosDisponibles(env, sesion.userId);
   const correo = (email ?? '').trim().toLowerCase();
   let supervisor: FilaSupervisor | null = null;
@@ -193,7 +204,7 @@ async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string
       .first<FilaSupervisor>();
     // Sin cuenta se hace igual el cálculo del hash, para no delatar por el tiempo qué correos existen
     const claveCorrecta = fila?.password ? await verificarClave(clave, fila.password) : (await hashearClave(clave), false);
-    if (fila && claveCorrecta && puedeAutorizar(fila, localId)) supervisor = fila;
+    if (fila && claveCorrecta && puedeAutorizar(fila, localId, soloGlobal)) supervisor = fila;
   } else {
     // Solo con la contraseña: la tiene que tener alguien que pueda autorizar en ESTE local (encargado de ese local, gerentes y
     // administradores activos: unas pocas personas). El tope de 5 fallos por quien vende sigue protegiendo contra adivinarla.
@@ -201,10 +212,10 @@ async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string
       .prepare(
         `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
            FROM perfiles p JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
-          WHERE p.status = 'active' AND (p.rol IN ('administrador', 'gerente') OR (p.rol = 'encargado' AND p.local_id = ?))
+          WHERE p.status = 'active' AND (p.rol IN ('administrador', 'gerente') OR (? = 0 AND p.rol = 'encargado' AND p.local_id = ?))
           ORDER BY p.id`
       )
-      .bind(localId)
+      .bind(soloGlobal ? 1 : 0, localId)
       .all<FilaSupervisor>();
     for (const c of candidatos.results) {
       if (c.password && (await verificarClave(clave, c.password))) {
@@ -217,7 +228,7 @@ async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string
 
   if (!supervisor) {
     await anotarFallo(env, sesion.userId);
-    throw credencialesInvalidas();
+    throw credencialesInvalidas(soloGlobal);
   }
   await borrarFallos(env, sesion.userId);
   return supervisor;
@@ -296,12 +307,11 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
   for (const l of pedido.lineas) {
     const producto = lista.get(l.producto_id);
     if (!producto) throw new ErrorApi(400, 'Uno de los productos no existe en el catálogo.', 'datos_invalidos');
-    if (l.precio < producto.precio_venta - TOLERANCIA) {
-      throw new ErrorApi(400, `El precio de «${producto.nombre}» no puede ser menor al precio de lista ($${producto.precio_venta.toFixed(2)}).`, 'precio_bajo_lista');
-    }
   }
+  // Un precio MENOR al del catálogo (descuento) solo lo autoriza un gerente o un administrador; uno mayor, también el encargado del local
+  const hayDescuento = pedido.lineas.some((l) => l.precio < (lista.get(l.producto_id)?.precio_venta ?? 0) - TOLERANCIA);
 
-  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id);
+  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id, hayDescuento);
 
   const vence = Date.now() + VIDA_AUTORIZACION_MS;
   const token = await firmarAutorizacion(env, {
@@ -338,7 +348,8 @@ export async function verificarPrecioPromotor(
   env: Entorno,
   sesion: Sesion,
   datos: { local_id: string; promotor?: DatosPromotor | null; autorizacion_precio?: string | null },
-  desviadas: [string, number][]
+  desviadas: [string, number][],
+  hayDescuento = false
 ): Promise<PrecioPromotorVerificado> {
   const token = (datos.autorizacion_precio ?? '').trim();
   if (!token) throw sinAutorizacion();
@@ -361,6 +372,6 @@ export async function verificarPrecioPromotor(
       throw sinAutorizacion('El precio cobrado no coincide con el autorizado. Vuelve a pedirla.');
     }
   }
-  if (!(await supervisorSigueVigente(env, c.a, datos.local_id))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
+  if (!(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
   return { promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, autorizado_por: c.a, autorizado_nombre: c.an };
 }

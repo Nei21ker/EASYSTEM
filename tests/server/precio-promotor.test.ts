@@ -175,8 +175,7 @@ describe('autorizarPrecio: qué se autoriza', () => {
     expect(promotorValido(null)).toMatchObject({ cedula: null, nombre: null, telefono: null });
   });
 
-  it('no se autoriza un precio menor al de lista, ni cero, ni un producto que no existe', async () => {
-    await rechazo(autorizarPrecio(env, sV, pedido(admin, { lineas: [{ producto_id: PRODUCTO, precio: 11.99 }] })), 400, /lista/i);
+  it('no se autoriza un precio en cero, ni un producto que no existe', async () => {
     await rechazo(autorizarPrecio(env, sV, pedido(admin, { lineas: [{ producto_id: PRODUCTO, precio: 0 }] })), 400);
     await rechazo(autorizarPrecio(env, sV, pedido(admin, { lineas: [{ producto_id: 'fantasma', precio: 20 }] })), 400, /producto/i);
     await rechazo(autorizarPrecio(env, sV, pedido(admin, { lineas: [] })), 400);
@@ -251,9 +250,89 @@ describe('autorizarPrecio: qué se autoriza', () => {
     await rechazo(guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: vencido })), 400, /venci|autoriz/i);
   });
 
-  it('el precio no puede quedar por debajo del de lista aunque venga "autorizado"', async () => {
+  it('un precio menor al del catálogo no lo puede dejar autorizado el encargado, ni siquiera con un token firmado a su nombre', async () => {
     const { firmarAutorizacion } = await import('../../src/server/servicios/autorizaciones');
     const t = await firmarAutorizacion(env, { v: 1, u: sV.userId, a: encargadoAcc.id, an: 'Ema', l: accesorios, p: promotorValido(PROMOTOR).clave, pn: 'Pedro Promotor', ln: [[PRODUCTO, 9]], exp: Date.now() + 60_000 });
-    await rechazo(guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: t, total: 9, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 9, monto_bs: null }], items: [{ producto_id: PRODUCTO, nombre: 'x', codigo_barras: 'y', cantidad: 1, precio_unitario: 9 }] })), 400, /lista/i);
+    await rechazo(guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: t, total: 9, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 9, monto_bs: null }], items: [{ producto_id: PRODUCTO, nombre: 'x', codigo_barras: 'y', cantidad: 1, precio_unitario: 9 }] })), 400, /ya no puede/i);
+    expect(await listarVentas(env, sA, {})).toHaveLength(0);
+  });
+});
+
+describe('descuento: precio menor al del catálogo', () => {
+  const lineasDescuento = [{ producto_id: PRODUCTO, precio: 9 }];
+  const ventaConDescuento = (token: string, extra: Partial<NuevaVenta> = {}): NuevaVenta =>
+    venta({
+      promotor: null,
+      autorizacion_precio: token,
+      total: 9,
+      pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 9, monto_bs: null }],
+      items: [{ producto_id: PRODUCTO, nombre: 'Control A/C Samsung', codigo_barras: '2000000000015', cantidad: 1, precio_unitario: 9 }],
+      ...extra,
+    });
+
+  it('un gerente o un administrador autorizan un precio menor con su contraseña', async () => {
+    for (const supervisor of [gerente, admin]) {
+      const r = await autorizarPrecio(env, sV, pedido(supervisor, { promotor: null, lineas: lineasDescuento }));
+      expect(r.token).toMatch(/\./);
+    }
+  });
+
+  it('el encargado del local NO autoriza un precio menor: mismo 403, y cuenta como intento fallido', async () => {
+    const e = await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { promotor: null, lineas: lineasDescuento })), 403, /gerente o un administrador/i);
+    expect(e.status).toBe(403);
+    // el mismo encargado sí autoriza un precio mayor
+    expect((await autorizarPrecio(env, sV, pedido(encargadoAcc))).token).toBeTruthy();
+  });
+
+  it('5 intentos seguidos con la contraseña del encargado en un descuento bloquean a quien vende (429)', async () => {
+    for (let i = 0; i < 5; i++) await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { promotor: null, lineas: lineasDescuento })), 403);
+    await rechazo(autorizarPrecio(env, sV, pedido(gerente, { promotor: null, lineas: lineasDescuento })), 429, /intentos/i);
+  });
+
+  it('si UNA línea baja y otra sube, manda la regla más estricta: solo gerente o administrador', async () => {
+    const lineas = [{ producto_id: PRODUCTO, precio: 15 }, { producto_id: 'p-otro', precio: 8 }];
+    await rechazo(autorizarPrecio(env, sV, pedido(encargadoAcc, { lineas })), 403, /gerente o un administrador/i);
+    expect((await autorizarPrecio(env, sV, pedido(gerente, { lineas }))).token).toBeTruthy();
+  });
+
+  it('la venta con descuento se guarda al precio cobrado, con el precio de lista de esa línea, sin comisión y con quién autorizó', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedido(gerente, { promotor: null, lineas: lineasDescuento }));
+    const v = await guardarVenta(env, sV, ventaConDescuento(token));
+    expect(v.total).toBe(9);
+    expect(v.comision).toBe(0);
+    expect(v.precio_autorizado_nombre).toBe('Gaby Gerente');
+    expect(v.promotor_nombre).toBeNull();
+    expect(v.items[0]).toMatchObject({ precio_unitario: 9, precio_lista: 12 });
+  });
+
+  it('sin autorización un precio menor al del catálogo se rechaza (400)', async () => {
+    await rechazo(guardarVenta(env, sV, ventaConDescuento('')), 400, /autoriz/i);
+    expect(await listarVentas(env, sA, {})).toHaveLength(0);
+  });
+
+  it('un token de descuento a nombre de un gerente que ya no puede autorizar no sirve', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedido(gerente, { promotor: null, lineas: lineasDescuento }));
+    await env.DB.prepare("UPDATE perfiles SET status = 'inactive' WHERE id = ?").bind(gerente.id).run();
+    await rechazo(guardarVenta(env, sV, ventaConDescuento(token)), 400, /ya no puede/i);
+  });
+
+  it('en una venta mixta la comisión es solo de la línea más cara; el descuento de la otra no la reduce', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedido(admin, { lineas: [{ producto_id: PRODUCTO, precio: 15 }, { producto_id: 'p-otro', precio: 8 }] }));
+    const v = await guardarVenta(
+      env,
+      sV,
+      venta({
+        promotor: PROMOTOR,
+        autorizacion_precio: token,
+        total: 23,
+        pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 23, monto_bs: null }],
+        items: [
+          { producto_id: PRODUCTO, nombre: 'Control A/C Samsung', codigo_barras: '2000000000015', cantidad: 1, precio_unitario: 15 },
+          { producto_id: 'p-otro', nombre: 'Control Roku', codigo_barras: '2000000000022', cantidad: 1, precio_unitario: 8 },
+        ],
+      })
+    );
+    expect(v.comision).toBe(3);
+    expect(v.precio_autorizado_nombre).toBe('Ada Admin');
   });
 });

@@ -427,12 +427,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <form id="pos-precio-form" class="flex max-h-[90dvh] flex-col" autocomplete="off" novalidate>
       <div class="shrink-0 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800">
         <h2 id="pos-precio-titulo" class="text-base font-semibold">¿Modificar el precio?</h2>
-        <p class="mt-0.5 text-sm text-slate-600 dark:text-slate-300">Escribe el precio al que paga el cliente. La diferencia con el catálogo es la comisión del promotor.</p>
+        <p class="mt-0.5 text-sm text-slate-600 dark:text-slate-300">Escribe el precio al que paga el cliente. Si es mayor al del catálogo, la diferencia es la comisión del promotor; si es menor, es un descuento.</p>
       </div>
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
         <ul id="pos-precio-lineas" class="space-y-3"></ul>
         <p id="pos-precio-comision" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
-        <fieldset class="space-y-2">
+        <fieldset id="pos-promotor-bloque" class="space-y-2">
           <legend class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor <span class="font-normal text-slate-400">(opcional)</span></legend>
           <div class="flex gap-2">
             <select id="pos-promotor-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
@@ -445,7 +445,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <input id="pos-promotor-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="Teléfono (ej. 0414-1234567)" aria-label="Teléfono del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </fieldset>
         <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
-          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
+          <p id="pos-precio-clave-titulo" class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
           <input id="pos-precio-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <p id="pos-precio-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
@@ -485,8 +485,10 @@ import { alCambiarDatos } from '../lib/realtime';
     cantidad: number;
     /** Unidades concretas escaneadas o elegidas (cada una con su código); el resto de la cantidad sale por orden de llegada */
     unidades: string[];
-    /** Precio de promotor autorizado por un supervisor (mayor al del catálogo); si no hay, se cobra el del catálogo */
+    /** Precio modificado y autorizado por un supervisor (mayor al del catálogo: promotor; menor: descuento); si no hay, se cobra el del catálogo */
     precioPromotor?: number;
+    /** Precio de catálogo que tenía el producto cuando se autorizó (si el catálogo cambia después, la autorización ya no vale) */
+    listaAutorizada?: number;
   }
 
   let productos: ProductoConRelaciones[] = [];
@@ -652,8 +654,12 @@ import { alCambiarDatos } from '../lib/realtime';
         const subtotal = precio * cantidad;
         const alMaximo = cantidad >= producto.stock_actual;
         const conPromotor = linea.precioPromotor !== undefined;
+        const esDescuento = conPromotor && precio < producto.precio_venta - 0.005;
         const detallePrecio = conPromotor
-          ? `<p class="text-xs font-medium text-amber-700 dark:text-amber-400">Precio de promotor${promotorVenta?.nombre ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
+          ? esDescuento
+            ? `<p class="text-xs font-medium text-emerald-700 dark:text-emerald-400">Precio con descuento</p>
+             <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · descuento ${formatearMoneda((producto.precio_venta - precio) * cantidad)}</p>`
+            : `<p class="text-xs font-medium text-amber-700 dark:text-amber-400">Precio de promotor${promotorVenta?.nombre ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
              <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · comisión ${formatearMoneda((precio - producto.precio_venta) * cantidad)}</p>`
           : '';
         const codigos = unidades.length
@@ -679,7 +685,7 @@ import { alCambiarDatos } from '../lib/realtime';
             <div class="mt-2 flex">
               ${
                 conPromotor
-                  ? `<button type="button" data-quitar-precio="${producto.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar precio de promotor</button>`
+                  ? `<button type="button" data-quitar-precio="${producto.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar precio modificado</button>`
                   : `<button type="button" data-precio-promotor="${producto.id}" class="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Modificar precio</button>`
               }
             </div>
@@ -1155,7 +1161,7 @@ import { alCambiarDatos } from '../lib/realtime';
         codigo_barras: l.producto.codigo_barras,
         cantidad: l.cantidad,
         precio_unitario: precioDe(l),
-        // El precio de catálogo solo se anota en las líneas con precio de promotor (el servidor lo vuelve a leer del catálogo)
+        // El precio de catálogo solo se anota en las líneas con precio modificado (el servidor lo vuelve a leer del catálogo)
         precio_lista: l.precioPromotor !== undefined ? l.producto.precio_venta : undefined,
         unidades: l.unidades.length ? [...l.unidades] : undefined,
         // Las unidades elegidas a mano (la etiqueta no se leía) viajan con la autorización del supervisor que las permitió
@@ -1277,10 +1283,11 @@ import { alCambiarDatos } from '../lib/realtime';
         continue;
       }
       linea.producto = actual;
-      // Si el catálogo subió por encima del precio de promotor autorizado, ese precio ya no vale (nunca se vende bajo la lista)
-      if (linea.precioPromotor !== undefined && linea.precioPromotor < actual.precio_venta) {
+      // Si el precio de catálogo cambió desde que se autorizó el precio modificado, esa autorización ya no vale
+      if (linea.precioPromotor !== undefined && Math.abs(actual.precio_venta - (linea.listaAutorizada ?? actual.precio_venta)) > 0.005) {
         delete linea.precioPromotor;
-        avisos.push(`El precio de "${actual.nombre}" cambió en el catálogo: se quitó el precio de promotor de esa línea.`);
+        delete linea.listaAutorizada;
+        avisos.push(`El precio de "${actual.nombre}" cambió en el catálogo: se quitó el precio modificado de esa línea.`);
       }
       if (linea.cantidad > actual.stock_actual) {
         if (actual.stock_actual <= 0) {
@@ -1346,23 +1353,33 @@ import { alCambiarDatos } from '../lib/realtime';
   const numeroEscrito = (texto: string): number => Number(texto.trim().replace(',', '.'));
   const camposPrecio = () => [...listaPrecio.querySelectorAll<HTMLInputElement>('input[data-precio-de]')];
 
-  /** Precios escritos que superan al del catálogo: [línea, precio]. Los campos vacíos o iguales al catálogo no cuentan. */
+  /** Precios escritos distintos al del catálogo (más caros o más baratos): [línea, precio]. Los campos vacíos o iguales al catálogo no cuentan. */
   function preciosEscritos(): { linea: LineaCarrito; precio: number }[] {
     const resultado: { linea: LineaCarrito; precio: number }[] = [];
     for (const campo of camposPrecio()) {
       const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
       const precio = Math.round(numeroEscrito(campo.value) * 100) / 100;
-      if (linea && campo.value.trim() !== '' && Number.isFinite(precio) && precio > linea.producto.precio_venta + 0.005) resultado.push({ linea, precio });
+      if (linea && campo.value.trim() !== '' && Number.isFinite(precio) && precio > 0 && Math.abs(precio - linea.producto.precio_venta) > 0.005) resultado.push({ linea, precio });
     }
     return resultado;
   }
 
+  /**
+   * Según lo escrito: la comisión del promotor (precios mayores), el descuento (precios menores) y quién puede autorizar.
+   * Un precio menor al del catálogo solo lo autoriza un gerente o un administrador; uno mayor, también el encargado.
+   */
   function textoComision() {
-    const comision = preciosEscritos().reduce((suma, { linea, precio }) => suma + (precio - linea.producto.precio_venta) * linea.cantidad, 0);
-    document.getElementById('pos-precio-comision')!.textContent =
-      comision > 0
-        ? `La tienda le paga ${formatearMoneda(comision)} de comisión al promotor.`
-        : 'El precio debe ser mayor al del catálogo: la diferencia es la comisión del promotor.';
+    const cambios = preciosEscritos();
+    const comision = cambios.reduce((suma, { linea, precio }) => suma + Math.max(0, precio - linea.producto.precio_venta) * linea.cantidad, 0);
+    const descuento = cambios.reduce((suma, { linea, precio }) => suma + Math.max(0, linea.producto.precio_venta - precio) * linea.cantidad, 0);
+    const partes: string[] = [];
+    if (comision > 0) partes.push(`La tienda le paga ${formatearMoneda(comision)} de comisión al promotor.`);
+    if (descuento > 0) partes.push(`Descuento de ${formatearMoneda(descuento)}: solo lo autoriza un gerente o un administrador.`);
+    document.getElementById('pos-precio-comision')!.textContent = partes.length > 0 ? partes.join(' ') : 'Escribe un precio distinto al del catálogo en alguno de los productos.';
+    // El promotor solo interesa cuando hay un precio mayor (comisión)
+    document.getElementById('pos-promotor-bloque')!.classList.toggle('hidden', comision <= 0 && cambios.length > 0);
+    document.getElementById('pos-precio-clave-titulo')!.textContent =
+      descuento > 0 ? 'Contraseña de un gerente o administrador' : 'Contraseña de un encargado, gerente o administrador';
   }
 
   function errorDePrecio(mensaje: string) {
@@ -1382,7 +1399,7 @@ import { alCambiarDatos } from '../lib/realtime';
       .map(
         (linea) => `
           <li class="flex items-center justify-between gap-3 px-3 py-2">
-            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>' : ''}</span>
+            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? (linea.precioPromotor < linea.producto.precio_venta ? '<span class="ml-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">(con descuento)</span>' : '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>') : ''}</span>
             <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(precioDe(linea) * linea.cantidad)}</span>
           </li>`
       )
@@ -1445,20 +1462,23 @@ import { alCambiarDatos } from '../lib/realtime';
 
   formPrecio.addEventListener('submit', async (e) => {
     e.preventDefault();
-    // Un precio menor al del catálogo no se acepta nunca
     for (const campo of camposPrecio()) {
       const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
       if (!linea || campo.value.trim() === '') continue;
       const valor = numeroEscrito(campo.value);
       if (!Number.isFinite(valor) || valor <= 0) return errorDePrecio(`El precio de «${linea.producto.nombre}» no es válido.`);
-      if (valor < linea.producto.precio_venta - 0.005) return errorDePrecio(`El precio de «${linea.producto.nombre}» no puede ser menor al del catálogo (${formatearMoneda(linea.producto.precio_venta)}).`);
     }
     const cambios = preciosEscritos();
+    const hayDescuento = cambios.some(({ linea, precio }) => precio < linea.producto.precio_venta);
+    const hayAumento = cambios.some(({ linea, precio }) => precio > linea.producto.precio_venta);
 
-    // Sin ningún precio mayor al catálogo: todo vuelve al precio normal (no hace falta contraseña para cobrar menos)
+    // Todos los precios iguales al catálogo: todo vuelve al precio normal (no hace falta contraseña para volver al precio de lista)
     if (cambios.length === 0) {
-      if (!carrito.some((l) => l.precioPromotor !== undefined)) return errorDePrecio('Escribe un precio mayor al del catálogo en alguno de los productos.');
-      for (const l of carrito) delete l.precioPromotor;
+      if (!carrito.some((l) => l.precioPromotor !== undefined)) return errorDePrecio('Escribe un precio distinto al del catálogo en alguno de los productos.');
+      for (const l of carrito) {
+        delete l.precioPromotor;
+        delete l.listaAutorizada;
+      }
       promotorVenta = null;
       autorizacionPrecio = null;
       cerrarPrecioPromotor();
@@ -1467,9 +1487,10 @@ import { alCambiarDatos } from '../lib/realtime';
       return;
     }
 
-    const promotor = leerPromotor();
+    // El promotor solo se anota cuando hay un precio mayor (comisión); un descuento no lleva promotor
+    const promotor: { datos: DatosPromotor } | { error: string } = hayAumento ? leerPromotor() : { datos: { cedula: null, nombre: '', apellido: '', telefono: '' } };
     if ('error' in promotor) return errorDePrecio(promotor.error);
-    if (!campoClaveSupervisor.value) return errorDePrecio('Escribe la contraseña de un encargado, gerente o administrador.');
+    if (!campoClaveSupervisor.value) return errorDePrecio(hayDescuento ? 'Escribe la contraseña de un gerente o administrador.' : 'Escribe la contraseña de un encargado, gerente o administrador.');
 
     errorPrecio.classList.add('hidden');
     botonAutorizar.disabled = true;
@@ -1480,8 +1501,14 @@ import { alCambiarDatos } from '../lib/realtime';
         promotor: promotor.datos,
         lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),
       });
-      for (const l of carrito) delete l.precioPromotor;
-      for (const { linea, precio } of cambios) linea.precioPromotor = precio;
+      for (const l of carrito) {
+        delete l.precioPromotor;
+        delete l.listaAutorizada;
+      }
+      for (const { linea, precio } of cambios) {
+        linea.precioPromotor = precio;
+        linea.listaAutorizada = linea.producto.precio_venta;
+      }
       promotorVenta = { datos: promotor.datos, nombre: aut.promotor };
       autorizacionPrecio = aut;
       cerrarPrecioPromotor();
@@ -1501,6 +1528,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const linea = carrito.find((l) => l.producto.id === productoId);
     if (!linea) return;
     delete linea.precioPromotor;
+    delete linea.listaAutorizada;
     if (!carrito.some((l) => l.precioPromotor !== undefined)) {
       promotorVenta = null;
       autorizacionPrecio = null;
@@ -1513,9 +1541,12 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Si la autorización venció (dura 20 minutos), las líneas vuelven al precio de catálogo y se avisa; devuelve si venció. */
   function autorizacionVencida(): boolean {
     if (!autorizacionPrecio || autorizacionPrecio.vence_en > Date.now() + 15_000) return false;
-    for (const l of carrito) delete l.precioPromotor;
+    for (const l of carrito) {
+      delete l.precioPromotor;
+      delete l.listaAutorizada;
+    }
     renderCarrito();
-    mostrarError('La autorización del precio de promotor venció: las líneas volvieron al precio de catálogo. Vuelve a pedir la autorización.');
+    mostrarError('La autorización del precio venció: las líneas volvieron al precio de catálogo. Vuelve a pedir la autorización.');
     return true;
   }
 

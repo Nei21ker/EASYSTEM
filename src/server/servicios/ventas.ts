@@ -92,8 +92,8 @@ interface PrecioPromotorDeVenta {
 }
 
 /**
- * Compara lo cobrado en cada línea con el precio de catálogo. Una línea más barata que la lista se rechaza; una más cara exige la
- * autorización firmada de un supervisor y un promotor, y su diferencia es la comisión. Los productos que no están en el catálogo se
+ * Compara lo cobrado en cada línea con el precio de catálogo. Una línea con otro precio exige la autorización firmada de un supervisor:
+ * si es más cara (precio de promotor) la diferencia es la comisión; si es más barata (descuento) la autoriza solo un gerente o un administrador. Los productos que no están en el catálogo se
  * dejan pasar (no hay con qué comparar).
  */
 async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<PrecioPromotorDeVenta> {
@@ -108,21 +108,22 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   }
 
   const desviadas: [string, number][] = [];
+  let hayDescuento = false;
   const items = datos.items.map((item): VentaItem => {
     const lista = precios.get(item.producto_id);
     if (lista === undefined) return item;
     const { precio_lista: _ignorado, ...limpio } = item;
-    if (item.precio_unitario < lista - 0.005) {
-      throw new ErrorApi(400, `«${item.nombre}» no puede venderse por debajo del precio de lista ($${lista.toFixed(2)}).`, 'precio_bajo_lista');
-    }
-    if (item.precio_unitario <= lista + 0.005) return limpio;
+    if (Math.abs(item.precio_unitario - lista) <= 0.005) return limpio;
+    // Más caro (precio de promotor) o más barato (descuento) que el catálogo: exige la autorización firmada de un supervisor
     desviadas.push([item.producto_id, item.precio_unitario]);
+    if (item.precio_unitario < lista - 0.005) hayDescuento = true;
     return { ...limpio, precio_lista: lista };
   });
   if (desviadas.length === 0) return { items, comision: 0, promotor: null };
 
-  const promotor = await verificarPrecioPromotor(env, sesion, datos, desviadas);
-  const comision = redondear2(items.reduce((s, i) => s + (i.precio_lista === undefined ? 0 : i.cantidad * (i.precio_unitario - i.precio_lista)), 0));
+  const promotor = await verificarPrecioPromotor(env, sesion, datos, desviadas, hayDescuento);
+  // La comisión es solo de las líneas más caras que el catálogo; un descuento no la reduce
+  const comision = redondear2(items.reduce((s, i) => s + (i.precio_lista === undefined || i.precio_unitario <= i.precio_lista ? 0 : i.cantidad * (i.precio_unitario - i.precio_lista)), 0));
   return { items, comision, promotor };
 }
 

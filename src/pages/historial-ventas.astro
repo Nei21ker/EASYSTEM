@@ -327,7 +327,9 @@ import { alCambiarDatos } from '../lib/realtime';
             ${
               v.promotor_nombre || (v.comision ?? 0) > 0
                 ? `<span class="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Promotor: ${escaparHtml(v.promotor_nombre || 'sin datos')} · comisión ${formatearMoneda(v.comision ?? 0)}</span>${v.promotor_cedula || v.promotor_telefono ? `<span class="block text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml([v.promotor_cedula, v.promotor_telefono].filter(Boolean).join(' · '))}</span>` : ''}${v.precio_autorizado_nombre ? `<span class="block text-[11px] text-slate-400 dark:text-slate-500">Precio autorizado por ${escaparHtml(v.precio_autorizado_nombre)}</span>` : ''}`
-                : ''
+                : v.precio_autorizado_nombre
+                  ? `<span class="mt-1 block text-[11px] font-medium text-emerald-700 dark:text-emerald-400">Precio con descuento · autorizó ${escaparHtml(v.precio_autorizado_nombre)}</span>`
+                  : ''
             }
           </span>
         </td>

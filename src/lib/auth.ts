@@ -214,11 +214,11 @@ export const MIN_CLAVE = modoServidor ? 8 : 6;
  * Solo modo demo (LocalStorage): ¿este correo y contraseña son de alguien que puede autorizar precios en ese local (encargado de ese
  * local, gerente o administrador)? Con el servidor lo decide el servidor (`POST /api/ventas/autorizar-precio`). No cambia la sesión.
  */
-export function verificarSupervisorDemo(email: string | undefined, clave: string, localId: string): { id: string; nombre: string } | null {
+export function verificarSupervisorDemo(email: string | undefined, clave: string, localId: string, soloGlobal = false): { id: string; nombre: string } | null {
   const correo = (email ?? '').trim().toLowerCase();
   // Sin correo basta la contraseña: la de cualquiera que pueda autorizar en este local
   const puedeAutorizar = (u: { rol: string; local_id?: string | null; status?: string }) =>
-    (u.status ?? 'active') === 'active' && (u.rol === 'administrador' || u.rol === 'gerente' || (u.rol === 'encargado' && u.local_id === localId));
+    (u.status ?? 'active') === 'active' && (u.rol === 'administrador' || u.rol === 'gerente' || (!soloGlobal && u.rol === 'encargado' && u.local_id === localId));
   const u = leerUsuariosLocales().find((x) => (!correo || x.email.toLowerCase() === correo) && x.password === clave && puedeAutorizar(x));
   return u ? { id: u.id, nombre: u.nombre } : null;
 }

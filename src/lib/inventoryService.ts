@@ -1699,8 +1699,8 @@ export interface DatosVenta {
   precioPromotor?: { promotor?: DatosPromotor | null; autorizacion: AutorizacionPrecio } | null;
 }
 
-/** ¿Alguna línea se cobra más cara que el precio de catálogo? (el POS pone `precio_lista` en las líneas con precio de promotor) */
-export const tienePrecioDePromotor = (items: VentaItem[]): boolean => items.some((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista + 0.005);
+/** ¿Alguna línea se cobra a un precio distinto al del catálogo, más caro (promotor) o más barato (descuento)? (el POS pone `precio_lista` en esas líneas) */
+export const tienePrecioDePromotor = (items: VentaItem[]): boolean => items.some((i) => i.precio_lista !== undefined && Math.abs(i.precio_unitario - i.precio_lista) > 0.005);
 
 /** Comisión del promotor: Σ cantidad × (precio cobrado − precio de lista) de las líneas con precio de promotor. */
 export const comisionDePromotor = (items: VentaItem[]): number =>
@@ -1726,10 +1726,13 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave: stri
   for (const l of pedido.lineas) {
     const producto = db.productos.find((p) => p.id === l.producto_id);
     if (!producto) throw new Error('Uno de los productos no existe en el catálogo.');
-    if (!(l.precio >= producto.precio_venta - 0.005)) throw new Error(`El precio de «${producto.nombre}» no puede ser menor al precio de lista ($${producto.precio_venta.toFixed(2)}).`);
   }
-  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id);
-  if (!supervisor) throw new Error('Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
+  // Un precio menor al del catálogo (descuento) solo lo autoriza un gerente o un administrador
+  const hayDescuento = pedido.lineas.some((l) => l.precio < (db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0) - 0.005);
+  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id, hayDescuento);
+  if (!supervisor) {
+    throw new Error(hayDescuento ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.' : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
+  }
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-${generarId()}`;
   autorizacionesDemo.set(token, {
@@ -1773,7 +1776,7 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     let promotorDeLaVenta: Partial<Venta> = {};
     if (tienePrecioDePromotor(registro.items)) {
       const aut = autorizacion_precio ? autorizacionesDemo.get(autorizacion_precio) : undefined;
-      const desviadas = registro.items.filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista + 0.005);
+      const desviadas = registro.items.filter((i) => i.precio_lista !== undefined && Math.abs(i.precio_unitario - i.precio_lista) > 0.005);
       const promotorVenta = normalizarPromotor(registro.promotor);
       if (!promotorVenta.ok) throw new Error(promotorVenta.mensaje);
       if (!aut || aut.vence_en < Date.now() || aut.promotor_clave !== promotorVenta.promotor.clave || desviadas.some((i) => Math.abs((aut.lineas.get(i.producto_id) ?? -1) - i.precio_unitario) > 0.005)) {
