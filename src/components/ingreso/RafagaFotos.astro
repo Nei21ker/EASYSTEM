@@ -1,0 +1,419 @@
+---
+// Cámara de ráfaga: fotografía una lista de productos de corrido, un toque por producto. Se abre con el evento window
+// "easystem:abrir-rafaga" ({ productos: [{ id, nombre }] }); "Crear varios productos" lo dispara después de crear los productos.
+// - La cámara se abre UNA vez (un solo permiso) y no se cierra entre producto y producto.
+// - Cada toque del obturador toma la foto del producto que aparece arriba y pasa al siguiente. "Saltar" lo deja sin foto y
+//   "Repetir" vuelve al anterior.
+// - Las fotos se reducen y se suben EN SEGUNDO PLANO (2 a la vez, con reintentos), así que no se espera a la red entre una y otra.
+// - Si el navegador no deja abrir la cámara aquí, el obturador abre la cámara normal del teléfono (una foto por toque, mismo flujo).
+// Avisa con "easystem:rafaga-fotos" cuando se sube una foto (la pantalla de Ingreso refresca las miniaturas).
+---
+
+<dialog
+  id="rf-dialogo"
+  aria-labelledby="rf-titulo"
+  class="m-auto h-[100dvh] max-h-none w-full max-w-none overflow-hidden rounded-none border-0 bg-slate-950 p-0 text-white shadow-2xl backdrop:bg-black sm:h-[min(52rem,96vh)] sm:w-[min(32rem,100vw)] sm:rounded-2xl"
+>
+  <div class="flex h-full max-h-[100dvh] flex-col">
+    <!-- Captura -->
+    <div id="rf-captura" class="flex min-h-0 flex-1 flex-col">
+      <header class="shrink-0 px-4 pb-2 pt-3">
+        <div class="flex items-center justify-between gap-3">
+          <h2 id="rf-titulo" class="text-xs font-semibold uppercase tracking-wider text-slate-400">Fotos de los productos</h2>
+          <button type="button" id="rf-terminar" class="rounded-lg px-3 py-1.5 text-sm font-semibold text-sky-300 hover:bg-white/10">Terminar</button>
+        </div>
+        <p id="rf-nombre" class="mt-1 break-words text-lg font-semibold leading-snug"></p>
+        <div class="mt-2 flex items-center gap-3">
+          <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/15"><div id="rf-barra" class="h-full w-0 rounded-full bg-sky-400 transition-all"></div></div>
+          <span id="rf-posicion" class="shrink-0 text-xs tabular-nums text-slate-300"></span>
+        </div>
+      </header>
+
+      <div class="relative mx-4 min-h-0 flex-1 overflow-hidden rounded-xl bg-black">
+        <video id="rf-video" class="h-full w-full object-cover" playsinline muted autoplay></video>
+        <div id="rf-cargando" class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-sm text-slate-300">
+          <span class="h-6 w-6 animate-spin rounded-full border-2 border-slate-500 border-t-white"></span>
+          <span id="rf-cargando-texto">Abriendo la cámara…</span>
+        </div>
+        <p id="rf-aviso-archivo" class="absolute inset-0 hidden flex-col items-center justify-center gap-2 px-6 text-center text-sm text-slate-300"></p>
+        <div id="rf-flash" class="pointer-events-none absolute inset-0 bg-white opacity-0 transition-opacity duration-150"></div>
+        <span id="rf-hecha" class="pointer-events-none absolute right-3 top-3 hidden rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white">✓ Tomada</span>
+      </div>
+
+      <p id="rf-estado" class="shrink-0 px-4 pt-2 text-center text-xs text-slate-400"></p>
+      <p id="rf-error" role="alert" class="mx-4 mt-2 hidden shrink-0 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300"></p>
+
+      <footer class="grid shrink-0 grid-cols-3 items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+        <button type="button" id="rf-repetir" class="justify-self-start rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-30">Repetir</button>
+        <button type="button" id="rf-obturador" aria-label="Tomar la foto de este producto" class="justify-self-center rounded-full border-4 border-white bg-white/20 p-1 transition active:scale-95 disabled:opacity-40">
+          <span class="block h-16 w-16 rounded-full bg-white"></span>
+        </button>
+        <button type="button" id="rf-saltar" class="justify-self-end rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10">Saltar</button>
+      </footer>
+    </div>
+
+    <!-- Resumen -->
+    <div id="rf-resumen" class="hidden min-h-0 flex-1 flex-col">
+      <header class="shrink-0 px-5 pb-2 pt-5">
+        <h2 class="text-lg font-semibold">Fotos terminadas</h2>
+        <p id="rf-resumen-linea" class="mt-1 text-sm text-slate-300"></p>
+      </header>
+      <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-2">
+        <p id="rf-subida" class="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-200"></p>
+        <div id="rf-sin-foto-bloque" class="hidden">
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Sin foto</h3>
+          <ul id="rf-sin-foto" class="mt-1 list-inside list-disc space-y-0.5 text-sm text-slate-200"></ul>
+          <p class="mt-1 text-xs text-slate-400">Se la puedes poner después con "Editar" en Productos.</p>
+        </div>
+      </div>
+      <footer class="flex shrink-0 flex-col gap-2 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+        <button type="button" id="rf-reintentar" class="hidden rounded-xl border border-amber-300/50 px-4 py-3 text-sm font-semibold text-amber-200 hover:bg-white/10">Reintentar las que fallaron</button>
+        <button type="button" id="rf-listo" class="rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white hover:bg-sky-400">Listo</button>
+      </footer>
+    </div>
+
+    <input id="rf-archivo" type="file" accept="image/*" capture="environment" class="hidden" />
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
+  import { reducirImagen } from '../../utils/imagenes';
+
+  interface ProductoRafaga {
+    id: string;
+    nombre: string;
+  }
+  type EstadoTarea = 'espera' | 'subiendo' | 'ok' | 'error' | 'cancelada';
+  interface Tarea {
+    producto: ProductoRafaga;
+    blob: Blob | null;
+    estado: EstadoTarea;
+    intentos: number;
+    proximoIntento: number;
+    error?: string;
+  }
+
+  const MAX_PARALELO = 2;
+  const MAX_INTENTOS = 3;
+  const ESPERAS_MS = [2000, 6000];
+  const LADO_CAPTURA = 1280;
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('rf-dialogo');
+  const vistaCaptura = $('rf-captura');
+  const vistaResumen = $('rf-resumen');
+  const video = $<HTMLVideoElement>('rf-video');
+  const cargando = $('rf-cargando');
+  const cargandoTexto = $('rf-cargando-texto');
+  const avisoArchivo = $('rf-aviso-archivo');
+  const flash = $('rf-flash');
+  const marcaHecha = $('rf-hecha');
+  const nombre = $('rf-nombre');
+  const posicion = $('rf-posicion');
+  const barra = $('rf-barra');
+  const estado = $('rf-estado');
+  const error = $('rf-error');
+  const botonObturador = $<HTMLButtonElement>('rf-obturador');
+  const botonRepetir = $<HTMLButtonElement>('rf-repetir');
+  const botonSaltar = $<HTMLButtonElement>('rf-saltar');
+  const entradaArchivo = $<HTMLInputElement>('rf-archivo');
+
+  let productos: ProductoRafaga[] = [];
+  let indice = 0;
+  const tareas: Tarea[] = [];
+  let tareasDesde = 0; // las tareas de esta ráfaga empiezan aquí (quedan restos de la anterior si aún subían)
+  let flujo: MediaStream | null = null;
+  let fichaCamara = 0; // descarta respuestas tardías de una apertura de cámara ya cancelada
+  let modoArchivo = false;
+  let bloqueado = false;
+  let temporizadorAviso: ReturnType<typeof setTimeout> | undefined;
+
+  const pendientes = () => tareas.filter((t) => t.estado === 'espera' || t.estado === 'subiendo').length;
+  const deEstaRafaga = () => tareas.slice(tareasDesde);
+
+  function mostrarError(texto: string) {
+    error.textContent = texto;
+    error.classList.remove('hidden');
+  }
+
+  // --- Subida en segundo plano -----------------------------------------------------------------------------------
+  function avisarFotoSubida() {
+    clearTimeout(temporizadorAviso);
+    temporizadorAviso = setTimeout(() => window.dispatchEvent(new Event('easystem:rafaga-fotos')), 1200);
+  }
+
+  async function subir(t: Tarea) {
+    t.estado = 'subiendo';
+    pintarEstado();
+    try {
+      if (!t.blob) throw new Error('La foto ya no está disponible.');
+      const foto = await reducirImagen(new File([t.blob], 'foto', { type: t.blob.type || 'image/jpeg' }), { preferirWebp: true });
+      await inventoryService.guardarImagenProducto(t.producto.id, foto);
+      t.estado = 'ok';
+      t.blob = null; // suelta la memoria
+      avisarFotoSubida();
+    } catch (err) {
+      t.intentos++;
+      if (t.intentos < MAX_INTENTOS) {
+        const espera = ESPERAS_MS[t.intentos - 1] ?? ESPERAS_MS[ESPERAS_MS.length - 1];
+        t.estado = 'espera';
+        t.proximoIntento = Date.now() + espera;
+        setTimeout(programar, espera + 50);
+      } else {
+        t.estado = 'error';
+        t.error = err instanceof Error ? err.message : 'No se pudo subir.';
+      }
+    } finally {
+      programar();
+    }
+  }
+
+  /** Lanza las subidas que toquen: hasta MAX_PARALELO a la vez y nunca dos del MISMO producto juntas (la última foto manda). */
+  function programar() {
+    let libres = MAX_PARALELO - tareas.filter((t) => t.estado === 'subiendo').length;
+    const ahora = Date.now();
+    for (const t of tareas) {
+      if (libres <= 0) break;
+      if (t.estado !== 'espera' || t.proximoIntento > ahora) continue;
+      if (tareas.some((o) => o !== t && o.producto.id === t.producto.id && o.estado === 'subiendo')) continue;
+      libres--;
+      void subir(t);
+    }
+    pintarEstado();
+  }
+
+  function encolar(blob: Blob) {
+    const producto = productos[indice];
+    if (!producto) return;
+    // Una foto nueva del mismo producto (Repetir) reemplaza a la anterior si esa aún no empezó a subir
+    for (const o of tareas) if (o.producto.id === producto.id && (o.estado === 'espera' || o.estado === 'error')) o.estado = 'cancelada';
+    tareas.push({ producto, blob, estado: 'espera', intentos: 0, proximoIntento: 0 });
+    indice++;
+    programar();
+    pintarCaptura();
+  }
+
+  // --- Pantallas -------------------------------------------------------------------------------------------------
+  function textoSubida(): string {
+    const mias = deEstaRafaga().filter((t) => t.estado !== 'cancelada');
+    const subiendo = mias.filter((t) => t.estado === 'espera' || t.estado === 'subiendo').length;
+    const listas = mias.filter((t) => t.estado === 'ok').length;
+    const falladas = mias.filter((t) => t.estado === 'error').length;
+    if (mias.length === 0) return '';
+    return [subiendo ? `Subiendo ${subiendo}` : '', `${listas} lista${listas === 1 ? '' : 's'}`, falladas ? `${falladas} con problema` : ''].filter(Boolean).join(' · ');
+  }
+
+  function pintarCaptura() {
+    const total = productos.length;
+    const actual = productos[indice];
+    if (!actual) return mostrarResumen();
+    nombre.textContent = actual.nombre;
+    posicion.textContent = `${indice + 1} de ${total}`;
+    barra.style.width = `${(indice / total) * 100}%`;
+    botonRepetir.disabled = indice === 0;
+    pintarEstado();
+  }
+
+  function pintarEstado() {
+    estado.textContent = textoSubida();
+    if (!vistaResumen.classList.contains('hidden')) pintarResumen();
+  }
+
+  function mostrarResumen() {
+    detenerCamara();
+    vistaCaptura.classList.add('hidden');
+    vistaResumen.classList.remove('hidden');
+    vistaResumen.classList.add('flex');
+    pintarResumen();
+  }
+
+  function pintarResumen() {
+    const conFoto = new Set(deEstaRafaga().filter((t) => t.estado !== 'cancelada').map((t) => t.producto.id));
+    const sinFoto = productos.filter((p) => !conFoto.has(p.id));
+    $('rf-resumen-linea').textContent = `${conFoto.size} de ${productos.length} producto${productos.length === 1 ? '' : 's'} con foto.`;
+    const falladas = deEstaRafaga().filter((t) => t.estado === 'error');
+    const subiendo = deEstaRafaga().filter((t) => t.estado === 'espera' || t.estado === 'subiendo').length;
+    $('rf-subida').textContent = subiendo
+      ? `Subiendo ${subiendo} foto${subiendo === 1 ? '' : 's'}… puedes cerrar esta ventana, pero no la página, hasta que terminen.`
+      : falladas.length
+        ? `${falladas.length} foto${falladas.length === 1 ? '' : 's'} no se pudo subir (${falladas[0].error ?? 'error de conexión'}). Revisa la conexión y reintenta.`
+        : 'Todas las fotos están guardadas.';
+    $('rf-reintentar').classList.toggle('hidden', falladas.length === 0);
+    $('rf-sin-foto-bloque').classList.toggle('hidden', sinFoto.length === 0);
+    const lista = $('rf-sin-foto');
+    lista.replaceChildren(
+      ...sinFoto.map((p) => {
+        const li = document.createElement('li');
+        li.textContent = p.nombre;
+        return li;
+      })
+    );
+  }
+
+  // --- Cámara ----------------------------------------------------------------------------------------------------
+  function detenerCamara() {
+    fichaCamara++;
+    flujo?.getTracks().forEach((t) => t.stop());
+    flujo = null;
+    video.srcObject = null;
+  }
+
+  /** La cámara de dentro del sistema no está disponible: el obturador abre la cámara normal del teléfono, una foto por toque. */
+  function usarArchivo(motivo: string) {
+    modoArchivo = true;
+    cargando.classList.add('hidden');
+    avisoArchivo.textContent = `${motivo} El botón redondo abrirá la cámara del teléfono para cada producto.`;
+    avisoArchivo.classList.remove('hidden');
+    avisoArchivo.classList.add('flex');
+    botonObturador.disabled = false;
+  }
+
+  async function iniciarCamara() {
+    detenerCamara();
+    const ficha = ++fichaCamara;
+    modoArchivo = false;
+    botonObturador.disabled = true;
+    avisoArchivo.classList.add('hidden');
+    avisoArchivo.classList.remove('flex');
+    cargando.classList.remove('hidden');
+    cargandoTexto.textContent = 'Abriendo la cámara…';
+    if (!navigator.mediaDevices?.getUserMedia) return usarArchivo('Este navegador no puede abrir la cámara dentro del sistema.');
+    try {
+      const f = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+        audio: false,
+      });
+      if (ficha !== fichaCamara || !dialogo.open) {
+        f.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      flujo = f;
+      video.srcObject = f;
+      await video.play().catch(() => undefined);
+      cargando.classList.add('hidden');
+      botonObturador.disabled = false;
+    } catch (err) {
+      if (ficha !== fichaCamara) return;
+      const denegado = err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      usarArchivo(denegado ? 'No diste permiso para usar la cámara.' : 'No se pudo abrir la cámara.');
+    }
+  }
+
+  /** Un fotograma del video como imagen (máx. 1280 px; después se reduce otra vez a 720 al subirla). */
+  async function fotogramaDelVideo(): Promise<Blob | null> {
+    if (!video.videoWidth || !video.videoHeight) return null;
+    const escala = Math.min(1, LADO_CAPTURA / Math.max(video.videoWidth, video.videoHeight));
+    const lienzo = document.createElement('canvas');
+    lienzo.width = Math.round(video.videoWidth * escala);
+    lienzo.height = Math.round(video.videoHeight * escala);
+    try {
+      lienzo.getContext('2d')?.drawImage(video, 0, 0, lienzo.width, lienzo.height);
+      return await new Promise<Blob | null>((resolve) => lienzo.toBlob(resolve, 'image/jpeg', 0.9));
+    } finally {
+      lienzo.width = 0; // Safari de iPhone no suelta la memoria de los lienzos por sí solo
+      lienzo.height = 0;
+    }
+  }
+
+  function destello() {
+    flash.style.opacity = '0.7';
+    setTimeout(() => (flash.style.opacity = '0'), 120);
+    marcaHecha.classList.remove('hidden');
+    setTimeout(() => marcaHecha.classList.add('hidden'), 600);
+    navigator.vibrate?.(25);
+  }
+
+  async function disparar() {
+    if (bloqueado || !productos[indice]) return;
+    error.classList.add('hidden');
+    if (modoArchivo) {
+      entradaArchivo.value = ''; // vaciada ANTES de abrir: así "change" siempre se dispara
+      entradaArchivo.click();
+      return;
+    }
+    bloqueado = true;
+    try {
+      const blob = await fotogramaDelVideo();
+      if (!blob) return mostrarError('La cámara todavía no está lista. Espera un segundo y vuelve a tocar.');
+      destello();
+      encolar(blob);
+    } finally {
+      setTimeout(() => (bloqueado = false), 250);
+    }
+  }
+
+  entradaArchivo.addEventListener('change', () => {
+    const archivo = entradaArchivo.files?.[0];
+    entradaArchivo.value = '';
+    if (!archivo || !productos[indice]) return;
+    encolar(archivo);
+  });
+
+  // --- Botones ---------------------------------------------------------------------------------------------------
+  botonObturador.addEventListener('click', () => void disparar());
+  botonSaltar.addEventListener('click', () => {
+    error.classList.add('hidden');
+    indice++;
+    pintarCaptura();
+  });
+  botonRepetir.addEventListener('click', () => {
+    if (indice === 0) return;
+    error.classList.add('hidden');
+    indice--;
+    // Si la foto de ese producto aún no empezó a subir, se descarta; si ya subió, la nueva la reemplaza
+    for (const o of tareas.slice(tareasDesde)) if (o.producto.id === productos[indice].id && (o.estado === 'espera' || o.estado === 'error')) o.estado = 'cancelada';
+    pintarCaptura();
+  });
+  $('rf-terminar').addEventListener('click', mostrarResumen);
+  $('rf-reintentar').addEventListener('click', () => {
+    for (const t of deEstaRafaga()) {
+      if (t.estado !== 'error') continue;
+      t.estado = 'espera';
+      t.intentos = 0;
+      t.proximoIntento = 0;
+    }
+    programar();
+  });
+  $('rf-listo').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('cancel', (e) => {
+    // Escape: desde la cámara lleva al resumen; desde el resumen cierra
+    if (!vistaCaptura.classList.contains('hidden')) {
+      e.preventDefault();
+      mostrarResumen();
+    }
+  });
+  dialogo.addEventListener('close', () => {
+    detenerCamara();
+    window.dispatchEvent(new Event('easystem:rafaga-fotos'));
+  });
+  // Al volver a la pestaña la cámara puede haberse cortado (el teléfono la suelta en segundo plano)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !dialogo.open || vistaCaptura.classList.contains('hidden') || modoArchivo) return;
+    if (!flujo || flujo.getTracks().every((t) => t.readyState === 'ended')) void iniciarCamara();
+  });
+  window.addEventListener('beforeunload', (e) => {
+    if (pendientes() > 0) {
+      e.preventDefault();
+    }
+  });
+
+  async function abrir(lista: ProductoRafaga[]) {
+    const sesion = await obtenerSesionActual();
+    if (!esGerencia(sesion?.rol)) return;
+    productos = lista.filter((p) => p.id && p.nombre);
+    if (productos.length === 0) return;
+    indice = 0;
+    tareasDesde = tareas.length;
+    error.classList.add('hidden');
+    vistaResumen.classList.add('hidden');
+    vistaResumen.classList.remove('flex');
+    vistaCaptura.classList.remove('hidden');
+    pintarCaptura();
+    if (!dialogo.open) dialogo.showModal();
+    void iniciarCamara();
+  }
+
+  window.addEventListener('easystem:abrir-rafaga', ((e: CustomEvent<{ productos: ProductoRafaga[] }>) => void abrir(e.detail?.productos ?? [])) as EventListener);
+</script>

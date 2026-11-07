@@ -3,6 +3,7 @@
 // PRODUCTO POR LÍNEA y la categoría, el prefijo, el precio y la cantidad se ponen una sola vez. En el teléfono ocupa toda la pantalla.
 // Se abre con el evento window "easystem:abrir-alta-rapida" y, al crear, avisa con "easystem:alta-rapida-creada"
 // ({ items: [{ productoId, cantidad }] }) para que la página los meta al lote; también avisa "easystem:productos-cambiaron".
+// "Crear y tomar fotos" además abre la cámara de ráfaga (RafagaFotos) con los productos NUEVOS, en el orden en que se escribieron.
 const claseCampo =
   'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:py-2.5 sm:text-sm';
 const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
@@ -79,8 +80,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <button type="button" id="ar-cancelar" class="rounded-lg border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 sm:py-2.5">
         Cancelar
       </button>
-      <button type="submit" id="ar-crear" class="bg-marca rounded-lg px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:py-2.5">
+      <button type="submit" id="ar-crear" class="rounded-lg border border-brand-300 px-5 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-brand-500/50 dark:text-brand-300 dark:hover:bg-brand-500/10 sm:py-2.5">
         Crear y agregar al lote
+      </button>
+      <button type="submit" id="ar-crear-fotos" class="bg-marca rounded-lg px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60 sm:py-2.5">
+        Crear y tomar fotos
       </button>
     </footer>
   </form>
@@ -108,6 +112,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const conteo = $('ar-conteo');
   const error = $('ar-error');
   const botonCrear = $<HTMLButtonElement>('ar-crear');
+  const botonCrearFotos = $<HTMLButtonElement>('ar-crear-fotos');
 
   const LS = 'easystem:alta-rapida';
   const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos', 'Controles'];
@@ -244,9 +249,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
     if (aCrear.length > MAX_LINEAS_ALTA) return mostrarError(`Son demasiados productos nuevos de una vez (máximo ${MAX_LINEAS_ALTA}).`);
 
+    // Con "Crear y tomar fotos" se abre la cámara de ráfaga al terminar (solo para los productos nuevos)
+    const conFotos = (e as SubmitEvent).submitter?.id === 'ar-crear-fotos';
     ocupado = true;
     botonCrear.disabled = true;
-    botonCrear.textContent = 'Creando...';
+    botonCrearFotos.disabled = true;
+    (conFotos ? botonCrearFotos : botonCrear).textContent = 'Creando...';
     try {
       const filas: FilaAltaRapida[] = aCrear.map((l) => ({
         nombre: l.nombre,
@@ -269,6 +277,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       dialogo.close();
       window.dispatchEvent(new Event('easystem:productos-cambiaron'));
       window.dispatchEvent(new CustomEvent('easystem:alta-rapida-creada', { detail: { items, nuevos: creados.length } }));
+      if (conFotos && creados.length > 0) {
+        const paraFotos = aCrear.map((l) => ({ id: idCreado.get(normalizarNombre(l.nombre)) ?? '', nombre: l.nombre })).filter((p) => p.id);
+        window.dispatchEvent(new CustomEvent('easystem:abrir-rafaga', { detail: { productos: paraFotos } }));
+      }
     } catch (err) {
       // El texto se conserva: se corrige y se vuelve a intentar sin retipear
       mostrarError(err instanceof Error ? err.message : 'No se pudieron crear los productos.');
@@ -281,7 +293,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     } finally {
       ocupado = false;
       botonCrear.disabled = false;
+      botonCrearFotos.disabled = false;
       botonCrear.textContent = 'Crear y agregar al lote';
+      botonCrearFotos.textContent = 'Crear y tomar fotos';
     }
   });
 

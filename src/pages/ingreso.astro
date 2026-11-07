@@ -3,6 +3,7 @@ import DashboardLayout from '../layouts/DashboardLayout.astro';
 import CamaraEscaner from '../components/CamaraEscaner.astro';
 import FormularioProducto from '../components/productos/FormularioProducto.astro';
 import AltaRapida from '../components/ingreso/AltaRapida.astro';
+import RafagaFotos from '../components/ingreso/RafagaFotos.astro';
 import Descargo from '../components/mercancia/Descargo.astro';
 import Inventario from '../components/mercancia/Inventario.astro';
 import { FORMATOS_ETIQUETA, FORMATO_PERSONALIZADO_ID, LIMITES_FORMATO_PERSONALIZADO, TIPOS_CODIGO_ETIQUETA, estilosEtiqueta } from '../utils/etiquetas';
@@ -289,6 +290,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   <CamaraEscaner />
   <FormularioProducto />
   <AltaRapida />
+  <RafagaFotos />
 </DashboardLayout>
 
 <script>
@@ -1208,6 +1210,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       `${nuevos} producto${nuevos === 1 ? '' : 's'} creado${nuevos === 1 ? '' : 's'}${agregados > nuevos ? ` y ${agregados - nuevos} que ya existía${agregados - nuevos === 1 ? '' : 'n'}` : ''}, ${agregados === 1 ? 'agregado' : 'agregados'} al lote. Revisa las cantidades y pulsa "Registrar e imprimir etiquetas".`
     );
     $('ig-titulo-lote').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }) as unknown as EventListener);
+
+  // La cámara de ráfaga subió fotos: se refrescan las miniaturas del lote
+  window.addEventListener('easystem:rafaga-fotos', (async () => {
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
+    pintarLote();
   }) as unknown as EventListener);
 
   window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean }>) => {
