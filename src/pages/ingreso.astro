@@ -796,6 +796,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let galeriaEsReimpresion = false;
   /** Las etiquetas de esta galería ya se anotaron como impresas (al descargar o al pulsar Listo; solo una vez por galería) */
   let galeriaAnotada = false;
+  /** La galería abierta no incluyó todas las etiquetas pedidas (tope por tira): el lote no se vacía solo */
+  let galeriaHayRestantes = false;
   /** Las últimas etiquetas que se dieron por impresas (para ofrecer reimprimirlas si alguna salió mal) */
   let ultimasImpresas: { codigo: string; nombre: string }[] = [];
   let galeriaEtiquetas: { codigo: string; nombre: string }[] = [];
@@ -863,6 +865,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
     galeriaEsReimpresion = esReimpresion;
     galeriaAnotada = false;
+    galeriaHayRestantes = etiquetas.length > envio.length;
     galeriaEtiquetas = envio.map((e) => ({ codigo: e.codigo, nombre: e.nombre }));
     galeriaCodigos = envio.map((e) => e.codigo);
     const restantes = etiquetas.length - envio.length;
@@ -965,6 +968,15 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('ig-reimprimir-ultimas').classList.add('flex');
     // Las unidades impresas ya no se vuelven a ofrecer como "sin etiqueta"
     await anotarImpresas(); // si ya se anotó al descargar, no vuelve a contar (una reimpresión no se suma dos veces)
+    // Todo salió bien (ya se registró el ingreso, se anotaron las etiquetas y se imprimieron todas): el lote ya cumplió, se vacía solo
+    // para no tener que subir hasta "Vaciar lote". Si algo quedó pendiente (unidades sin registrar, sin red) se deja como está.
+    if (!esReimpresion && galeriaAnotada && !galeriaHayRestantes && lote.length > 0 && lote.every((l) => l.cantidad === 0)) {
+      lote = [];
+      guardarLote();
+      pintarLote();
+      exito.textContent += ' El lote quedó vacío.';
+      exito.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   });
 
   // --- Reimprimir etiquetas ---------------------------------------------------------------
