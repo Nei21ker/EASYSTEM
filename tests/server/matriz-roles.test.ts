@@ -121,6 +121,8 @@ function casos(): Caso[] {
     { archivo: 'usuarios/[id]/index.ts', metodo: 'PATCH', url: '/api/usuarios/no-existe', params: { id: 'no-existe' }, cuerpo: { status: 'inactive' }, permitidos: GLOBAL },
     { archivo: 'usuarios/[id]/index.ts', metodo: 'DELETE', url: '/api/usuarios/no-existe', params: { id: 'no-existe' }, permitidos: GLOBAL },
     { archivo: 'usuarios/[id]/clave.ts', metodo: 'POST', url: '/api/usuarios/no-existe/clave', params: { id: 'no-existe' }, cuerpo: { clave: 'clave-segura-1' }, permitidos: GLOBAL },
+    // Cambiar la PROPIA clave: cualquier rol (con la actual equivocada responde 400, no 403)
+    { archivo: 'cuenta/clave.ts', metodo: 'POST', url: '/api/cuenta/clave', cuerpo: { actual: 'no-es-la-actual', nueva: 'clave-segura-1' }, permitidos: TODOS },
     { archivo: 'usuarios/[id]/cerrar-sesion.ts', metodo: 'POST', url: '/api/usuarios/no-existe/cerrar-sesion', params: { id: 'no-existe' }, permitidos: ['administrador'] },
     { archivo: 'suscripciones/usuarios.ts', metodo: 'GET', url: '/api/suscripciones/usuarios', permitidos: ['administrador'] },
     { archivo: 'suscripciones/[localId]/index.ts', metodo: 'POST', url: `/api/suscripciones/${servicio}`, params: { localId: servicio }, cuerpo: { estado: 'SUSPENDED' }, permitidos: ['administrador'] },

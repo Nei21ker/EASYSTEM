@@ -1,0 +1,190 @@
+---
+// Perfil de quien tiene la sesión: sus datos y "Cambiar mi contraseña" (cualquier rol). Se abre al tocar el círculo con las
+// iniciales del menú lateral (evento `easystem:abrir-perfil`) y se abre solo, sin poder cerrarse, cuando la clave es temporal
+// (la puso un administrador o gerente): hay que elegir una propia antes de usar el sistema.
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-300';
+---
+
+<dialog
+  id="perfil-dialogo"
+  aria-labelledby="perfil-nombre"
+  class="m-auto max-h-[100dvh] w-[min(94vw,26rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="space-y-4 px-5 py-5 text-sm">
+    <div id="perfil-aviso-temporal" role="status" class="hidden rounded-lg bg-amber-50 px-3 py-3 text-xs text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+      <strong>Tu contraseña es temporal.</strong> Fue elegida por otra persona: escribe una propia para poder usar el sistema.
+    </div>
+
+    <div class="oculto-con-teclado flex items-center gap-3">
+      <div class="bg-marca flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-semibold text-white">
+        <span id="perfil-iniciales">EA</span>
+      </div>
+      <div class="min-w-0">
+        <h2 id="perfil-nombre" class="truncate text-base font-semibold text-slate-900 dark:text-white">—</h2>
+        <p id="perfil-rol" class="text-xs font-medium text-brand-700 dark:text-brand-300">—</p>
+      </div>
+    </div>
+
+    <dl id="perfil-datos" class="oculto-con-teclado divide-y divide-slate-100 rounded-lg border border-slate-200 text-xs dark:divide-slate-800 dark:border-slate-700">
+      <div class="flex justify-between gap-3 px-3 py-2"><dt class="text-slate-500 dark:text-slate-400">Correo</dt><dd id="perfil-correo" class="min-w-0 break-all text-right font-medium">—</dd></div>
+      <div class="flex justify-between gap-3 px-3 py-2"><dt class="text-slate-500 dark:text-slate-400">Local</dt><dd id="perfil-local" class="text-right font-medium">—</dd></div>
+      <div id="perfil-fila-sesion" class="flex justify-between gap-3 px-3 py-2"><dt class="text-slate-500 dark:text-slate-400">Sesión iniciada</dt><dd id="perfil-sesion" class="text-right font-medium">—</dd></div>
+      <div id="perfil-fila-creada" class="flex justify-between gap-3 px-3 py-2"><dt class="text-slate-500 dark:text-slate-400">Cuenta creada</dt><dd id="perfil-creada" class="text-right font-medium">—</dd></div>
+    </dl>
+
+    <form id="perfil-form-clave" class="space-y-3" autocomplete="on" novalidate>
+      <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Cambiar mi contraseña</h3>
+      <div>
+        <label for="perfil-clave-actual" class={claseEtiqueta}>Contraseña actual</label>
+        <input id="perfil-clave-actual" type="password" autocomplete="current-password" class={claseCampo} />
+      </div>
+      <div>
+        <label for="perfil-clave-nueva" class={claseEtiqueta}>Contraseña nueva</label>
+        <input id="perfil-clave-nueva" type="password" autocomplete="new-password" class={claseCampo} />
+      </div>
+      <div>
+        <label for="perfil-clave-repetir" class={claseEtiqueta}>Repite la contraseña nueva</label>
+        <input id="perfil-clave-repetir" type="password" autocomplete="new-password" class={claseCampo} />
+      </div>
+      <label class="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+        <input id="perfil-ver-claves" type="checkbox" class="h-4 w-4 rounded border-slate-300" /> Mostrar lo que escribo
+      </label>
+      <p id="perfil-ayuda-clave" class="oculto-con-teclado text-[11px] text-slate-500 dark:text-slate-400"></p>
+      <p id="perfil-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300"></p>
+      <p id="perfil-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
+      <button id="perfil-guardar" type="submit" class="bg-marca w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">
+        Cambiar contraseña
+      </button>
+    </form>
+
+    <div class="flex items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+      <button id="perfil-salir" type="button" class="rounded-lg px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10">Cerrar sesión</button>
+      <button id="perfil-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Cerrar</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  import { cambiarMiClave, cerrarSesion, esSinLocal, ETIQUETAS_ROL, MIN_CLAVE, obtenerSesionActual, type SesionUsuario } from '../../lib/auth';
+  import { obtenerContextoLocal } from '../../lib/inventoryService';
+  import { modoServidor } from '../../lib/modo';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('perfil-dialogo');
+  const form = $<HTMLFormElement>('perfil-form-clave');
+  const claveActual = $<HTMLInputElement>('perfil-clave-actual');
+  const claveNueva = $<HTMLInputElement>('perfil-clave-nueva');
+  const claveRepetir = $<HTMLInputElement>('perfil-clave-repetir');
+  const campos = [claveActual, claveNueva, claveRepetir];
+  const error = $<HTMLParagraphElement>('perfil-error');
+  const exito = $<HTMLParagraphElement>('perfil-exito');
+  const guardar = $<HTMLButtonElement>('perfil-guardar');
+  let obligatorio = false;
+
+  const fecha = (iso?: string | null) => {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  };
+  const mostrar = (el: HTMLElement, texto: string | null) => {
+    el.textContent = texto ?? '';
+    el.classList.toggle('hidden', !texto);
+  };
+
+  async function pintarDatos(sesion: SesionUsuario) {
+    $('perfil-nombre').textContent = sesion.nombre;
+    $('perfil-rol').textContent = ETIQUETAS_ROL[sesion.rol];
+    $('perfil-correo').textContent = sesion.email;
+    $('perfil-iniciales').textContent = sesion.nombre.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase();
+
+    let local = esSinLocal(sesion.rol) ? 'Todos los locales' : 'Local asignado';
+    if (!esSinLocal(sesion.rol)) {
+      // Con la clave temporal el servidor no entrega los locales: se deja el texto genérico
+      const contexto = await obtenerContextoLocal().catch(() => null);
+      local = contexto?.local?.nombre ?? (sesion.local_id ? 'Local asignado' : 'Sin local asignado');
+    }
+    $('perfil-local').textContent = local;
+
+    const sesionDesde = fecha(sesion.sesion_iniciada_en);
+    const creada = fecha(sesion.creado_en);
+    $('perfil-fila-sesion').classList.toggle('hidden', !sesionDesde);
+    $('perfil-fila-creada').classList.toggle('hidden', !creada);
+    $('perfil-sesion').textContent = sesionDesde ?? '';
+    $('perfil-creada').textContent = creada ?? '';
+    $('perfil-ayuda-clave').textContent =
+      `Mínimo ${MIN_CLAVE} caracteres.` + (modoServidor ? ' Al cambiarla se cierran tus otras sesiones abiertas.' : '');
+  }
+
+  function limpiarAvisos() {
+    mostrar(error, null);
+    mostrar(exito, null);
+  }
+
+  async function abrir(esObligatorio = false) {
+    const sesion = await obtenerSesionActual();
+    if (!sesion) return;
+    obligatorio = esObligatorio || sesion.debe_cambiar_clave === true;
+    await pintarDatos(sesion);
+    limpiarAvisos();
+    form.reset();
+    $('perfil-aviso-temporal').classList.toggle('hidden', !obligatorio);
+    $('perfil-cerrar').classList.toggle('hidden', obligatorio);
+    if (!dialogo.open) dialogo.showModal();
+    claveActual.focus();
+  }
+
+  window.addEventListener('easystem:abrir-perfil', () => void abrir());
+  // La clave temporal manda: la ventana se abre sola y no se puede cerrar (solo cerrar la sesión)
+  void obtenerSesionActual().then((sesion) => {
+    if (sesion?.debe_cambiar_clave) void abrir(true);
+  });
+
+  // Esc y el fondo no cierran mientras la clave sea temporal
+  dialogo.addEventListener('cancel', (e) => {
+    if (obligatorio) e.preventDefault();
+  });
+  $('perfil-cerrar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('click', (e) => {
+    if (e.target === dialogo && !obligatorio) dialogo.close();
+  });
+  dialogo.addEventListener('close', () => form.reset());
+
+  $<HTMLInputElement>('perfil-ver-claves').addEventListener('change', (e) => {
+    const ver = (e.target as HTMLInputElement).checked;
+    for (const c of campos) c.type = ver ? 'text' : 'password';
+  });
+
+  $('perfil-salir').addEventListener('click', async () => {
+    await cerrarSesion();
+    window.location.href = '/login';
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    limpiarAvisos();
+    if (!claveActual.value) return mostrar(error, 'Escribe tu contraseña actual.');
+    if (claveNueva.value.length < MIN_CLAVE) return mostrar(error, `La contraseña nueva debe tener al menos ${MIN_CLAVE} caracteres.`);
+    if (claveNueva.value === claveActual.value) return mostrar(error, 'La contraseña nueva debe ser distinta de la actual.');
+    if (claveNueva.value !== claveRepetir.value) return mostrar(error, 'Las dos contraseñas nuevas no coinciden.');
+
+    guardar.disabled = true;
+    guardar.textContent = 'Guardando…';
+    try {
+      await cambiarMiClave(claveActual.value, claveNueva.value);
+      form.reset();
+      if (obligatorio) {
+        // Ya es suya: se vuelve a cargar la página para entrar con normalidad
+        mostrar(exito, 'Contraseña cambiada. Entrando…');
+        window.setTimeout(() => window.location.reload(), 600);
+        return;
+      }
+      mostrar(exito, 'Contraseña cambiada.' + (modoServidor ? ' Se cerraron tus otras sesiones.' : ''));
+    } catch (err) {
+      mostrar(error, err instanceof Error ? err.message : 'No se pudo cambiar la contraseña.');
+    } finally {
+      guardar.disabled = false;
+      guardar.textContent = 'Cambiar contraseña';
+    }
+  });
+</script>

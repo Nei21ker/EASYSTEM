@@ -58,6 +58,11 @@ export interface SesionUsuario {
   local_id: string | null;
   /** inactive = el usuario no puede operar (migración 0021). Si falta se asume active */
   status?: 'active' | 'inactive';
+  /** La clave actual es temporal (la puso otra persona): hay que cambiarla antes de usar el sistema. */
+  debe_cambiar_clave?: boolean;
+  /** Cuándo empezó esta sesión y cuándo se creó la cuenta (ISO): se muestran en el perfil. */
+  sesion_iniciada_en?: string | null;
+  creado_en?: string | null;
 }
 
 /** Por qué una cuenta no tiene acceso a los datos (ver estado_cuenta() en la migración 0021). */
@@ -121,7 +126,12 @@ interface UsuarioLocal extends SesionUsuario {
 }
 
 function sesionDesdePerfil(id: string, perfil: any): SesionUsuario {
-  return { id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null, status: perfil.status ?? 'active' };
+  return {
+    id, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id ?? null, status: perfil.status ?? 'active',
+    debe_cambiar_clave: perfil.debe_cambiar_clave === true,
+    sesion_iniciada_en: perfil.sesion_iniciada_en ?? null,
+    creado_en: perfil.creado_en ?? null,
+  };
 }
 
 function generarId(): string {
@@ -241,7 +251,8 @@ export async function iniciarSesion(email: string, password: string): Promise<Se
 
   const { password: _sinUsar, ...sesion } = usuario;
   // emitida_en equivale al "iat" del token: un cierre forzado posterior la invalida
-  localStorage.setItem(LS_SESION, JSON.stringify({ ...sesion, emitida_en: new Date().toISOString() }));
+  const ahora = new Date().toISOString();
+  localStorage.setItem(LS_SESION, JSON.stringify({ ...sesion, emitida_en: ahora, sesion_iniciada_en: ahora }));
   invalidarCacheSesion();
   return sesion;
 }
@@ -286,7 +297,10 @@ export async function obtenerSesionActual(): Promise<SesionUsuario | null> {
 
 /** Estado de cuenta tal como lo responde el servidor (incluye los datos del usuario). */
 interface RespuestaEstado extends EstadoCuenta {
-  usuario?: { id: string; email: string; nombre: string; rol: Rol; local_id: string | null; status: 'active' | 'inactive' };
+  usuario?: {
+    id: string; email: string; nombre: string; rol: Rol; local_id: string | null; status: 'active' | 'inactive';
+    debe_cambiar_clave?: boolean; sesion_iniciada_en?: string; creado_en?: string;
+  };
 }
 
 async function cargarSesionActual(): Promise<SesionUsuario | null> {
@@ -300,7 +314,8 @@ async function cargarSesionActual(): Promise<SesionUsuario | null> {
       }
       estadoDeLaCarga = estadoCuenta;
       const sesion = sesionDesdePerfil(estado.usuario.id, estado.usuario);
-      localStorage.setItem(LS_SESION_CACHE, JSON.stringify(sesion));
+      // Sin conexión no se obliga a cambiar la clave (el servidor lo exige igual): la copia guardada no lleva la marca
+      localStorage.setItem(LS_SESION_CACHE, JSON.stringify({ ...sesion, debe_cambiar_clave: false }));
       return sesion;
     } catch (err) {
       // 401 = no hay sesión (o expiró): al login. Sin conexión o con un error del servidor: se sigue con la última sesión conocida para poder vender
@@ -364,7 +379,8 @@ export async function registrarUsuario(input: {
   if (usuarios.some((u) => u.email.toLowerCase() === email)) {
     throw new Error('Ya existe un usuario con ese correo.');
   }
-  usuarios.push({ id: generarId(), email, password: input.password, nombre, rol, local_id });
+  // La clave la elige quien crea la cuenta: es temporal y la persona debe cambiarla al entrar
+  usuarios.push({ id: generarId(), email, password: input.password, nombre, rol, local_id, debe_cambiar_clave: true, creado_en: new Date().toISOString() });
   guardarUsuariosLocales(usuarios);
   return { requiereConfirmacion: false };
 }
@@ -452,12 +468,45 @@ export async function cambiarClaveUsuario(id: string, clave: string): Promise<vo
     throw new Error('No tienes permiso para cambiar la contraseña de este usuario.');
   }
   usuario.password = clave;
+  // La clave que fija otra persona es temporal; la que uno se pone a sí mismo ya es la suya
+  usuario.debe_cambiar_clave = actor?.id !== id;
   guardarUsuariosLocales(usuarios);
   if (actor?.id !== id) {
     const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
     cierres[id] = new Date().toISOString();
     localStorage.setItem(LS_CIERRES_FORZADOS, JSON.stringify(cierres));
   }
+}
+
+/**
+ * Cambia la contraseña de quien tiene la sesión, sea cual sea su rol. Pide la actual; con el servidor además cierra las demás
+ * sesiones de la cuenta y quita la marca de "clave temporal". Los mensajes de error ya vienen en español.
+ */
+export async function cambiarMiClave(actual: string, nueva: string): Promise<void> {
+  if (nueva.length < MIN_CLAVE) throw new Error(`La contraseña nueva debe tener al menos ${MIN_CLAVE} caracteres.`);
+  if (nueva === actual) throw new Error('La contraseña nueva debe ser distinta de la actual.');
+
+  if (modoServidor) {
+    await api.post('/api/cuenta/clave', { actual, nueva });
+    invalidarCacheSesion();
+    return;
+  }
+
+  const sesion = await obtenerSesionActual();
+  const usuarios = leerUsuariosLocales();
+  const usuario = usuarios.find((u) => u.id === sesion?.id);
+  if (!sesion || !usuario) throw new Error('Tu sesión expiró. Inicia sesión de nuevo.');
+  if (usuario.password !== actual) throw new Error('La contraseña actual no es correcta.');
+  usuario.password = nueva;
+  usuario.debe_cambiar_clave = false;
+  guardarUsuariosLocales(usuarios);
+  try {
+    const raw = localStorage.getItem(LS_SESION);
+    if (raw) localStorage.setItem(LS_SESION, JSON.stringify({ ...JSON.parse(raw), debe_cambiar_clave: false }));
+  } catch {
+    // sin acceso al almacenamiento: la sesión se renueva sola al entrar de nuevo
+  }
+  invalidarCacheSesion();
 }
 
 // ----------------------------------------------------------------------------
@@ -598,6 +647,10 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
     await redirigirPorBloqueo(estado.motivo);
     throw new Error('EASYSTEM_REDIRECT');
   }
+
+  // Clave temporal: antes de usar nada hay que cambiarla. La ventana del perfil (PerfilUsuario.astro) se abre sola al ver la marca;
+  // aquí se detiene la carga para que no se vea ni se pida nada de la página (el servidor además rechaza el resto de la API).
+  if (sesion.debe_cambiar_clave) throw new Error('EASYSTEM_REDIRECT');
 
   const roles = opciones?.roles;
   // El contador solo trabaja en la nómina: cualquier otra página lo lleva allí

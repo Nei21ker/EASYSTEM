@@ -105,6 +105,8 @@ export const perfiles = sqliteTable('perfiles', {
   local_id: text('local_id'),
   status: text('status', { enum: ['active', 'inactive'] }).notNull().default('active'),
   last_force_logout_at: text('last_force_logout_at'),
+  /** 1 = la clave actual es temporal (la puso otra persona): hay que cambiarla al entrar (migración 0016) */
+  debe_cambiar_clave: integer('debe_cambiar_clave').notNull().default(0),
   created_at: marca('created_at'),
 });
 

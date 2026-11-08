@@ -12,7 +12,14 @@ export interface EstadoCuenta {
   acceso: boolean;
   motivo: MotivoBloqueo;
   /** Datos del usuario (la interfaz arma la sesión con esto) */
-  usuario?: { id: string; email: string; nombre: string; rol: string; local_id: string | null; status: string };
+  usuario?: {
+    id: string; email: string; nombre: string; rol: string; local_id: string | null; status: string;
+    /** La clave actual es temporal: la interfaz obliga a cambiarla antes de seguir */
+    debe_cambiar_clave: boolean;
+    /** Cuándo empezó esta sesión (ISO) y cuándo se creó la cuenta: se muestran en el perfil */
+    sesion_iniciada_en: string;
+    creado_en: string;
+  };
   rol?: string;
   local_id?: string | null;
   local_nombre?: string;
@@ -43,7 +50,12 @@ export async function estadoCuenta(env: Entorno, request: Request): Promise<Esta
   return {
     acceso: motivo === 'ok',
     motivo,
-    usuario: { id: userId, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id, status: perfil.status },
+    usuario: {
+      id: userId, email: perfil.email, nombre: perfil.nombre, rol: perfil.rol, local_id: perfil.local_id, status: perfil.status,
+      debe_cambiar_clave: perfil.debe_cambiar_clave === 1,
+      sesion_iniciada_en: new Date(emitidaMs).toISOString(),
+      creado_en: perfil.created_at,
+    },
     rol: perfil.rol,
     local_id: perfil.local_id,
     local_nombre: local?.nombre,

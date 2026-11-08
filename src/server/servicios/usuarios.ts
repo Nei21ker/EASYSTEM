@@ -4,11 +4,11 @@
 import { crearUsuarioInterno } from '../auth';
 import { avisarCambio, sentenciasCambio } from '../cambios';
 import {
-  alcanceDe, esAdministrador, esGlobal, esSinLocal, puedeGestionarUsuario, rolesAsignables, type Rol, type Sesion,
+  alcanceDe, alcanceNomina, esAdministrador, esGlobal, esSinLocal, puedeGestionarUsuario, rolesAsignables, type Rol, type Sesion,
 } from '../authz';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
-import { hashearClave } from '../password';
+import { hashearClave, verificarClave } from '../password';
 import { ahoraISO, nuevoId } from '../util';
 
 export interface PerfilUsuario {
@@ -81,7 +81,8 @@ export async function crearUsuario(
     if (!localId) throw new ErrorApi(400, 'Elige el local al que pertenece el empleado.', 'local_requerido');
     await exigirLocalExistente(env, localId);
   }
-  const id = await crearUsuarioInterno(env, { ...datos, localId });
+  // La clave la elige quien crea la cuenta: es temporal y la persona debe cambiarla al entrar
+  const id = await crearUsuarioInterno(env, { ...datos, localId, debeCambiarClave: true });
   await avisarCambio(env.DB, ['perfiles']);
   return id;
 }
@@ -144,9 +145,60 @@ export async function cambiarClaveUsuario(env: Entorno, actor: Sesion, id: strin
   const hash = await hashearClave(clave);
   const lote = [
     env.DB.prepare("UPDATE account SET password = ?, updatedAt = ? WHERE userId = ? AND providerId = 'credential'").bind(hash, Date.now(), id),
+    // La clave que fija otra persona es temporal (hay que cambiarla al entrar); la que uno se fija a sí mismo ya es la suya
+    env.DB.prepare('UPDATE perfiles SET debe_cambiar_clave = ? WHERE id = ?').bind(id === actor.userId ? 0 : 1, id),
   ];
   // A otro usuario se le cierran las sesiones abiertas: debe entrar con la contraseña nueva
   if (id !== actor.userId) lote.push(env.DB.prepare('DELETE FROM session WHERE userId = ?').bind(id));
+  await env.DB.batch(lote);
+}
+
+// --- Cambiar la propia contraseña ---------------------------------------------------------------------------
+// Cualquier rol puede. Pide la clave actual (quien deje una sesión abierta no debe poder cambiarla) y, como adivinarla a ciegas
+// sería lo único que le quedaría a quien tenga la sesión, se cuentan los fallos: 5 seguidos bloquean 15 minutos.
+const MAX_FALLOS_CLAVE = 5;
+const VENTANA_FALLOS_CLAVE_MS = 15 * 60 * 1000;
+const claveIntentosPropia = (userId: string) => `clave-propia:${userId}`;
+
+export async function cambiarMiClave(env: Entorno, sesion: Sesion, actual: string, nueva: string): Promise<void> {
+  // Como el resto de la API, una cuenta de un local suspendido o sin vigencia recibe 403 (el contador, que no tiene alcance de
+  // negocio, se comprueba con el de la nómina, lo único que ve)
+  await (sesion.rol === 'contador' ? alcanceNomina(env, sesion) : alcanceDe(env, sesion));
+  const llave = claveIntentosPropia(sesion.userId);
+  const fila = await env.DB.prepare('SELECT count, lastRequest FROM rateLimit WHERE key = ?').bind(llave).first<{ count: number; lastRequest: number }>();
+  if (fila && fila.count >= MAX_FALLOS_CLAVE && Date.now() - fila.lastRequest < VENTANA_FALLOS_CLAVE_MS) {
+    throw new ErrorApi(429, 'Demasiados intentos fallidos. Espera unos minutos e inténtalo de nuevo.', 'demasiados_intentos');
+  }
+
+  const cuenta = await env.DB
+    .prepare("SELECT password FROM account WHERE userId = ? AND providerId = 'credential'")
+    .bind(sesion.userId)
+    .first<{ password: string | null }>();
+  // Sin cuenta se hace igual el cálculo del hash, para no variar el tiempo de respuesta
+  const correcta = cuenta?.password ? await verificarClave(actual, cuenta.password) : (await hashearClave(actual), false);
+  if (!correcta) {
+    const ahora = Date.now();
+    await env.DB
+      .prepare(
+        `INSERT INTO rateLimit (id, key, count, lastRequest) VALUES (?, ?, 1, ?)
+         ON CONFLICT (key) DO UPDATE SET count = CASE WHEN ? - lastRequest < ? THEN count + 1 ELSE 1 END, lastRequest = ?`
+      )
+      .bind(llave, llave, ahora, ahora, VENTANA_FALLOS_CLAVE_MS, ahora)
+      .run();
+    throw new ErrorApi(400, 'La contraseña actual no es correcta.', 'clave_actual_incorrecta');
+  }
+
+  if (!nueva || nueva.length < 8) throw new ErrorApi(400, 'La contraseña nueva debe tener al menos 8 caracteres.', 'clave_corta');
+  if (nueva === actual) throw new ErrorApi(400, 'La contraseña nueva debe ser distinta de la actual.', 'clave_igual');
+
+  const hash = await hashearClave(nueva);
+  const lote = [
+    env.DB.prepare("UPDATE account SET password = ?, updatedAt = ? WHERE userId = ? AND providerId = 'credential'").bind(hash, Date.now(), sesion.userId),
+    env.DB.prepare('UPDATE perfiles SET debe_cambiar_clave = 0 WHERE id = ?').bind(sesion.userId),
+    env.DB.prepare('DELETE FROM rateLimit WHERE key = ?').bind(llave),
+  ];
+  // Las demás sesiones de esta cuenta (otros equipos, o quien la tuviera abierta) se cierran; esta sigue
+  if (sesion.sesionId) lote.push(env.DB.prepare('DELETE FROM session WHERE userId = ? AND id <> ?').bind(sesion.userId, sesion.sesionId));
   await env.DB.batch(lote);
 }
 

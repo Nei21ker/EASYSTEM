@@ -54,6 +54,10 @@ export function conSesion(manejador: (contexto: Contexto) => Promise<unknown>): 
     try {
       const entorno = env as unknown as Entorno;
       const sesion = await cargarSesion(entorno, request);
+      // Clave temporal (la puso otra persona): hasta cambiarla no se atiende nada más que el cambio de clave
+      if (sesion.debeCambiarClave && new URL(request.url).pathname !== '/api/cuenta/clave') {
+        throw new ErrorApi(403, 'Debes cambiar tu contraseña temporal antes de continuar.', 'debe_cambiar_clave');
+      }
       const resultado = await manejador({ env: entorno, sesion, request, params });
       if (resultado instanceof Response) return resultado;
       return request.method === 'GET' ? await respuestaLectura(request, resultado) : Response.json(resultado ?? { ok: true });

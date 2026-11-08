@@ -354,7 +354,7 @@ describe('estadoCuenta', () => {
   });
 
   it('incluye los datos del usuario para que la interfaz arme la sesión sin otra consulta', async () => {
-    expect((await estadoCuenta(env, peticionComo(vendedor))).usuario).toEqual({ id: vendedor.id, email: vendedor.email, nombre: expect.any(String), rol: 'vendedor', local_id: accesorios, status: 'active' });
+    expect((await estadoCuenta(env, peticionComo(vendedor))).usuario).toEqual({ id: vendedor.id, email: vendedor.email, nombre: expect.any(String), rol: 'vendedor', local_id: accesorios, status: 'active', debe_cambiar_clave: false, sesion_iniciada_en: expect.any(String), creado_en: expect.any(String) });
   });
 
   it('local suspendido: sin acceso (local_suspendido)', async () => {

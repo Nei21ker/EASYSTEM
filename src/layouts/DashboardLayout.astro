@@ -4,6 +4,7 @@ import Header from '../components/layout/Header.astro';
 import TasaDelDia from '../components/layout/TasaDelDia.astro';
 import ContextoLocal from '../components/layout/ContextoLocal.astro';
 import VisorImagen from '../components/layout/VisorImagen.astro';
+import PerfilUsuario from '../components/layout/PerfilUsuario.astro';
 import AvisoNavegador from '../components/layout/AvisoNavegador.astro';
 import '../styles/global.css';
 import type { Rol } from '../lib/auth';
@@ -60,6 +61,9 @@ const { titulo, subtitulo, roles, tituloPestana } = Astro.props;
 
     <!-- Visor de fotos: al tocar la foto de un producto se amplía en el centro; tocar fuera la cierra -->
     <VisorImagen />
+
+    <!-- Perfil de quien tiene la sesión (círculo del menú lateral): datos y cambiar contraseña; se abre solo si la clave es temporal -->
+    <PerfilUsuario />
 
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';

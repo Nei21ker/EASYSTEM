@@ -43,6 +43,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
         <div>
           <label for="us-password" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Contraseña temporal</label>
           <input id="us-password" type="text" required minlength={MIN_CLAVE} class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">En su primer ingreso la persona tendrá que cambiarla por una propia.</p>
         </div>
         <div>
           <label for="us-rol" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Rol</label>
@@ -94,7 +95,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
           </div>
           <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
             La contraseña actual queda cifrada y no se puede consultar; aquí defines una nueva y puedes verla mientras la escribes. Al
-            cambiarla, el usuario debe iniciar sesión otra vez.
+            cambiar la de otra persona, debe iniciar sesión otra vez y elegir una propia en ese primer ingreso (la tuya la cambias desde tu perfil).
           </p>
         </div>
 

@@ -57,6 +57,8 @@ export interface DatosUsuarioNuevo {
   clave: string;
   rol: Rol;
   localId: string | null;
+  /** La clave la eligió otra persona (administrador o gerente): obliga a cambiarla en el primer ingreso */
+  debeCambiarClave?: boolean;
 }
 
 /**
@@ -80,8 +82,8 @@ export async function crearUsuarioInterno(env: Entorno, datos: DatosUsuarioNuevo
         .prepare("INSERT INTO account (id, accountId, providerId, userId, password, createdAt, updatedAt) VALUES (?, ?, 'credential', ?, ?, ?, ?)")
         .bind(nuevoId(), id, id, hash, ahora, ahora),
       env.DB
-        .prepare('INSERT INTO perfiles (id, email, nombre, rol, local_id, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(id, email, nombre, datos.rol, datos.localId, 'active', ahoraISO()),
+        .prepare('INSERT INTO perfiles (id, email, nombre, rol, local_id, status, created_at, debe_cambiar_clave) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+        .bind(id, email, nombre, datos.rol, datos.localId, 'active', ahoraISO(), datos.debeCambiarClave ? 1 : 0),
     ]);
   } catch (err) {
     if (err instanceof Error && /UNIQUE constraint failed: user\.email/i.test(err.message)) {

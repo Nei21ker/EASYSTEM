@@ -20,6 +20,10 @@ export interface Sesion {
   status: 'active' | 'inactive';
   /** Segundos desde 1970 en que se inició la sesión */
   emitidaEn: number;
+  /** Id de la fila de la sesión (para cerrar las demás al cambiar la clave) */
+  sesionId?: string;
+  /** La clave actual es temporal (la puso otra persona): hasta cambiarla solo funciona /api/cuenta/clave */
+  debeCambiarClave?: boolean;
 }
 
 export type Alcance = { tipo: 'todos' } | { tipo: 'locales'; ids: string[] };
@@ -41,6 +45,8 @@ interface FilaPerfil {
   local_id: string | null;
   status: 'active' | 'inactive';
   last_force_logout_at: string | null;
+  created_at: string;
+  debe_cambiar_clave: number;
 }
 
 export const ROLES: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico', 'contador'];
@@ -62,15 +68,15 @@ export async function leerSesionYPerfil(env: Entorno, request: Request) {
   const datos = await crearAuth(env, new URL(request.url).origin).api.getSession({ headers: request.headers });
   if (!datos) throw new ErrorApi(401, 'Tu sesión expiró. Inicia sesión de nuevo.', 'sin_sesion');
   const perfil = await env.DB
-    .prepare('SELECT email, nombre, rol, local_id, status, last_force_logout_at FROM perfiles WHERE id = ?')
+    .prepare('SELECT email, nombre, rol, local_id, status, last_force_logout_at, created_at, debe_cambiar_clave FROM perfiles WHERE id = ?')
     .bind(datos.user.id)
     .first<FilaPerfil>();
-  return { userId: datos.user.id, emitidaMs: new Date(datos.session.createdAt).getTime(), perfil };
+  return { userId: datos.user.id, sesionId: datos.session.id, emitidaMs: new Date(datos.session.createdAt).getTime(), perfil };
 }
 
 /** La sesión de la petición (cookie de Better-Auth + perfil). Equivale a usuario_habilitado(): 401 si no puede operar. */
 export async function cargarSesion(env: Entorno, request: Request): Promise<Sesion> {
-  const { userId, emitidaMs, perfil } = await leerSesionYPerfil(env, request);
+  const { userId, sesionId, emitidaMs, perfil } = await leerSesionYPerfil(env, request);
   if (!perfil) throw new ErrorApi(401, 'Tu cuenta no tiene un perfil asociado. Comunícate con el administrador.', 'sin_perfil');
   if (perfil.status !== 'active') {
     throw new ErrorApi(401, 'Tu cuenta está desactivada. Comunícate con el administrador de tu negocio.', 'usuario_inactivo');
@@ -86,6 +92,8 @@ export async function cargarSesion(env: Entorno, request: Request): Promise<Sesi
     localId: perfil.local_id,
     status: perfil.status,
     emitidaEn: Math.floor(emitidaMs / 1000),
+    sesionId,
+    debeCambiarClave: perfil.debe_cambiar_clave === 1,
   };
 }
 
