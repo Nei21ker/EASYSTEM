@@ -10,6 +10,7 @@
 // impresión), igual que el resto del sistema; las barras vienen de utils/codigoBarras.ts.
 import { svgCodigoBarras } from './codigoBarras';
 import { svgQr } from './qr';
+import { LOGO_ETIQUETA } from './logoEtiqueta';
 
 export type TipoCodigoEtiqueta = 'qr' | 'barras';
 
@@ -92,6 +93,21 @@ export function buscarFormatoEtiqueta(id: string | null | undefined, personaliza
   return FORMATOS_ETIQUETA.find((f) => f.id === id) ?? FORMATOS_ETIQUETA[0];
 }
 
+/**
+ * Lado (mm) del distintivo del local que va abajo, al centro, de toda etiqueta: ~23 % del alto (entre 5,5 y 10 mm). En una etiqueta
+ * demasiado baja (menos de 20 mm) no cabe sin quitarle espacio al código, así que ahí no se pone.
+ */
+export function logoMmPara(altoMm: number): number {
+  if (altoMm < 20) return 0;
+  return unDecimal(Math.min(10, Math.max(5.5, altoMm * 0.23)));
+}
+
+/** Alto (mm) que queda arriba del distintivo para el código y el texto (margen superior, hueco y margen inferior descontados). */
+export function zonaContenidoMm(altoMm: number): number {
+  const logo = logoMmPara(altoMm);
+  return unDecimal(altoMm - 1.6 - (logo > 0 ? logo + 0.6 + 0.8 : 1.6));
+}
+
 export interface EtiquetaPedida {
   codigo: string;
   nombre: string;
@@ -110,6 +126,9 @@ export function estilosEtiqueta(): string {
 .etq .etq-nombre{font-weight:700;text-align:center;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .etq.etq-fila{flex-direction:row;align-items:center;justify-content:flex-start;gap:2mm}
 .etq .etq-qr{flex:none}
+.etq .etq-cuerpo{flex:1;min-height:0;width:100%;display:flex;flex-direction:row;align-items:center;gap:2mm}
+.etq .etq-logo{flex:none;display:block;margin:.6mm auto 0;object-fit:contain}
+.etq.etq-con-logo{justify-content:space-between;padding-bottom:.8mm}
 .etq .etq-qr svg{width:100%;height:100%}
 .etq .etq-texto{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:.8mm}
 .etq-fila .etq-nombre{text-align:center;-webkit-line-clamp:3}
@@ -122,18 +141,23 @@ export function estilosEtiqueta(): string {
 export function htmlEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = TIPO_CODIGO_POR_DEFECTO): string {
   const dimensiones = `width:${formato.anchoMm}mm;height:${formato.altoMm}mm`;
   const qr = tipo === 'qr' ? svgQr(e.codigo) : null;
+  const logoMm = logoMmPara(formato.altoMm);
+  const zona = zonaContenidoMm(formato.altoMm);
+  const logo = logoMm > 0 ? `<img class="etq-logo" src="${LOGO_ETIQUETA}" alt="" style="width:${logoMm}mm;height:${logoMm}mm" />` : '';
+  const clase = logoMm > 0 ? 'etq etq-con-logo' : 'etq';
   // Debajo del nombre va escrito el código de la unidad (INF000014): es lo que dice el QR y se puede teclear si no se lee
   const codigoEscrito = `<div class="etq-codigo" style="font-size:${formato.nombrePt * 1.3}pt">${escapar(e.codigo)}</div>`;
   // Con QR: el código a la izquierda y, a su lado, el nombre y el número. Si no se puede generar un QR, se cae a las barras.
   if (qr) {
-    return `<div class="etq etq-fila" style="${dimensiones}"><div class="etq-qr" style="width:${formato.qrMm}mm;height:${formato.qrMm}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt * 1.7}pt">${escapar(e.nombre)}</div>${codigoEscrito}</div></div>`;
+    const lado = unDecimal(Math.min(formato.qrMm, zona));
+    return `<div class="${clase}" style="${dimensiones}"><div class="etq-cuerpo"><div class="etq-qr" style="width:${lado}mm;height:${lado}mm">${qr}</div><div class="etq-texto"><div class="etq-nombre" style="font-size:${formato.nombrePt * 1.7}pt">${escapar(e.nombre)}</div>${codigoEscrito}</div></div>${logo}</div>`;
   }
 
   const barras = svgCodigoBarras(e.codigo, 40);
   const cuerpo = barras
-    ? `<div style="height:${formato.barrasMm}mm">${barras.replace('<svg ', '<svg style="height:100%" ')}</div>`
+    ? `<div style="height:${unDecimal(Math.min(formato.barrasMm, zona * 0.5))}mm">${barras.replace('<svg ', '<svg style="height:100%" ')}</div>`
     : `<div class="etq-sin-barras">Código no imprimible en barras</div>`;
-  return `<div class="etq" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt * 1.5}pt">${escapar(e.nombre)}</div>${codigoEscrito}</div>`;
+  return `<div class="${clase}" style="${dimensiones}">${cuerpo}<div class="etq-nombre" style="font-size:${formato.nombrePt * 1.5}pt">${escapar(e.nombre)}</div>${codigoEscrito}${logo}</div>`;
 }
 
 /** Cantidad total de etiquetas del pedido. */

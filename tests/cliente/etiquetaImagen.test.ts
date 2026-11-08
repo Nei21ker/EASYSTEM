@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { FORMATOS_ETIQUETA } from '../../src/utils/etiquetas';
+import { FORMATOS_ETIQUETA, formatoPersonalizado, htmlEtiqueta, logoMmPara } from '../../src/utils/etiquetas';
+import { LOGO_ETIQUETA } from '../../src/utils/logoEtiqueta';
 import { ajustarNombre, nombreArchivoEtiqueta, partirEnLineas, svgEtiqueta, DPI_IMAGEN } from '../../src/utils/etiquetaImagen';
 
 const rollo50x30 = FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-50x30')!;
@@ -181,5 +182,48 @@ describe('el código de la unidad se imprime bajo el nombre', () => {
     const svg = svgEtiqueta({ codigo: 'INF000014', nombre: 'Cargador Infinix doble usb Micro-USB reforzado 30W' }, chico, 'qr');
     const codigo = textos(svg).find((l) => l.texto === 'INF000014')!;
     expect(codigo.y).toBeLessThan(mmAPx(25));
+  });
+});
+
+describe('distintivo del local en la etiqueta', () => {
+  const e = { codigo: 'INF000001', nombre: 'Forro silicona iPhone 11 Pro Max' };
+
+  it('toda etiqueta de rollo o de hoja lleva el logo abajo y al centro (QR y barras)', () => {
+    for (const formato of FORMATOS_ETIQUETA) {
+      for (const tipo of ['qr', 'barras'] as const) {
+        const svg = svgEtiqueta(e, formato, tipo);
+        const W = mmAPx(formato.anchoMm);
+        const H = mmAPx(formato.altoMm);
+        const lado = mmAPx(logoMmPara(formato.altoMm));
+        expect(svg).toContain(`<image href="${LOGO_ETIQUETA}"`);
+        const x = Number(/<image [^>]*x="(\d+)"/.exec(svg)![1]);
+        const y = Number(/<image [^>]*y="(\d+)"/.exec(svg)![1]);
+        expect(Math.abs(x + lado / 2 - W / 2)).toBeLessThanOrEqual(1); // centrado
+        expect(y).toBeGreaterThan(H / 2); // en la mitad de abajo
+        expect(y + lado).toBeLessThanOrEqual(H); // sin salirse
+      }
+    }
+  });
+
+  it('el logo no tapa el texto: el código escrito queda arriba del logo y el nombre sigue completo', () => {
+    const svg = svgEtiqueta(e, FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-40x30')!, 'qr');
+    expect(textoDe(svg)).toBe('Forro silicona iPhone 11 Pro Max INF000001');
+    const yLogo = Number(/<image [^>]*y="(\d+)"/.exec(svg)![1]);
+    const yCodigo = Number(/<text x="\d+" y="(\d+)"[^>]*>INF000001</.exec(svg)![1]);
+    expect(yCodigo).toBeLessThan(yLogo);
+  });
+
+  it('una etiqueta personalizada muy baja (menos de 20 mm) no lleva logo para no quitarle sitio al código', () => {
+    expect(logoMmPara(12)).toBe(0);
+    expect(logoMmPara(30)).toBeGreaterThanOrEqual(5.5);
+    expect(svgEtiqueta(e, formatoPersonalizado(50, 15), 'qr')).not.toContain('<image');
+    expect(svgEtiqueta(e, formatoPersonalizado(40, 30), 'qr')).toContain('<image');
+  });
+
+  it('la etiqueta HTML (vista previa e impresión directa) también lleva el logo', () => {
+    const html = htmlEtiqueta(e, FORMATOS_ETIQUETA[0], 'qr');
+    expect(html).toContain('class="etq-logo"');
+    expect(html).toContain(LOGO_ETIQUETA);
+    expect(htmlEtiqueta(e, formatoPersonalizado(50, 15), 'qr')).not.toContain('etq-logo');
   });
 });
