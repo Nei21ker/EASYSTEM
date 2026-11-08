@@ -523,6 +523,19 @@ export interface ResultadoReseteoReportes {
   simulado: boolean;
 }
 
+/** Lo que hizo (o haría, en una simulación) la eliminación de ventas elegidas. */
+export interface ResultadoEliminacionVentas {
+  ventas: number;
+  /** Folios de las ventas, de menor a mayor */
+  folios: number[];
+  devoluciones: number;
+  /** Piezas que vuelven al stock de su local */
+  piezas: number;
+  /** Ventas anteriores a los códigos por pieza: se borran, pero no hay piezas que reponer */
+  ventasSinPiezas: number;
+  simulado: boolean;
+}
+
 /** Lo que hizo (o haría, en una simulación) el reseteo de ventas: cuántas se borran y cuántas piezas vuelven al stock. */
 export interface ResultadoReseteoVentas {
   ventas: number;

@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { AutorizacionCodigo, AutorizacionPrecio, DatosPromotor, NuevaVenta, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
+import type { AutorizacionCodigo, AutorizacionPrecio, DatosPromotor, NuevaVenta, ResultadoEliminacionVentas, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
 
 /** Guarda el registro de una venta. El folio y el vendedor los pone el servidor (el vendedor sale de la sesión). */
 export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
@@ -46,6 +46,11 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
 /** Deja los reportes en cero: borra ventas, devoluciones y movimientos de compra/venta, sin tocar el stock (solo el administrador). */
 export async function resetearReportes(opciones: { simular?: boolean }): Promise<ResultadoReseteoReportes> {
   return api.post<ResultadoReseteoReportes>('/api/reportes/resetear', { simular: opciones.simular ?? false });
+}
+
+/** Elimina las ventas elegidas, devuelve sus piezas al stock y las quita de los reportes (administrador y gerente). Con `simular` solo cuenta. */
+export async function eliminarVentas(ids: string[], opciones: { simular?: boolean }): Promise<ResultadoEliminacionVentas> {
+  return api.post<ResultadoEliminacionVentas>('/api/ventas/eliminar', { ids, simular: opciones.simular ?? false });
 }
 
 /** Borra todas las ventas y devoluciones y devuelve al stock las piezas vendidas (solo el administrador). Con `simular` solo cuenta. */

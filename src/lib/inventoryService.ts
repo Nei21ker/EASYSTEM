@@ -67,6 +67,7 @@ import type {
   Local,
   MetodoPago,
   ResultadoReseteoReportes,
+  ResultadoEliminacionVentas,
   ResultadoReseteoVentas,
   ModeloTelefono,
   MovimientoInventario,
@@ -2083,6 +2084,75 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
  * Devoluciones, más nuevas primero. El administrador ve todas; un vendedor, solo las de las ventas
  * que puede ver (lo exige la base de datos).
  */
+/**
+ * Eliminar ventas elegidas (administrador y gerente): devuelve al stock las piezas que dejaron vendidas (las de la venta y las entregadas
+ * a cambio en sus devoluciones), borra las ventas con sus devoluciones y las salidas de stock que las originaron (así salen también de los
+ * reportes) y deja en Movimientos la entrada de reposición. Con `simular` solo cuenta. Necesita conexión (modo servidor).
+ */
+export async function eliminarVentas(ids: string[], opciones: { simular?: boolean } = {}): Promise<ResultadoEliminacionVentas> {
+  if (!esGlobal((await obtenerSesionActual())?.rol)) throw new Error('Solo el administrador o el gerente pueden eliminar ventas.');
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0) throw new Error('Elige al menos una venta.');
+  if (unicos.length > 100) throw new Error('Se pueden eliminar hasta 100 ventas a la vez.');
+  if (modoServidor) {
+    if (!obtenerEstadoConexion().online) throw new Error('Eliminar ventas necesita conexión a internet.');
+    return ventasDb.eliminarVentas(unicos, { simular: opciones.simular });
+  }
+
+  // Modo demo (LocalStorage): mismas reglas que el servidor
+  const db = leerDB();
+  const ventas = (db.ventas ?? []).filter((v) => unicos.includes(v.id));
+  const devoluciones = (db.devoluciones ?? []).filter((d) => ventas.some((v) => v.id === d.venta_id));
+  const origenes = [
+    ...ventas.map((v) => ({ local_id: v.local_id, fecha: v.fecha, codigos: v.items.flatMap((i) => i.unidades ?? []) })),
+    ...devoluciones.map((d) => ({ local_id: d.local_id, fecha: d.fecha, codigos: d.items_nuevos.flatMap((i) => i.unidades ?? []) })),
+  ];
+  const todos = new Set(origenes.flatMap((o) => o.codigos));
+  const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && todos.has(u.codigo));
+  const folios = ventas.map((v) => v.folio).sort((a, b) => a - b);
+  const resultado: ResultadoEliminacionVentas = {
+    ventas: ventas.length,
+    folios,
+    devoluciones: devoluciones.length,
+    piezas: vendidas.length,
+    ventasSinPiezas: ventas.filter((v) => v.items.every((i) => (i.unidades ?? []).length === 0)).length,
+    simulado: !!opciones.simular,
+  };
+  if (opciones.simular || ventas.length === 0) return resultado;
+
+  const grupos = new Map<string, { producto_id: string; local_id: string; codigos: string[] }>();
+  for (const u of vendidas) {
+    const clave = `${u.producto_id}|${u.local_id}`;
+    const grupo = grupos.get(clave) ?? { producto_id: u.producto_id, local_id: u.local_id, codigos: [] };
+    grupo.codigos.push(u.codigo);
+    grupos.set(clave, grupo);
+  }
+  const etiquetas = folios.map((f) => `#${String(f).padStart(4, '0')}`);
+  const motivo = `Eliminación de ${etiquetas.length === 1 ? 'la venta' : 'las ventas'} ${etiquetas.slice(0, 6).join(', ')}${etiquetas.length > 6 ? ` y ${etiquetas.length - 6} más` : ''} (restaura el stock)`;
+  for (const g of grupos.values()) {
+    await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.codigos.length, motivo, local_id: g.local_id, unidad_codigos: g.codigos });
+  }
+  const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de borrar los registros
+  // Las salidas de stock que originaron esas ventas: la primera de cada pieza desde la fecha de la venta
+  const salidas = new Set<string>();
+  for (const o of origenes) {
+    const desde = Date.parse(o.fecha) - 10 * 60_000;
+    const vistas = new Set<string>();
+    for (const m of [...despues.movimientos].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+      if (m.tipo !== 'SALIDA' || m.local_id !== o.local_id || Date.parse(m.fecha) < desde) continue;
+      const nuevos = (m.unidad_codigos ?? []).filter((c) => o.codigos.includes(c) && !vistas.has(c));
+      if (nuevos.length === 0) continue;
+      for (const c of nuevos) vistas.add(c);
+      salidas.add(m.id);
+    }
+  }
+  despues.movimientos = despues.movimientos.filter((m) => !salidas.has(m.id));
+  despues.devoluciones = (despues.devoluciones ?? []).filter((d) => !ventas.some((v) => v.id === d.venta_id));
+  despues.ventas = (despues.ventas ?? []).filter((v) => !unicos.includes(v.id));
+  guardarDB(despues);
+  return resultado;
+}
+
 /**
  * Resetear las ventas (solo el administrador): borra TODAS las ventas y devoluciones y devuelve al stock las piezas que quedaron
  * vendidas (las de las ventas y las entregadas a cambio; las ya devueltas no se cuentan dos veces). Sirve para limpiar las ventas de

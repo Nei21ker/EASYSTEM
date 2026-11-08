@@ -34,6 +34,8 @@ const claseBotonSecundario =
         </div>
         <div class="flex flex-wrap items-center gap-2">
           <button id="hv-exportar" type="button" class={`${claseBotonSecundario} hidden`}>Exportar CSV</button>
+          <!-- Administrador y gerente: elegir ventas y eliminarlas (sus piezas vuelven al stock) -->
+          <button id="hv-seleccionar" type="button" class={`${claseBotonSecundario} hidden`}>Seleccionar</button>
           <!-- Solo el administrador: borra todas las ventas y devuelve las piezas al stock -->
           <button id="hv-resetear" type="button" class="hidden rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10">Resetear ventas</button>
         </div>
@@ -136,7 +138,43 @@ const claseBotonSecundario =
       </div>
     </div>
   </div>
+
+  <!-- Barra de la selección: fuera del contenedor con separación vertical para que quede pegada al borde de la pantalla -->
+  <div id="hv-barra-seleccion" class="fixed inset-x-0 bottom-0 z-30 mb-0 hidden border-t border-slate-200 bg-white/95 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-[0_-4px_16px_rgba(0,0,0,0.12)] backdrop-blur lg:left-64 print:hidden dark:border-slate-700 dark:bg-slate-900/95">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <p id="hv-sel-conteo" class="text-sm font-semibold text-slate-900 dark:text-white">Ninguna seleccionada</p>
+      <div class="flex flex-wrap items-center gap-2">
+        <button id="hv-sel-pagina" type="button" class={claseBotonSecundario}>Elegir las de esta página</button>
+        <button id="hv-sel-salir" type="button" class={claseBotonSecundario}>Cancelar</button>
+        <button id="hv-sel-eliminar" type="button" disabled class="rounded-lg bg-red-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40">Eliminar seleccionadas</button>
+      </div>
+    </div>
+  </div>
+
   <DevolucionVenta />
+
+  <dialog id="hv-del-dialogo" class="m-auto w-[min(94vw,30rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div class="space-y-4 px-5 py-5 text-sm">
+      <h2 class="text-base font-semibold text-red-600 dark:text-red-400">Eliminar ventas</h2>
+      <p id="hv-del-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-slate-700 dark:bg-slate-800 dark:text-slate-200">Calculando…</p>
+      <ul class="list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
+        <li>Se borran esas ventas con sus devoluciones y <strong>dejan de contar en los reportes</strong>.</li>
+        <li>Las piezas que dejaron vendidas <strong>vuelven al stock</strong> de su local, con los mismos códigos.</li>
+        <li>En Movimientos queda una entrada "Eliminación de venta" como rastro.</li>
+        <li><strong>No se puede deshacer.</strong></li>
+      </ul>
+      <p id="hv-del-aviso" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+      <div>
+        <label for="hv-del-confirmar" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Para confirmar, escribe <strong>ELIMINAR</strong></label>
+        <input id="hv-del-confirmar" type="text" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-red-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+      </div>
+      <p id="hv-del-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-300"></p>
+      <div class="flex justify-end gap-2">
+        <button id="hv-del-cancelar" type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Cancelar</button>
+        <button id="hv-del-ejecutar" type="button" disabled class="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50">Eliminar</button>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="hv-reset-dialogo" class="m-auto w-[min(94vw,30rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div class="space-y-4 px-5 py-5 text-sm">
@@ -163,7 +201,7 @@ const claseBotonSecundario =
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
-  import { esGerencia, obtenerSesionActual } from '../lib/auth';
+  import { esGerencia, esGlobal, obtenerSesionActual } from '../lib/auth';
   import { formatearBolivares, formatearFecha, formatearMoneda } from '../utils/format';
   import { descargarCSV } from '../utils/csv';
   import { animarLista, contarHasta } from '../utils/animaciones';
@@ -187,6 +225,10 @@ import { alCambiarDatos } from '../lib/realtime';
   let nombresLocales = new Map<string, string>();
   let nombreSesion = '';
   let pagina = 1;
+  // Selección de ventas para eliminar (administrador y gerente); se guarda por id, así sobrevive a filtros, páginas y refrescos
+  let puedeEliminar = false;
+  let modoSeleccion = false;
+  const seleccion = new Set<string>();
   let primeraVez = true;
   let cargaId = 0; // descarta respuestas viejas si se cambia de rango rápido
 
@@ -291,8 +333,13 @@ import { alCambiarDatos } from '../lib/realtime';
       : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">Pendiente de sincronizar</span>';
 
     return `
-      <tr class="align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
+      <tr class="align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40 ${modoSeleccion && seleccion.has(v.id) ? 'bg-red-50/70 dark:bg-red-500/10' : ''}">
         <td class="px-5 py-3">
+          ${
+            modoSeleccion && v.folio
+              ? `<label class="mb-1.5 flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300"><input type="checkbox" data-sel-venta="${escaparHtml(v.id)}" ${seleccion.has(v.id) ? 'checked' : ''} class="h-5 w-5 rounded border-slate-300 text-red-600 focus:ring-red-500" aria-label="Elegir la venta ${escaparHtml(String(v.folio))}" /> Elegir</label>`
+              : ''
+          }
           <p class="font-semibold text-slate-900 dark:text-white">${folio}</p>
           <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(v.fecha))}</p>
           ${verLocal ? `<p class="mt-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300">${escaparHtml(nombresLocales.get(v.local_id) ?? 'Local')}</p>` : ''}
@@ -387,6 +434,32 @@ import { alCambiarDatos } from '../lib/realtime';
     $<HTMLButtonElement>('hv-siguiente').disabled = pagina >= totalPaginas;
 
     pintarResumen(lista);
+    pintarBarraSeleccion();
+  }
+
+  // --- Selección para eliminar ------------------------------------------------------
+  const ventasDeLaPagina = (): VentaRegistrada[] => {
+    const lista = filtrar();
+    const inicio = (Math.min(Math.max(1, pagina), Math.max(1, Math.ceil(lista.length / POR_PAGINA))) - 1) * POR_PAGINA;
+    return lista.slice(inicio, inicio + POR_PAGINA).filter((v) => v.folio); // las pendientes de sincronizar no se pueden elegir
+  };
+
+  function pintarBarraSeleccion() {
+    $('hv-barra-seleccion').classList.toggle('hidden', !modoSeleccion);
+    $('hv-seleccionar').textContent = modoSeleccion ? 'Salir de la selección' : 'Seleccionar';
+    // Espacio al final para que la barra no tape las últimas filas
+    document.body.classList.toggle('pb-24', modoSeleccion);
+    const n = seleccion.size;
+    $('hv-sel-conteo').textContent = n === 0 ? 'Ninguna seleccionada' : n === 1 ? '1 seleccionada' : `${n} seleccionadas`;
+    $<HTMLButtonElement>('hv-sel-eliminar').disabled = n === 0;
+    const pag = ventasDeLaPagina();
+    $('hv-sel-pagina').textContent = pag.length > 0 && pag.every((v) => seleccion.has(v.id)) ? 'Quitar las de esta página' : 'Elegir las de esta página';
+  }
+
+  function alternarModoSeleccion(activo: boolean) {
+    modoSeleccion = activo && puedeEliminar;
+    if (!modoSeleccion) seleccion.clear();
+    pintar();
   }
 
   // --- Carga por rango de fechas -----------------------------------------------------
@@ -425,6 +498,7 @@ import { alCambiarDatos } from '../lib/realtime';
       $('hv-error').classList.remove('hidden');
     }
     $('hv-cargando').classList.add('hidden');
+    for (const id of [...seleccion]) if (!ventas.some((v) => v.id === id)) seleccion.delete(id); // otra persona la eliminó o salió del rango
     // Una actualización en vivo no devuelve a la página 1 a quien esté revisando la lista
     if (!enVivo) pagina = 1;
     if (primeraVez) {
@@ -473,6 +547,89 @@ import { alCambiarDatos } from '../lib/realtime';
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-devolver-venta]')?.dataset.devolverVenta;
     const venta = ventas.find((v) => v.id === id);
     if (venta) window.dispatchEvent(new CustomEvent('easystem:abrir-devolucion', { detail: { venta } }));
+  });
+
+  filas.addEventListener('change', (e) => {
+    const casilla = (e.target as HTMLElement).closest<HTMLInputElement>('[data-sel-venta]');
+    if (!casilla?.dataset.selVenta) return;
+    if (casilla.checked) seleccion.add(casilla.dataset.selVenta);
+    else seleccion.delete(casilla.dataset.selVenta);
+    casilla.closest('tr')?.classList.toggle('bg-red-50/70', casilla.checked);
+    casilla.closest('tr')?.classList.toggle('dark:bg-red-500/10', casilla.checked);
+    pintarBarraSeleccion();
+  });
+  $('hv-seleccionar').addEventListener('click', () => alternarModoSeleccion(!modoSeleccion));
+  $('hv-sel-salir').addEventListener('click', () => alternarModoSeleccion(false));
+  $('hv-sel-pagina').addEventListener('click', () => {
+    const pag = ventasDeLaPagina();
+    const todas = pag.length > 0 && pag.every((v) => seleccion.has(v.id));
+    for (const v of pag) {
+      if (todas) seleccion.delete(v.id);
+      else seleccion.add(v.id);
+    }
+    pintar();
+  });
+
+  const dialogoEliminar = $<HTMLDialogElement>('hv-del-dialogo');
+  const confirmarEliminar = $<HTMLInputElement>('hv-del-confirmar');
+  const ejecutarEliminar = $<HTMLButtonElement>('hv-del-ejecutar');
+  const errorEliminar = $('hv-del-error');
+  const avisoEliminar = $('hv-del-aviso');
+  const pluralDe = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+  const textoFolios = (folios: number[]) => {
+    const f = folios.slice(0, 8).map((n) => `#${String(n).padStart(4, '0')}`).join(', ');
+    return folios.length > 8 ? `${f} y ${folios.length - 8} más` : f;
+  };
+
+  $('hv-sel-eliminar').addEventListener('click', async () => {
+    if (seleccion.size === 0) return;
+    confirmarEliminar.value = '';
+    ejecutarEliminar.disabled = true;
+    errorEliminar.classList.add('hidden');
+    avisoEliminar.classList.add('hidden');
+    $('hv-del-resumen').textContent = 'Calculando…';
+    dialogoEliminar.showModal();
+    try {
+      const r = await inventoryService.eliminarVentas([...seleccion], { simular: true });
+      $('hv-del-resumen').textContent =
+        r.ventas === 0
+          ? 'Esas ventas ya no existen.'
+          : `Se eliminarán ${pluralDe(r.ventas, 'venta', 'ventas')} (${textoFolios(r.folios)})${r.devoluciones ? ` y ${pluralDe(r.devoluciones, 'devolución', 'devoluciones')}` : ''}, y volverán al stock ${pluralDe(r.piezas, 'pieza', 'piezas')}.`;
+      if (r.ventasSinPiezas > 0) {
+        avisoEliminar.textContent = `${pluralDe(r.ventasSinPiezas, 'venta es anterior', 'ventas son anteriores')} a los códigos por pieza: se borra${r.ventasSinPiezas === 1 ? '' : 'n'}, pero su stock no se repone (hay que ajustarlo con un ingreso).`;
+        avisoEliminar.classList.remove('hidden');
+      }
+    } catch (err) {
+      $('hv-del-resumen').textContent = '';
+      errorEliminar.textContent = err instanceof Error ? err.message : 'No se pudo calcular la eliminación.';
+      errorEliminar.classList.remove('hidden');
+    }
+  });
+  confirmarEliminar.addEventListener('input', () => {
+    ejecutarEliminar.disabled = confirmarEliminar.value.trim().toUpperCase() !== 'ELIMINAR';
+  });
+  $('hv-del-cancelar').addEventListener('click', () => dialogoEliminar.close());
+  ejecutarEliminar.addEventListener('click', async () => {
+    if (confirmarEliminar.value.trim().toUpperCase() !== 'ELIMINAR' || seleccion.size === 0) return;
+    ejecutarEliminar.disabled = true;
+    ejecutarEliminar.textContent = 'Eliminando…';
+    errorEliminar.classList.add('hidden');
+    try {
+      const r = await inventoryService.eliminarVentas([...seleccion]);
+      dialogoEliminar.close();
+      alternarModoSeleccion(false);
+      const aviso = $('hv-aviso-exito');
+      aviso.textContent = `Listo: se eliminaron ${pluralDe(r.ventas, 'venta', 'ventas')} (${textoFolios(r.folios)}); volvieron al stock ${pluralDe(r.piezas, 'pieza', 'piezas')}.`;
+      aviso.classList.remove('hidden');
+      setTimeout(() => aviso.classList.add('hidden'), 10000);
+      void cargar();
+    } catch (err) {
+      errorEliminar.textContent = `${err instanceof Error ? err.message : 'No se pudo eliminar.'} Puedes volver a intentarlo: solo repone lo que falte.`;
+      errorEliminar.classList.remove('hidden');
+      ejecutarEliminar.disabled = false;
+    } finally {
+      ejecutarEliminar.textContent = 'Eliminar';
+    }
   });
 
   // Se registró una devolución o cambio: recarga y avisa
@@ -566,6 +723,8 @@ import { alCambiarDatos } from '../lib/realtime';
   obtenerSesionActual().then((sesion) => {
     esAdministrador = esGerencia(sesion?.rol);
     $('hv-resetear').classList.toggle('hidden', sesion?.rol !== 'administrador');
+    puedeEliminar = esGlobal(sesion?.rol);
+    $('hv-seleccionar').classList.toggle('hidden', !puedeEliminar);
     nombreSesion = sesion?.nombre ?? '';
     void inventoryService.obtenerContextoLocal().then((contexto) => {
       verLocal = contexto?.alcance === 'todos';

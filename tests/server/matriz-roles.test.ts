@@ -94,6 +94,7 @@ function casos(): Caso[] {
     { archivo: 'ventas/autorizar-precio.ts', metodo: 'POST', url: '/api/ventas/autorizar-precio', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, lineas: [{ producto_id: p, precio: 0 }] }, permitidos: NEGOCIO },
     { archivo: 'ventas/autorizar-codigo.ts', metodo: 'POST', url: '/api/ventas/autorizar-codigo', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, producto_id: 'no-existe' }, permitidos: NEGOCIO },
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
+    { archivo: 'ventas/eliminar.ts', metodo: 'POST', url: '/api/ventas/eliminar', cuerpo: { ids: ['no-existe'], simular: true }, permitidos: ['administrador', 'gerente'] },
     { archivo: 'reportes/resetear.ts', metodo: 'POST', url: '/api/reportes/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
     { archivo: 'ordenes/index.ts', metodo: 'POST', url: '/api/ordenes', cuerpo: orden, permitidos: NEGOCIO },
     { archivo: 'devoluciones/index.ts', metodo: 'GET', url: '/api/devoluciones', permitidos: NEGOCIO },

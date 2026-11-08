@@ -3,7 +3,7 @@
 //   · ver ventas: administrador, gerente y encargado las de sus locales; vendedor y técnico solo las suyas;
 //   · registrar una devolución: administrador, gerente y encargado del local de la venta; nadie edita ni borra.
 // El folio sale de la tabla `contadores` DENTRO del mismo lote que inserta la fila (no se repite ni con ventas simultáneas).
-import { alcanceDe, condicionAlcance, esAdministrador, esGerencia, localAccesible, type Sesion } from '../authz';
+import { alcanceDe, condicionAlcance, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
@@ -301,6 +301,52 @@ const MOTIVO_RESETEO = 'Reseteo de ventas (restaura el stock)';
 const PIEZAS_POR_TRAMO = 500; // tope de unidades por lote de movimientos
 const MOVIMIENTOS_POR_TRAMO = 50;
 
+interface GrupoPiezas {
+  productoId: string;
+  localId: string;
+  codigos: string[];
+}
+
+/** De estos códigos, las piezas que siguen VENDIDAS (las devueltas ya están en el stock), agrupadas por producto y local. */
+async function piezasVendidas(db: D1Database, codigos: Iterable<string>): Promise<{ grupos: Map<string, GrupoPiezas>; piezas: number }> {
+  const grupos = new Map<string, GrupoPiezas>();
+  let piezas = 0;
+  for (const tramo of tramos([...new Set(codigos)])) {
+    const filas = await db
+      .prepare(`SELECT codigo, producto_id, local_id FROM unidades_producto WHERE estado = 'VENDIDA' AND codigo IN (${marcas(tramo.length)})`)
+      .bind(...tramo)
+      .all<{ codigo: string; producto_id: string; local_id: string }>();
+    for (const f of filas.results) {
+      const clave = `${f.producto_id}|${f.local_id}`;
+      const grupo = grupos.get(clave) ?? { productoId: f.producto_id, localId: f.local_id, codigos: [] };
+      grupo.codigos.push(f.codigo);
+      grupos.set(clave, grupo);
+      piezas++;
+    }
+  }
+  return { grupos, piezas };
+}
+
+/** Repone esas piezas al stock: una ENTRADA por producto y local que reactiva las MISMAS piezas, por lotes que respetan los topes. */
+async function reponerPiezas(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoPiezas>, motivo: string): Promise<void> {
+  let lote: EntradaMovimiento[] = [];
+  let enLote = 0;
+  const enviar = async () => {
+    if (lote.length > 0) await registrarMovimientos(env, sesion, lote);
+    lote = [];
+    enLote = 0;
+  };
+  for (const grupo of grupos.values()) {
+    for (let i = 0; i < grupo.codigos.length; i += PIEZAS_POR_TRAMO) {
+      const trozo = grupo.codigos.slice(i, i + PIEZAS_POR_TRAMO);
+      if (enLote + trozo.length > PIEZAS_POR_TRAMO || lote.length >= MOVIMIENTOS_POR_TRAMO) await enviar();
+      lote.push({ productoId: grupo.productoId, tipo: 'ENTRADA', cantidad: trozo.length, localId: grupo.localId, motivo, unidadCodigos: trozo });
+      enLote += trozo.length;
+    }
+  }
+  await enviar();
+}
+
 /**
  * Borra TODAS las ventas y devoluciones y devuelve al stock las piezas que esas ventas dejaron vendidas (las de la venta y las
  * entregadas a cambio, menos las que ya se devolvieron). Es para limpiar las ventas de prueba: solo el administrador.
@@ -325,42 +371,13 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   for (const d of devoluciones) juntar(d.items_nuevos);
 
   // De ellas, las que siguen vendidas (las devueltas ya están en el stock)
-  const porGrupo = new Map<string, { productoId: string; localId: string; codigos: string[] }>();
-  let piezas = 0;
-  for (const tramo of tramos([...codigos])) {
-    const filas = await db
-      .prepare(`SELECT codigo, producto_id, local_id FROM unidades_producto WHERE estado = 'VENDIDA' AND codigo IN (${marcas(tramo.length)})`)
-      .bind(...tramo)
-      .all<{ codigo: string; producto_id: string; local_id: string }>();
-    for (const f of filas.results) {
-      const clave = `${f.producto_id}|${f.local_id}`;
-      const grupo = porGrupo.get(clave) ?? { productoId: f.producto_id, localId: f.local_id, codigos: [] };
-      grupo.codigos.push(f.codigo);
-      porGrupo.set(clave, grupo);
-      piezas++;
-    }
-  }
+  const { grupos: porGrupo, piezas } = await piezasVendidas(db, codigos);
 
   const resultado: ResultadoReseteo = { ventas: ventas.length, devoluciones: devoluciones.length, piezas, simulado: !!opciones.simular };
   if (opciones.simular || (ventas.length === 0 && devoluciones.length === 0 && piezas === 0)) return resultado;
 
   // 1. Reponer el stock, por lotes que respetan los topes de movimientos y de piezas
-  let lote: EntradaMovimiento[] = [];
-  let enLote = 0;
-  const enviar = async () => {
-    if (lote.length > 0) await registrarMovimientos(env, sesion, lote);
-    lote = [];
-    enLote = 0;
-  };
-  for (const grupo of porGrupo.values()) {
-    for (let i = 0; i < grupo.codigos.length; i += PIEZAS_POR_TRAMO) {
-      const trozo = grupo.codigos.slice(i, i + PIEZAS_POR_TRAMO);
-      if (enLote + trozo.length > PIEZAS_POR_TRAMO || lote.length >= MOVIMIENTOS_POR_TRAMO) await enviar();
-      lote.push({ productoId: grupo.productoId, tipo: 'ENTRADA', cantidad: trozo.length, localId: grupo.localId, motivo: MOTIVO_RESETEO, unidadCodigos: trozo });
-      enLote += trozo.length;
-    }
-  }
-  await enviar();
+  await reponerPiezas(env, sesion, porGrupo, MOTIVO_RESETEO);
 
   // 2. Borrar los registros (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas
   const locales = new Set([...ventas.map((v) => v.local_id), ...devoluciones.map((d) => d.local_id)]);
@@ -369,6 +386,123 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
     db.prepare('DELETE FROM ventas'),
     ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones'], localId)),
   ]);
+  return resultado;
+}
+
+// --- Eliminar ventas elegidas (administrador y gerente) ----------------------------------------------------------
+
+export interface ResultadoEliminacionVentas {
+  ventas: number;
+  /** Folios de las ventas que se eliminan (o eliminarían), de menor a mayor */
+  folios: number[];
+  devoluciones: number;
+  /** Piezas que esas ventas dejaron vendidas y vuelven al stock de su local */
+  piezas: number;
+  /** Ventas hechas antes de que cada pieza tuviera código: se borran, pero no hay piezas que reponer */
+  ventasSinPiezas: number;
+  simulado: boolean;
+}
+
+export const MAX_VENTAS_A_ELIMINAR = 100;
+const MARGEN_FECHA_SALIDA_MS = 10 * 60_000; // la salida de stock se registra un poco antes (o, sin conexión, después) que la fecha de la venta
+
+/**
+ * Elimina las ventas elegidas (error al cobrar, venta de prueba…): administrador y gerente, de los locales a los que acceden.
+ *
+ * Lo hace por una sola vía, igual que "Resetear ventas" pero solo con esas ventas:
+ *  1. las piezas que esas ventas dejaron vendidas (las de la venta y las entregadas a cambio en sus devoluciones) vuelven al stock con
+ *     una ENTRADA "Eliminación de venta" que reactiva LAS MISMAS piezas (no se crean códigos nuevos; lo ya devuelto no se cuenta dos veces);
+ *  2. se borran las ventas con sus devoluciones y las SALIDAS de stock que las originaron, para que desaparezcan también de los
+ *     reportes (que cuentan los ingresos y costos por esas salidas); la ENTRADA de reposición queda en Movimientos como rastro;
+ *  3. se borra el comprobante del pago móvil (el archivo), que es un dato personal que ya no respalda nada.
+ * El stock se repone primero y los registros se borran al final: si algo falla a medias, volver a ejecutarlo termina el trabajo.
+ * Con `simular` solo cuenta. Los ids desconocidos se ignoran. No se puede deshacer: respalda antes de usarlo masivamente.
+ */
+export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[], opciones: { simular?: boolean } = {}): Promise<ResultadoEliminacionVentas> {
+  if (!esGlobal(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador o el gerente pueden eliminar ventas.', 'sin_permiso');
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0) throw new ErrorApi(400, 'Elige al menos una venta.', 'datos_invalidos');
+  if (unicos.length > MAX_VENTAS_A_ELIMINAR) throw new ErrorApi(400, `Se pueden eliminar hasta ${MAX_VENTAS_A_ELIMINAR} ventas a la vez.`, 'lote_grande');
+  await alcanceDe(env, sesion); // con todos los locales bloqueados (suscripción) el gerente no puede nada, ni siquiera con ids que no existen
+  const db = env.DB;
+
+  const ventas: { id: string; folio: number; fecha: string; local_id: string; items: string; comprobante_path: string | null }[] = [];
+  for (const tramo of tramos(unicos)) {
+    const filas = await db
+      .prepare(`SELECT id, folio, fecha, local_id, items, comprobante_path FROM ventas WHERE id IN (${marcas(tramo.length)})`)
+      .bind(...tramo)
+      .all<(typeof ventas)[number]>();
+    ventas.push(...filas.results);
+  }
+  // Primero el permiso (un gerente solo toca los locales de su alcance) y recién después se actúa
+  for (const localId of new Set(ventas.map((v) => v.local_id))) {
+    if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso al local de una de esas ventas.', 'sin_permiso');
+  }
+  const idsVentas = ventas.map((v) => v.id);
+  const devoluciones: { id: string; fecha: string; local_id: string; items_nuevos: string }[] = [];
+  for (const tramo of tramos(idsVentas)) {
+    const filas = await db
+      .prepare(`SELECT id, fecha, local_id, items_nuevos FROM devoluciones WHERE venta_id IN (${marcas(tramo.length)})`)
+      .bind(...tramo)
+      .all<(typeof devoluciones)[number]>();
+    devoluciones.push(...filas.results);
+  }
+
+  // Piezas de cada venta y de lo entregado a cambio en sus devoluciones, con el momento desde el que buscar sus salidas de stock
+  const codigosDe = (texto: string): string[] => (JSON.parse(texto) as { unidades?: string[] }[]).flatMap((i) => i.unidades ?? []);
+  const origenes: { localId: string; fecha: string; codigos: string[] }[] = [
+    ...ventas.map((v) => ({ localId: v.local_id, fecha: v.fecha, codigos: codigosDe(v.items) })),
+    ...devoluciones.map((d) => ({ localId: d.local_id, fecha: d.fecha, codigos: codigosDe(d.items_nuevos) })),
+  ];
+  const todos = new Set(origenes.flatMap((o) => o.codigos));
+  const { grupos, piezas } = await piezasVendidas(db, todos);
+
+  const resultado: ResultadoEliminacionVentas = {
+    ventas: ventas.length,
+    folios: ventas.map((v) => v.folio).sort((a, b) => a - b),
+    devoluciones: devoluciones.length,
+    piezas,
+    ventasSinPiezas: ventas.filter((v) => codigosDe(v.items).length === 0).length,
+    simulado: !!opciones.simular,
+  };
+  if (opciones.simular || ventas.length === 0) return resultado;
+
+  // 1. Reponer el stock
+  const folios = resultado.folios.map((f) => `#${String(f).padStart(4, '0')}`);
+  const motivo = `Eliminación de ${folios.length === 1 ? 'la venta' : 'las ventas'} ${folios.slice(0, 6).join(', ')}${folios.length > 6 ? ` y ${folios.length - 6} más` : ''} (restaura el stock)`;
+  await reponerPiezas(env, sesion, grupos, motivo);
+
+  // 2. Las salidas de stock de esas ventas: para cada pieza, la primera salida de su local desde la fecha de la venta
+  const salidas = new Set<string>();
+  for (const origen of origenes) {
+    if (origen.codigos.length === 0) continue;
+    const desde = new Date(Date.parse(origen.fecha) - MARGEN_FECHA_SALIDA_MS).toISOString();
+    const primera = new Map<string, string>(); // código → id del movimiento más antiguo que lo sacó
+    for (const tramo of tramos(origen.codigos)) {
+      const filas = await db
+        .prepare(
+          `SELECT m.id AS id, j.value AS codigo FROM movimientos_inventario m, json_each(m.unidad_codigos) j
+           WHERE m.tipo = 'SALIDA' AND m.local_id = ? AND m.fecha >= ? AND j.value IN (${marcas(tramo.length)}) ORDER BY m.fecha ASC`
+        )
+        .bind(origen.localId, desde, ...tramo)
+        .all<{ id: string; codigo: string }>();
+      for (const f of filas.results) if (!primera.has(f.codigo)) primera.set(f.codigo, f.id);
+    }
+    for (const id of primera.values()) salidas.add(id);
+  }
+
+  // 3. Borrar los registros (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas
+  const locales = new Set([...ventas.map((v) => v.local_id), ...devoluciones.map((d) => d.local_id)]);
+  await db.batch([
+    ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM devoluciones WHERE venta_id IN (${marcas(t.length)})`).bind(...t)),
+    ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM ventas WHERE id IN (${marcas(t.length)})`).bind(...t)),
+    ...tramos([...salidas]).map((t) => db.prepare(`DELETE FROM movimientos_inventario WHERE tipo = 'SALIDA' AND id IN (${marcas(t.length)})`).bind(...t)),
+    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario'], localId)),
+  ]);
+
+  // El archivo del comprobante ya no respalda ninguna venta (si falla, queda un archivo suelto sin consecuencias)
+  const rutas = ventas.map((v) => v.comprobante_path).filter((r): r is string => !!r && !r.startsWith('data:'));
+  if (rutas.length > 0) await env.FOTOS_PRIVADAS.delete(rutas).catch(() => undefined);
   return resultado;
 }
 
