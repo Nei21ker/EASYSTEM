@@ -13,7 +13,13 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 >
   <!-- Solo administrador y gerente (oculto por defecto; el script lo muestra) -->
   <section id="dash-resumen" hidden class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-    <StatCard id="stat-total-productos" etiqueta="Total de productos" valor="—" icono="productos" />
+    <StatCard
+      id="stat-total-productos"
+      etiqueta="Total de productos"
+      valor="—"
+      icono="productos"
+      secundario={{ id: 'stat-total-unidades', valor: '—', leyendaPrincipal: 'productos distintos', leyenda: 'unidades en stock' }}
+    />
     <StatCard id="stat-valor-inventario" etiqueta="Valor del inventario" valor="—" tendencia=" " icono="valor" />
     <StatCard
       id="stat-stock-bajo"
@@ -80,7 +86,10 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
         el.textContent = formato(valor);
       }
     };
-    mostrar('stat-total-productos', productos.length);
+    // "Total de productos" cuenta ítems del catálogo (169 = 169 productos distintos); al lado van las unidades físicas en stock
+    const miles = (n: number) => Math.round(n).toLocaleString('es-VE');
+    mostrar('stat-total-productos', productos.length, miles);
+    mostrar('stat-total-unidades', productos.reduce((total, p) => total + Math.max(0, p.stock_actual), 0), miles);
     mostrar('stat-valor-inventario', valorInventario, formatearMoneda, 1100);
     mostrar('stat-stock-bajo', stockBajo.length);
 

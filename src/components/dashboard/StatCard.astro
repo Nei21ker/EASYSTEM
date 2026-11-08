@@ -6,9 +6,11 @@ interface Props {
   tendenciaPositiva?: boolean;
   icono?: 'productos' | 'stock-bajo' | 'valor' | 'movimientos';
   id?: string;
+  /** Segunda cifra al lado de la principal (p. ej. unidades junto a productos). `leyenda` rotula cada cifra. */
+  secundario?: { id: string; valor: string; leyenda: string; leyendaPrincipal: string };
 }
 
-const { etiqueta, valor, tendencia, tendenciaPositiva = true, icono = 'productos', id } = Astro.props;
+const { etiqueta, valor, tendencia, tendenciaPositiva = true, icono = 'productos', id, secundario } = Astro.props;
 
 const iconos: Record<string, string> = {
   productos: 'M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4',
@@ -22,7 +24,20 @@ const iconos: Record<string, string> = {
   <div class="flex items-start justify-between">
     <div>
       <p class="text-sm font-medium text-slate-500 dark:text-slate-400">{etiqueta}</p>
-      <p id={id} class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{valor}</p>
+      {secundario ? (
+        <div class="mt-2 flex items-end gap-4">
+          <div>
+            <p id={id} class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{valor}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">{secundario.leyendaPrincipal}</p>
+          </div>
+          <div class="border-l border-slate-200 pl-4 dark:border-slate-700">
+            <p id={secundario.id} class="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{secundario.valor}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">{secundario.leyenda}</p>
+          </div>
+        </div>
+      ) : (
+        <p id={id} class="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">{valor}</p>
+      )}
     </div>
     <div class="bg-marca rounded-lg p-2 text-white shadow-sm transition-transform duration-300 group-hover:scale-110 group-hover:-rotate-6">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
