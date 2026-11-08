@@ -319,6 +319,19 @@ import { alCambiarDatos } from '../lib/realtime';
     window.open(URL.createObjectURL(new Blob([bytes], { type: tipo })), '_blank', 'noopener');
   }
 
+
+  /**
+   * Texto del precio autorizado de una venta SIN promotor: "Precio con descuento" (ventas anteriores o solo líneas más baratas) o, si la
+   * tienda cambió el precio con "Precio del local" (precio_tipo = local), si fue más caro, con descuento o ambos.
+   */
+  function textoPrecioDelLocal(v: VentaRegistrada): string {
+    const local = v.items.filter((i) => i.precio_tipo === 'local' && i.precio_lista !== undefined);
+    if (local.length === 0) return 'Precio con descuento';
+    const masCaro = local.some((i) => i.precio_unitario > (i.precio_lista ?? 0));
+    const masBarato = local.some((i) => i.precio_unitario < (i.precio_lista ?? 0));
+    return masCaro && masBarato ? 'Precio del local (más caro y con descuento)' : masCaro ? 'Precio del local (más caro)' : 'Precio del local (con descuento)';
+  }
+
   function filaHtml(v: VentaRegistrada): string {
     const unidades = v.items.reduce((suma, i) => suma + i.cantidad, 0);
     const pagos = pagosDeVenta(v);
@@ -375,7 +388,7 @@ import { alCambiarDatos } from '../lib/realtime';
               v.promotor_nombre || (v.comision ?? 0) > 0
                 ? `<span class="mt-1 block text-[11px] font-medium text-amber-700 dark:text-amber-400">Promotor: ${escaparHtml(v.promotor_nombre || 'sin datos')} · comisión ${formatearMoneda(v.comision ?? 0)}</span>${v.promotor_cedula || v.promotor_telefono ? `<span class="block text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml([v.promotor_cedula, v.promotor_telefono].filter(Boolean).join(' · '))}</span>` : ''}${v.precio_autorizado_nombre ? `<span class="block text-[11px] text-slate-400 dark:text-slate-500">Precio autorizado por ${escaparHtml(v.precio_autorizado_nombre)}</span>` : ''}`
                 : v.precio_autorizado_nombre
-                  ? `<span class="mt-1 block text-[11px] font-medium text-emerald-700 dark:text-emerald-400">Precio con descuento · autorizó ${escaparHtml(v.precio_autorizado_nombre)}</span>`
+                  ? `<span class="mt-1 block text-[11px] font-medium ${textoPrecioDelLocal(v) === 'Precio con descuento' ? 'text-emerald-700 dark:text-emerald-400' : 'text-sky-700 dark:text-sky-400'}">${textoPrecioDelLocal(v)} · autorizó ${escaparHtml(v.precio_autorizado_nombre)}</span>`
                   : ''
             }
           </span>

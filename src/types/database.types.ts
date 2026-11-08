@@ -204,6 +204,8 @@ export interface VentaItem {
   precio_unitario: number;
   /** Precio de catálogo al momento de la venta; solo se guarda en las ventas de promotor, donde `precio_unitario` (lo que pagó el cliente) es mayor */
   precio_lista?: number;
+  /** Quién fijó el precio distinto al del catálogo: "local" = la tienda cambió el precio (sin promotor ni comisión). Ausente = precio de promotor o descuento anteriores. Lo pone el servidor */
+  precio_tipo?: 'local';
   /** Códigos de las unidades concretas que salieron (migración 0033); las ventas anteriores no lo traen */
   unidades?: string[];
   /** Solo al enviar la venta: cuáles de esas unidades se eligieron a mano (la etiqueta no se leía) y la autorización firmada de un supervisor */
@@ -290,9 +292,17 @@ export interface Venta extends NuevaVenta {
   precio_autorizado_nombre?: string | null;
 }
 
+/**
+ * Para qué se cambia el precio: "promotor" = el cliente paga más y la diferencia es la comisión de un promotor; "local" = la tienda
+ * misma cambia el precio (más caro o con descuento), sin promotor ni comisión.
+ */
+export type ModoPrecio = 'promotor' | 'local';
+
 /** Respuesta de pedir la autorización de precio (supervisor + contraseña) */
 export interface AutorizacionPrecio {
   token: string;
+  /** Modo con el que se autorizó (lo firma el servidor) */
+  modo: ModoPrecio;
   /** Milisegundos desde 1970 en que deja de valer */
   vence_en: number;
   autorizado_por: string;

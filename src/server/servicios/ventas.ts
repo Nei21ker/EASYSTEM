@@ -112,7 +112,7 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   const items = datos.items.map((item): VentaItem => {
     const lista = precios.get(item.producto_id);
     if (lista === undefined) return item;
-    const { precio_lista: _ignorado, ...limpio } = item;
+    const { precio_lista: _ignorado, precio_tipo: _tipo, ...limpio } = item;
     if (Math.abs(item.precio_unitario - lista) <= 0.005) return limpio;
     // Más caro (precio de promotor) o más barato (descuento) que el catálogo: exige la autorización firmada de un supervisor
     desviadas.push([item.producto_id, item.precio_unitario]);
@@ -122,6 +122,10 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   if (desviadas.length === 0) return { items, comision: 0, promotor: null };
 
   const promotor = await verificarPrecioPromotor(env, sesion, datos, desviadas, hayDescuento);
+  if (promotor.modo === 'local') {
+    // Precio del local: la tienda cambió el precio (más caro o con descuento) por su cuenta: sin promotor y sin comisión
+    return { items: items.map((i) => (i.precio_lista === undefined ? i : { ...i, precio_tipo: 'local' as const })), comision: 0, promotor };
+  }
   // La comisión es solo de las líneas más caras que el catálogo; un descuento no la reduce
   const comision = redondear2(items.reduce((s, i) => s + (i.precio_lista === undefined || i.precio_unitario <= i.precio_lista ? 0 : i.cantidad * (i.precio_unitario - i.precio_lista)), 0));
   return { items, comision, promotor };

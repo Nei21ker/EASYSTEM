@@ -86,6 +86,8 @@ export const esquemaAutorizarPrecio = z.object({
   clave: z.string().min(1).max(200),
   local_id: z.string(),
   promotor: esquemaPromotor.nullable().optional(),
+  /** "promotor" (por defecto, clientes anteriores) o "local": la tienda cambia el precio, sin promotor ni comisión */
+  modo: z.enum(['promotor', 'local']).optional(),
   lineas: z.array(z.object({ producto_id: z.string(), precio: z.number() })).min(1).max(100),
 });
 

@@ -52,6 +52,7 @@ import type {
   AutorizacionCodigo,
   AutorizacionPrecio,
   DatosPromotor,
+  ModoPrecio,
   ClienteVenta,
   Compatibilidad,
   ContadoCuadre,
@@ -1708,19 +1709,20 @@ export const comisionDePromotor = (items: VentaItem[]): number =>
   Math.round(items.reduce((s, i) => s + (i.precio_lista !== undefined && i.precio_unitario > i.precio_lista ? i.cantidad * (i.precio_unitario - i.precio_lista) : 0), 0) * 100) / 100;
 
 // Modo demo: las autorizaciones viven en memoria (no hay servidor que las firme); se pierden al recargar la página
-const autorizacionesDemo = new Map<string, { promotor_clave: string; supervisor_id: string; supervisor_nombre: string; vence_en: number; lineas: Map<string, number> }>();
+const autorizacionesDemo = new Map<string, { modo: ModoPrecio; promotor_clave: string; supervisor_id: string; supervisor_nombre: string; vence_en: number; lineas: Map<string, number> }>();
 const VIDA_AUTORIZACION_DEMO_MS = 20 * 60_000;
 
 /**
  * Un encargado (de este local), gerente o administrador autoriza vender a precios mayores al del catálogo tecleando SU correo y
  * contraseña. `lineas` = los productos con su nuevo precio. Devuelve la autorización que se manda con la venta (dura 20 minutos).
  */
-export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor?: DatosPromotor | null; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
+export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor?: DatosPromotor | null; modo?: ModoPrecio; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarPrecio({ ...pedido, local_id });
 
   const db = leerDB();
-  const datosPromotor = normalizarPromotor(pedido.promotor);
+  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : 'promotor';
+  const datosPromotor = normalizarPromotor(modo === 'local' ? null : pedido.promotor);
   if (!datosPromotor.ok) throw new Error(datosPromotor.mensaje);
   const promotor = datosPromotor.promotor;
   if (pedido.lineas.length === 0) throw new Error('No hay precios que autorizar.');
@@ -1737,13 +1739,14 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave: stri
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-${generarId()}`;
   autorizacionesDemo.set(token, {
+    modo,
     promotor_clave: promotor.clave,
     supervisor_id: supervisor.id,
     supervisor_nombre: supervisor.nombre,
     vence_en,
     lineas: new Map(pedido.lineas.map((l) => [l.producto_id, l.precio])),
   });
-  return { token, vence_en, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
+  return { token, modo, vence_en, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
 }
 
 // Modo demo: autorizaciones de selección manual de código, en memoria
@@ -1778,7 +1781,8 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     if (tienePrecioDePromotor(registro.items)) {
       const aut = autorizacion_precio ? autorizacionesDemo.get(autorizacion_precio) : undefined;
       const desviadas = registro.items.filter((i) => i.precio_lista !== undefined && Math.abs(i.precio_unitario - i.precio_lista) > 0.005);
-      const promotorVenta = normalizarPromotor(registro.promotor);
+      // En modo local no hay promotor: lo que se haya enviado se ignora
+      const promotorVenta = normalizarPromotor(aut?.modo === 'local' ? null : registro.promotor);
       if (!promotorVenta.ok) throw new Error(promotorVenta.mensaje);
       if (!aut || aut.vence_en < Date.now() || aut.promotor_clave !== promotorVenta.promotor.clave || desviadas.some((i) => Math.abs((aut.lineas.get(i.producto_id) ?? -1) - i.precio_unitario) > 0.005)) {
         throw new Error('El precio no está autorizado o la autorización venció. Vuelve a pedirla.');
@@ -1788,14 +1792,16 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
         promotor_nombre: promotorVenta.promotor.nombre,
         promotor_cedula: promotorVenta.promotor.cedula,
         promotor_telefono: promotorVenta.promotor.telefono,
-        comision: comisionDePromotor(registro.items),
+        comision: aut.modo === 'local' ? 0 : comisionDePromotor(registro.items),
         precio_autorizado_por: aut.supervisor_id,
         precio_autorizado_nombre: aut.supervisor_nombre,
       };
     }
     // Códigos elegidos a mano: se guardan marcados y con quién los autorizó (nunca la autorización en sí), como hace el servidor
+    const modoLocal = !!autorizacion_precio && autorizacionesDemo.get(autorizacion_precio)?.modo === 'local';
     base.items = base.items.map((item) => {
-      const { codigos_manuales, autorizacion_codigo, ...limpio } = item;
+      const { codigos_manuales, autorizacion_codigo, precio_tipo: _tipo, ...sinTipo } = item;
+      const limpio: VentaItem = modoLocal && sinTipo.precio_lista !== undefined ? { ...sinTipo, precio_tipo: 'local' } : sinTipo;
       const aut = autorizacion_codigo ? codigosManualesDemo.get(autorizacion_codigo) : undefined;
       if (!codigos_manuales?.length || !aut) return limpio;
       return { ...limpio, seleccion_manual: { codigos: codigos_manuales, autorizado_por: aut.supervisor_id, autorizado_nombre: aut.supervisor_nombre } };

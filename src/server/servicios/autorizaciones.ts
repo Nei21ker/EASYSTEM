@@ -12,7 +12,7 @@ import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { hashearClave, verificarClave } from '../password';
 import { redondear2 } from '../util';
-import type { AutorizacionPrecio, DatosPromotor } from '../../types/database.types';
+import type { AutorizacionPrecio, DatosPromotor, ModoPrecio } from '../../types/database.types';
 import { normalizarPromotor, type PromotorNormalizado } from '../../utils/promotor';
 
 export const VIDA_AUTORIZACION_MS = 20 * 60_000;
@@ -35,6 +35,8 @@ export interface CargaAutorizacion {
   pn: string;
   /** [producto_id, precio autorizado] */
   ln: [string, number][];
+  /** Modo: "local" = la tienda cambia el precio (sin promotor ni comisión); ausente o "promotor" = precio de promotor */
+  m?: ModoPrecio;
   /** Vence (ms desde 1970) */
   exp: number;
 }
@@ -283,6 +285,8 @@ export interface PedidoAutorizacion {
   clave: string;
   local_id: string;
   promotor?: DatosPromotor | null;
+  /** Por defecto "promotor". Con "local" no hay promotor ni comisión (cualquier dato de promotor enviado se ignora) */
+  modo?: ModoPrecio;
   lineas: { producto_id: string; precio: number }[];
 }
 
@@ -290,7 +294,8 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
   if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
   // Primero lo que se pide (no cuenta como intento fallido): el promotor y los precios
-  const promotor = promotorValido(pedido.promotor);
+  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : 'promotor';
+  const promotor = promotorValido(modo === 'local' ? null : pedido.promotor);
   if (!Array.isArray(pedido.lineas) || pedido.lineas.length === 0) throw new ErrorApi(400, 'No hay precios que autorizar.', 'datos_invalidos');
   const vistos = new Set<string>();
   for (const l of pedido.lineas) {
@@ -323,13 +328,16 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     p: promotor.clave,
     pn: promotor.nombre ?? '',
     ln: pedido.lineas.map((l) => [l.producto_id, redondear2(l.precio)]),
+    ...(modo === 'local' ? { m: 'local' as const } : {}),
     exp: vence,
   });
-  return { token, vence_en: vence, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
+  return { token, modo, vence_en: vence, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
 }
 
 // --- Usar la autorización al registrar la venta --------------------------------------------------------------
 export interface PrecioPromotorVerificado {
+  /** Con qué modo se autorizó: en "local" no hay promotor ni comisión */
+  modo: ModoPrecio;
   promotor_nombre: string | null;
   promotor_cedula: string | null;
   promotor_telefono: string | null;
@@ -353,8 +361,6 @@ export async function verificarPrecioPromotor(
 ): Promise<PrecioPromotorVerificado> {
   const token = (datos.autorizacion_precio ?? '').trim();
   if (!token) throw sinAutorizacion();
-  const promotor = promotorValido(datos.promotor);
-
   const r = await verificarAutorizacion(env, token);
   if (!r.ok) {
     throw r.motivo === 'vencida'
@@ -362,6 +368,9 @@ export async function verificarPrecioPromotor(
       : sinAutorizacion('La autorización no es válida. Vuelve a pedirla.');
   }
   const c = r.carga;
+  const modo: ModoPrecio = c.m === 'local' ? 'local' : 'promotor';
+  // En modo local no hay promotor: lo que haya enviado el cliente se ignora (la autorización se firmó sin promotor)
+  const promotor = promotorValido(modo === 'local' ? null : datos.promotor);
   if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== promotor.clave) {
     throw sinAutorizacion('Esa autorización es de otra venta, vendedor o promotor. Vuelve a pedirla.');
   }
@@ -373,5 +382,5 @@ export async function verificarPrecioPromotor(
     }
   }
   if (!(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
-  return { promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, autorizado_por: c.a, autorizado_nombre: c.an };
+  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, autorizado_por: c.a, autorizado_nombre: c.an };
 }

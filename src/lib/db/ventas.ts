@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { AutorizacionCodigo, AutorizacionPrecio, DatosPromotor, NuevaVenta, ResultadoEliminacionVentas, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
+import type { AutorizacionCodigo, AutorizacionPrecio, DatosPromotor, ModoPrecio, NuevaVenta, ResultadoEliminacionVentas, ResultadoReseteoReportes, ResultadoReseteoVentas, Venta } from '../../types/database.types';
 
 /** Guarda el registro de una venta. El folio y el vendedor los pone el servidor (el vendedor sale de la sesión). */
 export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
@@ -12,6 +12,7 @@ export async function autorizarPrecio(pedido: {
   clave: string;
   local_id: string;
   promotor?: DatosPromotor | null;
+  modo?: ModoPrecio;
   lineas: { producto_id: string; precio: number }[];
 }): Promise<AutorizacionPrecio> {
   return api.post<AutorizacionPrecio>('/api/ventas/autorizar-precio', pedido);

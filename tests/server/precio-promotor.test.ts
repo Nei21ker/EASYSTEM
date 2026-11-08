@@ -336,3 +336,72 @@ describe('descuento: precio menor al del catálogo', () => {
     expect(v.precio_autorizado_nombre).toBe('Ada Admin');
   });
 });
+
+describe('precio del local (modo "local"): la tienda cambia el precio, sin promotor ni comisión', () => {
+  const ventaLocal = (token: string, precio: number, extra: Partial<NuevaVenta> = {}): NuevaVenta =>
+    venta({
+      promotor: null,
+      autorizacion_precio: token,
+      total: precio,
+      pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: precio, monto_bs: null }],
+      items: [{ producto_id: PRODUCTO, nombre: 'Control A/C Samsung', codigo_barras: '2000000000015', cantidad: 1, precio_unitario: precio }],
+      ...extra,
+    });
+  const pedidoLocal = (supervisor: UsuarioDePrueba, precio: number, extra: Record<string, unknown> = {}) =>
+    pedido(supervisor, { modo: 'local', promotor: null, lineas: [{ producto_id: PRODUCTO, precio }], ...extra });
+
+  it('más caro: lo autoriza el encargado del local, un gerente o un administrador; la respuesta dice el modo', async () => {
+    for (const supervisor of [encargadoAcc, gerente, admin]) {
+      const r = await autorizarPrecio(env, sV, pedidoLocal(supervisor, 15));
+      expect(r.modo).toBe('local');
+      expect(r.promotor).toBe('');
+    }
+    // sin indicar modo (clientes anteriores) sigue siendo precio de promotor
+    expect((await autorizarPrecio(env, sV, pedido(encargadoAcc))).modo).toBe('promotor');
+  });
+
+  it('con descuento: solo gerente o administrador; el encargado recibe el mismo 403 y cuenta como intento fallido', async () => {
+    for (const supervisor of [gerente, admin]) expect((await autorizarPrecio(env, sV, pedidoLocal(supervisor, 9))).modo).toBe('local');
+    await rechazo(autorizarPrecio(env, sV, pedidoLocal(encargadoAcc, 9)), 403, /gerente o un administrador/i);
+  });
+
+  it('un precio más caro del local se guarda sin comisión, sin promotor y marcado como precio del local, con quién autorizó', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedidoLocal(encargadoAcc, 15));
+    const v = await guardarVenta(env, sV, ventaLocal(token, 15));
+    expect(v.total).toBe(15);
+    expect(v.comision).toBe(0);
+    expect(v.promotor_nombre).toBeNull();
+    expect(v.promotor_cedula).toBeNull();
+    expect(v.precio_autorizado_nombre).toBe('Ema Encargada');
+    expect(v.items[0]).toMatchObject({ precio_unitario: 15, precio_lista: 12, precio_tipo: 'local' });
+  });
+
+  it('aunque el cliente mande datos de promotor, en el modo local se ignoran y no hay comisión', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedidoLocal(gerente, 15, { promotor: PROMOTOR }));
+    const v = await guardarVenta(env, sV, ventaLocal(token, 15, { promotor: PROMOTOR }));
+    expect(v.comision).toBe(0);
+    expect(v.promotor_nombre).toBeNull();
+    expect(v.promotor_telefono).toBeNull();
+  });
+
+  it('con descuento del local se guarda marcado como local y sin comisión', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedidoLocal(gerente, 9));
+    const v = await guardarVenta(env, sV, ventaLocal(token, 9));
+    expect(v.comision).toBe(0);
+    expect(v.items[0]).toMatchObject({ precio_unitario: 9, precio_lista: 12, precio_tipo: 'local' });
+  });
+
+  it('el cliente no puede marcar por su cuenta una línea como "local" para evitar la comisión: sale marcada solo lo que dice la autorización', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedido(encargadoAcc)); // precio de promotor
+    const v = await guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: token, items: [{ producto_id: PRODUCTO, nombre: 'Control A/C Samsung', codigo_barras: '2000000000015', cantidad: 1, precio_unitario: 15, precio_tipo: 'local' }] }));
+    expect(v.comision).toBe(3);
+    expect(v.items[0].precio_tipo).toBeUndefined();
+  });
+
+  it('una autorización de precio del local no sirve para otro precio ni para otro vendedor', async () => {
+    const { token } = await autorizarPrecio(env, sV, pedidoLocal(gerente, 15));
+    await rechazo(guardarVenta(env, sV, ventaLocal(token, 14)), 400, /autoriz/i);
+    await rechazo(guardarVenta(env, sV2, ventaLocal(token, 15)), 400, /autoriz/i);
+    expect(await listarVentas(env, sA, {})).toHaveLength(0);
+  });
+});
