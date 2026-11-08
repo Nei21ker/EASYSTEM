@@ -3,8 +3,7 @@
 // Un iPhone no deja que una página web hable directamente con una impresora Bluetooth (Safari no tiene Web Bluetooth), así
 // que el camino que funciona es: el sistema dibuja cada etiqueta como imagen del tamaño exacto del rollo y la entrega a la
 // app de la impresora (WePrint, etc.) con el menú "Compartir" del teléfono. La app hace la conexión Bluetooth y la impresión.
-import { buscarTipoCodigo, logoMmPara, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
-import { LOGO_ETIQUETA } from './logoEtiqueta';
+import { buscarTipoCodigo, TEXTO_BAJO_QR, type EtiquetaPedida, type FormatoEtiqueta, type TipoCodigoEtiqueta } from './etiquetas';
 import { svgCodigoBarras } from './codigoBarras';
 import { svgQr } from './qr';
 
@@ -100,10 +99,9 @@ export function ajustarNombre(nombre: string, anchoPx: number, altoPx: number, t
 }
 
 /**
- * SVG de UNA etiqueta (fondo blanco, tamaño exacto del formato a `DPI_IMAGEN`). Con QR: el código a la izquierda y el NOMBRE del
- * producto, grande y centrado, en el resto del ancho; con barras: barras arriba y el nombre grande y centrado debajo. Debajo del nombre va escrito el código de la
- * unidad (INF000014), el mismo que dice el QR. Abajo, al centro, va el distintivo del local (si la etiqueta mide al menos 20 mm de alto).
- * Si no se puede dibujar el código, deja un aviso.
+ * SVG de UNA etiqueta (fondo blanco, tamaño exacto del formato a `DPI_IMAGEN`). Con QR, dos mitades: a la izquierda el código QR y debajo la palabra
+ * "EGC"; a la derecha el NOMBRE del producto, grande y centrado, y debajo su número; con barras: barras arriba y el nombre grande y centrado debajo. Debajo del nombre va escrito el código de la
+ * unidad (INF000014), el mismo que dice el QR. Si no se puede dibujar el código, deja un aviso.
  */
 export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, formato: FormatoEtiqueta, tipo: TipoCodigoEtiqueta = 'qr'): string {
   const W = pixeles(formato.anchoMm);
@@ -115,13 +113,6 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
   const tamMax = Math.round(tamBase * 2.2);
   const fuente = 'font-family="Arial, Helvetica, sans-serif"';
   const contenido: string[] = [];
-
-  // El distintivo del local va abajo, al centro; el código y el texto se reparten en la zona que queda arriba
-  const logoMm = logoMmPara(formato.altoMm);
-  const logoPx = pixeles(logoMm);
-  const logoY = H - pixeles(0.8) - logoPx;
-  const zonaTop = margen;
-  const zonaH = logoMm > 0 ? logoY - pixeles(0.6) - zonaTop : H - margen * 2;
 
   const texto = (lineas: string[], tam: number, centroX: number, primeraY: number) =>
     lineas.map((linea, i) => `<text x="${centroX}" y="${Math.round(primeraY + i * tam * 1.15)}" font-size="${tam}" font-weight="700" text-anchor="middle" ${fuente}>${escapar(linea)}</text>`);
@@ -137,25 +128,33 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
   const qr = buscarTipoCodigo(tipo) === 'qr' ? svgQr(e.codigo) : null;
   if (qr) {
     // El QR un poco más chico que el del formato: así el nombre tiene más ancho y se imprime más grande (un QR de ~19 mm se lee bien)
-    const lado = Math.min(Math.round(pixeles(formato.qrMm) * 0.85), zonaH);
-    const y = Math.round(zonaTop + (zonaH - lado) / 2);
+    // Mitad izquierda: el QR y debajo la palabra EGC (centrada bajo el QR). El QR cede lo justo para que quepan los dos.
+    const tamBajo = Math.round(tamBase * 1.5);
+    const altoBajo = Math.round(tamBajo * 1.1);
+    const hueco = pixeles(0.6);
+    const lado = Math.min(Math.round(pixeles(formato.qrMm) * 0.85), H - margen * 2 - altoBajo - hueco);
+    const bloque = lado + hueco + altoBajo;
+    const y = Math.round((H - bloque) / 2);
     contenido.push(qr.replace('<svg ', `<svg x="${margen}" y="${y}" width="${lado}" height="${lado}" `));
+    contenido.push(
+      `<text x="${Math.round(margen + lado / 2)}" y="${Math.round(y + lado + hueco + tamBajo * 0.85)}" font-size="${tamBajo}" font-weight="700" letter-spacing="${Math.round(tamBajo * 0.08)}" text-anchor="middle" ${fuente}>${TEXTO_BAJO_QR}</text>`
+    );
     const x = margen + lado + pixeles(1.5);
     const ancho = W - x - margen;
     const centroX = Math.round(x + ancho / 2);
     const codigo = codigoEscrito(ancho);
-    const { tam, lineas } = ajustarNombre(e.nombre, ancho, zonaH - codigo.alto, tamMin, tamMax, 4);
+    const { tam, lineas } = ajustarNombre(e.nombre, ancho, H - margen * 2 - codigo.alto, tamMin, tamMax, 4);
     const altoNombre = lineas.length * tam * 1.15;
-    const arriba = zonaTop + (zonaH - (altoNombre + codigo.alto)) / 2;
+    const arriba = (H - (altoNombre + codigo.alto)) / 2;
     contenido.push(...texto(lineas, tam, centroX, arriba + tam * 0.85));
     contenido.push(lineaCodigo(codigo.tam, centroX, arriba + altoNombre + codigo.tam * 1.05));
   } else {
     const barras = svgCodigoBarras(e.codigo, 40);
     if (barras) {
-      const alto = Math.min(pixeles(formato.barrasMm), Math.round(zonaH * 0.5));
+      const alto = pixeles(formato.barrasMm);
       contenido.push(barras.replace('<svg ', `<svg x="${margen}" y="${margen}" width="${W - margen * 2}" height="${alto}" `));
       const inicio = margen + alto + pixeles(1);
-      const disponible = zonaTop + zonaH - inicio;
+      const disponible = H - inicio - margen;
       const codigo = codigoEscrito(W - margen * 2);
       const { tam, lineas } = ajustarNombre(e.nombre, W - margen * 2, disponible - codigo.alto, tamMin, tamMax, 2);
       const altoNombre = lineas.length * tam * 1.15;
@@ -166,8 +165,6 @@ export function svgEtiqueta(e: Pick<EtiquetaPedida, 'codigo' | 'nombre'>, format
       contenido.push(`<text x="${W / 2}" y="${H / 2}" font-size="${tamBase}" font-weight="700" text-anchor="middle" ${fuente}>Código no imprimible</text>`);
     }
   }
-
-  if (logoMm > 0) contenido.push(`<image href="${LOGO_ETIQUETA}" x="${Math.round((W - logoPx) / 2)}" y="${logoY}" width="${logoPx}" height="${logoPx}"/>`);
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>${contenido.join('')}</svg>`;
 }

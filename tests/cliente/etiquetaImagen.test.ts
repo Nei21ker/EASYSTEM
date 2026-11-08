@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FORMATOS_ETIQUETA, formatoPersonalizado, htmlEtiqueta, logoMmPara } from '../../src/utils/etiquetas';
-import { LOGO_ETIQUETA } from '../../src/utils/logoEtiqueta';
+import { FORMATOS_ETIQUETA, htmlEtiqueta, TEXTO_BAJO_QR } from '../../src/utils/etiquetas';
 import { ajustarNombre, nombreArchivoEtiqueta, partirEnLineas, svgEtiqueta, DPI_IMAGEN } from '../../src/utils/etiquetaImagen';
 
 const rollo50x30 = FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-50x30')!;
@@ -41,7 +40,7 @@ describe('svgEtiqueta', () => {
     const e = { codigo: 'INF000001', nombre: 'Cargador Tecno doble usb' };
     const conQr = svgEtiqueta(e, rollo50x30, 'qr');
     expect(conQr).not.toContain('>N.º');
-    expect(textoDe(conQr)).toBe('Cargador Tecno doble usb INF000001');
+    expect(textoDe(conQr)).toBe('EGC Cargador Tecno doble usb INF000001'); // EGC va bajo el QR (mitad izquierda, se dibuja primero)
     expect(conQr).toContain('<svg x='); // el QR va incrustado
     const conBarras = svgEtiqueta(e, rollo50x30, 'barras');
     expect(conBarras).not.toContain('>N.º');
@@ -94,8 +93,8 @@ describe('nombre grande y centrado', () => {
   it('con QR el nombre queda dentro de la etiqueta, a la derecha del código', () => {
     const svg = svgEtiqueta({ codigo: '2100000000012', nombre: 'Cargador Honor sencillo Tipo C' }, rollo50x30, 'qr');
     const W = mmAPx(50);
-    for (const m of svg.matchAll(/<text x="([\d.]+)"/g)) {
-      expect(Number(m[1])).toBeGreaterThan(mmAPx(22)); // pasado el QR
+    for (const m of svg.matchAll(/<text x="([\d.]+)"[^>]*>(?!EGC)/g)) {
+      expect(Number(m[1])).toBeGreaterThan(mmAPx(22)); // pasado el QR (el "EGC" va bajo el QR, a la izquierda)
       expect(Number(m[1])).toBeLessThan(W);
     }
   });
@@ -169,7 +168,7 @@ describe('el código de la unidad se imprime bajo el nombre', () => {
     for (const tipo of ['qr', 'barras'] as const) {
       const lineas = textos(svgEtiqueta(e, rollo50x30, tipo));
       const codigo = lineas.find((l) => l.texto === 'INF000014')!;
-      const nombre = lineas.filter((l) => l.texto !== 'INF000014');
+      const nombre = lineas.filter((l) => l.texto !== 'INF000014' && l.texto !== 'EGC'); // el EGC va bajo el QR, no bajo el nombre
       expect(codigo).toBeDefined();
       expect(nombre.length).toBeGreaterThan(0);
       for (const l of nombre) expect(codigo.y).toBeGreaterThan(l.y);
@@ -185,45 +184,33 @@ describe('el código de la unidad se imprime bajo el nombre', () => {
   });
 });
 
-describe('distintivo del local en la etiqueta', () => {
+describe('etiqueta con QR dividida en dos mitades: izquierda QR + "EGC", derecha nombre + número', () => {
   const e = { codigo: 'INF000001', nombre: 'Forro silicona iPhone 11 Pro Max' };
 
-  it('toda etiqueta de rollo o de hoja lleva el logo abajo y al centro (QR y barras)', () => {
+  it('"EGC" va debajo del QR y centrado con él, y el nombre y el número quedan a la derecha de los dos', () => {
+    expect(TEXTO_BAJO_QR).toBe('EGC');
     for (const formato of FORMATOS_ETIQUETA) {
-      for (const tipo of ['qr', 'barras'] as const) {
-        const svg = svgEtiqueta(e, formato, tipo);
-        const W = mmAPx(formato.anchoMm);
-        const H = mmAPx(formato.altoMm);
-        const lado = mmAPx(logoMmPara(formato.altoMm));
-        expect(svg).toContain(`<image href="${LOGO_ETIQUETA}"`);
-        const x = Number(/<image [^>]*x="(\d+)"/.exec(svg)![1]);
-        const y = Number(/<image [^>]*y="(\d+)"/.exec(svg)![1]);
-        expect(Math.abs(x + lado / 2 - W / 2)).toBeLessThanOrEqual(1); // centrado
-        expect(y).toBeGreaterThan(H / 2); // en la mitad de abajo
-        expect(y + lado).toBeLessThanOrEqual(H); // sin salirse
-      }
+      const svg = svgEtiqueta(e, formato, 'qr');
+      const qr = /<svg x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"/.exec(svg)!;
+      const [x, y, lado] = [Number(qr[1]), Number(qr[2]), Number(qr[3])];
+      const egc = /<text x="(\d+)" y="(\d+)"[^>]*>EGC</.exec(svg)!;
+      expect(Math.abs(Number(egc[1]) - (x + lado / 2))).toBeLessThanOrEqual(1); // centrado bajo el QR
+      expect(Number(egc[2])).toBeGreaterThan(y + lado); // debajo del QR
+      expect(Number(egc[2])).toBeLessThanOrEqual(mmAPx(formato.altoMm)); // sin salirse de la etiqueta
+      // el nombre y el número están a la derecha del QR
+      for (const m of svg.matchAll(/<text x="(\d+)"[^>]*>(?!EGC)([^<]+)</g)) expect(Number(m[1])).toBeGreaterThan(x + lado);
     }
   });
 
-  it('el logo no tapa el texto: el código escrito queda arriba del logo y el nombre sigue completo', () => {
-    const svg = svgEtiqueta(e, FORMATOS_ETIQUETA.find((f) => f.id === 'rollo-40x30')!, 'qr');
-    expect(textoDe(svg)).toBe('Forro silicona iPhone 11 Pro Max INF000001');
-    const yLogo = Number(/<image [^>]*y="(\d+)"/.exec(svg)![1]);
-    const yCodigo = Number(/<text x="\d+" y="(\d+)"[^>]*>INF000001</.exec(svg)![1]);
-    expect(yCodigo).toBeLessThan(yLogo);
+  it('ya no lleva logo (ni imagen incrustada) y las etiquetas con barras no llevan EGC', () => {
+    expect(svgEtiqueta(e, rollo50x30, 'qr')).not.toContain('<image');
+    expect(textoDe(svgEtiqueta(e, rollo50x30, 'barras'))).not.toContain('EGC');
   });
 
-  it('una etiqueta personalizada muy baja (menos de 20 mm) no lleva logo para no quitarle sitio al código', () => {
-    expect(logoMmPara(12)).toBe(0);
-    expect(logoMmPara(30)).toBeGreaterThanOrEqual(5.5);
-    expect(svgEtiqueta(e, formatoPersonalizado(50, 15), 'qr')).not.toContain('<image');
-    expect(svgEtiqueta(e, formatoPersonalizado(40, 30), 'qr')).toContain('<image');
-  });
-
-  it('la etiqueta HTML (vista previa e impresión directa) también lleva el logo', () => {
-    const html = htmlEtiqueta(e, FORMATOS_ETIQUETA[0], 'qr');
-    expect(html).toContain('class="etq-logo"');
-    expect(html).toContain(LOGO_ETIQUETA);
-    expect(htmlEtiqueta(e, formatoPersonalizado(50, 15), 'qr')).not.toContain('etq-logo');
+  it('la etiqueta HTML (vista previa e impresión directa) tiene la misma división: QR con EGC debajo, y a la derecha el nombre y el número', () => {
+    const html = htmlEtiqueta(e, rollo50x30, 'qr');
+    expect(html).toMatch(/class="etq-izq"><div class="etq-qr"[^>]*>.*<\/svg><\/div><div class="etq-bajo-qr"[^>]*>EGC<\/div><\/div><div class="etq-texto">/s);
+    expect(html).not.toContain('<img');
+    expect(htmlEtiqueta(e, rollo50x30, 'barras')).not.toContain('EGC');
   });
 });
