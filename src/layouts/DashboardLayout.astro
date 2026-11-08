@@ -63,6 +63,10 @@ const { titulo, subtitulo, roles, tituloPestana } = Astro.props;
 
     <script>
       import { protegerPagina, type Rol } from '../lib/auth';
+      import { iniciarTecladoDialogos } from '../utils/tecladoDialogos';
+
+      // Teclado en pantalla del celular dentro de las ventanas (<dialog>): ver utils/tecladoDialogos.ts
+      iniciarTecladoDialogos();
 
       // Service worker (public/sw.js): archivos estáticos desde la caché y páginas con copia para abrir sin conexión.
       // Solo en producción: en desarrollo (HMR) estorbaría.
