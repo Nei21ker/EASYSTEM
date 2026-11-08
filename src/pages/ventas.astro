@@ -222,7 +222,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   <dialog
     id="pos-confirmar"
     aria-labelledby="pos-confirmar-titulo"
-    class="anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+    class="group anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
   >
     <form id="pos-confirmar-form" class="flex max-h-[92dvh] flex-col" novalidate>
       <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
@@ -240,7 +240,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <ol id="pos-pasos" class="flex gap-1.5" aria-label="Pasos de la venta"></ol>
 
         <div>
-          <ul id="pos-confirmar-lineas" class="hidden max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+          <ul id="pos-confirmar-lineas" class="hidden group-data-[teclado=true]:hidden max-h-32 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
           <div class="mt-3 flex items-center justify-between text-base font-semibold">
             <span>Total a cobrar</span>
             <button id="pos-confirmar-total-btn" type="button" title="Modificar el precio" aria-label="Modificar el precio de la venta" class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -mr-1.5 decoration-dotted underline-offset-4 hover:bg-slate-100 hover:underline dark:hover:bg-slate-800">
@@ -248,8 +248,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
               <span id="pos-confirmar-total"></span>
             </button>
           </div>
-          <p id="pos-confirmar-total-bs" class="text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
-          <p id="pos-confirmar-precio-nota" class="text-right text-[11px] text-slate-400 dark:text-slate-500">Toca el total para modificar el precio</p>
+          <p id="pos-confirmar-total-bs" class="group-data-[teclado=true]:hidden text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
+          <p id="pos-confirmar-precio-nota" class="group-data-[teclado=true]:hidden text-right text-[11px] text-slate-400 dark:text-slate-500">Toca el total para modificar el precio</p>
         </div>
 
         <section data-paso="escaneo" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
@@ -922,6 +922,36 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   const dialogoConfirmar = document.getElementById('pos-confirmar') as HTMLDialogElement;
+
+  // Teclado en pantalla (celular): al salir el teclado la ventana queda bajita y el campo que se está escribiendo (p. ej. el del código
+  // de la etiqueta) quedaba debajo del borde de lo visible. Al enfocar un campo de texto dentro de una ventana se lo lleva a la vista
+  // (otra vez cuando el teclado termina de salir) y, en la ventana de cobro, mientras dura el teclado se esconde el detalle del total
+  // (Bs., nota y líneas) para dejar sitio. Solo en pantallas táctiles: con ratón y teclado físico no pasa nada.
+  const pantallaTactil = window.matchMedia('(pointer: coarse)');
+  const esCampoDeTexto = (el: Element | null): el is HTMLElement =>
+    !!el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && !['checkbox', 'radio', 'button', 'submit', 'file'].includes((el as HTMLInputElement).type);
+  const traerCampoAVista = (campo: HTMLElement) => {
+    if (campo.isConnected && document.activeElement === campo) campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  };
+  let pausaTeclado: ReturnType<typeof setTimeout> | undefined;
+  document.addEventListener('focusin', (e) => {
+    const campo = e.target as Element | null;
+    if (!pantallaTactil.matches || !esCampoDeTexto(campo) || !campo.closest('dialog')) return;
+    clearTimeout(pausaTeclado);
+    if (campo.closest('#pos-confirmar')) dialogoConfirmar.dataset.teclado = 'true';
+    for (const ms of [150, 450]) setTimeout(() => traerCampoAVista(campo), ms);
+  });
+  document.addEventListener('focusout', () => {
+    clearTimeout(pausaTeclado);
+    pausaTeclado = setTimeout(() => {
+      if (!esCampoDeTexto(document.activeElement)) delete dialogoConfirmar.dataset.teclado;
+    }, 250);
+  });
+  dialogoConfirmar.addEventListener('close', () => delete dialogoConfirmar.dataset.teclado);
+  window.visualViewport?.addEventListener('resize', () => {
+    const activo = document.activeElement;
+    if (pantallaTactil.matches && esCampoDeTexto(activo) && activo.closest('dialog[open]')) traerCampoAVista(activo);
+  });
   const formConfirmar = document.getElementById('pos-confirmar-form') as HTMLFormElement;
   const errorConfirmar = document.getElementById('pos-confirmar-error') as HTMLParagraphElement;
   const campo = (id: string) => document.getElementById(id) as HTMLInputElement & HTMLSelectElement;
