@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { nombreArchivoTicket, svgTicket } from '../../src/utils/ticketImagen';
+import { LOGO_TICKET } from '../../src/utils/logoTicket';
 
 const venta = {
   folio: 74,
@@ -32,6 +33,17 @@ const alto = (svg: string) => Number(/<svg[^>]* height="(\d+)"/.exec(svg)![1]);
 
 describe('svgTicket', () => {
   const svg = svgTicket(venta);
+
+  it('lleva el logo del negocio arriba, centrado y ANTES del nombre (la imagen que se manda al cliente no cargaba archivos externos)', () => {
+    const ancho = Number(/<svg[^>]* width="(\d+)"/.exec(svg)![1]);
+    const logo = /<image href="([^"]+)" x="(\d+)" y="(\d+)" width="(\d+)" height="(\d+)"/.exec(svg);
+    expect(logo).not.toBeNull();
+    expect(logo![1]).toBe(LOGO_TICKET);
+    expect(LOGO_TICKET.startsWith('data:image/png;base64,')).toBe(true); // incrustado, no una ruta
+    expect(Math.abs(Number(logo![2]) + Number(logo![4]) / 2 - ancho / 2)).toBeLessThanOrEqual(1);
+    const yNombre = Number(/<text x="\d+" y="(\d+)"[^>]*>Edward Accesorios</.exec(svg)![1]);
+    expect(Number(logo![3]) + Number(logo![5])).toBeLessThan(yNombre - 30); // el nombre queda debajo del logo, sin taparlo
+  });
 
   it('es un SVG de ancho fijo con fondo blanco', () => {
     expect(svg.startsWith('<svg')).toBe(true);

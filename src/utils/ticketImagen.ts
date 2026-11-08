@@ -6,6 +6,7 @@
 import { formatearBolivares, formatearMoneda } from './format';
 import { etiquetaMetodoPago, pagosDeVenta } from './pagos';
 import { partirEnLineas } from './etiquetaImagen';
+import { LOGO_TICKET, LOGO_TICKET_PROPORCION } from './logoTicket';
 import type { DineroEntregado, PagoVenta, Venta, VentaItem } from '../types/database.types';
 
 export interface VentaParaTicket {
@@ -27,6 +28,9 @@ export interface VentaParaTicket {
 export const ANCHO_TICKET_PX = 720;
 
 const MARGEN = 40;
+/** Alto del logo de arriba (el mismo que se ve en el ticket de pantalla) y su ancho, con la proporción del archivo */
+const LOGO_ALTO = 92;
+const LOGO_ANCHO = Math.round(LOGO_ALTO * LOGO_TICKET_PROPORCION);
 const FUENTE = 'font-family="Arial, Helvetica, sans-serif"';
 const FUENTE_CODIGO = 'font-family="Consolas, \'Courier New\', monospace"';
 
@@ -44,7 +48,7 @@ function montoConBs(usd: number, bs: number | null | undefined): string {
 }
 
 /**
- * SVG del ticket completo: negocio, folio, fecha, cliente, cada producto (cantidad, precio y el CÓDIGO de cada unidad vendida), total,
+ * SVG del ticket completo: logo y nombre del negocio, folio, fecha, cliente, cada producto (cantidad, precio y el CÓDIGO de cada unidad vendida), total,
  * bolívares con la tasa, forma de pago, vuelto y la leyenda de nota de entrega / garantía. Alto variable según el contenido.
  */
 export function svgTicket(venta: VentaParaTicket): string {
@@ -65,8 +69,10 @@ export function svgTicket(venta: VentaParaTicket): string {
     texto(valor, derecha, tam, { peso, ancla: 'end', color });
   };
 
-  // Encabezado
-  y = 70;
+  // Encabezado: el logo del negocio (incrustado, porque el SVG-imagen no puede cargar archivos) y debajo el nombre
+  const logoY = 32;
+  partes.push(`<image href="${LOGO_TICKET}" x="${Math.round((W - LOGO_ANCHO) / 2)}" y="${logoY}" width="${LOGO_ANCHO}" height="${LOGO_ALTO}"/>`);
+  y = logoY + LOGO_ALTO + 50;
   texto('Edward Accesorios', W / 2, 40, { peso: 700, ancla: 'middle' });
   y += 38;
   texto('Ticket de venta', W / 2, 26, { ancla: 'middle', color: '#475569' });
