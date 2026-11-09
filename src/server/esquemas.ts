@@ -10,6 +10,7 @@ export const esquemaProducto = z.object({
   stock_minimo: z.number().optional(),
   imagen_url: z.string().nullable().optional(),
   prefijo_codigo: z.string().optional(),
+  control_por_cantidad: z.number().int().min(0).max(1).optional(),
 });
 
 export const esquemaProductoRapido = z.object({
@@ -18,6 +19,7 @@ export const esquemaProductoRapido = z.object({
   precio_venta: z.number(),
   precio_compra: z.number().optional(),
   prefijo_codigo: z.string().optional(),
+  control_por_cantidad: z.number().int().min(0).max(1).optional(),
 });
 
 export const esquemaMovimiento = z.object({
@@ -40,6 +42,12 @@ export const esquemaItemVenta = z.object({
   unidades: z.array(z.string()).optional(),
   codigos_manuales: z.array(z.string()).max(500).optional(),
   autorizacion_codigo: z.string().max(2000).optional(),
+  danados: z.number().int().min(0).max(500).optional(),
+  danados_motivo: z.enum(['DEFECTO_FABRICA', 'DANADO_AL_COLOCAR', 'OTRO']).nullable().optional(),
+  danados_nota: z.string().max(300).nullable().optional(),
+  autorizacion_danados: z.string().max(2000).optional(),
+  movimiento_id: z.string().max(100).optional(),
+  movimiento_baja_id: z.string().max(100).optional(),
 });
 
 /** Pedido de autorización para elegir a mano el código de una unidad: un supervisor teclea su correo y contraseña */
@@ -107,4 +115,32 @@ export const esquemaDevolucion = z.object({
   vuelto: esquemaDinero.nullable().optional(),
   reembolso: esquemaDinero.nullable().optional(),
   registrado_nombre: z.string().nullable().optional(),
+});
+
+const motivoMerma = z.enum(['DEFECTO_FABRICA', 'DANADO_AL_COLOCAR', 'OTRO']);
+/** Pedido de autorización para botar 3 o más piezas defectuosas en una venta: un gerente o administrador teclea su contraseña */
+export const esquemaAutorizarDanados = z.object({
+  email: z.string().min(3).max(200).optional(),
+  clave: z.string().min(1).max(200),
+  local_id: z.string(),
+  cantidad: z.number(),
+});
+/** Una línea de venta de un producto por cantidad con piezas defectuosas (salida + baja en un lote) */
+export const esquemaSalidaConMerma = z.object({
+  productoId: z.string(),
+  localId: z.string(),
+  cantidad: z.number(),
+  danados: z.number(),
+  danadosVenta: z.number().optional(),
+  motivo: motivoMerma.nullable().optional(),
+  nota: z.string().max(300).nullable().optional(),
+  autorizacion: z.string().max(2000).optional(),
+});
+/** Bota piezas de un producto por cantidad (Descargo) */
+export const esquemaBajaPorCantidad = z.object({
+  productoId: z.string(),
+  localId: z.string(),
+  cantidad: z.number(),
+  motivo: motivoMerma.nullable().optional(),
+  nota: z.string().max(300).nullable().optional(),
 });

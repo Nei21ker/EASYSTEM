@@ -49,6 +49,33 @@ export async function registrarEntradasLote(filas: { producto_id: string; cantid
   return respuesta.map((r) => r.unidadCodigos ?? []);
 }
 
+export type MotivoMermaCliente = 'DEFECTO_FABRICA' | 'DANADO_AL_COLOCAR' | 'OTRO';
+
+/** Una línea de venta de un producto por cantidad con piezas defectuosas: la salida (lo cobrado) y la baja (lo botado) en un solo lote atómico. */
+export async function registrarSalidaConMerma(input: {
+  producto_id: string;
+  local_id: string;
+  cantidad: number;
+  danados: number;
+  /** Total de piezas defectuosas de TODA la venta (decide si hace falta clave) */
+  danados_venta?: number;
+  motivo?: MotivoMermaCliente | null;
+  nota?: string | null;
+  autorizacion?: string;
+}): Promise<{ salida: MovimientoInventario; baja: MovimientoInventario }> {
+  const r = await api.post<{ salida: ResultadoMovimiento; baja: ResultadoMovimiento }>('/api/movimientos/con-merma', {
+    productoId: input.producto_id,
+    localId: input.local_id,
+    cantidad: input.cantidad,
+    danados: input.danados,
+    danadosVenta: input.danados_venta,
+    motivo: input.motivo ?? null,
+    nota: input.nota ?? null,
+    autorizacion: input.autorizacion,
+  });
+  return { salida: r.salida.movimiento, baja: r.baja.movimiento };
+}
+
 type FilaLote = { producto_id: string; tipo: TipoMovimiento; cantidad: number; local_id: string; motivo?: string };
 
 /**

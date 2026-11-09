@@ -167,6 +167,7 @@ const claseSelect =
   import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
   import { codigoVisible } from '../../utils/codigos';
+  import { esPorCantidad } from '../../utils/controlPorCantidad';
   import {
     alternarCompatibles,
     compararNatural as natural,
@@ -275,7 +276,7 @@ const claseSelect =
             ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
             <div class="min-w-0">
               <p class="line-clamp-2 break-words font-medium leading-snug text-slate-900 dark:text-white">${escapar(p.nombre)}</p>
-              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}</p>
+              <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}${esPorCantidad(p) ? ' <span title="Sin etiqueta por pieza: se vende sin escanear y el stock se corrige contando" class="ml-1 rounded bg-sky-100 px-1.5 py-0.5 font-sans text-[10px] font-semibold uppercase text-sky-800 dark:bg-sky-500/20 dark:text-sky-300">Por cantidad</span>' : ''}</p>
             </div>
           </div>
         </td>

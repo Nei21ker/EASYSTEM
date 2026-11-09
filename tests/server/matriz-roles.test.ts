@@ -87,11 +87,16 @@ function casos(): Caso[] {
     { archivo: 'traslados/[id]/cerrar.ts', metodo: 'POST', url: '/api/traslados/no-existe/cerrar', params: { id: 'no-existe' }, permitidos: GERENCIA },
     { archivo: 'bajas/index.ts', metodo: 'POST', url: '/api/bajas', cuerpo: { localId: accesorios, codigos: ['2100000000012'], motivo: 'DANADA' }, permitidos: GERENCIA },
     { archivo: 'bajas/revertir.ts', metodo: 'POST', url: '/api/bajas/revertir', cuerpo: { codigos: ['2100000000012'] }, permitidos: GLOBAL },
+    // Productos por cantidad: piezas defectuosas al vender (con cantidad 0 / en un producto con código los roles con permiso reciben 400 antes de tocar nada)
+    { archivo: 'movimientos/con-merma.ts', metodo: 'POST', url: '/api/movimientos/con-merma', cuerpo: { productoId: p, localId: accesorios, cantidad: 1, danados: 1 }, permitidos: GERENCIA },
+    { archivo: 'mermas/index.ts', metodo: 'GET', url: '/api/mermas', permitidos: GERENCIA },
+    { archivo: 'mermas/index.ts', metodo: 'POST', url: '/api/mermas', cuerpo: { productoId: p, localId: accesorios, cantidad: 1 }, permitidos: GERENCIA },
     // Ventas, devoluciones y órdenes
     { archivo: 'ventas/index.ts', metodo: 'GET', url: '/api/ventas', permitidos: NEGOCIO },
     { archivo: 'ventas/index.ts', metodo: 'POST', url: '/api/ventas', cuerpo: venta, permitidos: NEGOCIO },
     // (con un precio inválido: los roles con permiso reciben 400 antes de tocar contraseñas; el resto, 403)
     { archivo: 'ventas/autorizar-precio.ts', metodo: 'POST', url: '/api/ventas/autorizar-precio', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, lineas: [{ producto_id: p, precio: 0 }] }, permitidos: NEGOCIO },
+    { archivo: 'ventas/autorizar-danados.ts', metodo: 'POST', url: '/api/ventas/autorizar-danados', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, cantidad: 0 }, permitidos: NEGOCIO },
     { archivo: 'ventas/autorizar-codigo.ts', metodo: 'POST', url: '/api/ventas/autorizar-codigo', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, producto_id: 'no-existe' }, permitidos: NEGOCIO },
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { simular: true }, permitidos: ['administrador'] },
     { archivo: 'ventas/eliminar.ts', metodo: 'POST', url: '/api/ventas/eliminar', cuerpo: { ids: ['no-existe'], simular: true }, permitidos: ['administrador', 'gerente'] },

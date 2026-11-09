@@ -5,6 +5,10 @@
 //     donde el trigger trg_unidad_ya_vendida aborta todo el lote si una unidad ya no está disponible (doble venta).
 // Una ENTRADA de N crea N unidades; una SALIDA marca VENDIDA las indicadas y completa por orden de llegada; una ENTRADA
 // que lista códigos (devolución) reactiva esas unidades y crea el resto.
+//
+// Los productos "por cantidad" (`control_por_cantidad = 1`, mercancía de $1 a $3 sin etiqueta por pieza) no tienen unidades: sus
+// movimientos solo mueven el número de inventario_local (lo hacen los triggers), sin códigos. Solo ellos admiten el tipo BAJA aquí
+// (las piezas con código se dan de baja por `traslados.darDeBaja`), y cada BAJA lleva su fila en `mermas` (quién y por qué).
 import { alcanceDe, condicionAlcance, esGerencia, localAccesible, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
@@ -13,9 +17,21 @@ import { ahoraISO, limiteSeguro, nuevoId } from '../util';
 import { construirCodigoUnidad } from '../../utils/codigos';
 import type { MovimientoInventario, TipoMovimiento, TipoMovimientoManual, UnidadProducto } from '../../types/database.types';
 
+/** Quién y por qué se botaron piezas de un producto por cantidad (se guarda en `mermas`, junto al movimiento BAJA). */
+export interface DatosMerma {
+  origen: 'VENTA' | 'DESCARGO';
+  motivo?: 'DEFECTO_FABRICA' | 'DANADO_AL_COLOCAR' | 'OTRO' | null;
+  nota?: string | null;
+  autorizadoPor?: string | null;
+  autorizadoNombre?: string | null;
+}
+
 export interface EntradaMovimiento {
   productoId: string;
-  tipo: TipoMovimientoManual;
+  /** BAJA solo para productos por cantidad (con su `merma`) */
+  tipo: TipoMovimientoManual | 'BAJA';
+  /** Obligatoria en una BAJA */
+  merma?: DatosMerma;
   cantidad: number;
   localId: string;
   motivo?: string;
@@ -74,6 +90,9 @@ async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMo
   if (entradas.some((e) => e.tipo === 'ENTRADA') && !esGerencia(sesion.rol)) {
     throw new ErrorApi(403, 'Tu rol no puede registrar entradas de inventario.', 'sin_permiso');
   }
+  if (entradas.some((e) => e.tipo === 'BAJA') && !esGerencia(sesion.rol)) {
+    throw new ErrorApi(403, 'Solo el administrador, el gerente o el encargado pueden dar de baja mercancía.', 'sin_permiso');
+  }
   for (const localId of new Set(entradas.map((e) => e.localId))) {
     if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
   }
@@ -107,17 +126,27 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
   const idsProducto = [...new Set(entradas.map((e) => e.productoId))];
   const nombres = new Map<string, string>();
   const prefijos = new Map<string, string>();
+  const porCantidad = new Set<string>();
   for (const tramo of tramos(idsProducto)) {
     const filas = await db
-      .prepare(`SELECT id, nombre, prefijo_codigo FROM productos WHERE id IN (${marcas(tramo.length)})`)
+      .prepare(`SELECT id, nombre, prefijo_codigo, control_por_cantidad FROM productos WHERE id IN (${marcas(tramo.length)})`)
       .bind(...tramo)
-      .all<{ id: string; nombre: string; prefijo_codigo: string }>();
+      .all<{ id: string; nombre: string; prefijo_codigo: string; control_por_cantidad: number }>();
     for (const f of filas.results) {
       nombres.set(f.id, f.nombre);
       prefijos.set(f.id, f.prefijo_codigo);
+      if (f.control_por_cantidad === 1) porCantidad.add(f.id);
     }
   }
   if (nombres.size !== idsProducto.length) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+  for (const e of entradas) {
+    if (porCantidad.has(e.productoId) && e.unidadCodigos?.length) {
+      throw new ErrorApi(400, `"${nombres.get(e.productoId)}" se controla por cantidad: no tiene códigos por pieza.`, 'datos_invalidos');
+    }
+    if (e.tipo === 'BAJA' && (!porCantidad.has(e.productoId) || !e.merma)) {
+      throw new ErrorApi(400, `"${nombres.get(e.productoId)}" lleva código por pieza: se da de baja escaneando su etiqueta (Mercancía → Descargo).`, 'datos_invalidos');
+    }
+  }
 
   // 2. Stock actual por (producto, local)
   const stock = new Map<string, number>();
@@ -142,7 +171,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
   }
   const colas = new Map<string, string[]>();
   for (const localId of new Set(entradas.filter((e) => e.tipo === 'SALIDA').map((e) => e.localId))) {
-    const productos = [...new Set(entradas.filter((e) => e.tipo === 'SALIDA' && e.localId === localId).map((e) => e.productoId))];
+    const productos = [...new Set(entradas.filter((e) => e.tipo === 'SALIDA' && e.localId === localId && !porCantidad.has(e.productoId)).map((e) => e.productoId))];
     for (const tramo of tramos(productos)) {
       const filas = await db
         .prepare(`SELECT codigo, estado, producto_id, local_id FROM unidades_producto WHERE local_id = ? AND estado = 'DISPONIBLE' AND producto_id IN (${marcas(tramo.length)}) ORDER BY created_at, rowid`)
@@ -159,7 +188,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
   // 4. Códigos nuevos: cada prefijo (INF, TEC…) lleva su propia cuenta; se reserva un rango por prefijo (cada petición recibe uno propio)
   const nuevasPorPrefijo = new Map<string, number>();
   for (const e of entradas) {
-    if (e.tipo !== 'ENTRADA') continue;
+    if (e.tipo !== 'ENTRADA' || porCantidad.has(e.productoId)) continue;
     const nuevas = e.cantidad - (e.unidadCodigos?.length ?? 0);
     if (nuevas > 0) nuevasPorPrefijo.set(prefijos.get(e.productoId)!, (nuevasPorPrefijo.get(prefijos.get(e.productoId)!) ?? 0) + nuevas);
   }
@@ -186,7 +215,12 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     const codigos: string[] = [];
     const sentenciasUnidades: D1PreparedStatement[] = [];
 
-    if (e.tipo === 'ENTRADA') {
+    if (porCantidad.has(e.productoId)) {
+      // Sin unidades: el stock es solo un número por local
+      const disponible = stock.get(k) ?? 0;
+      if (e.tipo !== 'ENTRADA' && disponible < e.cantidad) throw stockInsuficiente(nombre, disponible, e.cantidad);
+      stock.set(k, e.tipo === 'ENTRADA' ? disponible + e.cantidad : disponible - e.cantidad);
+    } else if (e.tipo === 'ENTRADA') {
       for (const codigo of indicadasMov) {
         const u = unidades.get(codigo);
         if (!u || u.estado !== 'VENDIDA' || u.producto_id !== e.productoId) throw new ErrorApi(400, MSG_NO_VENDIDA, 'unidad_no_vendida');
@@ -209,7 +243,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
         );
       }
       stock.set(k, (stock.get(k) ?? 0) + e.cantidad);
-    } else {
+    } else if (e.tipo === 'SALIDA') {
       const disponible = stock.get(k) ?? 0;
       if (disponible < e.cantidad) throw stockInsuficiente(nombre, disponible, e.cantidad);
       for (const codigo of indicadasMov) {
@@ -234,6 +268,8 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
         sentenciasUnidades.push(db.prepare("UPDATE unidades_producto SET estado = 'VENDIDA', vendida_en = ? WHERE codigo = ?").bind(ahora, codigo));
       }
       stock.set(k, disponible - e.cantidad);
+    } else {
+      throw new ErrorApi(400, 'Tipo de movimiento no válido para este producto.', 'datos_invalidos');
     }
 
     const movimiento: MovimientoInventario = {
@@ -252,11 +288,22 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
         .bind(movimiento.id, movimiento.producto_id, movimiento.tipo, movimiento.cantidad, movimiento.fecha, movimiento.motivo, movimiento.local_id, JSON.stringify(codigos)),
       ...sentenciasUnidades
     );
+    if (e.tipo === 'BAJA' && e.merma) {
+      const m = e.merma;
+      sentencias.push(
+        db
+          .prepare(
+            'INSERT INTO mermas (id, movimiento_id, producto_id, local_id, cantidad, origen, motivo, nota, por_id, por_nombre, autorizado_por, autorizado_nombre, fecha) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+          )
+          .bind(nuevoId(), movimiento.id, e.productoId, e.localId, e.cantidad, m.origen, m.motivo ?? null, m.nota ?? null, sesion.userId, sesion.nombre, m.autorizadoPor ?? null, m.autorizadoNombre ?? null, ahora)
+      );
+    }
     resultados.push({ movimiento, unidadCodigos: codigos });
   }
 
+  const tablasCambio = entradas.some((e) => e.tipo === 'BAJA') ? ['movimientos_inventario', 'inventario_local', 'unidades_producto', 'mermas'] : ['movimientos_inventario', 'inventario_local', 'unidades_producto'];
   for (const localId of new Set(entradas.map((e) => e.localId))) {
-    sentencias.push(...sentenciasCambio(db, ['movimientos_inventario', 'inventario_local', 'unidades_producto'], localId));
+    sentencias.push(...sentenciasCambio(db, tablasCambio, localId));
   }
   sentencias.push(...sentenciasCambio(db, ['productos'], null));
 

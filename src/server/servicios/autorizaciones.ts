@@ -13,6 +13,7 @@ import { ErrorApi } from '../errores';
 import { hashearClave, verificarClave } from '../password';
 import { redondear2 } from '../util';
 import type { AutorizacionPrecio, DatosPromotor, ModoPrecio } from '../../types/database.types';
+import { UMBRAL_CLAVE_DANADOS } from '../../utils/controlPorCantidad';
 import { normalizarPromotor, type PromotorNormalizado } from '../../utils/promotor';
 
 export const VIDA_AUTORIZACION_MS = 20 * 60_000;
@@ -131,11 +132,11 @@ interface FilaSupervisor {
   password: string | null;
 }
 
-const credencialesInvalidas = (soloGlobal = false) =>
+const credencialesInvalidas = (soloGlobal = false, textoGlobal?: string) =>
   new ErrorApi(
     403,
     soloGlobal
-      ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.'
+      ? (textoGlobal ?? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.')
       : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.',
     'autorizador_invalido'
   );
@@ -189,7 +190,7 @@ async function borrarFallos(env: Entorno, userId: string): Promise<void> {
  * La persona que autoriza, por su correo y contraseña. Toda falla (correo desconocido, clave mala, rol sin permiso) da el MISMO mensaje
  * y cuenta un intento de quien vende; tras 5 seguidos se bloquea. Un acierto borra los fallos.
  */
-async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string | undefined, clave: string, localId: string, soloGlobal = false): Promise<FilaSupervisor> {
+async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string | undefined, clave: string, localId: string, soloGlobal = false, textoGlobal?: string): Promise<FilaSupervisor> {
   await exigirIntentosDisponibles(env, sesion.userId);
   const correo = (email ?? '').trim().toLowerCase();
   let supervisor: FilaSupervisor | null = null;
@@ -230,7 +231,7 @@ async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string
 
   if (!supervisor) {
     await anotarFallo(env, sesion.userId);
-    throw credencialesInvalidas(soloGlobal);
+    throw credencialesInvalidas(soloGlobal, textoGlobal);
   }
   await borrarFallos(env, sesion.userId);
   return supervisor;
@@ -256,6 +257,57 @@ export async function autorizarCodigoManual(
   const vence = Date.now() + VIDA_AUTORIZACION_MS;
   const token = await firmarCarga(env, { v: 1, k: 'codigo', u: sesion.userId, a: supervisor.id, an: supervisor.nombre, l: pedido.local_id, pr: pedido.producto_id, exp: vence } satisfies CargaCodigoManual);
   return { token, vence_en: vence, autorizado_por: supervisor.nombre };
+}
+
+// --- Piezas defectuosas en una venta (productos por cantidad) -----------------------------------------------------
+export { UMBRAL_CLAVE_DANADOS };
+
+/** Autorización para botar `n` piezas defectuosas en una venta: atada a quien vende, el local y la cantidad. */
+export interface CargaDanados {
+  v: 1;
+  k: 'danados';
+  u: string;
+  a: string;
+  an: string;
+  l: string;
+  /** Cantidad máxima de piezas defectuosas de esa venta que cubre */
+  n: number;
+  exp: number;
+}
+
+export interface AutorizacionDanados {
+  token: string;
+  vence_en: number;
+  autorizado_por: string;
+}
+
+/** Un gerente o administrador (solo su contraseña) autoriza botar `cantidad` piezas defectuosas en una venta (por 20 minutos). */
+export async function autorizarDanados(
+  env: Entorno,
+  sesion: Sesion,
+  pedido: { email?: string; clave: string; local_id: string; cantidad: number }
+): Promise<AutorizacionDanados> {
+  if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+  if (!Number.isInteger(pedido.cantidad) || pedido.cantidad < 1 || pedido.cantidad > 500) throw new ErrorApi(400, 'La cantidad de piezas defectuosas no es válida.', 'datos_invalidos');
+  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id, true, 'Contraseña incorrecta: botar 3 o más piezas defectuosas en una venta lo autoriza un gerente o un administrador.');
+  const vence = Date.now() + VIDA_AUTORIZACION_MS;
+  const token = await firmarCarga(env, { v: 1, k: 'danados', u: sesion.userId, a: supervisor.id, an: supervisor.nombre, l: pedido.local_id, n: pedido.cantidad, exp: vence } satisfies CargaDanados);
+  return { token, vence_en: vence, autorizado_por: supervisor.nombre };
+}
+
+const sinAutorizacionDanados = (detalle: string) => new ErrorApi(400, `Botar ${UMBRAL_CLAVE_DANADOS} o más piezas defectuosas en una venta necesita la clave de un gerente o administrador. ${detalle}`, 'danados_no_autorizados');
+
+/** Comprueba la autorización de `cantidad` piezas defectuosas (de toda la venta). Devuelve quién la dio. */
+export async function verificarDanados(env: Entorno, sesion: Sesion, localId: string, cantidad: number, token: string): Promise<{ autorizado_por: string; autorizado_nombre: string }> {
+  if (!token) throw sinAutorizacionDanados('Pídela antes de cobrar.');
+  const r = await leerCargaFirmada(env, token);
+  if (!r.ok) throw sinAutorizacionDanados(r.motivo === 'vencida' ? 'Venció (dura 20 minutos). Vuelve a pedirla.' : 'No es válida. Vuelve a pedirla.');
+  const c = r.carga as unknown as Partial<CargaDanados>;
+  if (c.k !== 'danados' || typeof c.n !== 'number') throw sinAutorizacionDanados('No es válida. Vuelve a pedirla.');
+  if (c.u !== sesion.userId || c.l !== localId || !c.a || !c.an) throw sinAutorizacionDanados('Es de otra venta o vendedor. Vuelve a pedirla.');
+  if (c.n < cantidad) throw sinAutorizacionDanados(`Cubre ${c.n} pieza${c.n === 1 ? '' : 's'} y son ${cantidad}. Vuelve a pedirla.`);
+  if (!(await supervisorSigueVigente(env, c.a, localId, true))) throw sinAutorizacionDanados('Quien la dio ya no puede hacerlo. Vuelve a pedirla.');
+  return { autorizado_por: c.a, autorizado_nombre: c.an };
 }
 
 const sinAutorizacionCodigo = (detalle: string) => new ErrorApi(400, `La selección manual del código no está autorizada. ${detalle}`, 'codigo_no_autorizado');

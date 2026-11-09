@@ -23,6 +23,11 @@ export async function autorizarCodigoManual(pedido: { email?: string; clave: str
   return api.post<AutorizacionCodigo>('/api/ventas/autorizar-codigo', pedido);
 }
 
+/** Pide la clave de un gerente o administrador para botar 3 o más piezas defectuosas en una venta (productos por cantidad). */
+export async function autorizarDanados(pedido: { email?: string; clave: string; local_id: string; cantidad: number }): Promise<AutorizacionCodigo> {
+  return api.post<AutorizacionCodigo>('/api/ventas/autorizar-danados', pedido);
+}
+
 /** Sube la captura del pago móvil al almacenamiento privado ("comprobantes-pago-movil/<local>/<hora>-<n>.jpg"). Devuelve la ruta. */
 export async function subirComprobantePagoMovil(localId: string, imagen: Blob): Promise<string> {
   const ruta = `comprobantes-pago-movil/${localId}/${Date.now()}-${Math.floor(Math.random() * 1_000_000)}.jpg`;

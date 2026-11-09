@@ -152,7 +152,24 @@ export const productos = sqliteTable('productos', {
   imagen_url: text('imagen_url'),
   prefijo_codigo: text('prefijo_codigo').notNull().default('GEN'),
   referencia: text('referencia'),
+  control_por_cantidad: integer('control_por_cantidad').notNull().default(0),
   created_at: marca('created_at'),
+});
+
+export const mermas = sqliteTable('mermas', {
+  id: text('id').primaryKey(),
+  movimiento_id: text('movimiento_id').notNull(),
+  producto_id: text('producto_id').notNull(),
+  local_id: text('local_id').notNull(),
+  cantidad: integer('cantidad').notNull(),
+  origen: text('origen', { enum: ['VENTA', 'DESCARGO'] }).notNull(),
+  motivo: text('motivo', { enum: ['DEFECTO_FABRICA', 'DANADO_AL_COLOCAR', 'OTRO'] }),
+  nota: text('nota'),
+  por_id: text('por_id'),
+  por_nombre: text('por_nombre').notNull(),
+  autorizado_por: text('autorizado_por'),
+  autorizado_nombre: text('autorizado_nombre'),
+  fecha: marca('fecha'),
 });
 
 export const compatibilidades = sqliteTable('compatibilidades', {

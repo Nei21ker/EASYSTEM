@@ -1,7 +1,7 @@
 ---
 // Pestaña "Descargo" de Mercancía: mover piezas a otro local en dos pasos (despachar / recibir) y dar de baja piezas
 // dañadas, usadas o en garantía. Todo se hace escaneando el código único de cada pieza (el mismo de su etiqueta).
-import { MOTIVOS_BAJA } from '../../types/database.types';
+import { MOTIVOS_BAJA, MOTIVOS_MERMA } from '../../types/database.types';
 
 const claseCampo =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -20,12 +20,62 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     <button id="ds-modo-baja" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
       Dar de baja <span class="font-normal opacity-70">· dañada, usada o en garantía</span>
     </button>
+    <button id="ds-modo-cantidad" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">
+      Bajas por cantidad <span class="font-normal opacity-70">· vidrios sencillos, sin código por pieza</span>
+    </button>
   </div>
 
   <p id="ds-aviso" role="status" class="hidden rounded-lg px-3 py-2 text-sm"></p>
   <button id="ds-imprimir-ultimo" type="button" class="hidden w-full rounded-lg border border-emerald-300 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-slate-800 sm:w-auto">Imprimir hoja de despacho</button>
 
-  <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <!-- Bajas por cantidad: productos sin código por pieza (vidrios sencillos de menos de $3). No hay nada que escanear: se elige el producto y cuántas piezas se botan -->
+  <section id="ds-cantidad" class={`hidden ${claseTarjeta} space-y-4`}>
+    <div>
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Bajas por cantidad</h2>
+      <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+        Para los productos que se controlan por cantidad (sin etiqueta por pieza): se botan piezas defectuosas, rotas o perdidas que no pasaron por una venta. Las que se botan al vender se anotan en el cobro.
+      </p>
+    </div>
+    <div id="dc-bloque-local" class="hidden">
+      <label for="dc-local" class={claseEtiqueta}>Local</label>
+      <select id="dc-local" class={`${claseCampo} mt-1`}></select>
+    </div>
+    <p id="dc-sin-productos" class="hidden rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+      Este local no maneja productos por cantidad. Se marcan al crear el producto (casilla «Se controla por cantidad»).
+    </p>
+    <div id="dc-formulario" class="space-y-3">
+      <div>
+        <label for="dc-producto" class={claseEtiqueta}>Producto</label>
+        <select id="dc-producto" class={`${claseCampo} mt-1`}></select>
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label for="dc-cantidad" class={claseEtiqueta}>Piezas que se botan</label>
+          <input id="dc-cantidad" type="number" inputmode="numeric" min="1" max="5000" step="1" placeholder="Ej: 3" class={`${claseCampo} mt-1`} />
+        </div>
+        <div>
+          <label for="dc-motivo" class={claseEtiqueta}>Motivo (opcional)</label>
+          <select id="dc-motivo" class={`${claseCampo} mt-1`}>
+            <option value="">Sin motivo</option>
+            {MOTIVOS_MERMA.map((m) => <option value={m.id}>{m.nombre}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="dc-nota" class={claseEtiqueta}>Nota (opcional)</label>
+        <textarea id="dc-nota" rows="2" maxlength="300" placeholder="Qué pasó: se cayó la caja, vinieron rotos de fábrica..." class={`${claseCampo} mt-1`}></textarea>
+      </div>
+      <p class="text-xs text-slate-500 dark:text-slate-400">Las piezas salen del stock del local y quedan registradas como baja (no cuentan como venta). No se puede deshacer desde aquí: si fue un error, vuelve a ingresar las piezas.</p>
+      <button id="dc-baja" type="button" class="w-full rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">Dar de baja</button>
+    </div>
+    <div>
+      <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Pérdidas recientes</h3>
+      <p id="dc-mermas-estado" class="py-4 text-center text-sm text-slate-500 dark:text-slate-400">Cargando…</p>
+      <ul id="dc-mermas" class="mt-1 divide-y divide-slate-100 dark:divide-slate-800"></ul>
+    </div>
+  </section>
+
+  <div id="ds-grid" class="grid grid-cols-1 gap-6 xl:grid-cols-3">
     <!-- Piezas escaneadas -->
     <section class={`${claseTarjeta} xl:col-span-2`}>
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end">
@@ -177,7 +227,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import { escaparHtml } from '../../utils/productosUI';
   import { formatearFecha } from '../../utils/format';
   import { htmlHojaDespacho, imprimirHoja } from '../../utils/hojasImpresas';
-  import { MOTIVOS_BAJA, type Local, type MotivoBaja, type Traslado, type UnidadProducto } from '../../types/database.types';
+  import { esPorCantidad } from '../../utils/controlPorCantidad';
+  import { MOTIVOS_BAJA, MOTIVOS_MERMA, type Local, type Merma, type MotivoBaja, type MotivoMerma, type Traslado, type UnidadProducto } from '../../types/database.types';
 
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -195,7 +246,9 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     nombre: string;
   }
 
-  let modo: 'traslado' | 'baja' = 'traslado';
+  let modo: 'traslado' | 'baja' | 'cantidad' = 'traslado';
+  /** Local de las bajas por cantidad (el del encargado; administrador y gerente lo eligen) */
+  let localCantidad: string | null = null;
   let filtro: 'transito' | 'cerrados' = 'transito';
   let piezas: Pieza[] = [];
   let origenId: string | null = null;
@@ -238,9 +291,13 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   function aplicarModo() {
     const traslado = modo === 'traslado';
     pintarTab('ds-modo-traslado', traslado);
-    pintarTab('ds-modo-baja', !traslado);
+    pintarTab('ds-modo-baja', modo === 'baja');
+    pintarTab('ds-modo-cantidad', modo === 'cantidad');
     $('ds-bloque-traslado').classList.toggle('hidden', !traslado);
-    $('ds-bloque-baja').classList.toggle('hidden', traslado);
+    $('ds-bloque-baja').classList.toggle('hidden', modo !== 'baja');
+    $('ds-grid').classList.toggle('hidden', modo === 'cantidad');
+    $('ds-cantidad').classList.toggle('hidden', modo !== 'cantidad');
+    if (modo === 'cantidad') void cargarCantidad();
     refrescarBotones();
   }
 
@@ -545,6 +602,80 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     }
   }
 
+  // --- Bajas por cantidad (productos sin código por pieza) ------------------------------------------------------------------
+  const textoMotivoMerma = (m: MotivoMerma | null) => MOTIVOS_MERMA.find((x) => x.id === m)?.nombre ?? 'Sin motivo';
+
+  async function cargarCantidad() {
+    if (!localCantidad) return;
+    const select = $<HTMLSelectElement>('dc-producto');
+    const anterior = select.value;
+    try {
+      // El stock mostrado es el del local elegido (no el del selector del encabezado)
+      const productos = (await inventoryService.listarProductos({ localId: localCantidad })).filter((p) => esPorCantidad(p));
+      $('dc-sin-productos').classList.toggle('hidden', productos.length > 0);
+      $('dc-formulario').classList.toggle('hidden', productos.length === 0);
+      select.innerHTML = productos
+        .sort((a, b) => a.nombre.localeCompare(b.nombre))
+        .map((p) => `<option value="${escaparHtml(p.id)}">${escaparHtml(p.nombre)} — ${p.stock_actual} en stock</option>`)
+        .join('');
+      if (anterior && productos.some((p) => p.id === anterior)) select.value = anterior;
+    } catch (err) {
+      avisar(`No se pudieron cargar los productos por cantidad: ${mensaje(err)}`, 'error');
+    }
+    await cargarMermas();
+  }
+
+  async function cargarMermas() {
+    const estado = $('dc-mermas-estado');
+    try {
+      const mermas: Merma[] = (await inventoryService.listarMermas({ limite: 30 })).filter((m) => !localCantidad || m.local_id === localCantidad);
+      estado.classList.toggle('hidden', mermas.length > 0);
+      estado.textContent = 'Todavía no hay piezas botadas por cantidad.';
+      $('dc-mermas').innerHTML = mermas
+        .map(
+          (m) => `<li class="py-2">
+            <p class="text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(m.producto_nombre ?? nombresProducto.get(m.producto_id) ?? 'Producto')} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">${m.cantidad} ${m.cantidad === 1 ? 'pieza' : 'piezas'}</span></p>
+            <p class="text-xs text-slate-500 dark:text-slate-400">${m.origen === 'VENTA' ? 'En una venta' : 'Descargo'} · ${escaparHtml(textoMotivoMerma(m.motivo))} · ${escaparHtml(m.por_nombre)}${m.autorizado_nombre ? ` (autorizó ${escaparHtml(m.autorizado_nombre)})` : ''} · ${escaparHtml(formatearFecha(m.fecha))}${m.nota ? ` · ${escaparHtml(m.nota)}` : ''}</p>
+          </li>`
+        )
+        .join('');
+    } catch (err) {
+      estado.classList.remove('hidden');
+      estado.textContent = `No se pudieron cargar las pérdidas: ${mensaje(err)}`;
+    }
+  }
+
+  async function botarPorCantidad() {
+    if (ocupado || !localCantidad) return;
+    const select = $<HTMLSelectElement>('dc-producto');
+    const cantidad = Number($<HTMLInputElement>('dc-cantidad').value);
+    if (!select.value) return avisar('Elige el producto.', 'error');
+    if (!Number.isInteger(cantidad) || cantidad < 1) return avisar('Escribe cuántas piezas se botan (un número entero mayor a 0).', 'error');
+    const nombre = select.selectedOptions[0]?.textContent?.split(' — ')[0] ?? 'este producto';
+    if (!confirm(`¿Dar de baja ${cantidad} ${cantidad === 1 ? 'pieza' : 'piezas'} de «${nombre}»?\n\nSalen del stock de ${nombresLocal.get(localCantidad) ?? 'este local'} y no cuentan como venta.`)) return;
+    ocupado = true;
+    ($('dc-baja') as HTMLButtonElement).disabled = true;
+    try {
+      await inventoryService.darDeBajaPorCantidad({
+        productoId: select.value,
+        localId: localCantidad,
+        cantidad,
+        motivo: ($('dc-motivo') as HTMLSelectElement).value ? (($('dc-motivo') as HTMLSelectElement).value as MotivoMerma) : null,
+        nota: ($('dc-nota') as HTMLTextAreaElement).value,
+      });
+      $<HTMLInputElement>('dc-cantidad').value = '';
+      ($('dc-nota') as HTMLTextAreaElement).value = '';
+      avisar(`Se dieron de baja ${cantidad} ${cantidad === 1 ? 'pieza' : 'piezas'} de «${nombre}».`, 'ok');
+      window.dispatchEvent(new Event('easystem:productos-cambiaron'));
+      await cargarCantidad();
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+      ($('dc-baja') as HTMLButtonElement).disabled = false;
+    }
+  }
+
   // --- Bajas recientes --------------------------------------------------------------------------------------------------
   async function cargarBajas() {
     const estado = $('ds-bajas-estado');
@@ -621,15 +752,29 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     }
     $('ds-origen-texto').textContent = origenId ? `Sale de: ${nombresLocal.get(origenId) ?? 'este local'}` : '';
 
+    // Bajas por cantidad: el encargado usa su local; administrador y gerente eligen
+    localCantidad = origenId;
+    if (esGlobalUsuario) {
+      const selectorLocal = $<HTMLSelectElement>('dc-local');
+      $('dc-bloque-local').classList.remove('hidden');
+      selectorLocal.innerHTML = locales.map((l) => `<option value="${escaparHtml(l.id)}">${escaparHtml(l.nombre)}</option>`).join('');
+      if (localCantidad) selectorLocal.value = localCantidad;
+      selectorLocal.addEventListener('change', () => {
+        localCantidad = selectorLocal.value || null;
+        void cargarCantidad();
+      });
+    }
+
     aplicarModo();
     pintarPiezas();
     pintarTab('ds-filtro-transito', true);
     pintarTab('ds-filtro-cerrados', false);
     await Promise.all([llenarDestinos(), cargarTraslados(), cargarBajas()]);
 
-    alCambiarDatos(['traslados', 'unidades_producto'], () => {
+    alCambiarDatos(['traslados', 'unidades_producto', 'mermas', 'inventario_local'], () => {
       void cargarTraslados();
       void cargarBajas();
+      if (modo === 'cantidad') void cargarCantidad();
     });
   }
 
@@ -642,6 +787,11 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     modo = 'baja';
     aplicarModo();
   });
+  $('ds-modo-cantidad').addEventListener('click', () => {
+    modo = 'cantidad';
+    aplicarModo();
+  });
+  $('dc-baja').addEventListener('click', () => void botarPorCantidad());
   $('ds-filtro-transito').addEventListener('click', () => {
     filtro = 'transito';
     pintarTab('ds-filtro-transito', true);

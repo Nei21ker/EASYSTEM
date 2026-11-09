@@ -65,6 +65,11 @@ export interface Producto {
   prefijo_codigo?: string;
   /** Referencia corta para personas: el prefijo y un número consecutivo (INF-001). Se asigna al crear el producto y no cambia. */
   referencia?: string | null;
+  /**
+   * 1 = producto "por cantidad" (migración 0017): mercancía de menos de $3 sin código ni etiqueta por pieza. Su stock es solo un número
+   * por local: se vende sin escanear y se controla con conteos y mermas. 0 o ausente = una pieza = un código = una etiqueta.
+   */
+  control_por_cantidad?: number;
   created_at: string;
 }
 
@@ -94,6 +99,32 @@ export interface MovimientoInventario {
 export type EstadoUnidad = 'DISPONIBLE' | 'VENDIDA' | 'EN_TRANSITO' | 'BAJA';
 
 export type MotivoBaja = 'DANADA' | 'USADA' | 'GARANTIA';
+
+/** Motivo (opcional) de una pieza botada de un producto por cantidad */
+export type MotivoMerma = 'DEFECTO_FABRICA' | 'DANADO_AL_COLOCAR' | 'OTRO';
+
+export const MOTIVOS_MERMA: { id: MotivoMerma; nombre: string }[] = [
+  { id: 'DEFECTO_FABRICA', nombre: 'Venía defectuoso' },
+  { id: 'DANADO_AL_COLOCAR', nombre: 'Se dañó al colocar' },
+  { id: 'OTRO', nombre: 'Otro motivo' },
+];
+
+/** Piezas botadas de un producto por cantidad (migración 0017): en una venta (defectuosas, no se cobran) o dadas de baja en el Descargo */
+export interface Merma {
+  id: string;
+  movimiento_id: string;
+  producto_id: string;
+  producto_nombre: string | null;
+  local_id: string;
+  cantidad: number;
+  origen: 'VENTA' | 'DESCARGO';
+  motivo: MotivoMerma | null;
+  nota: string | null;
+  por_id: string | null;
+  por_nombre: string;
+  autorizado_nombre: string | null;
+  fecha: string;
+}
 export const MOTIVOS_BAJA: { id: MotivoBaja; nombre: string; ayuda: string }[] = [
   { id: 'DANADA', nombre: 'Dañada', ayuda: 'Se rompió o no funciona.' },
   { id: 'USADA', nombre: 'Usada', ayuda: 'Se usó (de muestra, de prueba) y ya no se puede vender como nueva.' },
@@ -213,6 +244,19 @@ export interface VentaItem {
   autorizacion_codigo?: string;
   /** Lo que queda guardado: los códigos elegidos a mano y quién lo autorizó (lo pone el servidor) */
   seleccion_manual?: { codigos: string[]; autorizado_por: string; autorizado_nombre: string };
+  /**
+   * Solo productos por cantidad: piezas defectuosas o dañadas que se botaron en esta venta y NO se cobraron (salieron como baja,
+   * aparte de `cantidad`, que es lo que sí se cobró). Solo lo marcan encargado, gerente y administrador.
+   */
+  danados?: number;
+  /** Solo al enviar la venta: motivo y nota opcionales de las piezas defectuosas, y la autorización firmada (obligatoria con 3 o más en la venta) */
+  danados_motivo?: 'DEFECTO_FABRICA' | 'DANADO_AL_COLOCAR' | 'OTRO' | null;
+  danados_nota?: string | null;
+  autorizacion_danados?: string;
+  /** Id del movimiento de salida de esta línea (productos por cantidad, que no tienen códigos de pieza): permite reponer su stock al eliminar la venta */
+  movimiento_id?: string;
+  /** Id del movimiento de baja de las piezas defectuosas de esta línea */
+  movimiento_baja_id?: string;
 }
 
 export interface ClienteVenta {
@@ -234,6 +278,8 @@ export interface FilaAltaRapida {
   precio_compra?: number;
   /** 2 a 4 letras; vacío = el sistema lo sugiere por la marca o la categoría */
   prefijo_codigo?: string;
+  /** 1 = producto por cantidad (sin etiqueta por pieza; solo si cuesta menos de $3) */
+  control_por_cantidad?: number;
 }
 
 export interface ProductoCreadoRapido {

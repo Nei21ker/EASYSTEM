@@ -78,6 +78,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </p>
       </div>
 
+      <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <label class="flex cursor-pointer items-start gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+          <input id="fp-por-cantidad" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" />
+          <span>Se controla por cantidad (sin etiqueta por pieza)</span>
+        </label>
+        <p id="fp-por-cantidad-ayuda" class="mt-1 text-xs text-slate-400">
+          Para mercancía muy barata y desechable (menos de $3, como los vidrios sencillos): no se imprime una etiqueta por pieza, se vende sin escanear y el stock es solo un número que se corrige contando. Si una pieza viene defectuosa se bota desde la venta o desde Descargo.
+        </p>
+      </div>
+
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
           <label for="fp-precio-venta" class={claseEtiqueta}>Precio venta ($) *</label>
@@ -128,6 +138,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
+  import { errorPrecioPorCantidad, esPorCantidad } from '../../utils/controlPorCantidad';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
 
@@ -146,6 +157,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     precioCompra: $<HTMLInputElement>('fp-precio-compra'),
     stock: $<HTMLInputElement>('fp-stock'),
     minimo: $<HTMLInputElement>('fp-minimo'),
+    porCantidad: $<HTMLInputElement>('fp-por-cantidad'),
   };
   const contenedorModelos = $('fp-modelos');
   const contadorModelos = $('fp-modelos-contador');
@@ -161,6 +173,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const seleccion = new Set<string>();
 
   const TEXTO_AYUDA_PREFIJO = $('fp-prefijo-ayuda').textContent ?? '';
+  const TEXTO_AYUDA_POR_CANTIDAD = $('fp-por-cantidad-ayuda').textContent ?? '';
   const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos'];
 
   function normalizar(t: string): string {
@@ -326,6 +339,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.precioVenta.value = String(editando.precio_venta);
       campos.precioCompra.value = String(editando.precio_compra);
       campos.minimo.value = String(editando.stock_minimo);
+      campos.porCantidad.checked = esPorCantidad(editando);
+      // Cambiar cómo se cuenta el producto solo lo hacen administrador y gerente, y solo con el stock en 0
+      const sinPermiso = !veCosto;
+      const conStock = editando.stock_actual > 0;
+      campos.porCantidad.disabled = sinPermiso || conStock;
+      $('fp-por-cantidad-ayuda').textContent = sinPermiso
+        ? 'Solo el administrador o el gerente pueden cambiar esto en un producto que ya existe.'
+        : conStock
+          ? 'Para cambiarlo el producto debe tener el stock en 0 (retíralo con una baja o crea otro producto).'
+          : TEXTO_AYUDA_POR_CANTIDAD;
       editando.modelos_compatibles.forEach((m) => seleccion.add(m.id));
     } else {
       titulo.textContent = 'Nuevo producto';
@@ -333,6 +356,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.precioCompra.value = '0';
       campos.stock.value = '0';
       campos.minimo.value = '0';
+      campos.porCantidad.checked = false;
+      campos.porCantidad.disabled = false;
+      $('fp-por-cantidad-ayuda').textContent = TEXTO_AYUDA_POR_CANTIDAD;
       if (codigoInicial) campos.codigo.value = codigoInicial;
       prefijoManual = false;
       campos.prefijo.value = '';
@@ -367,6 +393,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!esPrefijoValido(prefijo)) return mostrarError('El prefijo del código debe tener de 2 a 4 letras (A-Z), por ejemplo INF.');
     if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
+    if (campos.porCantidad.checked && !campos.porCantidad.disabled) {
+      const motivoPrecio = errorPrecioPorCantidad(precioVenta);
+      if (motivoPrecio) return mostrarError(motivoPrecio);
+    }
     if (!Number.isInteger(stock) || stock < 0) return mostrarError('El stock inicial debe ser un entero mayor o igual a 0.');
     if (!Number.isInteger(minimo) || minimo < 0) return mostrarError('El stock mínimo debe ser un entero mayor o igual a 0.');
 
@@ -395,6 +425,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           precio_venta: precioVenta,
           ...(veCosto ? { precio_compra: precioCompra } : {}),
           stock_minimo: minimo,
+          // Solo si cambió (y se pudo cambiar): el servidor lo rechaza si el producto tiene stock o el rol no puede
+          ...(!campos.porCantidad.disabled && campos.porCantidad.checked !== esPorCantidad(editando) ? { control_por_cantidad: campos.porCantidad.checked ? 1 : 0 } : {}),
         });
         await inventoryService.establecerCompatibilidades(editando.id, [...seleccion]);
         if (quitarFoto && editando.imagen_url) await inventoryService.quitarImagenProducto(editando.id);
@@ -409,6 +441,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           precio_compra: veCosto ? precioCompra : 0,
           stock_actual: 0,
           stock_minimo: minimo,
+          control_por_cantidad: campos.porCantidad.checked ? 1 : 0,
         });
         idCreado = creado.id;
         if (seleccion.size > 0) await inventoryService.establecerCompatibilidades(creado.id, [...seleccion]);

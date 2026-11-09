@@ -35,6 +35,7 @@ export const TABLAS_TIEMPO_REAL = [
   'unidades_producto',
   'cuadres_caja',
   'traslados',
+  'mermas',
 ] as const;
 
 /** Cada cuánto se pregunta por cambios con la pantalla visible y activa. */

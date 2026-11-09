@@ -50,6 +50,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         El prefijo (2 a 4 letras) arma el código de cada pieza: CTL → CTL000001. Vacío = el sistema lo sugiere por la marca o la categoría.
       </p>
 
+      <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+        <input id="ar-por-cantidad" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" />
+        <span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">Estos productos se controlan por cantidad (sin etiqueta por pieza)</span>
+          <span class="block text-xs text-slate-400">Para mercancía de menos de $3 (vidrios sencillos): no se imprime una etiqueta por pieza y se vende sin escanear.</span>
+        </span>
+      </label>
+
       <div>
         <label for="ar-texto" class={claseEtiqueta}>Productos (uno por línea) *</label>
         <textarea
@@ -94,6 +102,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { esPrefijoValido } from '../../utils/codigos';
+  import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
   import { leerPrecio, normalizarNombre, parsearAltaRapida, problemaDeAlta, MAX_LINEAS_ALTA } from '../../utils/altaRapida';
   import { reanimar } from '../../utils/animaciones';
   import type { FilaAltaRapida, ProductoConRelaciones } from '../../types/database.types';
@@ -107,6 +116,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const campoPrecio = $<HTMLInputElement>('ar-precio');
   const campoCompra = $<HTMLInputElement>('ar-compra');
   const campoTexto = $<HTMLTextAreaElement>('ar-texto');
+  const campoPorCantidad = $<HTMLInputElement>('ar-por-cantidad');
   const vista = $('ar-vista');
   const lista = $('ar-lista');
   const conteo = $('ar-conteo');
@@ -132,7 +142,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     try {
       localStorage.setItem(
         LS,
-        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, compra: campoCompra.value, texto: campoTexto.value })
+        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, compra: campoCompra.value, texto: campoTexto.value, porCantidad: campoPorCantidad.checked ? '1' : '' })
       );
     } catch {
       /* sin almacenamiento: no se recuerda nada */
@@ -149,6 +159,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campoPrecio.value = b.precio ?? '';
       campoCompra.value = b.compra ?? '';
       campoTexto.value = b.texto ?? '';
+      campoPorCantidad.checked = b.porCantidad === '1';
     } catch {
       /* borrador ilegible: se empieza en blanco */
     }
@@ -229,6 +240,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     campoPrefijo.value = campoPrefijo.value.toUpperCase().replace(/[^A-Z]/g, '');
   });
   for (const campo of [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto]) campo.addEventListener('input', () => pintarVista());
+  campoPorCantidad.addEventListener('change', () => pintarVista());
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -247,6 +259,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (problema) return mostrarError(problema);
 
     const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
+    if (campoPorCantidad.checked) {
+      const cara = aCrear.find((l) => errorPrecioPorCantidad(l.precio ?? 0));
+      if (cara) return mostrarError(`«${cara.nombre}»: ${errorPrecioPorCantidad(cara.precio ?? 0)}`);
+    }
     if (aCrear.length > MAX_LINEAS_ALTA) return mostrarError(`Son demasiados productos nuevos de una vez (máximo ${MAX_LINEAS_ALTA}).`);
 
     // Con "Crear y tomar fotos" se abre la cámara de ráfaga al terminar (solo para los productos nuevos)
@@ -262,6 +278,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         precio_venta: l.precio ?? 0,
         precio_compra: compra ?? 0,
         prefijo_codigo: prefijo || undefined,
+        ...(campoPorCantidad.checked ? { control_por_cantidad: 1 } : {}),
       }));
       const creados = filas.length > 0 ? await inventoryService.crearProductosRapidos(filas) : [];
       const idCreado = new Map(creados.map((c) => [normalizarNombre(c.nombre), c.id]));

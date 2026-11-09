@@ -14,6 +14,7 @@ import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
 import { normalizarNombre } from '../../utils/altaRapida';
 import { construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
+import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
 export type { ProductoConInventario } from '../repos/productos';
@@ -39,6 +40,8 @@ export interface DatosProducto {
   imagen_url?: string | null;
   /** Prefijo del código de sus unidades (2 a 4 letras). Si no se indica se sugiere por la marca del nombre o la categoría. */
   prefijo_codigo?: string;
+  /** 1 = producto por cantidad (sin código ni etiqueta por pieza; solo si cuesta menos de $3). Se fija al crearlo; cambiarlo después exige stock 0. */
+  control_por_cantidad?: number;
 }
 
 /** Pasa a mayúsculas el prefijo indicado y comprueba que sean 2 a 4 letras A-Z. */
@@ -88,6 +91,13 @@ function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
     throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
   }
   if (d.prefijo_codigo !== undefined) prefijoIndicado(d.prefijo_codigo);
+  if (d.control_por_cantidad !== undefined && d.control_por_cantidad !== 0 && d.control_por_cantidad !== 1) {
+    throw new ErrorApi(400, 'El control por cantidad debe ser 0 o 1.', 'datos_invalidos');
+  }
+  if (completo && d.control_por_cantidad === 1) {
+    const mensaje = errorPrecioPorCantidad(d.precio_venta ?? 0);
+    if (mensaje) throw new ErrorApi(400, mensaje, 'precio_no_permitido');
+  }
 }
 
 const duplicado = (codigo: string) => new ErrorApi(409, `Ya existe un producto con el código de barras ${codigo}.`, 'codigo_repetido');
@@ -161,13 +171,14 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     imagen_url: datos.imagen_url ?? null,
     prefijo_codigo: datos.prefijo_codigo !== undefined ? prefijoIndicado(datos.prefijo_codigo) : sugerirPrefijo(datos.nombre.trim(), datos.categoria.trim(), await marcasConocidas(env)),
     referencia: '',
+    control_por_cantidad: datos.control_por_cantidad === 1 ? 1 : 0,
     created_at: ahoraISO(),
   };
   fila.referencia = (await reservarReferencias(env, [fila.prefijo_codigo]))[0];
   try {
     await env.DB
-      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.referencia, fila.created_at)
+      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.referencia, fila.control_por_cantidad, fila.created_at)
       .run();
   } catch (err) {
     if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
@@ -189,8 +200,30 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
     await exigirNombresLibres(env, [cambios.nombre], id);
   }
 
+  // Pasar de "con código por pieza" a "por cantidad" (o al revés) cambia cómo se cuenta el stock: solo administrador/gerente y solo con
+  // el stock en 0 (y nada en tránsito); si no, quedarían piezas con código sin dueño o stock sin piezas.
+  const cambiaControl = cambios.control_por_cantidad !== undefined && cambios.control_por_cantidad !== (actual.control_por_cantidad ? 1 : 0);
+  if (cambiaControl) {
+    exigirGlobal(sesion);
+    const hay = await env.DB
+      .prepare(
+        `SELECT (SELECT COALESCE(SUM(stock_actual), 0) FROM inventario_local WHERE producto_id = ?) AS stock,
+                (SELECT count(*) FROM unidades_producto WHERE producto_id = ? AND estado IN ('DISPONIBLE', 'EN_TRANSITO')) AS piezas`
+      )
+      .bind(id, id)
+      .first<{ stock: number; piezas: number }>();
+    if (hay && (hay.stock > 0 || hay.piezas > 0)) {
+      throw new ErrorApi(409, 'Para cambiar entre "por cantidad" y "con etiqueta por pieza" el producto debe tener el stock en 0 en todos los locales (y nada en tránsito). Retíralo con una baja o crea otro producto.', 'control_con_stock');
+    }
+    if (cambios.control_por_cantidad === 1) {
+      const mensaje = errorPrecioPorCantidad(cambios.precio_venta ?? actual.precio_venta);
+      if (mensaje) throw new ErrorApi(400, mensaje, 'precio_no_permitido');
+    }
+  }
+
   // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
   const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url', 'prefijo_codigo'];
+  if (cambiaControl) permitidos.push('control_por_cantidad');
   if (sesion.rol !== 'encargado') permitidos.push('precio_compra');
   const columnas: string[] = [];
   const valores: unknown[] = [];
@@ -313,9 +346,9 @@ async function insertarProductosNuevos(env: Entorno, sesion: Sesion, filas: Dato
     await env.DB.batch(
       creados.map(({ id, codigo_barras, prefijo, referencia, f }) =>
         env.DB
-          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           // El encargado no ve ni fija el precio de compra
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, ahora)
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, f.control_por_cantidad === 1 ? 1 : 0, ahora)
       )
     );
   } catch (err) {
@@ -334,6 +367,8 @@ export interface FilaAltaRapida {
   precio_compra?: number;
   /** Si no se indica se sugiere por la marca del nombre o la categoría */
   prefijo_codigo?: string;
+  /** 1 = por cantidad (sin etiqueta por pieza; solo si cuesta menos de $3) */
+  control_por_cantidad?: number;
 }
 
 const MAX_NOMBRE_ALTA = 120;
@@ -365,6 +400,7 @@ export async function crearProductosRapidos(env: Entorno, sesion: Sesion, filas:
       precio_compra: f.precio_compra,
       stock_minimo: 0,
       prefijo_codigo: f.prefijo_codigo?.trim() ? f.prefijo_codigo : undefined,
+      control_por_cantidad: f.control_por_cantidad === 1 ? 1 : 0,
     }));
     completas.forEach((f) => validarProducto(f, true));
     try {

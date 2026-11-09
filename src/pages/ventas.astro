@@ -218,6 +218,24 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </div>
   </dialog>
 
+  <!-- Botar 3 o más piezas defectuosas en una venta (productos por cantidad): pide la contraseña de un gerente o administrador -->
+  <dialog
+    id="pos-danados"
+    aria-labelledby="pos-danados-titulo"
+    class="anim-escalar m-auto w-[min(24rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <form id="pos-danados-form" class="space-y-3 px-5 pb-4 pt-5" novalidate>
+      <h2 id="pos-danados-titulo" class="text-base font-semibold">Piezas defectuosas: hace falta una clave</h2>
+      <p id="pos-danados-texto" class="oculto-con-teclado text-sm text-slate-600 dark:text-slate-300"></p>
+      <input id="pos-danados-clave" type="password" autocomplete="new-password" placeholder="Contraseña de un gerente o administrador" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+      <p id="pos-danados-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      <div class="flex gap-2 pt-1">
+        <button id="pos-danados-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Cancelar</button>
+        <button id="pos-danados-ok" type="submit" class="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:opacity-60">Autorizar</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Confirmación antes de procesar la venta + datos del cliente y tipo de cobro -->
   <dialog
     id="pos-confirmar"
@@ -490,7 +508,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import type { VentaRegistrada } from '../lib/inventoryService';
-  import { obtenerSesionActual } from '../lib/auth';
+  import { esGerencia, obtenerSesionActual } from '../lib/auth';
   import { etiquetaMetodoPago, incluyePagoMovil, pagosDeVenta } from '../utils/pagos';
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
@@ -499,6 +517,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura, reducirImagen } from '../utils/imagenes';
   import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo } from '../utils/codigos';
+  import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
+  import { MOTIVOS_MERMA, type MotivoMerma } from '../types/database.types';
   import { normalizarPromotor } from '../utils/promotor';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
@@ -516,7 +536,19 @@ import { alCambiarDatos } from '../lib/realtime';
     precioPromotor?: number;
     /** Precio de catálogo que tenía el producto cuando se autorizó (si el catálogo cambia después, la autorización ya no vale) */
     listaAutorizada?: number;
+    /** Solo productos por cantidad: piezas defectuosas que se botan en esta venta y NO se cobran (aparte de `cantidad`, que sí se cobra) */
+    danados?: number;
+    /** Motivo opcional de esas piezas defectuosas */
+    danadosMotivo?: MotivoMerma | null;
   }
+
+  /** Lo que sale del stock por esa línea: lo que se cobra más lo que se bota */
+  const ocupadas = (l: LineaCarrito): number => l.cantidad + (l.danados ?? 0);
+  const totalDanadosCarrito = (): number => carrito.reduce((suma, l) => suma + (l.danados ?? 0), 0);
+  /** Solo el encargado, el gerente y el administrador marcan piezas defectuosas (el servidor lo vuelve a exigir) */
+  let puedeMarcarDanados = false;
+  /** La clave de un gerente o administrador para botar 3 o más piezas defectuosas; cubre hasta `cantidad` en total (dura 20 minutos) */
+  let autorizacionDanados: { token: string; vence_en: number; autorizado_por: string; cantidad: number } | null = null;
 
   let productos: ProductoConRelaciones[] = [];
   let carrito: LineaCarrito[] = [];
@@ -592,7 +624,8 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   function cantidadEnCarrito(productoId: string): number {
-    return carrito.find((l) => l.producto.id === productoId)?.cantidad ?? 0;
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    return linea ? ocupadas(linea) : 0;
   }
 
   function filtrarProductos(texto: string): ProductoConRelaciones[] {
@@ -670,6 +703,7 @@ import { alCambiarDatos } from '../lib/realtime';
       promotorVenta = null;
       autorizacionPrecio = null;
     }
+    if (totalDanadosCarrito() === 0) autorizacionDanados = null;
     carritoVacio.classList.toggle('hidden', carrito.length > 0);
     carritoContador.textContent = `${carrito.length} línea${carrito.length === 1 ? '' : 's'}`;
     botonProcesar.disabled = carrito.length === 0;
@@ -679,7 +713,8 @@ import { alCambiarDatos } from '../lib/realtime';
         const { producto, cantidad, unidades } = linea;
         const precio = precioDe(linea);
         const subtotal = precio * cantidad;
-        const alMaximo = cantidad >= producto.stock_actual;
+        const alMaximo = ocupadas(linea) >= producto.stock_actual;
+        const danados = linea.danados ?? 0;
         const conPromotor = linea.precioPromotor !== undefined;
         const esDescuento = conPromotor && precio < producto.precio_venta - 0.005;
         const esLocal = autorizacionPrecio?.modo === 'local';
@@ -693,6 +728,30 @@ import { alCambiarDatos } from '../lib/realtime';
               : `<p class="text-xs font-medium text-amber-700 dark:text-amber-400">Precio de promotor${promotorVenta?.nombre ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
              <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · comisión ${formatearMoneda((precio - producto.precio_venta) * cantidad)}</p>`
           : '';
+        // Producto por cantidad: botón para las piezas defectuosas (no se cobran), solo para encargado, gerente y administrador
+        const bloqueDanados =
+          puedeMarcarDanados && esPorCantidad(producto)
+            ? `<div class="mt-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 dark:border-orange-500/30 dark:bg-orange-500/10">
+                <div class="flex items-center justify-between gap-3">
+                  <p class="text-xs font-semibold text-orange-800 dark:text-orange-300">Pieza defectuosa (no se cobra)</p>
+                  <div class="flex items-center gap-1">
+                    <button type="button" data-danados-restar="${producto.id}" ${danados === 0 ? 'disabled' : ''} aria-label="Quitar una pieza defectuosa" class="h-9 w-9 rounded-lg border border-orange-200 text-lg leading-none text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-orange-500/40 dark:text-orange-300 dark:hover:bg-orange-500/20">−</button>
+                    <span class="w-8 text-center text-base font-semibold text-slate-900 dark:text-white">${danados}</span>
+                    <button type="button" data-danados-sumar="${producto.id}" ${alMaximo ? 'disabled' : ''} aria-label="Agregar una pieza defectuosa" class="h-9 w-9 rounded-lg border border-orange-200 text-lg leading-none text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-orange-500/40 dark:text-orange-300 dark:hover:bg-orange-500/20">+</button>
+                  </div>
+                </div>
+                ${
+                  danados > 0
+                    ? `<select data-danados-motivo="${producto.id}" aria-label="Motivo de la pieza defectuosa (opcional)" class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+                        <option value="">Motivo (opcional)</option>
+                        ${MOTIVOS_MERMA.map((m) => `<option value="${m.id}" ${linea.danadosMotivo === m.id ? 'selected' : ''}>${escaparHtml(m.nombre)}</option>`).join('')}
+                      </select>`
+                    : ''
+                }
+              </div>`
+            : danados > 0
+              ? `<p class="mt-1 text-xs font-medium text-orange-700 dark:text-orange-400">${danados} defectuosa${danados === 1 ? '' : 's'} (no se cobra${danados === 1 ? '' : 'n'})</p>`
+              : '';
         const codigos = unidades.length
           ? `<div class="mt-1 flex flex-wrap gap-1">${unidades
               .map(
@@ -710,6 +769,7 @@ import { alCambiarDatos } from '../lib/realtime';
                 <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio)} c/u</p>
                 ${detallePrecio}
                 ${codigos}
+                ${esPorCantidad(producto) ? '<p class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400">Por cantidad: no se escanea cada pieza</p>' : ''}
               </div>
               <span class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
             </div>
@@ -720,6 +780,7 @@ import { alCambiarDatos } from '../lib/realtime';
                   : `<button type="button" data-precio-promotor="${producto.id}" class="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Modificar precio</button>`
               }
             </div>
+            ${bloqueDanados}
             <div class="mt-2 flex items-center justify-between gap-3">
               <div class="flex items-center gap-1">
                 <button type="button" data-restar="${producto.id}" aria-label="Quitar una unidad" class="h-10 w-10 rounded-lg border border-slate-200 text-lg leading-none text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">−</button>
@@ -754,7 +815,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (!producto) return;
 
     const linea = carrito.find((l) => l.producto.id === productoId);
-    const cantidadActual = linea?.cantidad ?? 0;
+    const cantidadActual = linea ? ocupadas(linea) : 0;
 
     if (cantidadActual + 1 > producto.stock_actual) {
       mostrarError(`No hay más stock disponible de "${producto.nombre}".`);
@@ -777,7 +838,7 @@ import { alCambiarDatos } from '../lib/realtime';
       return false;
     }
     const linea = carrito.find((l) => l.producto.id === producto.id);
-    if ((linea?.cantidad ?? 0) + 1 > producto.stock_actual) {
+    if ((linea ? ocupadas(linea) : 0) + 1 > producto.stock_actual) {
       mostrarError(`No hay más stock disponible de "${producto.nombre}".`);
       return false;
     }
@@ -822,7 +883,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (delta < 0 && linea.unidades.length >= linea.cantidad) linea.unidades.pop();
     if (nuevaCantidad <= 0) {
       carrito = carrito.filter((l) => l.producto.id !== productoId);
-    } else if (nuevaCantidad > linea.producto.stock_actual) {
+    } else if (nuevaCantidad + (linea.danados ?? 0) > linea.producto.stock_actual) {
       mostrarError(`No hay más stock disponible de "${linea.producto.nombre}".`);
       return;
     } else {
@@ -1107,7 +1168,7 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Paso previo: muestra el resumen y pide los datos del cliente; la venta solo se registra al confirmar. */
   function pedirConfirmacion() {
     if (carrito.length === 0 || dialogoConfirmar.open) return;
-    if (autorizacionVencida()) return;
+    if (autorizacionVencida() || autorizacionDanadosVencida()) return;
     const unidades = carrito.reduce((suma, l) => suma + l.cantidad, 0);
 
     document.getElementById('pos-confirmar-resumen')!.textContent =
@@ -1174,7 +1235,7 @@ import { alCambiarDatos } from '../lib/realtime';
   async function procesarVenta(datos: { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null }) {
     if (carrito.length === 0) return;
     limpiarError();
-    if (autorizacionVencida() || autorizacionesManualesVencidas()) return;
+    if (autorizacionVencida() || autorizacionesManualesVencidas() || autorizacionDanadosVencida()) return;
     const tasa = tasaActual.get();
     if (!tasa) {
       mostrarError('Falta la tasa del dólar del día. Regístrala para poder vender.');
@@ -1195,6 +1256,8 @@ import { alCambiarDatos } from '../lib/realtime';
         // El precio de catálogo solo se anota en las líneas con precio modificado (el servidor lo vuelve a leer del catálogo)
         precio_lista: l.precioPromotor !== undefined ? l.producto.precio_venta : undefined,
         unidades: l.unidades.length ? [...l.unidades] : undefined,
+        // Piezas defectuosas (productos por cantidad): no se cobran, salen del stock como baja junto con la venta
+        ...((l.danados ?? 0) > 0 ? { danados: l.danados, danados_motivo: l.danadosMotivo ?? null } : {}),
         // Las unidades elegidas a mano (la etiqueta no se leía) viajan con la autorización del supervisor que las permitió
         ...(() => {
           const a = manualPorProducto.get(l.producto.id);
@@ -1210,6 +1273,7 @@ import { alCambiarDatos } from '../lib/realtime';
         comprobante: incluyePagoMovil(datos.pagos) && modoComprobante === 'foto' ? comprobante : null,
         referenciaPagoMovil: incluyePagoMovil(datos.pagos) && modoComprobante === 'referencia' ? campoReferencia.value : null,
         precioPromotor: autorizacionPrecio ? { promotor: promotorVenta?.datos ?? null, autorizacion: autorizacionPrecio } : null,
+        autorizacionDanados: totalDanadosCarrito() >= UMBRAL_CLAVE_DANADOS && autorizacionDanados ? { token: autorizacionDanados.token, vence_en: autorizacionDanados.vence_en, autorizado_por: autorizacionDanados.autorizado_por } : null,
       });
       mostrarTicket(venta);
       carrito = [];
@@ -1320,12 +1384,15 @@ import { alCambiarDatos } from '../lib/realtime';
         delete linea.listaAutorizada;
         avisos.push(`El precio de "${actual.nombre}" cambió en el catálogo: se quitó el precio modificado de esa línea.`);
       }
-      if (linea.cantidad > actual.stock_actual) {
+      if (ocupadas(linea) > actual.stock_actual) {
         if (actual.stock_actual <= 0) {
           carrito = carrito.filter((l) => l !== linea);
           avisos.push(`Se agotó "${actual.nombre}" (otro dispositivo lo vendió) y se quitó del carrito.`);
         } else {
-          linea.cantidad = actual.stock_actual;
+          // Primero se sueltan las piezas defectuosas marcadas; luego se baja lo que se cobra
+          delete linea.danados;
+          delete linea.danadosMotivo;
+          linea.cantidad = Math.min(linea.cantidad, actual.stock_actual);
           linea.unidades = linea.unidades.slice(0, linea.cantidad);
           avisos.push(`Solo quedan ${actual.stock_actual} de "${actual.nombre}": se ajustó la cantidad del carrito.`);
         }
@@ -1358,12 +1425,121 @@ import { alCambiarDatos } from '../lib/realtime';
     const eliminar = objetivo.closest<HTMLButtonElement>('[data-eliminar]');
     const precioPromotor = objetivo.closest<HTMLButtonElement>('[data-precio-promotor]');
     const quitarPrecio = objetivo.closest<HTMLButtonElement>('[data-quitar-precio]');
-    if (sumar?.dataset.sumar) cambiarCantidad(sumar.dataset.sumar, 1);
+    const danadosSumar = objetivo.closest<HTMLButtonElement>('[data-danados-sumar]');
+    const danadosRestar = objetivo.closest<HTMLButtonElement>('[data-danados-restar]');
+    if (danadosSumar?.dataset.danadosSumar) cambiarDanados(danadosSumar.dataset.danadosSumar, 1);
+    else if (danadosRestar?.dataset.danadosRestar) cambiarDanados(danadosRestar.dataset.danadosRestar, -1);
+    else if (sumar?.dataset.sumar) cambiarCantidad(sumar.dataset.sumar, 1);
     else if (restar?.dataset.restar) cambiarCantidad(restar.dataset.restar, -1);
     else if (eliminar?.dataset.eliminar) eliminarDelCarrito(eliminar.dataset.eliminar);
     else if (precioPromotor?.dataset.precioPromotor) elegirModoPrecio(precioPromotor.dataset.precioPromotor);
     else if (quitarPrecio?.dataset.quitarPrecio) quitarPrecioPromotor(quitarPrecio.dataset.quitarPrecio);
   });
+
+  listaCarrito.addEventListener('change', (e) => {
+    const motivo = (e.target as HTMLElement).closest<HTMLSelectElement>('[data-danados-motivo]');
+    if (!motivo?.dataset.danadosMotivo) return;
+    const linea = carrito.find((l) => l.producto.id === motivo.dataset.danadosMotivo);
+    if (linea) linea.danadosMotivo = (MOTIVOS_MERMA.find((m) => m.id === motivo.value)?.id as MotivoMerma | undefined) ?? null;
+  });
+
+  // --- Piezas defectuosas (productos por cantidad) ----------------------------------------------------------------
+  // Una pieza que viene defectuosa o se daña al colocarla no se le cobra al cliente: se anota aquí y sale del stock como baja, junto con
+  // la venta. Solo encargado, gerente y administrador. Con 3 o más piezas defectuosas en la misma venta hace falta la contraseña de un
+  // gerente o administrador (ventana #pos-danados); el servidor lo vuelve a comprobar.
+  const dialogoDanados = document.getElementById('pos-danados') as HTMLDialogElement;
+  const formDanados = document.getElementById('pos-danados-form') as HTMLFormElement;
+  const claveDanados = document.getElementById('pos-danados-clave') as HTMLInputElement;
+  const errorDanados = document.getElementById('pos-danados-error') as HTMLParagraphElement;
+  const botonDanados = document.getElementById('pos-danados-ok') as HTMLButtonElement;
+  let pendienteDanados: { productoId: string; total: number } | null = null;
+
+  const autorizacionDanadosVigente = (cantidad: number) =>
+    !!autorizacionDanados && autorizacionDanados.vence_en > Date.now() + 15_000 && autorizacionDanados.cantidad >= cantidad;
+
+  function cambiarDanados(productoId: string, delta: number) {
+    limpiarError();
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    if (!linea || !esPorCantidad(linea.producto) || !puedeMarcarDanados) return;
+    const actual = linea.danados ?? 0;
+    if (actual + delta < 0) return;
+    if (delta > 0) {
+      if (ocupadas(linea) + 1 > linea.producto.stock_actual) {
+        mostrarError(`No hay más stock disponible de "${linea.producto.nombre}".`);
+        return;
+      }
+      const total = totalDanadosCarrito() + 1;
+      if (total >= UMBRAL_CLAVE_DANADOS && !autorizacionDanadosVigente(total)) {
+        pedirClaveDanados(productoId, total);
+        return;
+      }
+    }
+    aplicarDanados(linea, actual + delta);
+  }
+
+  function aplicarDanados(linea: LineaCarrito, cantidad: number) {
+    if (cantidad > 0) linea.danados = cantidad;
+    else {
+      delete linea.danados;
+      delete linea.danadosMotivo;
+    }
+    renderCarrito();
+    destacarLinea(linea.producto.id);
+  }
+
+  function pedirClaveDanados(productoId: string, total: number) {
+    pendienteDanados = { productoId, total };
+    document.getElementById('pos-danados-texto')!.textContent = `Botar ${total} piezas defectuosas en una misma venta lo autoriza un gerente o un administrador con su contraseña (vale 20 minutos).`;
+    claveDanados.value = '';
+    errorDanados.classList.add('hidden');
+    dialogoDanados.showModal();
+    claveDanados.focus();
+  }
+
+  document.getElementById('pos-danados-cancelar')!.addEventListener('click', () => {
+    pendienteDanados = null;
+    dialogoDanados.close();
+  });
+  formDanados.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendienteDanados) return;
+    const { productoId, total } = pendienteDanados;
+    if (!claveDanados.value) {
+      errorDanados.textContent = 'Escribe la contraseña de un gerente o administrador.';
+      errorDanados.classList.remove('hidden');
+      return;
+    }
+    botonDanados.disabled = true;
+    try {
+      const r = await inventoryService.autorizarDanados({ clave: claveDanados.value, cantidad: total });
+      autorizacionDanados = { token: r.token, vence_en: r.vence_en, autorizado_por: r.autorizado_por, cantidad: total };
+      claveDanados.value = '';
+      pendienteDanados = null;
+      dialogoDanados.close();
+      const linea = carrito.find((l) => l.producto.id === productoId);
+      if (linea) aplicarDanados(linea, (linea.danados ?? 0) + 1);
+    } catch (err) {
+      errorDanados.textContent = err instanceof Error ? err.message : 'No se pudo autorizar.';
+      errorDanados.classList.remove('hidden');
+      claveDanados.select();
+    } finally {
+      botonDanados.disabled = false;
+    }
+  });
+
+  /** Si la autorización de las piezas defectuosas venció (o no hay) y ya son 3 o más, se quitan las defectuosas y se avisa; devuelve si pasó. */
+  function autorizacionDanadosVencida(): boolean {
+    const total = totalDanadosCarrito();
+    if (total < UMBRAL_CLAVE_DANADOS || autorizacionDanadosVigente(total)) return false;
+    for (const l of carrito) {
+      delete l.danados;
+      delete l.danadosMotivo;
+    }
+    autorizacionDanados = null;
+    renderCarrito();
+    mostrarError('La autorización de las piezas defectuosas venció: se quitaron del carrito. Márcalas de nuevo (pedirá la clave).');
+    return true;
+  }
 
   // --- Precio de promotor ---------------------------------------------------------------------------------------
   // El cliente paga más que el catálogo (p. ej. $15 por un control de $12) y la diferencia es la comisión del promotor, que la tienda
@@ -1787,7 +1963,7 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   function pintarSelectorProductos() {
-    const lista = filtrarProductos(selBuscar.value).filter((p) => p.stock_actual > 0);
+    const lista = filtrarProductos(selBuscar.value).filter((p) => p.stock_actual > 0 && !esPorCantidad(p));
     selLista.innerHTML = lista.length
       ? lista
           .slice(0, 40)
@@ -1903,16 +2079,17 @@ import { alCambiarDatos } from '../lib/realtime';
   const escaneoAbierto = () => dialogoConfirmar.open && pasos[pasoActual] === 'escaneo';
 
   /** Líneas del carrito con unidades todavía sin escanear. */
-  const pendientesDeEscanear = () => carrito.filter((l) => l.unidades.length < l.cantidad);
+  const pendientesDeEscanear = () => carrito.filter((l) => !esPorCantidad(l.producto) && l.unidades.length < l.cantidad);
 
   function pintarEscaneo() {
     listaEscaneo.innerHTML = carrito
       .map((l) => {
-        const hecho = l.unidades.length >= l.cantidad;
+        const porCantidad = esPorCantidad(l.producto);
+        const hecho = porCantidad || l.unidades.length >= l.cantidad;
         const chips = l.unidades.map((c) => `<span class="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">${escaparHtml(c)}</span>`).join(' ');
         return `<li class="flex items-center justify-between gap-3 px-3 py-2">
           <div class="min-w-0"><p class="font-medium">${escaparHtml(l.producto.nombre)}</p><div class="mt-1 flex flex-wrap gap-1">${chips}</div>${hecho ? '' : `<button type="button" data-manual="${l.producto.id}" class="mt-1.5 text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">No lee el código</button>`}</div>
-          <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${hecho ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'}">${hecho ? 'Listo' : `${l.unidades.length} de ${l.cantidad}`}</span>
+          <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${hecho ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300'}">${porCantidad ? 'Por cantidad' : hecho ? 'Listo' : `${l.unidades.length} de ${l.cantidad}`}</span>
         </li>`;
       })
       .join('');
@@ -2013,7 +2190,7 @@ import { alCambiarDatos } from '../lib/realtime';
       return false;
     }
     if (!unidad) return false;
-    const linea = carrito.find((l) => l.producto.id === unidad!.producto_id && l.unidades.length < l.cantidad);
+    const linea = carrito.find((l) => l.producto.id === unidad!.producto_id && !esPorCantidad(l.producto) && l.unidades.length < l.cantidad);
     if (!linea) {
       const enCarrito = carrito.find((l) => l.producto.id === unidad!.producto_id);
       const nombre = enCarrito?.producto.nombre ?? productos.find((p) => p.id === unidad!.producto_id)?.nombre ?? 'otro producto';
@@ -2247,6 +2424,7 @@ import { alCambiarDatos } from '../lib/realtime';
 
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
+    puedeMarcarDanados = esGerencia(contexto?.sesion.rol);
     if (contexto?.local) {
       localActivoId = contexto.local.id;
       cargarProductos();

@@ -151,6 +151,19 @@ async function aplicarSeleccionManual(env: Entorno, sesion: Sesion, localId: str
   return resultado;
 }
 
+/**
+ * Piezas defectuosas de productos por cantidad: solo las marca el encargado, el gerente o el administrador. La baja ya se hizo aparte
+ * (`registrarSalidaConMerma`); aquí solo queda en la venta cuántas fueron y su motivo. La autorización y la nota nunca se guardan en la venta.
+ */
+function limpiarDanados(sesion: Sesion, items: VentaItem[]): VentaItem[] {
+  return items.map((item) => {
+    const { autorizacion_danados: _token, danados_nota: _nota, danados, danados_motivo: motivo, ...resto } = item;
+    if (!danados) return resto;
+    if (!esGerencia(sesion.rol)) throw new ErrorApi(403, 'Solo el encargado, el gerente o el administrador pueden marcar piezas defectuosas.', 'sin_permiso');
+    return { ...resto, danados, ...(motivo ? { danados_motivo: motivo } : {}) };
+  });
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -166,7 +179,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
   const comprobante = await validarComprobantePagoMovil(env, datos);
   const precios = await aplicarPrecioPromotor(env, sesion, datos);
-  const itemsGuardados = await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items);
+  const itemsGuardados = limpiarDanados(sesion, await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items));
 
   const id = nuevoId();
   const db = env.DB;
@@ -331,6 +344,71 @@ async function piezasVendidas(db: D1Database, codigos: Iterable<string>): Promis
   return { grupos, piezas };
 }
 
+// Productos por cantidad (sin códigos de pieza): lo que una venta sacó del stock se repone por cantidad.
+interface GrupoCantidad {
+  productoId: string;
+  localId: string;
+  cantidad: number;
+}
+
+type ItemConCantidad = { producto_id: string; cantidad: number; danados?: number };
+
+/**
+ * Cuánto de cada producto por cantidad sacaron esas ventas del stock de su local (lo cobrado, las piezas defectuosas que se botaron y lo
+ * entregado a cambio en sus devoluciones) menos lo que ya volvió por devoluciones. Las piezas con código se reponen por código.
+ */
+async function cantidadesPorCantidad(
+  db: D1Database,
+  ventas: { local_id: string; items: string }[],
+  devoluciones: { local_id: string; items_devueltos?: string; items_nuevos: string }[]
+): Promise<{ grupos: Map<string, GrupoCantidad>; productos: Set<string> }> {
+  const leer = (texto: string | undefined) => (texto ? (JSON.parse(texto) as ItemConCantidad[]) : []);
+  const ids = new Set<string>();
+  for (const v of ventas) for (const i of leer(v.items)) ids.add(i.producto_id);
+  for (const d of devoluciones) for (const i of [...leer(d.items_nuevos), ...leer(d.items_devueltos)]) ids.add(i.producto_id);
+  const porCantidad = new Set<string>();
+  for (const tramo of tramos([...ids])) {
+    const filas = await db.prepare(`SELECT id FROM productos WHERE control_por_cantidad = 1 AND id IN (${marcas(tramo.length)})`).bind(...tramo).all<{ id: string }>();
+    for (const f of filas.results) porCantidad.add(f.id);
+  }
+  const grupos = new Map<string, GrupoCantidad>();
+  const sumar = (localId: string, productoId: string, n: number) => {
+    if (!porCantidad.has(productoId) || n === 0) return;
+    const clave = `${productoId}|${localId}`;
+    const g = grupos.get(clave) ?? { productoId, localId, cantidad: 0 };
+    g.cantidad += n;
+    grupos.set(clave, g);
+  };
+  for (const v of ventas) for (const i of leer(v.items)) sumar(v.local_id, i.producto_id, i.cantidad + (i.danados ?? 0));
+  for (const d of devoluciones) {
+    for (const i of leer(d.items_nuevos)) sumar(d.local_id, i.producto_id, i.cantidad);
+    for (const i of leer(d.items_devueltos)) sumar(d.local_id, i.producto_id, -i.cantidad);
+  }
+  for (const [clave, g] of grupos) if (g.cantidad <= 0) grupos.delete(clave);
+  return { grupos, productos: porCantidad };
+}
+
+/** Repone al stock esas cantidades (una ENTRADA por producto y local, en lotes que respetan los topes). */
+async function reponerCantidades(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoCantidad>, motivo: string): Promise<void> {
+  let lote: EntradaMovimiento[] = [];
+  let enLote = 0;
+  const enviar = async () => {
+    if (lote.length > 0) await registrarMovimientos(env, sesion, lote);
+    lote = [];
+    enLote = 0;
+  };
+  for (const g of grupos.values()) {
+    for (let restante = g.cantidad; restante > 0; ) {
+      const trozo = Math.min(restante, PIEZAS_POR_TRAMO);
+      if (enLote + trozo > PIEZAS_POR_TRAMO || lote.length >= MOVIMIENTOS_POR_TRAMO) await enviar();
+      lote.push({ productoId: g.productoId, tipo: 'ENTRADA', cantidad: trozo, localId: g.localId, motivo });
+      enLote += trozo;
+      restante -= trozo;
+    }
+  }
+  await enviar();
+}
+
 /** Repone esas piezas al stock: una ENTRADA por producto y local que reactiva las MISMAS piezas, por lotes que respetan los topes. */
 async function reponerPiezas(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoPiezas>, motivo: string): Promise<void> {
   let lote: EntradaMovimiento[] = [];
@@ -364,7 +442,7 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   const db = env.DB;
 
   const ventas = (await db.prepare('SELECT local_id, items FROM ventas').all<{ local_id: string; items: string }>()).results;
-  const devoluciones = (await db.prepare('SELECT local_id, items_nuevos FROM devoluciones').all<{ local_id: string; items_nuevos: string }>()).results;
+  const devoluciones = (await db.prepare('SELECT local_id, items_devueltos, items_nuevos FROM devoluciones').all<{ local_id: string; items_devueltos: string; items_nuevos: string }>()).results;
 
   // Piezas que estas ventas sacaron del stock: las de cada venta y las entregadas a cambio
   const codigos = new Set<string>();
@@ -375,13 +453,17 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   for (const d of devoluciones) juntar(d.items_nuevos);
 
   // De ellas, las que siguen vendidas (las devueltas ya están en el stock)
-  const { grupos: porGrupo, piezas } = await piezasVendidas(db, codigos);
+  const { grupos: porGrupo, piezas: piezasConCodigo } = await piezasVendidas(db, codigos);
+  // Los productos por cantidad no tienen códigos de pieza: se reponen por la cantidad que esas ventas sacaron
+  const { grupos: porCantidad } = await cantidadesPorCantidad(db, ventas, devoluciones);
+  const piezas = piezasConCodigo + [...porCantidad.values()].reduce((s, g) => s + g.cantidad, 0);
 
   const resultado: ResultadoReseteo = { ventas: ventas.length, devoluciones: devoluciones.length, piezas, simulado: !!opciones.simular };
   if (opciones.simular || (ventas.length === 0 && devoluciones.length === 0 && piezas === 0)) return resultado;
 
   // 1. Reponer el stock, por lotes que respetan los topes de movimientos y de piezas
   await reponerPiezas(env, sesion, porGrupo, MOTIVO_RESETEO);
+  await reponerCantidades(env, sesion, porCantidad, MOTIVO_RESETEO);
 
   // 2. Borrar los registros (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas
   const locales = new Set([...ventas.map((v) => v.local_id), ...devoluciones.map((d) => d.local_id)]);
@@ -443,10 +525,10 @@ export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[]
     if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso al local de una de esas ventas.', 'sin_permiso');
   }
   const idsVentas = ventas.map((v) => v.id);
-  const devoluciones: { id: string; fecha: string; local_id: string; items_nuevos: string }[] = [];
+  const devoluciones: { id: string; fecha: string; local_id: string; items_devueltos: string; items_nuevos: string }[] = [];
   for (const tramo of tramos(idsVentas)) {
     const filas = await db
-      .prepare(`SELECT id, fecha, local_id, items_nuevos FROM devoluciones WHERE venta_id IN (${marcas(tramo.length)})`)
+      .prepare(`SELECT id, fecha, local_id, items_devueltos, items_nuevos FROM devoluciones WHERE venta_id IN (${marcas(tramo.length)})`)
       .bind(...tramo)
       .all<(typeof devoluciones)[number]>();
     devoluciones.push(...filas.results);
@@ -459,14 +541,21 @@ export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[]
     ...devoluciones.map((d) => ({ localId: d.local_id, fecha: d.fecha, codigos: codigosDe(d.items_nuevos) })),
   ];
   const todos = new Set(origenes.flatMap((o) => o.codigos));
-  const { grupos, piezas } = await piezasVendidas(db, todos);
+  const { grupos, piezas: piezasConCodigo } = await piezasVendidas(db, todos);
+  // Productos por cantidad (sin códigos de pieza): se reponen por cantidad, y sus movimientos se reconocen por el id guardado en la venta
+  const { grupos: porCantidad, productos: productosPorCantidad } = await cantidadesPorCantidad(db, ventas, devoluciones);
+  const piezas = piezasConCodigo + [...porCantidad.values()].reduce((s, g) => s + g.cantidad, 0);
+  const idsPorCantidad = new Set<string>(
+    ventas.flatMap((v) => (JSON.parse(v.items) as { movimiento_id?: string; movimiento_baja_id?: string }[]).flatMap((i) => [i.movimiento_id, i.movimiento_baja_id].filter((x): x is string => !!x)))
+  );
+  const conPiezas = (v: { items: string }) => codigosDe(v.items).length > 0 || (JSON.parse(v.items) as ItemConCantidad[]).some((i) => productosPorCantidad.has(i.producto_id));
 
   const resultado: ResultadoEliminacionVentas = {
     ventas: ventas.length,
     folios: ventas.map((v) => v.folio).sort((a, b) => a - b),
     devoluciones: devoluciones.length,
     piezas,
-    ventasSinPiezas: ventas.filter((v) => codigosDe(v.items).length === 0).length,
+    ventasSinPiezas: ventas.filter((v) => !conPiezas(v)).length,
     simulado: !!opciones.simular,
   };
   if (opciones.simular || ventas.length === 0) return resultado;
@@ -475,6 +564,7 @@ export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[]
   const folios = resultado.folios.map((f) => `#${String(f).padStart(4, '0')}`);
   const motivo = `Eliminación de ${folios.length === 1 ? 'la venta' : 'las ventas'} ${folios.slice(0, 6).join(', ')}${folios.length > 6 ? ` y ${folios.length - 6} más` : ''} (restaura el stock)`;
   await reponerPiezas(env, sesion, grupos, motivo);
+  await reponerCantidades(env, sesion, porCantidad, motivo);
 
   // 2. Las salidas de stock de esas ventas: para cada pieza, la primera salida de su local desde la fecha de la venta
   const salidas = new Set<string>();
@@ -501,7 +591,12 @@ export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[]
     ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM devoluciones WHERE venta_id IN (${marcas(t.length)})`).bind(...t)),
     ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM ventas WHERE id IN (${marcas(t.length)})`).bind(...t)),
     ...tramos([...salidas]).map((t) => db.prepare(`DELETE FROM movimientos_inventario WHERE tipo = 'SALIDA' AND id IN (${marcas(t.length)})`).bind(...t)),
-    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario'], localId)),
+    // Productos por cantidad: la salida y la baja de las piezas defectuosas de esas ventas, y las filas de mermas que las acompañan
+    ...tramos([...idsPorCantidad]).flatMap((t) => [
+      db.prepare(`DELETE FROM mermas WHERE movimiento_id IN (${marcas(t.length)})`).bind(...t),
+      db.prepare(`DELETE FROM movimientos_inventario WHERE tipo IN ('SALIDA', 'BAJA') AND id IN (${marcas(t.length)})`).bind(...t),
+    ]),
+    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'mermas'], localId)),
   ]);
 
   // El archivo del comprobante ya no respalda ninguna venta (si falla, queda un archivo suelto sin consecuencias)

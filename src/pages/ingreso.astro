@@ -297,6 +297,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia } from '../lib/auth';
   import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia } from '../utils/codigos';
+  import { esPorCantidad } from '../utils/controlPorCantidad';
   import {
     buscarFormatoEtiqueta,
     buscarTipoCodigo,
@@ -372,6 +373,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     return d.innerHTML;
   };
   const producto = (id: string) => productos.find((p) => p.id === id);
+  /**
+   * Una línea nueva del lote. Un producto por cantidad no lleva una etiqueta por pieza: su cantidad de etiquetas no sigue a las unidades
+   * (empieza en 0; si se quiere, se imprime UNA etiqueta de pila con el código del producto).
+   */
+  const lineaNueva = (id: string, cantidad: number): Linea => {
+    const porCantidad = esPorCantidad(producto(id));
+    return { id, cantidad, copias: porCantidad ? 0 : cantidad, manual: porCantidad };
+  };
   const entero = (valor: string) => {
     const n = Math.floor(Number(valor));
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -525,7 +534,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       existente.cantidad += 1;
       if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
     } else {
-      lote.push({ id, cantidad: 1, copias: 1, manual: false });
+      lote.push(lineaNueva(id, 1));
     }
     guardarLote();
     pintarLote();
@@ -534,6 +543,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   /** Qué se puede imprimir de esta línea: las unidades que acaba de ingresar y las que siguen sin etiqueta. */
   function textoPista(l: Linea): string {
+    if (esPorCantidad(producto(l.id))) {
+      return escapar('Por cantidad: sin etiqueta por pieza. En "Etiquetas" pon 1 si quieres imprimir una etiqueta de pila con el código del producto (0 = ninguna).');
+    }
     const nuevas = l.unidades?.length ?? 0;
     const pendientes = (sinEtiqueta.get(l.id) ?? []).filter((c) => !l.unidades?.includes(c)).length;
     const partes = [];
@@ -682,6 +694,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     let unidades = 0;
     const fallos: string[] = [];
+    const todosPorCantidad = aRegistrar.every((l) => esPorCantidad(producto(l.id)));
     try {
       const resultados = await inventoryService.registrarIngresoLote(
         aRegistrar.map((l) => ({ producto_id: l.id, cantidad: l.cantidad })),
@@ -693,9 +706,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           unidades += linea.cantidad;
           linea.cantidad = 0; // ya está en el stock
           // Cada unidad nueva tiene su código: las etiquetas a imprimir son exactamente esas
-          linea.unidades = [...(linea.unidades ?? []), ...r.codigos];
-          linea.copias = linea.unidades.length;
-          linea.manual = false;
+          // (un producto por cantidad no crea piezas con código: sus etiquetas se quedan como se pusieron)
+          if (!esPorCantidad(producto(linea.id))) {
+            linea.unidades = [...(linea.unidades ?? []), ...r.codigos];
+            linea.copias = linea.unidades.length;
+            linea.manual = false;
+          }
         } else {
           fallos.push(`${producto(linea.id)?.nombre ?? 'Producto'}: ${r?.ok === false ? r.mensaje : 'no se pudo registrar'}`);
         }
@@ -720,7 +736,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const registrados = aRegistrar.length - fallos.length;
     if (registrados > 0) {
       mostrarExito(
-        `Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}, cada una con su código.${imprimir ? '' : ' Ya puedes imprimir las etiquetas.'}`
+        `Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}${todosPorCantidad ? ' (por cantidad, sin código por pieza).' : ', cada una con su código.'}${imprimir ? '' : ' Ya puedes imprimir las etiquetas.'}`
       );
     }
     if (fallos.length) {
@@ -758,6 +774,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     for (const l of lote) {
       const p = producto(l.id);
       if (!p || l.copias <= 0) continue;
+      // Producto por cantidad: una etiqueta de pila con el código del producto (escanearla en la venta suma UNA pieza)
+      if (esPorCantidad(p)) {
+        etiquetas.push({ codigo: p.codigo_barras, nombre: p.nombre, copias: l.copias });
+        continue;
+      }
       const codigos = (l.unidades ?? []).slice(0, l.copias);
       if (codigos.length < l.copias) {
         const extra = (sinEtiqueta.get(l.id) ?? []).filter((c) => !codigos.includes(c)).slice(0, l.copias - codigos.length);
@@ -940,7 +961,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (galeriaAnotada || galeriaCodigos.length === 0) return;
     galeriaAnotada = true;
     try {
-      await inventoryService.marcarEtiquetasImpresas(galeriaCodigos, { reimpresion: galeriaEsReimpresion });
+      // Las etiquetas de pila de los productos por cantidad llevan el código del producto, no de una pieza: no hay nada que anotar
+      const deUnidades = galeriaCodigos.filter((c) => esCodigoUnidad(c));
+      if (deUnidades.length > 0) await inventoryService.marcarEtiquetasImpresas(deUnidades, { reimpresion: galeriaEsReimpresion });
       await cargarSinEtiqueta();
     } catch {
       galeriaAnotada = false; // sin red: se vuelve a intentar al pulsar Listo
@@ -1100,7 +1123,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const primeraLinea = lote.find((l) => producto(l.id));
     const primerProducto = primeraLinea ? producto(primeraLinea.id) : undefined;
     const codigoEjemplo = primeraLinea
-      ? (primeraLinea.unidades?.[0] ?? sinEtiqueta.get(primeraLinea.id)?.[0] ?? `${primerProducto?.prefijo_codigo ?? 'INF'}000001`)
+      ? esPorCantidad(primerProducto)
+        ? primerProducto!.codigo_barras
+        : (primeraLinea.unidades?.[0] ?? sinEtiqueta.get(primeraLinea.id)?.[0] ?? `${primerProducto?.prefijo_codigo ?? 'INF'}000001`)
       : 'INF000001';
     const primera = { codigo: codigoEjemplo, nombre: primerProducto?.nombre ?? 'Forro silicona iPhone 13' };
     const tipo = buscarTipoCodigo(selectTipo.value);
@@ -1210,7 +1235,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         existente.cantidad += cantidad;
         if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
       } else {
-        lote.push({ id: productoId, cantidad, copias: cantidad, manual: false });
+        lote.push(lineaNueva(productoId, cantidad));
       }
       agregados++;
     }
@@ -1297,8 +1322,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const reimprimir = parametros.get('reimprimir');
     if (reimprimir && lista.some((p) => p.id === reimprimir)) {
       history.replaceState(null, '', window.location.pathname);
-      pintarLote();
-      void abrirReimprimir(reimprimir);
+      if (esPorCantidad(lista.find((p) => p.id === reimprimir))) {
+        // Sin piezas con código no hay qué reimprimir por unidad: se deja lista UNA etiqueta de pila con el código del producto
+        if (!lote.some((l) => l.id === reimprimir)) lote.push({ id: reimprimir, cantidad: 0, copias: 1, manual: true });
+        guardarLote();
+        pintarLote();
+        avisar('Este producto se controla por cantidad: no tiene etiqueta por pieza. Quedó en el lote una etiqueta de pila con su código; ajusta la cantidad y pulsa "Imprimir etiquetas".');
+      } else {
+        pintarLote();
+        void abrirReimprimir(reimprimir);
+      }
     } else if (pedido && lista.some((p) => p.id === pedido)) {
       history.replaceState(null, '', window.location.pathname);
       agregar(pedido);

@@ -45,10 +45,12 @@ import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoVa
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
+import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
+import * as mermasDb from './db/mermas';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
-import { MOTIVOS_BAJA, sumaStock } from '../types/database.types';
+import { MOTIVOS_BAJA, MOTIVOS_MERMA, sumaStock } from '../types/database.types';
 import type {
   AutorizacionCodigo,
   AutorizacionPrecio,
@@ -67,7 +69,9 @@ import type {
   FotoCuadre,
   InventarioLocal,
   Local,
+  Merma,
   MetodoPago,
+  MotivoMerma,
   ResultadoReseteoReportes,
   ResultadoEliminacionVentas,
   ResultadoReseteoVentas,
@@ -138,6 +142,8 @@ interface LocalDB {
   referenciaSeqPorPrefijo?: Record<string, number>;
   /** Cuadres de caja diarios (las fotos van como data URL dentro de cada cuadre) */
   cuadres?: CuadreCaja[];
+  /** Piezas botadas de productos por cantidad (defectuosas en una venta o bajas del Descargo) */
+  mermas?: Merma[];
 }
 
 function generarId(): string {
@@ -1207,6 +1213,12 @@ function exigirNombreLibreLocal(productos: Producto[], nombres: string[], exclui
   }
 }
 
+/** Solo los productos de menos de $3 se pueden controlar por cantidad (regla del dueño; la misma del servidor). */
+function exigirPrecioPorCantidad(precioVenta: number): void {
+  const mensaje = errorPrecioPorCantidad(precioVenta);
+  if (mensaje) throw new Error(mensaje);
+}
+
 export async function crearProducto(
   input: Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>
 ): Promise<Producto> {
@@ -1224,6 +1236,7 @@ export async function crearProducto(
     throw new Error(`Ya existe un producto con el código de barras ${input.codigo_barras}.`);
   }
   exigirNombreLibreLocal(db.productos, [input.nombre]);
+  if (input.control_por_cantidad) exigirPrecioPorCantidad(input.precio_venta ?? 0);
 
   const producto: Producto = {
     id: generarId(),
@@ -1233,6 +1246,7 @@ export async function crearProducto(
     stock_minimo: 5,
     created_at: new Date().toISOString(),
     ...input,
+    control_por_cantidad: input.control_por_cantidad ? 1 : 0,
   };
   producto.prefijo_codigo = input.prefijo_codigo ? prefijoValidoODemo(input.prefijo_codigo) : undefined;
   prefijoDeProductoLocal(db, producto);
@@ -1272,6 +1286,7 @@ export async function crearProductosRapidos(filas: FilaAltaRapida[]): Promise<Pr
       precio_compra: f.precio_compra ?? 0,
       stock_minimo: 0,
       prefijo_codigo: f.prefijo_codigo?.trim() || undefined,
+      control_por_cantidad: f.control_por_cantidad === 1 ? 1 : 0,
     });
     creados.push({ id: p.id, nombre: p.nombre, codigo_barras: p.codigo_barras, referencia: p.referencia ?? undefined, prefijo_codigo: p.prefijo_codigo ?? undefined });
   }
@@ -1299,6 +1314,19 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   // Solo si de verdad cambia el nombre: los que ya estaban repetidos se pueden seguir editando sin tocarlo
   if (cambios.nombre !== undefined && normalizarNombre(cambios.nombre) !== normalizarNombre(producto.nombre)) {
     exigirNombreLibreLocal(db.productos, [cambios.nombre], id);
+  }
+  // Pasar de "con código por pieza" a "por cantidad" (o al revés) solo con el stock en 0 y solo administrador/gerente, como el servidor
+  const cambiaControl = cambios.control_por_cantidad !== undefined && (cambios.control_por_cantidad ? 1 : 0) !== (producto.control_por_cantidad ? 1 : 0);
+  if (cambiaControl) {
+    if (!esGlobal((await obtenerSesionActual())?.rol)) throw new Error('Solo el administrador o el gerente pueden cambiar si un producto se controla por cantidad.');
+    const hayPiezas = (db.unidades ?? []).some((u) => u.producto_id === id && (u.estado === 'DISPONIBLE' || u.estado === 'EN_TRANSITO'));
+    if (producto.stock_actual > 0 || hayPiezas) {
+      throw new Error('Para cambiar entre "por cantidad" y "con etiqueta por pieza" el producto debe tener el stock en 0 en todos los locales (y nada en tránsito). Retíralo con una baja o crea otro producto.');
+    }
+    if (cambios.control_por_cantidad) exigirPrecioPorCantidad(cambios.precio_venta ?? producto.precio_venta);
+    cambios.control_por_cantidad = cambios.control_por_cantidad ? 1 : 0;
+  } else {
+    delete cambios.control_por_cantidad;
   }
   Object.assign(producto, cambios);
   if (localId && cambios.stock_minimo !== undefined) {
@@ -1644,8 +1672,9 @@ export async function registrarMovimiento(input: {
       db.inventario.push(fila);
     }
 
-    // Primero las unidades (lanza si alguna no está disponible: no se ha guardado nada todavía)
-    const unidad_codigos = moverUnidadesLocal(db, { producto_id: input.producto_id, local_id, tipo: input.tipo, cantidad: input.cantidad }, input.unidad_codigos);
+    // Primero las unidades (lanza si alguna no está disponible: no se ha guardado nada todavía). Un producto por cantidad no tiene piezas con código.
+    if (esPorCantidad(producto) && input.unidad_codigos?.length) throw new Error(`"${producto.nombre}" se controla por cantidad: no lleva código por pieza.`);
+    const unidad_codigos = esPorCantidad(producto) ? [] : moverUnidadesLocal(db, { producto_id: input.producto_id, local_id, tipo: input.tipo, cantidad: input.cantidad }, input.unidad_codigos);
     const delta = input.tipo === 'ENTRADA' ? input.cantidad : -input.cantidad;
     fila.stock_actual += delta;
     producto.stock_actual += delta; // total entre locales
@@ -1728,7 +1757,12 @@ export interface DatosVenta {
    * autorización de un supervisor salen de `autorizarPrecioVenta`; el servidor la vuelve a comprobar y calcula la comisión.
    */
   precioPromotor?: { promotor?: DatosPromotor | null; autorizacion: AutorizacionPrecio } | null;
+  /** Autorización (`autorizarDanados`) de un gerente o administrador: obligatoria si las piezas defectuosas de la venta son 3 o más (UMBRAL_CLAVE_DANADOS) */
+  autorizacionDanados?: AutorizacionCodigo | null;
 }
+
+/** Piezas defectuosas que se botan en esta venta (suma de todas las líneas; solo productos por cantidad, no se cobran). */
+export const totalDanados = (items: VentaItem[]): number => items.reduce((s, i) => s + (i.danados ?? 0), 0);
 
 /** ¿Alguna línea se cobra a un precio distinto al del catálogo, más caro (promotor) o más barato (descuento)? (el POS pone `precio_lista` en esas líneas) */
 export const tienePrecioDePromotor = (items: VentaItem[]): boolean => items.some((i) => i.precio_lista !== undefined && Math.abs(i.precio_unitario - i.precio_lista) > 0.005);
@@ -1795,6 +1829,176 @@ export async function autorizarCodigoManual(pedido: { email?: string; clave: str
   const token = `demo-codigo-${generarId()}`;
   codigosManualesDemo.set(token, { producto_id: pedido.producto_id, supervisor_id: supervisor.id, supervisor_nombre: supervisor.nombre, vence_en });
   return { token, vence_en, autorizado_por: supervisor.nombre };
+}
+
+// Modo demo: autorizaciones para botar piezas defectuosas (3 o más en una venta), en memoria
+const danadosDemo = new Map<string, { cantidad: number; local_id: string; supervisor_id: string; supervisor_nombre: string; vence_en: number }>();
+
+/**
+ * Un gerente o administrador autoriza, con SU contraseña, botar 3 o más piezas defectuosas en una venta (productos por cantidad).
+ * Dura 20 minutos. Con el servidor la verifica el servidor.
+ */
+export async function autorizarDanados(pedido: { email?: string; clave: string; cantidad: number }): Promise<AutorizacionCodigo> {
+  const local_id = await exigirLocal('vender');
+  if (modoServidor) return ventasDb.autorizarDanados({ ...pedido, local_id });
+  if (!Number.isInteger(pedido.cantidad) || pedido.cantidad < 1) throw new Error('La cantidad de piezas defectuosas no es válida.');
+  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id, true);
+  if (!supervisor) throw new Error('Contraseña incorrecta: botar 3 o más piezas defectuosas en una venta lo autoriza un gerente o un administrador.');
+  const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
+  const token = `demo-danados-${generarId()}`;
+  danadosDemo.set(token, { cantidad: pedido.cantidad, local_id, supervisor_id: supervisor.id, supervisor_nombre: supervisor.nombre, vence_en });
+  return { token, vence_en, autorizado_por: supervisor.nombre };
+}
+
+function limpiarMermaDemo(motivo: MotivoMerma | null | undefined, nota: string | null | undefined): { motivo: MotivoMerma | null; nota: string | null } {
+  if (motivo && !MOTIVOS_MERMA.some((m) => m.id === motivo)) throw new Error('El motivo de la pérdida no es válido.');
+  const texto = (nota ?? '').trim().replace(/\s+/g, ' ');
+  if (texto.length > 300) throw new Error('La nota es muy larga (máximo 300 caracteres).');
+  return { motivo: motivo ?? null, nota: texto || null };
+}
+
+const nombreMotivoMerma = (motivo: MotivoMerma | null) => MOTIVOS_MERMA.find((m) => m.id === motivo)?.nombre;
+
+/** Demo: mueve el stock de un producto por cantidad (sin piezas con código) y deja el movimiento. */
+function moverCantidadDemo(db: LocalDB, tipo: TipoMovimiento, productoId: string, localId: string, cantidad: number, motivo: string): MovimientoInventario {
+  let fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === productoId);
+  if (!fila) {
+    fila = { local_id: localId, producto_id: productoId, stock_actual: 0, stock_minimo: 0 };
+    db.inventario.push(fila);
+  }
+  const delta = sumaStock(tipo) ? cantidad : -cantidad;
+  fila.stock_actual += delta;
+  const producto = db.productos.find((p) => p.id === productoId);
+  if (producto) producto.stock_actual += delta;
+  const movimiento: MovimientoInventario = { id: generarId(), producto_id: productoId, tipo, cantidad, motivo, fecha: new Date().toISOString(), local_id: localId, unidad_codigos: [] };
+  db.movimientos.unshift(movimiento);
+  return movimiento;
+}
+
+/**
+ * Una línea de venta de un producto por cantidad con piezas defectuosas: la salida de lo que se cobra y la baja de lo que se bota, juntas
+ * (atómicas: o salen las dos o ninguna). Solo encargado, gerente y administrador; con 3 o más defectuosas en la venta hace falta la autorización.
+ */
+async function registrarSalidaConMerma(input: {
+  producto_id: string;
+  local_id: string;
+  cantidad: number;
+  danados: number;
+  danados_venta: number;
+  motivo?: MotivoMerma | null;
+  nota?: string | null;
+  autorizacion?: string;
+}): Promise<{ salida: MovimientoInventario; baja: MovimientoInventario }> {
+  if (modoServidor) {
+    return movimientosDb.registrarSalidaConMerma({
+      producto_id: input.producto_id,
+      local_id: input.local_id,
+      cantidad: input.cantidad,
+      danados: input.danados,
+      danados_venta: input.danados_venta,
+      motivo: input.motivo,
+      nota: input.nota,
+      autorizacion: input.autorizacion,
+    });
+  }
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Solo el encargado, el gerente o el administrador pueden marcar piezas defectuosas.');
+  if (!Number.isInteger(input.cantidad) || input.cantidad < 1) throw new Error('Se debe cobrar al menos una pieza (la que sí sirvió).');
+  if (!Number.isInteger(input.danados) || input.danados < 1) throw new Error('La cantidad de piezas defectuosas debe ser un entero mayor a 0.');
+  const { motivo, nota } = limpiarMermaDemo(input.motivo, input.nota);
+  const total = Math.max(input.danados, input.danados_venta);
+  let autorizado: { id: string; nombre: string } | null = null;
+  if (total >= UMBRAL_CLAVE_DANADOS) {
+    const a = input.autorizacion ? danadosDemo.get(input.autorizacion) : undefined;
+    if (!a || a.vence_en < Date.now() || a.local_id !== input.local_id || a.cantidad < total) {
+      throw new Error(`Botar ${UMBRAL_CLAVE_DANADOS} o más piezas defectuosas en una venta necesita la clave de un gerente o administrador. Vuelve a pedirla.`);
+    }
+    autorizado = { id: a.supervisor_id, nombre: a.supervisor_nombre };
+  }
+  const db = leerDB();
+  const producto = db.productos.find((p) => p.id === input.producto_id);
+  if (!producto) throw new Error('Producto no encontrado.');
+  if (!esPorCantidad(producto)) throw new Error(`"${producto.nombre}" lleva código por pieza: sus piezas dañadas se dan de baja por código (Mercancía → Descargo).`);
+  const disponible = db.inventario.find((i) => i.local_id === input.local_id && i.producto_id === input.producto_id)?.stock_actual ?? 0;
+  if (disponible < input.cantidad + input.danados) {
+    throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${input.cantidad + input.danados}.`);
+  }
+  const salida = moverCantidadDemo(db, 'SALIDA', input.producto_id, input.local_id, input.cantidad, 'Venta POS');
+  const baja = moverCantidadDemo(
+    db,
+    'BAJA',
+    input.producto_id,
+    input.local_id,
+    input.danados,
+    `Pieza defectuosa en una venta${nombreMotivoMerma(motivo) ? ` (${nombreMotivoMerma(motivo)})` : ''}${nota ? `: ${nota}` : ''}`
+  );
+  (db.mermas ?? (db.mermas = [])).unshift({
+    id: generarId(),
+    movimiento_id: baja.id,
+    producto_id: input.producto_id,
+    producto_nombre: producto.nombre,
+    local_id: input.local_id,
+    cantidad: input.danados,
+    origen: 'VENTA',
+    motivo,
+    nota,
+    por_id: sesion.id,
+    por_nombre: sesion.nombre,
+    autorizado_nombre: autorizado?.nombre ?? null,
+    fecha: baja.fecha,
+  });
+  guardarDB(db);
+  return { salida, baja };
+}
+
+/** Bota piezas de un producto por cantidad sin que haya una venta (Mercancía → Descargo). Administrador, gerente y encargado de ese local. */
+export async function darDeBajaPorCantidad(datos: { productoId: string; localId: string; cantidad: number; motivo?: MotivoMerma | null; nota?: string | null }): Promise<void> {
+  const sesion = await sesionDeMercancia();
+  if (!puedeEnLocal(sesion, datos.localId)) throw new Error('Solo puedes dar de baja mercancía de tu propio local.');
+  if (!Number.isInteger(datos.cantidad) || datos.cantidad < 1 || datos.cantidad > 5000) throw new Error('La cantidad debe ser un entero mayor a 0.');
+  if (modoServidor) {
+    await mermasDb.darDeBajaPorCantidad(datos);
+    return;
+  }
+  const { motivo, nota } = limpiarMermaDemo(datos.motivo, datos.nota);
+  const db = leerDB();
+  const producto = db.productos.find((p) => p.id === datos.productoId);
+  if (!producto) throw new Error('Producto no encontrado.');
+  if (!esPorCantidad(producto)) throw new Error(`"${producto.nombre}" lleva código por pieza: sus piezas se dan de baja por código.`);
+  const disponible = db.inventario.find((i) => i.local_id === datos.localId && i.producto_id === datos.productoId)?.stock_actual ?? 0;
+  if (disponible < datos.cantidad) throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${datos.cantidad}.`);
+  const baja = moverCantidadDemo(db, 'BAJA', datos.productoId, datos.localId, datos.cantidad, `Baja por cantidad${nombreMotivoMerma(motivo) ? ` (${nombreMotivoMerma(motivo)})` : ''}${nota ? `: ${nota}` : ''}`);
+  (db.mermas ?? (db.mermas = [])).unshift({
+    id: generarId(),
+    movimiento_id: baja.id,
+    producto_id: datos.productoId,
+    producto_nombre: producto.nombre,
+    local_id: datos.localId,
+    cantidad: datos.cantidad,
+    origen: 'DESCARGO',
+    motivo,
+    nota,
+    por_id: sesion.id,
+    por_nombre: sesion.nombre,
+    autorizado_nombre: null,
+    fecha: baja.fecha,
+  });
+  guardarDB(db);
+}
+
+/** Las pérdidas registradas (más recientes primero) del alcance activo. Administrador, gerente y encargado. */
+export async function listarMermas(opciones: { desde?: Date; hasta?: Date; limite?: number } = {}): Promise<Merma[]> {
+  await sesionDeMercancia();
+  const alcance = await alcanceActual();
+  const limite = opciones.limite ?? 200;
+  if (modoServidor) {
+    return mermasDb.listarMermas({ desde: opciones.desde?.toISOString(), hasta: opciones.hasta?.toISOString(), localId: alcance.localId, limite });
+  }
+  const t = (m: Merma) => new Date(m.fecha).getTime();
+  return (leerDB().mermas ?? [])
+    .filter((m) => (alcance.todos || m.local_id === alcance.localId) && (!opciones.desde || t(m) >= opciones.desde.getTime()) && (!opciones.hasta || t(m) <= opciones.hasta.getTime()))
+    .sort((a, b) => t(b) - t(a))
+    .slice(0, limite);
 }
 
 /** Venta ya guardada. `pendienteSincronizar`: se hizo sin conexión y el folio se asignará al sincronizar (folio = 0). */
@@ -1951,6 +2155,21 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     }
   }
 
+  // Piezas defectuosas (productos por cantidad): también se comprueban ANTES de mover el inventario
+  const danadosVenta = totalDanados(items);
+  if (danadosVenta > 0) {
+    if (items.some((i) => (i.danados ?? 0) > 0 && i.cantidad < 1)) throw new Error('En cada producto con piezas defectuosas se debe cobrar al menos una pieza (la que sí sirvió).');
+    if (modoServidor && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new Error('Para marcar piezas defectuosas necesitas conexión: la baja se registra junto con la venta en el servidor.');
+    }
+    if (danadosVenta >= UMBRAL_CLAVE_DANADOS) {
+      const aut = datos.autorizacionDanados;
+      if (!aut) throw new Error(`Botar ${UMBRAL_CLAVE_DANADOS} o más piezas defectuosas necesita la clave de un gerente o administrador.`);
+      if (aut.vence_en < Date.now() + 15_000) throw new Error('La autorización de las piezas defectuosas venció. Vuelve a pedirla.');
+      if (!modoServidor && (danadosDemo.get(aut.token)?.cantidad ?? 0) < danadosVenta) throw new Error('La autorización de las piezas defectuosas no es válida. Vuelve a pedirla.');
+    }
+  }
+
   // Pago móvil = captura del comprobante ANTES de tocar el inventario: si no se puede subir, la venta no empieza
   const conPagoMovil = incluyePagoMovil(datos.pagos);
   const referenciaPagoMovil = conPagoMovil ? (datos.referenciaPagoMovil ?? '').trim() : '';
@@ -1972,17 +2191,41 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   let fallo: unknown = null;
   for (const item of items) {
     try {
-      const movimiento = await registrarMovimiento({
-        producto_id: item.producto_id,
-        tipo: 'SALIDA',
-        cantidad: item.cantidad,
-        motivo: 'Venta POS',
-        local_id,
-        unidad_codigos: item.unidades,
-      });
+      // La autorización y la nota de las piezas defectuosas nunca se guardan en la venta
+      const { autorizacion_danados: _token, danados_nota: nota, ...base } = item;
+      let movimiento: MovimientoInventario;
+      let bajaId: string | undefined;
+      if ((item.danados ?? 0) > 0) {
+        const r = await registrarSalidaConMerma({
+          producto_id: item.producto_id,
+          local_id,
+          cantidad: item.cantidad,
+          danados: item.danados!,
+          danados_venta: danadosVenta,
+          motivo: item.danados_motivo ?? null,
+          nota: nota ?? null,
+          autorizacion: datos.autorizacionDanados?.token,
+        });
+        movimiento = r.salida;
+        bajaId = r.baja.id;
+      } else {
+        movimiento = await registrarMovimiento({
+          producto_id: item.producto_id,
+          tipo: 'SALIDA',
+          cantidad: item.cantidad,
+          motivo: 'Venta POS',
+          local_id,
+          unidad_codigos: item.unidades,
+        });
+      }
       // El ticket y la devolución necesitan saber QUÉ unidades salieron (las escaneadas + las que completó el sistema)
       const salieron = movimiento.unidad_codigos?.length ? movimiento.unidad_codigos : item.unidades;
-      registradas.push(salieron?.length ? { ...item, unidades: salieron } : item);
+      // Sin códigos de pieza (producto por cantidad) se guarda el id del movimiento: así se puede reponer el stock si se elimina la venta
+      registradas.push({
+        ...base,
+        ...(salieron?.length ? { unidades: salieron } : { movimiento_id: movimiento.id }),
+        ...(bajaId ? { movimiento_baja_id: bajaId } : {}),
+      });
     } catch (err) {
       fallo = err;
       break;
@@ -2119,6 +2362,25 @@ export async function listarVentas(opciones: { desde?: Date; hasta?: Date; limit
  * Devoluciones, más nuevas primero. El administrador ve todas; un vendedor, solo las de las ventas
  * que puede ver (lo exige la base de datos).
  */
+/** Demo: cuánto de cada producto por cantidad (sin códigos de pieza) sacaron esas ventas del stock de su local, menos lo ya devuelto. */
+function cantidadesPorCantidadDemo(db: LocalDB, ventas: Venta[], devoluciones: Devolucion[]): { grupos: { producto_id: string; local_id: string; cantidad: number }[]; productos: Set<string> } {
+  const porCantidad = new Set(db.productos.filter((p) => esPorCantidad(p)).map((p) => p.id));
+  const mapa = new Map<string, { producto_id: string; local_id: string; cantidad: number }>();
+  const sumar = (local_id: string, producto_id: string, n: number) => {
+    if (!porCantidad.has(producto_id) || n === 0) return;
+    const clave = `${producto_id}|${local_id}`;
+    const g = mapa.get(clave) ?? { producto_id, local_id, cantidad: 0 };
+    g.cantidad += n;
+    mapa.set(clave, g);
+  };
+  for (const v of ventas) for (const i of v.items) sumar(v.local_id, i.producto_id, i.cantidad + (i.danados ?? 0));
+  for (const d of devoluciones) {
+    for (const i of d.items_nuevos) sumar(d.local_id, i.producto_id, i.cantidad);
+    for (const i of d.items_devueltos) sumar(d.local_id, i.producto_id, -i.cantidad);
+  }
+  return { grupos: [...mapa.values()].filter((g) => g.cantidad > 0), productos: porCantidad };
+}
+
 /**
  * Eliminar ventas elegidas (administrador y gerente): devuelve al stock las piezas que dejaron vendidas (las de la venta y las entregadas
  * a cambio en sus devoluciones), borra las ventas con sus devoluciones y las salidas de stock que las originaron (así salen también de los
@@ -2145,12 +2407,13 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
   const todos = new Set(origenes.flatMap((o) => o.codigos));
   const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && todos.has(u.codigo));
   const folios = ventas.map((v) => v.folio).sort((a, b) => a - b);
+  const { grupos: porCantidad, productos: productosPorCantidad } = cantidadesPorCantidadDemo(db, ventas, devoluciones);
   const resultado: ResultadoEliminacionVentas = {
     ventas: ventas.length,
     folios,
     devoluciones: devoluciones.length,
-    piezas: vendidas.length,
-    ventasSinPiezas: ventas.filter((v) => v.items.every((i) => (i.unidades ?? []).length === 0)).length,
+    piezas: vendidas.length + porCantidad.reduce((s, g) => s + g.cantidad, 0),
+    ventasSinPiezas: ventas.filter((v) => v.items.every((i) => (i.unidades ?? []).length === 0 && !productosPorCantidad.has(i.producto_id))).length,
     simulado: !!opciones.simular,
   };
   if (opciones.simular || ventas.length === 0) return resultado;
@@ -2167,6 +2430,7 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
   for (const g of grupos.values()) {
     await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.codigos.length, motivo, local_id: g.local_id, unidad_codigos: g.codigos });
   }
+  for (const g of porCantidad) await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.cantidad, motivo, local_id: g.local_id });
   const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de borrar los registros
   // Las salidas de stock que originaron esas ventas: la primera de cada pieza desde la fecha de la venta
   const salidas = new Set<string>();
@@ -2181,7 +2445,10 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
       salidas.add(m.id);
     }
   }
+  // Productos por cantidad: la salida y la baja de las piezas defectuosas se reconocen por el id guardado en la venta
+  for (const v of ventas) for (const i of v.items) for (const id of [i.movimiento_id, i.movimiento_baja_id]) if (id) salidas.add(id);
   despues.movimientos = despues.movimientos.filter((m) => !salidas.has(m.id));
+  despues.mermas = (despues.mermas ?? []).filter((m) => !salidas.has(m.movimiento_id));
   despues.devoluciones = (despues.devoluciones ?? []).filter((d) => !ventas.some((v) => v.id === d.venta_id));
   despues.ventas = (despues.ventas ?? []).filter((v) => !unicos.includes(v.id));
   guardarDB(despues);
@@ -2208,7 +2475,8 @@ export async function resetearVentas(opciones: { simular?: boolean } = {}): Prom
   for (const v of ventas) for (const i of v.items) for (const c of i.unidades ?? []) codigos.add(c);
   for (const d of devoluciones) for (const i of d.items_nuevos) for (const c of i.unidades ?? []) codigos.add(c);
   const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && codigos.has(u.codigo));
-  const resultado: ResultadoReseteoVentas = { ventas: ventas.length, devoluciones: devoluciones.length, piezas: vendidas.length, simulado: !!opciones.simular };
+  const { grupos: porCantidad } = cantidadesPorCantidadDemo(db, ventas, devoluciones);
+  const resultado: ResultadoReseteoVentas = { ventas: ventas.length, devoluciones: devoluciones.length, piezas: vendidas.length + porCantidad.reduce((s, g) => s + g.cantidad, 0), simulado: !!opciones.simular };
   if (opciones.simular) return resultado;
 
   const grupos = new Map<string, { producto_id: string; local_id: string; codigos: string[] }>();
@@ -2221,6 +2489,7 @@ export async function resetearVentas(opciones: { simular?: boolean } = {}): Prom
   for (const g of grupos.values()) {
     await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.codigos.length, motivo: 'Reseteo de ventas (restaura el stock)', local_id: g.local_id, unidad_codigos: g.codigos });
   }
+  for (const g of porCantidad) await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.cantidad, motivo: 'Reseteo de ventas (restaura el stock)', local_id: g.local_id });
   const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de vaciar los registros
   despues.ventas = [];
   despues.devoluciones = [];
@@ -2680,7 +2949,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     };
     const mover = (producto: Producto, tipo: TipoMovimiento, cantidad: number, motivo: string) => {
       const delta = tipo === 'ENTRADA' ? cantidad : -cantidad;
-      const unidad_codigos = moverUnidadesLocal(db, { producto_id: producto.id, local_id, tipo, cantidad });
+      const unidad_codigos = esPorCantidad(producto) ? [] : moverUnidadesLocal(db, { producto_id: producto.id, local_id, tipo, cantidad });
       filaInventario(producto.id).stock_actual += delta;
       producto.stock_actual += delta;
       db.movimientos.unshift({ id: generarId(), producto_id: producto.id, tipo, cantidad, motivo, fecha: ahora, local_id, unidad_codigos });
