@@ -16,6 +16,9 @@ const TABLAS_CATALOGO = ['productos', 'modelos_telefono', 'compatibilidades', 't
 // Tablas por local
 const TABLAS_LOCAL = ['inventario_local', 'movimientos_inventario', 'unidades_producto', 'ventas', 'devoluciones', 'ordenes_servicio', 'traslados', 'mermas'];
 const TABLAS_CUADRE = ['cuadres_caja'];
+// Pendientes con promotores: por local (los ve el negocio y también la nómina, que paga las comisiones) y el directorio, global
+const TABLA_PENDIENTES = 'pendientes';
+const TABLA_PROMOTORES = 'promotores';
 const TABLAS_NOMINA = ['empleados', 'nominas', 'nomina_reventas'];
 // Los avisos de cuenta (suspensión, cierre de sesión, desactivación) los necesita todo el que tenga sesión
 const TABLAS_CUENTA = ['locales', 'perfiles'];
@@ -43,6 +46,8 @@ export async function versionesVisibles(env: Entorno, sesion: Sesion): Promise<V
       if (TABLAS_CUENTA.includes(f.tabla)) return f.local_id === '';
       if (TABLAS_CATALOGO.includes(f.tabla)) return alcanceNegocio !== null && f.local_id === '';
       if (TABLAS_LOCAL.includes(f.tabla)) return permitido(alcanceNegocio, f.tabla, f.local_id, TABLAS_LOCAL);
+      if (f.tabla === TABLA_PROMOTORES) return (alcanceNegocio !== null || alcanceNom !== null) && f.local_id === '';
+      if (f.tabla === TABLA_PENDIENTES) return permitido(alcanceNegocio, f.tabla, f.local_id, [TABLA_PENDIENTES]) || permitido(alcanceNom, f.tabla, f.local_id, [TABLA_PENDIENTES]);
       if (TABLAS_CUADRE.includes(f.tabla)) return esGerencia(sesion.rol) && permitido(alcanceNegocio, f.tabla, f.local_id, TABLAS_CUADRE);
       if (TABLAS_NOMINA.includes(f.tabla)) {
         // `empleados` también se crea con local; `nominas` y `nomina_reventas` igual

@@ -1,0 +1,88 @@
+---
+// Confirmación para marcar un pendiente como pagado (la mercancía se pagó / se le pagó la comisión) o anularlo (fue un error), con una
+// nota opcional (p. ej. el número de la transferencia). Se abre con `easystem:cerrar-pendiente` { pendiente, accion } y, al terminar,
+// avisa con `easystem:pendiente-cambiado` (la página que la usa recarga sus listas).
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+---
+
+<dialog
+  id="cp-dialogo"
+  aria-labelledby="cp-titulo"
+  class="group anim-escalar m-auto w-[min(28rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form id="cp-form" novalidate class="flex max-h-[90vh] flex-col">
+    <div class="space-y-3 overflow-y-auto px-5 pb-4 pt-5">
+      <h2 id="cp-titulo" class="text-base font-semibold">Marcar como pagado</h2>
+      <div id="cp-resumen" class="oculto-con-teclado rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"></div>
+      <div>
+        <label for="cp-nota" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nota (opcional)</label>
+        <input id="cp-nota" type="text" maxlength="300" autocomplete="off" placeholder="Ej: transferencia 0123 / pagó en efectivo" class={`mt-1 ${campo}`} />
+      </div>
+      <p id="cp-aviso" class="oculto-con-teclado text-xs text-slate-500 dark:text-slate-400"></p>
+      <p id="cp-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+    <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="cp-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancelar</button>
+      <button id="cp-confirmar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Confirmar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { formatearMoneda } from '../../utils/format';
+  import { escaparHtml } from '../../utils/productosUI';
+  import type { Pendiente } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('cp-dialogo');
+  const confirmar = $<HTMLButtonElement>('cp-confirmar');
+  const error = $('cp-error');
+  let pendiente: Pendiente | null = null;
+  let accion: 'pagar' | 'anular' = 'pagar';
+
+  window.addEventListener('easystem:cerrar-pendiente', (e) => {
+    const d = (e as CustomEvent<{ pendiente: Pendiente; accion: 'pagar' | 'anular' }>).detail;
+    pendiente = d.pendiente;
+    accion = d.accion;
+    const pagar = accion === 'pagar';
+    const comision = pendiente.tipo === 'COMISION';
+    $('cp-titulo').textContent = pagar ? (comision ? 'Marcar comisión como pagada' : 'Marcar como pagado') : 'Anular pendiente';
+    $('cp-resumen').innerHTML = `<p class="font-semibold">${escaparHtml(pendiente.promotor_nombre || 'Promotor sin datos')} · ${formatearMoneda(pendiente.monto_usd)}</p>
+      <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">${escaparHtml(pendiente.descripcion)}</p>
+      ${pendiente.promotor_banco ? `<p class="mt-1 text-xs"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> <strong>${escaparHtml(pendiente.promotor_banco)}</strong></p>` : ''}`;
+    $('cp-aviso').textContent = pagar
+      ? comision
+        ? 'Confirma cuando ya le hayas pagado esta comisión. No se puede deshacer.'
+        : 'Confirma cuando el promotor ya haya pagado esta mercancía. No se puede deshacer.'
+      : 'Anúlalo solo si se creó por error. No se puede deshacer.';
+    confirmar.textContent = pagar ? 'Sí, ya se pagó' : 'Sí, anular';
+    ($('cp-nota') as HTMLInputElement).value = '';
+    error.classList.add('hidden');
+    confirmar.disabled = false;
+    if (!dialogo.open) dialogo.showModal();
+  });
+
+  $('cp-cancelar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  $('cp-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!pendiente) return;
+    confirmar.disabled = true;
+    error.classList.add('hidden');
+    try {
+      await inventoryService.cerrarPendiente(pendiente.id, accion, ($('cp-nota') as HTMLInputElement).value || null);
+      dialogo.close();
+      window.dispatchEvent(new CustomEvent('easystem:pendiente-cambiado', { detail: { accion } }));
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudo actualizar el pendiente.';
+      error.classList.remove('hidden');
+    } finally {
+      confirmar.disabled = false;
+    }
+  });
+</script>

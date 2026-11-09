@@ -12,6 +12,7 @@ import { esRutaPagoMovilDeLocal } from './archivos';
 import { normalizarCedula, separarNombre } from './clientes';
 import { verificarCodigoManual, verificarPrecioPromotor, type PrecioPromotorVerificado } from './autorizaciones';
 import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
+import { sentenciasBorrarComisiones, sentenciasComisionPromotor } from './pendientes';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -35,6 +36,7 @@ function aVenta(f: Record<string, unknown>): Venta {
     promotor_nombre: (f.promotor_nombre as string | null) ?? null,
     promotor_cedula: (f.promotor_cedula as string | null) ?? null,
     promotor_telefono: (f.promotor_telefono as string | null) ?? null,
+    promotor_banco: (f.promotor_banco as string | null) ?? null,
     comision: (f.comision as number | null) ?? 0,
     precio_autorizado_por: (f.precio_autorizado_por as string | null) ?? null,
     precio_autorizado_nombre: (f.precio_autorizado_nombre as string | null) ?? null,
@@ -164,6 +166,15 @@ function limpiarDanados(sesion: Sesion, items: VentaItem[]): VentaItem[] {
   });
 }
 
+/** Texto del pendiente de comisión: qué productos se vendieron más caros que la lista y a cuánto. */
+function descripcionComision(items: VentaItem[]): string {
+  const lineas = items
+    .filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista)
+    .map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
+  const texto = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
+  return `Comisión por venta con precio de promotor: ${texto}`;
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -189,13 +200,13 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     db
       .prepare(
         `INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, total, items, pagos, vuelto, tasa_cambio, total_bs, vendedor_id, vendedor_nombre, comprobante_path, referencia_pago_movil,
-                             promotor_id, promotor_nombre, promotor_cedula, promotor_telefono, comision, precio_autorizado_por, precio_autorizado_nombre)
-         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             promotor_id, promotor_nombre, promotor_cedula, promotor_telefono, promotor_banco, comision, precio_autorizado_por, precio_autorizado_nombre)
+         VALUES (?, (SELECT valor FROM contadores WHERE nombre = 'ventas'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(itemsGuardados),
         json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante.ruta, comprobante.referencia,
-        null, precios.promotor?.promotor_nombre ?? null, precios.promotor?.promotor_cedula ?? null, precios.promotor?.promotor_telefono ?? null, precios.comision,
+        null, precios.promotor?.promotor_nombre ?? null, precios.promotor?.promotor_cedula ?? null, precios.promotor?.promotor_telefono ?? null, precios.promotor?.promotor_banco ?? null, precios.comision,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),
     // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
@@ -205,6 +216,23 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
          ON CONFLICT (cedula) DO UPDATE SET nombre = excluded.nombre, apellido = excluded.apellido, telefono = excluded.telefono, updated_at = excluded.updated_at`
       )
       .bind(cedula, separado.nombre, separado.apellido, telefono, new Date().toISOString()),
+    // La comisión del promotor queda anotada en Pendientes (y el promotor en el directorio) en el MISMO lote que la venta
+    ...(precios.promotor?.modo === 'promotor' && precios.comision > 0
+      ? sentenciasComisionPromotor(db, sesion, {
+          ventaId: id,
+          localId: datos.local_id,
+          comision: precios.comision,
+          descripcion: descripcionComision(precios.items),
+          promotor: {
+            cedula: precios.promotor.promotor_cedula,
+            nombre: precios.promotor.promotor_nombre,
+            nombrePropio: precios.promotor.promotor_nombre_propio,
+            apellido: precios.promotor.promotor_apellido,
+            telefono: precios.promotor.promotor_telefono,
+            banco: precios.promotor.promotor_banco,
+          },
+        })
+      : []),
     ...sentenciasCambio(db, ['ventas'], datos.local_id),
   ]);
   const folio = lote[0].results[0].valor;
@@ -470,7 +498,9 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   await db.batch([
     db.prepare('DELETE FROM devoluciones'),
     db.prepare('DELETE FROM ventas'),
-    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones'], localId)),
+    // Las comisiones de promotor por pagar nacieron de esas ventas: desaparecen con ellas (las ya pagadas se conservan)
+    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IS NOT NULL"),
+    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'pendientes'], localId)),
   ]);
   return resultado;
 }
@@ -590,13 +620,14 @@ export async function eliminarVentas(env: Entorno, sesion: Sesion, ids: string[]
   await db.batch([
     ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM devoluciones WHERE venta_id IN (${marcas(t.length)})`).bind(...t)),
     ...tramos(idsVentas).map((t) => db.prepare(`DELETE FROM ventas WHERE id IN (${marcas(t.length)})`).bind(...t)),
+    ...sentenciasBorrarComisiones(db, idsVentas),
     ...tramos([...salidas]).map((t) => db.prepare(`DELETE FROM movimientos_inventario WHERE tipo = 'SALIDA' AND id IN (${marcas(t.length)})`).bind(...t)),
     // Productos por cantidad: la salida y la baja de las piezas defectuosas de esas ventas, y las filas de mermas que las acompañan
     ...tramos([...idsPorCantidad]).flatMap((t) => [
       db.prepare(`DELETE FROM mermas WHERE movimiento_id IN (${marcas(t.length)})`).bind(...t),
       db.prepare(`DELETE FROM movimientos_inventario WHERE tipo IN ('SALIDA', 'BAJA') AND id IN (${marcas(t.length)})`).bind(...t),
     ]),
-    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'mermas'], localId)),
+    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'mermas', 'pendientes'], localId)),
   ]);
 
   // El archivo del comprobante ya no respalda ninguna venta (si falla, queda un archivo suelto sin consecuencias)
@@ -642,7 +673,8 @@ export async function resetearReportes(env: Entorno, sesion: Sesion, opciones: {
     db.prepare('DELETE FROM devoluciones'), // primero: apuntan a las ventas
     db.prepare('DELETE FROM ventas'),
     db.prepare("DELETE FROM movimientos_inventario WHERE tipo IN ('ENTRADA','SALIDA')"),
-    ...locales.flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario'], localId)),
+    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IS NOT NULL"),
+    ...locales.flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'pendientes'], localId)),
   ]);
   return resultado;
 }

@@ -332,6 +332,8 @@ export interface Venta extends NuevaVenta {
   promotor_nombre?: string | null;
   promotor_cedula?: string | null;
   promotor_telefono?: string | null;
+  /** Banco receptor donde se le paga la comisión al promotor (opcional) */
+  promotor_banco?: string | null;
   /** Lo que se le paga al promotor: Σ cantidad × (precio cobrado − precio de lista). 0 si no hubo promotor. */
   comision?: number;
   precio_autorizado_por?: string | null;
@@ -368,6 +370,73 @@ export interface DatosPromotor {
   nombre?: string | null;
   apellido?: string | null;
   telefono?: string | null;
+  /** Banco receptor: donde se le paga la comisión */
+  banco?: string | null;
+}
+
+/** Un promotor registrado (directorio compartido por Pendientes, Nómina y el cobro del POS: al escribir su cédula se completan sus datos) */
+export interface Promotor {
+  id: string;
+  /** "V-12345678" / "E-12345678" */
+  cedula: string;
+  nombre: string;
+  apellido: string;
+  telefono: string | null;
+  banco: string | null;
+  creado_por_nombre?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Un promotor con lo que queda pendiente con él (dentro del alcance de quien consulta) */
+export interface PromotorResumen extends Promotor {
+  /** Comisiones por pagarle */
+  comision_pendiente: number;
+  /** Mercancía que se llevó y falta que pague */
+  mercancia_pendiente: number;
+  /** Cuántos pendientes abiertos tiene */
+  n_pendientes: number;
+}
+
+export interface DatosNuevoPromotor {
+  cedula: string;
+  nombre: string;
+  apellido: string;
+  telefono?: string | null;
+  banco?: string | null;
+}
+
+/** MERCANCIA = se llevó mercancía y vendrá a pagarla · COMISION = se le debe la comisión de una venta que trajo */
+export type TipoPendiente = 'MERCANCIA' | 'COMISION';
+export type EstadoPendiente = 'PENDIENTE' | 'PAGADO' | 'ANULADO';
+
+export interface Pendiente {
+  id: string;
+  local_id: string;
+  tipo: TipoPendiente;
+  promotor_id: string | null;
+  /** Datos del promotor: los actuales del directorio si está registrado; si no, los que se anotaron al crear el pendiente */
+  promotor_cedula: string | null;
+  promotor_nombre: string | null;
+  promotor_telefono: string | null;
+  promotor_banco: string | null;
+  descripcion: string;
+  monto_usd: number;
+  estado: EstadoPendiente;
+  venta_id: string | null;
+  venta_folio: number | null;
+  creado_por_nombre: string;
+  fecha: string;
+  cerrado_en: string | null;
+  cerrado_por_nombre: string | null;
+  nota_cierre: string | null;
+}
+
+export interface NuevoPendienteMercancia {
+  localId: string;
+  promotorId: string;
+  descripcion: string;
+  monto_usd: number;
 }
 
 /** Tasa del dólar: bolívares por 1 USD. Cada cambio es una fila (historial); la vigente es la última. */

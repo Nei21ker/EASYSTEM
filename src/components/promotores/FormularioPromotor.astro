@@ -1,0 +1,117 @@
+---
+// Ventana para agregar o corregir un promotor del directorio (cédula, nombre, apellido, teléfono y banco receptor). La usan Pendientes
+// y Nómina. Se abre con el evento `easystem:abrir-promotor` { promotor?: Promotor, cedula?: string } y, al guardar, avisa con
+// `easystem:promotor-guardado` { promotor, nuevo } (quien la abrió recarga su lista o elige al promotor recién creado).
+import { BANCOS_SUGERIDOS } from '../../utils/promotor';
+
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<dialog
+  id="fpr-dialogo"
+  aria-labelledby="fpr-titulo"
+  class="group anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form id="fpr-form" novalidate class="flex max-h-[90vh] flex-col">
+    <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+      <div>
+        <h2 id="fpr-titulo" class="text-base font-semibold">Agregar promotor</h2>
+        <p class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">
+          Queda guardado: la próxima vez que se venda con precio de promotor, al escribir su cédula se completan sus datos.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class="sm:col-span-2">
+          <label for="fpr-cedula" class={etiqueta}>Cédula *</label>
+          <input id="fpr-cedula" type="text" inputmode="text" autocomplete="off" placeholder="V-12345678" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="fpr-nombre" class={etiqueta}>Nombre *</label>
+          <input id="fpr-nombre" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="fpr-apellido" class={etiqueta}>Apellido *</label>
+          <input id="fpr-apellido" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="fpr-telefono" class={etiqueta}>Teléfono</label>
+          <input id="fpr-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="0414-1234567" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="fpr-banco" class={etiqueta}>Banco receptor</label>
+          <input id="fpr-banco" type="text" list="fpr-bancos" autocomplete="off" placeholder="Donde se le paga" class={`mt-1 ${campo}`} />
+          <datalist id="fpr-bancos">{BANCOS_SUGERIDOS.map((b) => <option value={b} />)}</datalist>
+        </div>
+      </div>
+      <p id="fpr-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+    <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="fpr-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancelar</button>
+      <button id="fpr-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import type { Promotor } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('fpr-dialogo');
+  const form = $<HTMLFormElement>('fpr-form');
+  const error = $('fpr-error');
+  const guardar = $<HTMLButtonElement>('fpr-guardar');
+  const campos = {
+    cedula: $<HTMLInputElement>('fpr-cedula'),
+    nombre: $<HTMLInputElement>('fpr-nombre'),
+    apellido: $<HTMLInputElement>('fpr-apellido'),
+    telefono: $<HTMLInputElement>('fpr-telefono'),
+    banco: $<HTMLInputElement>('fpr-banco'),
+  };
+  let editando: Promotor | null = null;
+
+  window.addEventListener('easystem:abrir-promotor', (e) => {
+    const detalle = (e as CustomEvent<{ promotor?: Promotor; cedula?: string } | undefined>).detail;
+    editando = detalle?.promotor ?? null;
+    $('fpr-titulo').textContent = editando ? 'Corregir datos del promotor' : 'Agregar promotor';
+    campos.cedula.value = editando?.cedula ?? detalle?.cedula ?? '';
+    campos.nombre.value = editando?.nombre ?? '';
+    campos.apellido.value = editando?.apellido ?? '';
+    campos.telefono.value = editando?.telefono ?? '';
+    campos.banco.value = editando?.banco ?? '';
+    error.classList.add('hidden');
+    guardar.disabled = false;
+    if (!dialogo.open) dialogo.showModal();
+    (editando ? campos.nombre : campos.cedula.value ? campos.nombre : campos.cedula).focus();
+  });
+
+  $('fpr-cancelar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    error.classList.add('hidden');
+    guardar.disabled = true;
+    try {
+      const datos = {
+        cedula: campos.cedula.value,
+        nombre: campos.nombre.value,
+        apellido: campos.apellido.value,
+        telefono: campos.telefono.value || null,
+        banco: campos.banco.value || null,
+      };
+      const promotor = editando ? await inventoryService.actualizarPromotor(editando.id, datos) : await inventoryService.crearPromotor(datos);
+      dialogo.close();
+      window.dispatchEvent(new CustomEvent('easystem:promotor-guardado', { detail: { promotor, nuevo: !editando } }));
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudo guardar el promotor.';
+      error.classList.remove('hidden');
+    } finally {
+      guardar.disabled = false;
+    }
+  });
+</script>

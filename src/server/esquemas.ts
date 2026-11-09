@@ -63,7 +63,28 @@ export const esquemaPromotor = z.object({
   nombre: z.string().max(80).nullable().optional(),
   apellido: z.string().max(80).nullable().optional(),
   telefono: z.string().max(30).nullable().optional(),
+  banco: z.string().max(80).nullable().optional(),
 });
+/** Alta/edición de un promotor del directorio (cédula, nombre y apellido obligatorios; el formato se valida en `normalizarPromotor`) */
+export const esquemaNuevoPromotor = z.object({
+  cedula: z.string().min(1).max(30),
+  nombre: z.string().min(1).max(80),
+  apellido: z.string().min(1).max(80),
+  telefono: z.string().max(30).nullable().optional(),
+  banco: z.string().max(80).nullable().optional(),
+});
+export const esquemaPendienteMercancia = z.object({
+  localId: z.string(),
+  promotorId: z.string().min(1).max(100),
+  descripcion: z.string().min(1).max(500),
+  monto_usd: z.number(),
+});
+export const esquemaCerrarPendiente = z.object({
+  /** "pagar" = el promotor pagó la mercancía / se le pagó la comisión; "anular" = se creó por error */
+  accion: z.enum(['pagar', 'anular']),
+  nota: z.string().max(300).nullable().optional(),
+});
+export const esquemaAsignarPromotor = z.object({ promotorId: z.string().min(1).max(100) });
 export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 export const esquemaDinero = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 

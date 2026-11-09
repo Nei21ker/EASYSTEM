@@ -16,7 +16,7 @@
 // sincronizarPendientes(). Ver ConnectionStatus.astro para el indicador de UI.
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
-import { normalizarPromotor } from '../utils/promotor';
+import { normalizarPromotor, type PromotorNormalizado } from '../utils/promotor';
 import { ErrorDeApi } from './api';
 import { partirEnTandas } from '../utils/tandas';
 import type { ResultadoEliminacion } from './db/productos';
@@ -47,6 +47,7 @@ import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
 import * as mermasDb from './db/mermas';
+import * as promotoresDb from './db/promotores';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
@@ -60,6 +61,12 @@ import type {
   Compatibilidad,
   ContadoCuadre,
   CuadreCaja,
+  DatosNuevoPromotor,
+  EstadoPendiente,
+  Pendiente,
+  Promotor,
+  PromotorResumen,
+  TipoPendiente,
   Devolucion,
   DineroEntregado,
   Empleado,
@@ -144,6 +151,9 @@ interface LocalDB {
   cuadres?: CuadreCaja[];
   /** Piezas botadas de productos por cantidad (defectuosas en una venta o bajas del Descargo) */
   mermas?: Merma[];
+  /** Directorio de promotores y pendientes con ellos (mercancía que se llevaron y comisiones por pagar) */
+  promotores?: Promotor[];
+  pendientes?: Pendiente[];
 }
 
 function generarId(): string {
@@ -2001,6 +2011,229 @@ export async function listarMermas(opciones: { desde?: Date; hasta?: Date; limit
     .slice(0, limite);
 }
 
+// --- Promotores y pendientes (Local Vidrios, nómina) --------------------------------------------------------------
+// Directorio de promotores y lo que queda por cobrar o pagar con ellos: mercancía que se llevaron y comisiones de ventas con precio de
+// promotor. Mismas reglas que el servidor (servicios/promotores.ts y servicios/pendientes.ts); en la demo viven en `db.promotores` y `db.pendientes`.
+
+/** Quien consulta pendientes y promotores: gerencia (administrador, gerente, encargado) o el contador (nómina). */
+async function sesionDePendientes(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !(esGerencia(sesion.rol) || sesion.rol === 'contador')) throw new Error('Tu rol no tiene acceso a los pendientes ni a los promotores.');
+  return sesion;
+}
+
+/**
+ * Local por el que se consulta: `undefined` = el alcance activo del encabezado; `null` = todos los locales (Nómina tiene su propio
+ * filtro); un id = ese local. Devuelve null para "todos".
+ */
+async function localParaPendientes(sesion: SesionUsuario, localId: string | null | undefined): Promise<string | null> {
+  if (localId !== undefined) return localId;
+  if (sesion.rol === 'contador') return null;
+  return (await alcanceActual()).localId;
+}
+
+function validarPromotorDemo(datos: DatosNuevoPromotor) {
+  const r = normalizarPromotor(datos);
+  if (!r.ok) throw new Error(r.mensaje);
+  const p = r.promotor;
+  if (!p.cedula) throw new Error('Escribe la cédula del promotor.');
+  if (p.nombrePropio.length < 2 || p.apellido.length < 2) throw new Error('Escribe el nombre y el apellido del promotor.');
+  return p;
+}
+
+const nombreCompleto = (p: { nombre: string; apellido: string }) => `${p.nombre} ${p.apellido}`.trim();
+
+/** Busca un promotor por cédula (para completar sus datos en el cobro con precio de promotor). */
+export async function buscarPromotorPorCedula(cedula: string): Promise<Promotor | null> {
+  const r = normalizarPromotor({ cedula });
+  if (!r.ok) throw new Error(r.mensaje);
+  if (!r.promotor.cedula) return null;
+  if (modoServidor) return promotoresDb.buscarPromotorPorCedula(r.promotor.cedula);
+  return (leerDB().promotores ?? []).find((p) => p.cedula === r.promotor.cedula) ?? null;
+}
+
+/** El directorio con lo pendiente con cada promotor (administrador, gerente, encargado y contador). */
+export async function listarPromotores(opciones: { localId?: string | null; buscar?: string } = {}): Promise<PromotorResumen[]> {
+  const sesion = await sesionDePendientes();
+  const localId = await localParaPendientes(sesion, opciones.localId);
+  if (modoServidor) return promotoresDb.listarPromotores({ localId, buscar: opciones.buscar });
+  const db = leerDB();
+  const texto = (opciones.buscar ?? '').trim().toLowerCase();
+  const abiertos = (db.pendientes ?? []).filter((x) => x.estado === 'PENDIENTE' && (!localId || x.local_id === localId));
+  return (db.promotores ?? [])
+    .filter((p) => !texto || `${nombreCompleto(p)} ${p.cedula} ${p.telefono ?? ''}`.toLowerCase().includes(texto))
+    .map((p): PromotorResumen => {
+      const suyos = abiertos.filter((x) => x.promotor_id === p.id);
+      const suma = (tipo: TipoPendiente) => Math.round(suyos.filter((x) => x.tipo === tipo).reduce((s, x) => s + x.monto_usd, 0) * 100) / 100;
+      return { ...p, comision_pendiente: suma('COMISION'), mercancia_pendiente: suma('MERCANCIA'), n_pendientes: suyos.length };
+    })
+    .sort((a, b) => nombreCompleto(a).localeCompare(nombreCompleto(b), 'es'));
+}
+
+/** Agrega un promotor al directorio (administrador, gerente, encargado y contador). La cédula es única. */
+export async function crearPromotor(datos: DatosNuevoPromotor): Promise<Promotor> {
+  const sesion = await sesionDePendientes();
+  const p = validarPromotorDemo(datos);
+  if (modoServidor) return promotoresDb.crearPromotor(datos);
+  const db = leerDB();
+  const lista = db.promotores ?? (db.promotores = []);
+  const existente = lista.find((x) => x.cedula === p.cedula);
+  if (existente) throw new Error(`Ya hay un promotor con la cédula ${p.cedula}: ${nombreCompleto(existente) || 'sin nombre'}. Búscalo en la lista.`);
+  const ahora = new Date().toISOString();
+  const nuevo: Promotor = { id: generarId(), cedula: p.cedula!, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion.nombre, created_at: ahora, updated_at: ahora };
+  lista.push(nuevo);
+  guardarDB(db);
+  return nuevo;
+}
+
+export async function actualizarPromotor(id: string, datos: DatosNuevoPromotor): Promise<Promotor> {
+  await sesionDePendientes();
+  const p = validarPromotorDemo(datos);
+  if (modoServidor) return promotoresDb.actualizarPromotor(id, datos);
+  const db = leerDB();
+  const lista = db.promotores ?? [];
+  const actual = lista.find((x) => x.id === id);
+  if (!actual) throw new Error('El promotor no existe.');
+  const otro = lista.find((x) => x.cedula === p.cedula && x.id !== id);
+  if (otro) throw new Error(`Esa cédula ya es de otro promotor: ${nombreCompleto(otro)}.`);
+  Object.assign(actual, { cedula: p.cedula!, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, updated_at: new Date().toISOString() });
+  guardarDB(db);
+  return actual;
+}
+
+/** Los datos del promotor se leen del directorio cuando está registrado (así un banco corregido vale para lo que aún se debe). */
+function pendienteConPromotor(db: LocalDB, x: Pendiente): Pendiente {
+  const p = x.promotor_id ? (db.promotores ?? []).find((y) => y.id === x.promotor_id) : undefined;
+  return p ? { ...x, promotor_cedula: p.cedula, promotor_nombre: nombreCompleto(p), promotor_telefono: p.telefono, promotor_banco: p.banco } : x;
+}
+
+export async function listarPendientes(opciones: { estado?: EstadoPendiente; tipo?: TipoPendiente; promotorId?: string; localId?: string | null; limite?: number } = {}): Promise<Pendiente[]> {
+  const sesion = await sesionDePendientes();
+  const localId = await localParaPendientes(sesion, opciones.localId);
+  if (modoServidor) return promotoresDb.listarPendientes({ ...opciones, localId });
+  const db = leerDB();
+  return (db.pendientes ?? [])
+    .filter((x) => (!localId || x.local_id === localId) && (!opciones.estado || x.estado === opciones.estado) && (!opciones.tipo || x.tipo === opciones.tipo) && (!opciones.promotorId || x.promotor_id === opciones.promotorId))
+    .map((x) => pendienteConPromotor(db, x))
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime())
+    .slice(0, opciones.limite ?? 500);
+}
+
+/** Anota la mercancía que un promotor se llevó y que vendrá a pagar (en el local activo). Administrador, gerente y encargado. */
+export async function crearPendienteMercancia(datos: { promotorId: string; descripcion: string; monto_usd: number; localId?: string }): Promise<Pendiente> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Solo el administrador, el gerente o el encargado anotan pendientes.');
+  const localId = datos.localId ?? (await exigirLocal('anotar un pendiente'));
+  if (!puedeEnLocal(sesion, localId)) throw new Error('No tienes acceso a ese local.');
+  const descripcion = datos.descripcion.trim().replace(/\s+/g, ' ');
+  if (descripcion.length < 3 || descripcion.length > 500) throw new Error('Describe qué mercancía se llevó (de 3 a 500 caracteres).');
+  if (!Number.isFinite(datos.monto_usd) || datos.monto_usd <= 0 || datos.monto_usd > 1_000_000) throw new Error('El monto que debe pagar debe ser mayor a 0.');
+  if (modoServidor) return promotoresDb.crearPendienteMercancia({ localId, promotorId: datos.promotorId, descripcion, monto_usd: datos.monto_usd });
+  const db = leerDB();
+  const promotor = (db.promotores ?? []).find((p) => p.id === datos.promotorId);
+  if (!promotor) throw new Error('Elige un promotor de la lista, o agrégalo primero.');
+  const nuevo: Pendiente = {
+    id: generarId(),
+    local_id: localId,
+    tipo: 'MERCANCIA',
+    promotor_id: promotor.id,
+    promotor_cedula: promotor.cedula,
+    promotor_nombre: nombreCompleto(promotor),
+    promotor_telefono: promotor.telefono,
+    promotor_banco: promotor.banco,
+    descripcion,
+    monto_usd: Math.round(datos.monto_usd * 100) / 100,
+    estado: 'PENDIENTE',
+    venta_id: null,
+    venta_folio: null,
+    creado_por_nombre: sesion.nombre,
+    fecha: new Date().toISOString(),
+    cerrado_en: null,
+    cerrado_por_nombre: null,
+    nota_cierre: null,
+  };
+  (db.pendientes ?? (db.pendientes = [])).unshift(nuevo);
+  guardarDB(db);
+  return nuevo;
+}
+
+/** Marca un pendiente como pagado, o lo anula si fue un error. Las comisiones las paga gerente, administrador o contador; anularlas, solo gerente o administrador. */
+export async function cerrarPendiente(id: string, accion: 'pagar' | 'anular', nota?: string | null): Promise<Pendiente> {
+  const sesion = await sesionDePendientes();
+  const texto = (nota ?? '').trim().replace(/\s+/g, ' ');
+  if (texto.length > 300) throw new Error('La nota es muy larga (máximo 300 caracteres).');
+  if (modoServidor) return promotoresDb.cerrarPendiente(id, accion, texto || null);
+  const db = leerDB();
+  const x = (db.pendientes ?? []).find((y) => y.id === id && (sesion.rol === 'contador' || esGlobal(sesion.rol) || y.local_id === sesion.local_id));
+  if (!x) throw new Error('El pendiente no existe.');
+  const permitido = x.tipo === 'MERCANCIA' ? esGerencia(sesion.rol) : accion === 'pagar' ? esGlobal(sesion.rol) || sesion.rol === 'contador' : esGlobal(sesion.rol);
+  if (!permitido) {
+    throw new Error(x.tipo === 'COMISION' ? 'Las comisiones las paga el gerente, el administrador o el contador desde Nómina; anularlas, solo el gerente o el administrador.' : 'No puedes cambiar este pendiente.');
+  }
+  if (x.estado !== 'PENDIENTE') throw new Error(`Este pendiente ya está ${x.estado === 'PAGADO' ? 'pagado' : 'anulado'}.`);
+  Object.assign(x, { estado: accion === 'pagar' ? 'PAGADO' : 'ANULADO', cerrado_en: new Date().toISOString(), cerrado_por_nombre: sesion.nombre, nota_cierre: texto || null });
+  guardarDB(db);
+  return pendienteConPromotor(db, x);
+}
+
+/** Ata a un promotor registrado un pendiente abierto que se creó sin sus datos. */
+export async function asignarPromotorAPendiente(id: string, promotorId: string): Promise<Pendiente> {
+  const sesion = await sesionDePendientes();
+  if (modoServidor) return promotoresDb.asignarPromotorAPendiente(id, promotorId);
+  const db = leerDB();
+  const x = (db.pendientes ?? []).find((y) => y.id === id && (sesion.rol === 'contador' || esGlobal(sesion.rol) || y.local_id === sesion.local_id));
+  if (!x) throw new Error('El pendiente no existe.');
+  if (x.estado !== 'PENDIENTE') throw new Error('Solo se puede cambiar el promotor de un pendiente abierto.');
+  const promotor = (db.promotores ?? []).find((p) => p.id === promotorId);
+  if (!promotor) throw new Error('Elige un promotor de la lista, o agrégalo primero.');
+  Object.assign(x, { promotor_id: promotor.id, promotor_cedula: promotor.cedula, promotor_nombre: nombreCompleto(promotor), promotor_telefono: promotor.telefono, promotor_banco: promotor.banco });
+  guardarDB(db);
+  return pendienteConPromotor(db, x);
+}
+
+/** Demo: anota la comisión de una venta con precio de promotor y deja al promotor en el directorio (lo que hace el servidor en el lote de la venta). */
+function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormalizado, sesion: SesionUsuario | null): void {
+  const ahora = new Date().toISOString();
+  let registrado: Promotor | undefined;
+  if (p.cedula) {
+    const lista = db.promotores ?? (db.promotores = []);
+    registrado = lista.find((x) => x.cedula === p.cedula);
+    if (registrado) {
+      // Completa lo que faltaba sin pisar con vacíos
+      if (p.nombrePropio) registrado.nombre = p.nombrePropio;
+      if (p.apellido) registrado.apellido = p.apellido;
+      registrado.telefono = p.telefono ?? registrado.telefono;
+      registrado.banco = p.banco ?? registrado.banco;
+      registrado.updated_at = ahora;
+    } else {
+      registrado = { id: generarId(), cedula: p.cedula, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion?.nombre ?? null, created_at: ahora, updated_at: ahora };
+      lista.push(registrado);
+    }
+  }
+  const lineas = venta.items.filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista).map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
+  const texto = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
+  (db.pendientes ?? (db.pendientes = [])).unshift({
+    id: generarId(),
+    local_id: venta.local_id,
+    tipo: 'COMISION',
+    promotor_id: registrado?.id ?? null,
+    promotor_cedula: p.cedula,
+    promotor_nombre: p.nombre,
+    promotor_telefono: p.telefono,
+    promotor_banco: p.banco,
+    descripcion: `Comisión por venta con precio de promotor: ${texto}`.slice(0, 500),
+    monto_usd: venta.comision ?? 0,
+    estado: 'PENDIENTE',
+    venta_id: venta.id,
+    venta_folio: venta.folio,
+    creado_por_nombre: sesion?.nombre ?? venta.vendedor_nombre ?? 'Vendedor',
+    fecha: ahora,
+    cerrado_en: null,
+    cerrado_por_nombre: null,
+    nota_cierre: null,
+  });
+}
+
 /** Venta ya guardada. `pendienteSincronizar`: se hizo sin conexión y el folio se asignará al sincronizar (folio = 0). */
 export type VentaRegistrada = Venta & { pendienteSincronizar?: boolean };
 
@@ -2011,6 +2244,7 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     // Precio de promotor: se aplican las mismas reglas que el servidor (autorización vigente y de esta venta; la comisión se calcula aquí)
     const { autorizacion_precio, ...base } = registro;
     let promotorDeLaVenta: Partial<Venta> = {};
+    let promotorNormalizado: PromotorNormalizado | null = null;
     if (tienePrecioDePromotor(registro.items)) {
       const aut = autorizacion_precio ? autorizacionesDemo.get(autorizacion_precio) : undefined;
       const desviadas = registro.items.filter((i) => i.precio_lista !== undefined && Math.abs(i.precio_unitario - i.precio_lista) > 0.005);
@@ -2025,10 +2259,12 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
         promotor_nombre: promotorVenta.promotor.nombre,
         promotor_cedula: promotorVenta.promotor.cedula,
         promotor_telefono: promotorVenta.promotor.telefono,
+        promotor_banco: promotorVenta.promotor.banco,
         comision: aut.modo === 'local' ? 0 : comisionDePromotor(registro.items),
         precio_autorizado_por: aut.supervisor_id,
         precio_autorizado_nombre: aut.supervisor_nombre,
       };
+      if (aut.modo !== 'local') promotorNormalizado = promotorVenta.promotor;
     }
     // Códigos elegidos a mano: se guardan marcados y con quién los autorizó (nunca la autorización en sí), como hace el servidor
     const modoLocal = !!autorizacion_precio && autorizacionesDemo.get(autorizacion_precio)?.modo === 'local';
@@ -2042,6 +2278,8 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
     const { promotor: _anotado, ...baseSinPromotor } = base;
     const venta: Venta = { ...baseSinPromotor, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
     ventas.unshift(venta);
+    // La comisión del promotor queda anotada en Pendientes (y el promotor en el directorio), como hace el servidor en el lote de la venta
+    if (promotorNormalizado && (venta.comision ?? 0) > 0) anotarComisionPromotorDemo(db, venta, promotorNormalizado, await obtenerSesionActual());
     guardarDB(db);
     return venta;
   }
@@ -2451,6 +2689,8 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
   despues.mermas = (despues.mermas ?? []).filter((m) => !salidas.has(m.movimiento_id));
   despues.devoluciones = (despues.devoluciones ?? []).filter((d) => !ventas.some((v) => v.id === d.venta_id));
   despues.ventas = (despues.ventas ?? []).filter((v) => !unicos.includes(v.id));
+  // Su comisión de promotor por pagar desaparece con ellas (las ya pagadas se conservan)
+  despues.pendientes = (despues.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id && unicos.includes(x.venta_id)));
   guardarDB(despues);
   return resultado;
 }
@@ -2493,6 +2733,7 @@ export async function resetearVentas(opciones: { simular?: boolean } = {}): Prom
   const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de vaciar los registros
   despues.ventas = [];
   despues.devoluciones = [];
+  despues.pendientes = (despues.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id));
   guardarDB(despues);
   return resultado;
 }
@@ -2521,6 +2762,7 @@ export async function resetearReportes(opciones: { simular?: boolean } = {}): Pr
   if (opciones.simular) return resultado;
   db.ventas = [];
   db.devoluciones = [];
+  db.pendientes = (db.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id));
   db.movimientos = db.movimientos.filter((m) => !cuentan(m));
   guardarDB(db);
   return resultado;

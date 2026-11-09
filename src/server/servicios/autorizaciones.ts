@@ -393,6 +393,10 @@ export interface PrecioPromotorVerificado {
   promotor_nombre: string | null;
   promotor_cedula: string | null;
   promotor_telefono: string | null;
+  promotor_banco: string | null;
+  /** Nombre y apellido por separado (para el directorio de promotores) */
+  promotor_nombre_propio: string;
+  promotor_apellido: string;
   autorizado_por: string;
   autorizado_nombre: string;
 }
@@ -434,5 +438,5 @@ export async function verificarPrecioPromotor(
     }
   }
   if (!(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
-  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, autorizado_por: c.a, autorizado_nombre: c.an };
+  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, promotor_banco: promotor.banco, promotor_nombre_propio: promotor.nombrePropio, promotor_apellido: promotor.apellido, autorizado_por: c.a, autorizado_nombre: c.an };
 }

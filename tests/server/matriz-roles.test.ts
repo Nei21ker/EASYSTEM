@@ -24,6 +24,8 @@ const NEGOCIO: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'te
 const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
 const GLOBAL: Rol[] = ['administrador', 'gerente'];
 const NOMINA: Rol[] = ['administrador', 'gerente', 'contador'];
+const PENDIENTES: Rol[] = ['administrador', 'gerente', 'encargado', 'contador']; // directorio de promotores y pendientes: gerencia + nómina
+const CAJERO: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor']; // quienes cobran en el POS
 
 interface Caso {
   /** Archivo de la ruta dentro de src/pages/api */
@@ -90,6 +92,15 @@ function casos(): Caso[] {
     // Productos por cantidad: piezas defectuosas al vender (con cantidad 0 / en un producto con código los roles con permiso reciben 400 antes de tocar nada)
     { archivo: 'movimientos/con-merma.ts', metodo: 'POST', url: '/api/movimientos/con-merma', cuerpo: { productoId: p, localId: accesorios, cantidad: 1, danados: 1 }, permitidos: GERENCIA },
     { archivo: 'mermas/index.ts', metodo: 'GET', url: '/api/mermas', permitidos: GERENCIA },
+    // Promotores y pendientes (lo que el vendedor y el técnico no ven; el POS busca al promotor por cédula)
+    { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores', permitidos: PENDIENTES },
+    { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores?cedula=V-12345678', permitidos: CAJERO },
+    { archivo: 'promotores/index.ts', metodo: 'POST', url: '/api/promotores', cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
+    { archivo: 'promotores/[id].ts', metodo: 'PUT', url: '/api/promotores/no-existe', params: { id: 'no-existe' }, cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
+    { archivo: 'pendientes/index.ts', metodo: 'GET', url: '/api/pendientes', permitidos: PENDIENTES },
+    { archivo: 'pendientes/index.ts', metodo: 'POST', url: '/api/pendientes', cuerpo: { localId: accesorios, promotorId: 'no-existe', descripcion: 'Vidrios', monto_usd: 5 }, permitidos: GERENCIA },
+    { archivo: 'pendientes/[id]/cerrar.ts', metodo: 'POST', url: '/api/pendientes/no-existe/cerrar', params: { id: 'no-existe' }, cuerpo: { accion: 'pagar' }, permitidos: PENDIENTES },
+    { archivo: 'pendientes/[id]/promotor.ts', metodo: 'PUT', url: '/api/pendientes/no-existe/promotor', params: { id: 'no-existe' }, cuerpo: { promotorId: 'x' }, permitidos: PENDIENTES },
     { archivo: 'mermas/index.ts', metodo: 'POST', url: '/api/mermas', cuerpo: { productoId: p, localId: accesorios, cantidad: 1 }, permitidos: GERENCIA },
     // Ventas, devoluciones y órdenes
     { archivo: 'ventas/index.ts', metodo: 'GET', url: '/api/ventas', permitidos: NEGOCIO },

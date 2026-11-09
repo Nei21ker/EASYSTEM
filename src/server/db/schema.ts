@@ -172,6 +172,41 @@ export const mermas = sqliteTable('mermas', {
   fecha: marca('fecha'),
 });
 
+// Promotores registrados y pendientes con ellos (migración 0018)
+export const promotores = sqliteTable('promotores', {
+  id: text('id').primaryKey(),
+  cedula: text('cedula').notNull().unique(),
+  nombre: text('nombre').notNull().default(''),
+  apellido: text('apellido').notNull().default(''),
+  telefono: text('telefono'),
+  banco: text('banco'),
+  creado_por_nombre: text('creado_por_nombre'),
+  created_at: marca('created_at'),
+  updated_at: marca('updated_at'),
+});
+
+export const pendientes = sqliteTable('pendientes', {
+  id: text('id').primaryKey(),
+  local_id: text('local_id').notNull(),
+  tipo: text('tipo', { enum: ['MERCANCIA', 'COMISION'] }).notNull(),
+  promotor_id: text('promotor_id'),
+  promotor_cedula: text('promotor_cedula'),
+  promotor_nombre: text('promotor_nombre'),
+  promotor_telefono: text('promotor_telefono'),
+  promotor_banco: text('promotor_banco'),
+  descripcion: text('descripcion').notNull(),
+  monto_usd: real('monto_usd').notNull(),
+  estado: text('estado', { enum: ['PENDIENTE', 'PAGADO', 'ANULADO'] }).notNull().default('PENDIENTE'),
+  venta_id: text('venta_id'),
+  venta_folio: integer('venta_folio'),
+  creado_por: text('creado_por'),
+  creado_por_nombre: text('creado_por_nombre').notNull(),
+  fecha: marca('fecha'),
+  cerrado_en: text('cerrado_en'),
+  cerrado_por_nombre: text('cerrado_por_nombre'),
+  nota_cierre: text('nota_cierre'),
+});
+
 export const compatibilidades = sqliteTable('compatibilidades', {
   id: text('id').primaryKey(),
   producto_id: text('producto_id').notNull(),
@@ -271,6 +306,8 @@ export const ventas = sqliteTable('ventas', {
   // Datos opcionales del promotor, anotados al vender (migración 0015)
   promotor_cedula: text('promotor_cedula'),
   promotor_telefono: text('promotor_telefono'),
+  // Banco donde se le paga la comisión al promotor (migración 0018)
+  promotor_banco: text('promotor_banco'),
   comision: real('comision').notNull().default(0),
   precio_autorizado_por: text('precio_autorizado_por'),
   precio_autorizado_nombre: text('precio_autorizado_nombre'),

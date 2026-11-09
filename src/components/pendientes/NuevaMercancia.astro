@@ -1,0 +1,124 @@
+---
+// Ventana para anotar la mercancía que un promotor se llevó y vendrá a pagar: promotor (del directorio, o se agrega ahí mismo),
+// qué se llevó y cuánto debe. Se abre con `easystem:abrir-mercancia-pendiente`; al guardar avisa con `easystem:pendiente-cambiado`.
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<dialog
+  id="nm-dialogo"
+  aria-labelledby="nm-titulo"
+  class="group anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <form id="nm-form" novalidate class="flex max-h-[90vh] flex-col">
+    <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+      <div>
+        <h2 id="nm-titulo" class="text-base font-semibold">Mercancía que se llevó un promotor</h2>
+        <p class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Queda anotada como pendiente hasta que el promotor la pague.</p>
+      </div>
+      <div>
+        <div class="flex items-end justify-between gap-2">
+          <label for="nm-promotor" class={etiqueta}>Promotor *</label>
+          <button id="nm-agregar" type="button" class="text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">+ Agregar promotor</button>
+        </div>
+        <select id="nm-promotor" class={`mt-1 ${campo}`}></select>
+        <p id="nm-promotor-banco" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <div>
+        <label for="nm-descripcion" class={etiqueta}>Qué se llevó *</label>
+        <textarea id="nm-descripcion" rows="3" maxlength="500" placeholder="Ej: 10 vidrios blindados Samsung A15 y 5 hidrogeles" class={`mt-1 ${campo}`}></textarea>
+      </div>
+      <div>
+        <label for="nm-monto" class={etiqueta}>Lo que debe pagar ($) *</label>
+        <input id="nm-monto" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" class={`mt-1 ${campo}`} />
+      </div>
+      <p id="nm-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+    <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="nm-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancelar</button>
+      <button id="nm-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Anotar pendiente</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { escaparHtml } from '../../utils/productosUI';
+  import type { Promotor } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('nm-dialogo');
+  const selectPromotor = $<HTMLSelectElement>('nm-promotor');
+  const error = $('nm-error');
+  const guardar = $<HTMLButtonElement>('nm-guardar');
+  let promotores: Promotor[] = [];
+
+  function pintarPromotores(elegir?: string) {
+    selectPromotor.innerHTML =
+      `<option value="">Elige un promotor…</option>` + promotores.map((p) => `<option value="${p.id}">${escaparHtml(`${p.nombre} ${p.apellido}`.trim())} · ${escaparHtml(p.cedula)}</option>`).join('');
+    if (elegir) selectPromotor.value = elegir;
+    mostrarBanco();
+  }
+  function mostrarBanco() {
+    const p = promotores.find((x) => x.id === selectPromotor.value);
+    $('nm-promotor-banco').textContent = p ? (p.banco ? `Banco receptor: ${p.banco}` : 'Todavía no tiene banco receptor registrado.') : '';
+  }
+  async function cargarPromotores(elegir?: string) {
+    promotores = await inventoryService.listarPromotores({ localId: null });
+    pintarPromotores(elegir);
+  }
+
+  window.addEventListener('easystem:abrir-mercancia-pendiente', async () => {
+    error.classList.add('hidden');
+    ($('nm-descripcion') as HTMLTextAreaElement).value = '';
+    ($('nm-monto') as HTMLInputElement).value = '';
+    guardar.disabled = false;
+    try {
+      await cargarPromotores();
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudieron cargar los promotores.';
+      error.classList.remove('hidden');
+    }
+    if (!dialogo.open) dialogo.showModal();
+  });
+
+  // Un promotor recién agregado desde esta ventana queda elegido
+  window.addEventListener('easystem:promotor-guardado', async (e) => {
+    if (!dialogo.open) return;
+    const d = (e as CustomEvent<{ promotor: Promotor }>).detail;
+    try {
+      await cargarPromotores(d.promotor.id);
+    } catch {
+      /* la lista se recarga al volver a abrir */
+    }
+  });
+
+  selectPromotor.addEventListener('change', mostrarBanco);
+  $('nm-agregar').addEventListener('click', () => window.dispatchEvent(new CustomEvent('easystem:abrir-promotor')));
+  $('nm-cancelar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  $('nm-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    error.classList.add('hidden');
+    guardar.disabled = true;
+    try {
+      if (!selectPromotor.value) throw new Error('Elige un promotor de la lista, o agrégalo primero.');
+      await inventoryService.crearPendienteMercancia({
+        promotorId: selectPromotor.value,
+        descripcion: ($('nm-descripcion') as HTMLTextAreaElement).value,
+        monto_usd: Number(($('nm-monto') as HTMLInputElement).value),
+      });
+      dialogo.close();
+      window.dispatchEvent(new CustomEvent('easystem:pendiente-cambiado', { detail: { accion: 'crear' } }));
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudo anotar el pendiente.';
+      error.classList.remove('hidden');
+    } finally {
+      guardar.disabled = false;
+    }
+  });
+</script>

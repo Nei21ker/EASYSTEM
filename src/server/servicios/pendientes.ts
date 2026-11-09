@@ -1,0 +1,202 @@
+// Pendientes con promotores (migración 0018): lo que queda por cobrar o pagar.
+//   · MERCANCIA: el promotor se llevó mercancía y vendrá a pagarla. Lo anota el encargado (o gerente/administrador) con lo que debe.
+//   · COMISION : un promotor trajo un cliente y se le debe la comisión de la venta. La crea sola `guardarVenta` (precio de promotor).
+// Estados: PENDIENTE → PAGADO (se pagó) o ANULADO (se creó por error). Un pendiente cerrado no se vuelve a abrir.
+// Permisos (el servicio los vuelve a exigir; matriz en tests/server/matriz-roles.test.ts):
+//   · ver: administrador, gerente y encargado (su local); el contador ve los de la nómina;
+//   · crear mercancía y cerrar mercancía: administrador, gerente y encargado de ese local;
+//   · pagar una comisión: administrador, gerente y contador (el pago de promotores es de nómina); anularla: administrador y gerente.
+import { condicionAlcance, esGerencia, localAccesible, type Sesion } from '../authz';
+import { sentenciasCambio } from '../cambios';
+import type { Entorno } from '../entorno';
+import { ErrorApi } from '../errores';
+import { limiteSeguro, nuevoId, redondear2 } from '../util';
+import { alcanceDePendientes } from './promotores';
+import type { EstadoPendiente, NuevoPendienteMercancia, Pendiente, TipoPendiente } from '../../types/database.types';
+
+const ahora = () => new Date().toISOString();
+
+// Los datos del promotor salen del directorio cuando está registrado (así un banco corregido vale para lo que aún se debe); si no, de la
+// copia que se anotó al crear el pendiente.
+const SELECCION = `
+  x.id, x.local_id, x.tipo, x.promotor_id,
+  COALESCE(p.cedula, x.promotor_cedula) AS promotor_cedula,
+  CASE WHEN p.id IS NOT NULL THEN trim(p.nombre || ' ' || p.apellido) ELSE x.promotor_nombre END AS promotor_nombre,
+  COALESCE(p.telefono, x.promotor_telefono) AS promotor_telefono,
+  COALESCE(p.banco, x.promotor_banco) AS promotor_banco,
+  x.descripcion, x.monto_usd, x.estado, x.venta_id, x.venta_folio, x.creado_por_nombre, x.fecha, x.cerrado_en, x.cerrado_por_nombre, x.nota_cierre`;
+const DESDE = 'FROM pendientes x LEFT JOIN promotores p ON p.id = x.promotor_id';
+
+export async function listarPendientes(
+  env: Entorno,
+  sesion: Sesion,
+  opciones: { estado?: EstadoPendiente; tipo?: TipoPendiente; promotorId?: string; localId?: string; limite?: number } = {}
+): Promise<Pendiente[]> {
+  const alcance = await alcanceDePendientes(env, sesion, opciones.localId);
+  const { sql, valores } = condicionAlcance(alcance, 'x.local_id');
+  const condiciones = [sql];
+  const params: unknown[] = [...valores];
+  if (opciones.estado) {
+    condiciones.push('x.estado = ?');
+    params.push(opciones.estado);
+  }
+  if (opciones.tipo) {
+    condiciones.push('x.tipo = ?');
+    params.push(opciones.tipo);
+  }
+  if (opciones.promotorId) {
+    condiciones.push('x.promotor_id = ?');
+    params.push(opciones.promotorId);
+  }
+  const filas = await env.DB
+    .prepare(`SELECT ${SELECCION} ${DESDE} WHERE ${condiciones.join(' AND ')} ORDER BY x.fecha DESC, x.rowid DESC LIMIT ?`)
+    .bind(...params, limiteSeguro(opciones.limite, 500, 3000))
+    .all<Pendiente>();
+  return filas.results.map((f) => ({ ...f, monto_usd: redondear2(f.monto_usd) }));
+}
+
+async function pendienteDelAlcance(env: Entorno, sesion: Sesion, id: string): Promise<Pendiente> {
+  const alcance = await alcanceDePendientes(env, sesion);
+  const { sql, valores } = condicionAlcance(alcance, 'x.local_id');
+  // Fuera del alcance se responde igual que si no existiera: no se pueden tantear ids de otros locales
+  const fila = await env.DB.prepare(`SELECT ${SELECCION} ${DESDE} WHERE x.id = ? AND ${sql}`).bind(id, ...valores).first<Pendiente>();
+  if (!fila) throw new ErrorApi(404, 'El pendiente no existe.', 'no_existe');
+  return fila;
+}
+
+/** Anota la mercancía que un promotor se llevó y que luego vendrá a pagar. */
+export async function crearPendienteMercancia(env: Entorno, sesion: Sesion, datos: NuevoPendienteMercancia): Promise<Pendiente> {
+  if (!esGerencia(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador, el gerente o el encargado anotan pendientes.', 'sin_permiso');
+  if (!(await localAccesible(env, sesion, datos.localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+  const descripcion = (datos.descripcion ?? '').trim().replace(/\s+/g, ' ');
+  if (descripcion.length < 3 || descripcion.length > 500) throw new ErrorApi(400, 'Describe qué mercancía se llevó (de 3 a 500 caracteres).', 'datos_invalidos');
+  if (!Number.isFinite(datos.monto_usd) || datos.monto_usd <= 0 || datos.monto_usd > 1_000_000) throw new ErrorApi(400, 'El monto que debe pagar debe ser mayor a 0.', 'datos_invalidos');
+  const promotor = await env.DB
+    .prepare('SELECT id, cedula, nombre, apellido, telefono, banco FROM promotores WHERE id = ?')
+    .bind(datos.promotorId)
+    .first<{ id: string; cedula: string; nombre: string; apellido: string; telefono: string | null; banco: string | null }>();
+  if (!promotor) throw new ErrorApi(400, 'Elige un promotor de la lista, o agrégalo primero.', 'datos_invalidos');
+
+  const id = nuevoId();
+  const db = env.DB;
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO pendientes (id, local_id, tipo, promotor_id, promotor_cedula, promotor_nombre, promotor_telefono, promotor_banco, descripcion, monto_usd, creado_por, creado_por_nombre, fecha)
+         VALUES (?, ?, 'MERCANCIA', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(id, datos.localId, promotor.id, promotor.cedula, `${promotor.nombre} ${promotor.apellido}`.trim(), promotor.telefono, promotor.banco, descripcion, redondear2(datos.monto_usd), sesion.userId, sesion.nombre, ahora()),
+    ...sentenciasCambio(db, ['pendientes'], datos.localId),
+  ]);
+  return pendienteDelAlcance(env, sesion, id);
+}
+
+/** Quién puede cerrar (pagar o anular) un pendiente según su tipo. */
+function puedeCerrar(sesion: Sesion, tipo: TipoPendiente, accion: 'pagar' | 'anular'): boolean {
+  if (tipo === 'MERCANCIA') return esGerencia(sesion.rol);
+  if (accion === 'pagar') return sesion.rol === 'administrador' || sesion.rol === 'gerente' || sesion.rol === 'contador';
+  return sesion.rol === 'administrador' || sesion.rol === 'gerente';
+}
+
+/** Marca un pendiente como pagado (la mercancía se pagó / la comisión se pagó) o lo anula (fue un error). */
+export async function cerrarPendiente(env: Entorno, sesion: Sesion, id: string, accion: 'pagar' | 'anular', notaTexto?: string | null): Promise<Pendiente> {
+  const pendiente = await pendienteDelAlcance(env, sesion, id);
+  if (!puedeCerrar(sesion, pendiente.tipo, accion)) {
+    throw new ErrorApi(
+      403,
+      pendiente.tipo === 'COMISION' ? 'Las comisiones las paga el gerente, el administrador o el contador desde Nómina; anularlas, solo el gerente o el administrador.' : 'No puedes cambiar este pendiente.',
+      'sin_permiso'
+    );
+  }
+  const nota = (notaTexto ?? '').trim().replace(/\s+/g, ' ');
+  if (nota.length > 300) throw new ErrorApi(400, 'La nota es muy larga (máximo 300 caracteres).', 'datos_invalidos');
+  if (pendiente.estado !== 'PENDIENTE') throw new ErrorApi(409, `Este pendiente ya está ${pendiente.estado === 'PAGADO' ? 'pagado' : 'anulado'}.`, 'pendiente_cerrado');
+
+  const db = env.DB;
+  const [resultado] = await db.batch([
+    db
+      .prepare("UPDATE pendientes SET estado = ?, cerrado_en = ?, cerrado_por_nombre = ?, nota_cierre = ? WHERE id = ? AND estado = 'PENDIENTE'")
+      .bind(accion === 'pagar' ? 'PAGADO' : 'ANULADO', ahora(), sesion.nombre, nota || null, id),
+    ...sentenciasCambio(db, ['pendientes'], pendiente.local_id),
+  ]);
+  if (!resultado.meta.changes) throw new ErrorApi(409, 'Otra persona acaba de cerrar este pendiente.', 'pendiente_cerrado');
+  return pendienteDelAlcance(env, sesion, id);
+}
+
+/** Ata a un promotor registrado un pendiente que se creó sin sus datos (p. ej. una comisión cuya venta no anotó la cédula). */
+export async function asignarPromotorAPendiente(env: Entorno, sesion: Sesion, id: string, promotorId: string): Promise<Pendiente> {
+  const pendiente = await pendienteDelAlcance(env, sesion, id);
+  const permitido = pendiente.tipo === 'COMISION' ? sesion.rol !== 'vendedor' && sesion.rol !== 'tecnico' : esGerencia(sesion.rol);
+  if (!permitido) throw new ErrorApi(403, 'No puedes cambiar este pendiente.', 'sin_permiso');
+  if (pendiente.estado !== 'PENDIENTE') throw new ErrorApi(409, 'Solo se puede cambiar el promotor de un pendiente abierto.', 'pendiente_cerrado');
+  const promotor = await env.DB
+    .prepare('SELECT id, cedula, nombre, apellido, telefono, banco FROM promotores WHERE id = ?')
+    .bind(promotorId)
+    .first<{ id: string; cedula: string; nombre: string; apellido: string; telefono: string | null; banco: string | null }>();
+  if (!promotor) throw new ErrorApi(400, 'Elige un promotor de la lista, o agrégalo primero.', 'datos_invalidos');
+  const db = env.DB;
+  await db.batch([
+    db
+      .prepare("UPDATE pendientes SET promotor_id = ?, promotor_cedula = ?, promotor_nombre = ?, promotor_telefono = ?, promotor_banco = ? WHERE id = ? AND estado = 'PENDIENTE'")
+      .bind(promotor.id, promotor.cedula, `${promotor.nombre} ${promotor.apellido}`.trim(), promotor.telefono, promotor.banco, id),
+    ...sentenciasCambio(db, ['pendientes'], pendiente.local_id),
+  ]);
+  return pendienteDelAlcance(env, sesion, id);
+}
+
+// --- Lo que usa el registro de ventas ---------------------------------------------------------------------------
+/**
+ * Sentencias que anotan la comisión de una venta con precio de promotor y, si se dio la cédula, dejan al promotor en el directorio
+ * (o completan lo que le faltaba, sin pisar con vacíos). Van dentro del MISMO lote que inserta la venta: si la venta falla, no
+ * queda ni comisión ni promotor. Lleva `venta_folio` del contador que ya se subió en ese lote.
+ */
+export function sentenciasComisionPromotor(
+  db: D1Database,
+  sesion: Sesion,
+  d: {
+    ventaId: string;
+    localId: string;
+    comision: number;
+    descripcion: string;
+    promotor: { cedula: string | null; nombre: string | null; nombrePropio: string; apellido: string; telefono: string | null; banco: string | null };
+  }
+): D1PreparedStatement[] {
+  const marca = ahora();
+  const { promotor: p } = d;
+  const sentencias: D1PreparedStatement[] = [];
+  if (p.cedula) {
+    sentencias.push(
+      db
+        .prepare(
+          `INSERT INTO promotores (id, cedula, nombre, apellido, telefono, banco, creado_por_nombre, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT (cedula) DO UPDATE SET
+             nombre = CASE WHEN excluded.nombre <> '' THEN excluded.nombre ELSE promotores.nombre END,
+             apellido = CASE WHEN excluded.apellido <> '' THEN excluded.apellido ELSE promotores.apellido END,
+             telefono = COALESCE(excluded.telefono, promotores.telefono),
+             banco = COALESCE(excluded.banco, promotores.banco),
+             updated_at = excluded.updated_at`
+        )
+        .bind(nuevoId(), p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, sesion.nombre, marca, marca)
+    );
+  }
+  sentencias.push(
+    db
+      .prepare(
+        `INSERT INTO pendientes (id, local_id, tipo, promotor_id, promotor_cedula, promotor_nombre, promotor_telefono, promotor_banco, descripcion, monto_usd, venta_id, venta_folio, creado_por, creado_por_nombre, fecha)
+         VALUES (?, ?, 'COMISION', (SELECT id FROM promotores WHERE cedula = ?), ?, ?, ?, ?, ?, ?, ?, (SELECT folio FROM ventas WHERE id = ?), ?, ?, ?)`
+      )
+      .bind(nuevoId(), d.localId, p.cedula, p.cedula, p.nombre, p.telefono, p.banco, d.descripcion.slice(0, 500), d.comision, d.ventaId, d.ventaId, sesion.userId, sesion.nombre, marca),
+    ...sentenciasCambio(db, p.cedula ? ['pendientes', 'promotores'] : ['pendientes'], d.localId)
+  );
+  return sentencias;
+}
+
+/** Borra los pendientes abiertos (o anulados) que nacieron de esas ventas: si la venta desaparece, la comisión pendiente también. Los ya pagados se conservan. */
+export function sentenciasBorrarComisiones(db: D1Database, ventaIds: string[]): D1PreparedStatement[] {
+  const sentencias: D1PreparedStatement[] = [];
+  for (let i = 0; i < ventaIds.length; i += 90) {
+    const tramo = ventaIds.slice(i, i + 90);
+    sentencias.push(db.prepare(`DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IN (${tramo.map(() => '?').join(', ')})`).bind(...tramo));
+  }
+  return sentencias;
+}

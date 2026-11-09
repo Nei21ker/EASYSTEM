@@ -1,0 +1,245 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+import FormularioPromotor from '../components/promotores/FormularioPromotor.astro';
+import CerrarPendiente from '../components/promotores/CerrarPendiente.astro';
+import ListaPromotores from '../components/promotores/ListaPromotores.astro';
+import NuevaMercancia from '../components/pendientes/NuevaMercancia.astro';
+
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+---
+
+<!-- Pendientes del Local Vidrios: mercancía que un promotor se llevó y vendrá a pagar, y comisiones que se le deben por los clientes que
+     trajo (las crea sola la venta con precio de promotor). El mismo directorio de promotores se ve también en Nómina. -->
+<DashboardLayout
+  titulo="Pendientes"
+  subtitulo="Mercancía que se llevó un promotor y comisiones por pagarle"
+  tituloPestana="Pendientes · EASYSTEM"
+  roles={['administrador', 'gerente', 'encargado']}
+>
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Secciones de pendientes">
+    <button id="pd-tab-pendientes" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">Pendientes</button>
+    <button id="pd-tab-promotores" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">Promotores</button>
+  </div>
+
+  <p id="pd-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+  <p id="pd-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+
+  <!-- Pendientes -->
+  <div id="pd-panel-pendientes" class="space-y-4">
+    <section class="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Resumen">
+      <div class={claseTarjeta}>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Comisiones por pagar</p>
+        <p id="pd-r-comisiones" class="mt-1 text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">—</p>
+      </div>
+      <div class={claseTarjeta}>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Mercancía por cobrar</p>
+        <p id="pd-r-mercancia" class="mt-1 text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">—</p>
+      </div>
+      <div class={claseTarjeta}>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Pendientes abiertos</p>
+        <p id="pd-r-abiertos" class="mt-1 text-2xl font-bold tabular-nums text-slate-900 dark:text-white">—</p>
+      </div>
+    </section>
+
+    <div class={claseTarjeta}>
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div>
+          <label for="pd-estado" class={etiqueta}>Estado</label>
+          <select id="pd-estado" class={`mt-1 ${campo}`}>
+            <option value="PENDIENTE">Pendientes</option>
+            <option value="PAGADO">Pagados</option>
+            <option value="ANULADO">Anulados</option>
+            <option value="TODOS">Todos</option>
+          </select>
+        </div>
+        <div>
+          <label for="pd-tipo" class={etiqueta}>Tipo</label>
+          <select id="pd-tipo" class={`mt-1 ${campo}`}>
+            <option value="">Todos</option>
+            <option value="COMISION">Comisiones</option>
+            <option value="MERCANCIA">Mercancía</option>
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label for="pd-buscar" class={etiqueta}>Buscar</label>
+          <input id="pd-buscar" type="search" autocomplete="off" placeholder="Promotor, cédula, banco o descripción" class={`mt-1 ${campo}`} />
+        </div>
+      </div>
+      <div class="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <button id="pd-nueva" type="button" class="bg-marca w-full rounded-lg px-3 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:w-auto">+ Anotar mercancía que se llevó un promotor</button>
+        <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Las comisiones aparecen solas cuando se vende con precio de promotor; las paga el gerente o el administrador desde aquí o desde Nómina.</p>
+      </div>
+    </div>
+
+    <p id="pd-vacio" class="hidden rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"></p>
+    <div id="pd-lista" class="grid grid-cols-1 gap-3 xl:grid-cols-2"></div>
+  </div>
+
+  <!-- Promotores -->
+  <div id="pd-panel-promotores" class="hidden space-y-3">
+    <div>
+      <label for="pd-buscar-promotor" class={etiqueta}>Buscar promotor</label>
+      <input id="pd-buscar-promotor" type="search" autocomplete="off" placeholder="Nombre, cédula o teléfono" class={`mt-1 sm:max-w-sm ${campo}`} />
+    </div>
+    <ListaPromotores />
+  </div>
+
+  <NuevaMercancia />
+  <FormularioPromotor />
+  <CerrarPendiente />
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { esGerencia } from '../lib/auth';
+  import { alCambiarDatos } from '../lib/realtime';
+  import { ALCANCE_TODOS } from '../lib/constantes-locales';
+  import { formatearFecha, formatearMoneda } from '../utils/format';
+  import { escaparHtml } from '../utils/productosUI';
+  import type { EstadoPendiente, Pendiente, TipoPendiente } from '../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
+  const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
+
+  let rol = '';
+  let abiertos: Pendiente[] = [];
+  let lista: Pendiente[] = [];
+  let nombresLocal = new Map<string, string>();
+  let verTodosLosLocales = false;
+
+  const esGlobalRol = () => rol === 'administrador' || rol === 'gerente';
+  const puedePagar = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' : esGlobalRol());
+  const puedeAnular = puedePagar;
+
+  const claseBoton = 'rounded-lg border px-3 py-2 text-xs font-semibold transition';
+  const botonPagar = `${claseBoton} border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-500/10`;
+  const botonNeutro = `${claseBoton} border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800`;
+
+  function aviso(el: HTMLElement, texto: string) {
+    el.textContent = texto;
+    el.classList.remove('hidden');
+  }
+
+  function aplicarPestana(pestana: 'pendientes' | 'promotores') {
+    for (const [id, activa] of [['pd-tab-pendientes', pestana === 'pendientes'], ['pd-tab-promotores', pestana === 'promotores']] as const) {
+      const tab = $(id);
+      tab.setAttribute('aria-selected', String(activa));
+      tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
+      tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
+    }
+    $('pd-panel-pendientes').classList.toggle('hidden', pestana !== 'pendientes');
+    $('pd-panel-promotores').classList.toggle('hidden', pestana !== 'promotores');
+  }
+
+  const estadoBadge = (e: EstadoPendiente) =>
+    e === 'PAGADO'
+      ? '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300">Pagado</span>'
+      : e === 'ANULADO'
+        ? '<span class="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulado</span>'
+        : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Pendiente</span>';
+
+  function htmlPendiente(p: Pendiente): string {
+    const comision = p.tipo === 'COMISION';
+    const tipo = comision
+      ? '<span class="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">Comisión por pagar</span>'
+      : '<span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-300">Mercancía por cobrar</span>';
+    const cerrado = p.estado !== 'PENDIENTE' && p.cerrado_en ? `<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${p.estado === 'PAGADO' ? 'Pagado' : 'Anulado'} el ${escaparHtml(formatearFecha(p.cerrado_en))}${p.cerrado_por_nombre ? ` por ${escaparHtml(p.cerrado_por_nombre)}` : ''}${p.nota_cierre ? ` · ${escaparHtml(p.nota_cierre)}` : ''}</p>` : '';
+    return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-wrap items-center gap-2">${tipo}${estadoBadge(p.estado)}
+        <span class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(p.fecha))}${p.venta_folio ? ` · venta #${p.venta_folio}` : ''}${verTodosLosLocales ? ` · ${escaparHtml(nombresLocal.get(p.local_id) ?? '')}` : ''}</span>
+        <strong class="ml-auto text-base tabular-nums">${formatearMoneda(p.monto_usd)}</strong></div>
+      <p class="mt-2 text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(p.promotor_nombre || 'Promotor sin datos')}</p>
+      <p class="text-xs text-slate-500 dark:text-slate-400">${p.promotor_cedula ? escaparHtml(p.promotor_cedula) : 'Sin cédula'}${p.promotor_telefono ? ` · ${escaparHtml(p.promotor_telefono)}` : ''}</p>
+      ${comision ? `<p class="mt-1 text-xs ${p.promotor_banco ? 'text-slate-700 dark:text-slate-200' : 'text-amber-700 dark:text-amber-400'}"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> ${p.promotor_banco ? `<strong>${escaparHtml(p.promotor_banco)}</strong>` : 'sin registrar'}</p>` : ''}
+      <p class="mt-2 text-sm text-slate-700 dark:text-slate-200">${escaparHtml(p.descripcion)}</p>
+      ${cerrado}
+      ${p.estado === 'PENDIENTE' ? `<div class="mt-3 flex flex-wrap gap-2">
+        ${puedePagar(p) ? `<button type="button" data-accion="pagar" data-id="${p.id}" class="${botonPagar}">${comision ? 'Marcar pagada' : 'Marcar cobrada'}</button>` : ''}
+        ${puedeAnular(p) ? `<button type="button" data-accion="anular" data-id="${p.id}" class="${botonNeutro}">Anular</button>` : ''}
+        ${comision && !puedePagar(p) ? '<span class="text-xs text-slate-500 dark:text-slate-400">La paga el gerente o el administrador.</span>' : ''}
+      </div>` : ''}
+    </article>`;
+  }
+
+  function pintar() {
+    const suma = (tipo: TipoPendiente) => abiertos.filter((p) => p.tipo === tipo).reduce((s, p) => s + p.monto_usd, 0);
+    $('pd-r-comisiones').textContent = formatearMoneda(suma('COMISION'));
+    $('pd-r-mercancia').textContent = formatearMoneda(suma('MERCANCIA'));
+    $('pd-r-abiertos').textContent = String(abiertos.length);
+
+    const q = ($('pd-buscar') as HTMLInputElement).value.trim().toLowerCase();
+    const visibles = q ? lista.filter((p) => `${p.promotor_nombre ?? ''} ${p.promotor_cedula ?? ''} ${p.promotor_banco ?? ''} ${p.descripcion}`.toLowerCase().includes(q)) : lista;
+    $('pd-lista').innerHTML = visibles.map(htmlPendiente).join('');
+    const vacio = $('pd-vacio');
+    vacio.classList.toggle('hidden', visibles.length > 0);
+    vacio.textContent = q ? 'Ningún pendiente coincide con la búsqueda.' : 'No hay pendientes con esos filtros.';
+  }
+
+  async function recargar() {
+    const estado = ($('pd-estado') as HTMLSelectElement).value;
+    const tipo = ($('pd-tipo') as HTMLSelectElement).value as TipoPendiente | '';
+    try {
+      // Los abiertos alimentan el resumen; si se miran otros estados se piden aparte
+      abiertos = await inventoryService.listarPendientes({ estado: 'PENDIENTE', limite: 2000 });
+      lista =
+        estado === 'PENDIENTE'
+          ? abiertos.filter((p) => !tipo || p.tipo === tipo)
+          : await inventoryService.listarPendientes({ estado: estado === 'TODOS' ? undefined : (estado as EstadoPendiente), tipo: tipo || undefined, limite: 300 });
+      if (estado === 'PENDIENTE') lista = lista.slice(0, 300);
+      $('pd-error').classList.add('hidden');
+      pintar();
+    } catch (err) {
+      aviso($('pd-error'), err instanceof Error ? err.message : 'No se pudieron cargar los pendientes.');
+    }
+  }
+
+  $('pd-tab-pendientes').addEventListener('click', () => aplicarPestana('pendientes'));
+  $('pd-tab-promotores').addEventListener('click', () => {
+    aplicarPestana('promotores');
+    window.dispatchEvent(new CustomEvent('easystem:promotores-filtro', { detail: { buscar: ($('pd-buscar-promotor') as HTMLInputElement).value } }));
+  });
+  $('pd-estado').addEventListener('change', recargar);
+  $('pd-tipo').addEventListener('change', recargar);
+  $('pd-buscar').addEventListener('input', pintar);
+  let esperaBusqueda: number | undefined;
+  $('pd-buscar-promotor').addEventListener('input', (e) => {
+    window.clearTimeout(esperaBusqueda);
+    const texto = (e.target as HTMLInputElement).value;
+    esperaBusqueda = window.setTimeout(() => window.dispatchEvent(new CustomEvent('easystem:promotores-filtro', { detail: { buscar: texto } })), 250);
+  });
+
+  $('pd-nueva').addEventListener('click', () => window.dispatchEvent(new CustomEvent('easystem:abrir-mercancia-pendiente')));
+
+  $('pd-lista').addEventListener('click', (e) => {
+    const boton = (e.target as HTMLElement).closest<HTMLElement>('[data-accion]');
+    if (!boton) return;
+    const pendiente = abiertos.find((p) => p.id === boton.dataset.id);
+    if (pendiente) window.dispatchEvent(new CustomEvent('easystem:cerrar-pendiente', { detail: { pendiente, accion: boton.dataset.accion } }));
+  });
+
+  window.addEventListener('easystem:pendiente-cambiado', (e) => {
+    const accion = (e as CustomEvent<{ accion: string }>).detail?.accion;
+    aviso($('pd-exito'), accion === 'pagar' ? 'Listo: quedó marcado como pagado.' : accion === 'anular' ? 'El pendiente quedó anulado.' : 'Pendiente anotado.');
+    $('pd-exito').classList.remove('hidden');
+    $('pd-error').classList.add('hidden');
+    window.setTimeout(() => $('pd-exito').classList.add('hidden'), 6000);
+    void recargar();
+  });
+
+  aplicarPestana('pendientes');
+  inventoryService
+    .obtenerContextoLocal()
+    .then(async (contexto) => {
+      if (!contexto || !esGerencia(contexto.sesion.rol)) return;
+      rol = contexto.sesion.rol;
+      verTodosLosLocales = contexto.alcance === ALCANCE_TODOS;
+      nombresLocal = new Map((await inventoryService.listarLocales()).map((l) => [l.id, l.nombre]));
+      await recargar();
+      alCambiarDatos(['pendientes'], recargar);
+    })
+    .catch((err) => aviso($('pd-error'), err instanceof Error ? err.message : 'No se pudieron cargar los pendientes.'));
+</script>
