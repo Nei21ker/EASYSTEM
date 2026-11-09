@@ -216,6 +216,11 @@ body {
 /* Entrada de página: el layout agrega .shell-listo al revelar el contenido */
 /* Con el teclado del celular abierto (utils/tecladoDialogos.ts) se esconde lo secundario de la ventana para que quepan el campo y los botones */
 dialog[data-teclado='true'] .oculto-con-teclado { display: none !important; }
+/* Ventana larga con pie de botones: con el teclado abierto se pega arriba de la zona visible (ver utils/tecladoDialogos.ts) */
+dialog.dialogo-sobre-teclado[data-teclado='true'] {
+  margin-top: calc(var(--arriba-visible, 0px) + 0.5rem);
+  margin-bottom: auto;
+}
 
 .shell-listo main > *:not(dialog, .fixed) { animation: subir 0.55s cubic-bezier(0.22, 1, 0.36, 1) backwards; }
 .shell-listo main > *:not(dialog, .fixed):nth-child(2) { animation-delay: 70ms; }
