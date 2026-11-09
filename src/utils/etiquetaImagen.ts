@@ -238,8 +238,14 @@ export function descargarArchivos(archivos: File[]): void {
 // Varias etiquetas en UN solo archivo (las apps de impresoras como WePrint suelen aceptar una imagen o un PDF a la vez)
 // ---------------------------------------------------------------------------------------------------------------------
 
-/** Máximo de etiquetas en una tira o en un PDF. */
+/** Máximo de etiquetas en una tira (una sola imagen: el navegador limita el tamaño del lienzo) y en las imágenes sueltas / vista previa. */
 export const MAX_ETIQUETAS_POR_TIRA = 40;
+
+/**
+ * Máximo de etiquetas en UN PDF (una página por etiqueta). Es un tope de seguridad para no agotar la memoria del teléfono (cada página
+ * pesa ~40 KB); con más, la ventana avisa y se vuelve a pulsar «Imprimir etiquetas» para las siguientes.
+ */
+export const MAX_ETIQUETAS_POR_PDF = 1000;
 
 /**
  * UNA imagen con todas las etiquetas una debajo de otra (ancho = el de la etiqueta, alto = etiquetas × alto de la etiqueta, más
@@ -334,7 +340,8 @@ export async function etiquetasComoPdf(etiquetas: Pick<EtiquetaPedida, 'codigo' 
   const ancho = pixeles(formato.anchoMm);
   const alto = pixeles(formato.altoMm);
   const jpegs: { bytes: Uint8Array; ancho: number; alto: number }[] = [];
-  for (const e of etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA)) {
+  for (const [i, e] of etiquetas.slice(0, MAX_ETIQUETAS_POR_PDF).entries()) {
+    if (i > 0 && i % 25 === 0) await new Promise((r) => setTimeout(r, 0)); // deja respirar a la pantalla en lotes grandes
     const imagen = new Image();
     imagen.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgEtiqueta(e, formato, tipo))}`;
     await imagen.decode();

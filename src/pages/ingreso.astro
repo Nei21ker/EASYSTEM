@@ -313,6 +313,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     descargarArchivos,
     etiquetasComoPdf,
     MAX_ETIQUETAS_POR_TIRA,
+    MAX_ETIQUETAS_POR_PDF,
     prepararArchivosEtiquetas,
     tiraComoPng,
   } from '../utils/etiquetaImagen';
@@ -848,14 +849,15 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     galeriaPdf = null;
     actualizarBotonesGaleria();
     try {
+      // Con más de 40 etiquetas solo el PDF las incluye todas: la tira y las imágenes sueltas (y la vista previa) cubren las primeras 40
       const [tira, pdf, sueltas] = await Promise.all([
-        tiraComoPng(galeriaEtiquetas, formato, tipo, separacion),
+        galeriaEtiquetas.length > MAX_ETIQUETAS_POR_TIRA ? Promise.resolve(null) : tiraComoPng(galeriaEtiquetas, formato, tipo, separacion),
         etiquetasComoPdf(galeriaEtiquetas, formato, tipo),
         incluirSueltas ? prepararArchivosEtiquetas(galeriaEtiquetas, formato, tipo) : Promise.resolve(galeriaSueltas),
       ]);
       if (version !== galeriaVersion) return; // llegó otra petición más nueva
       const medida = `${formato.anchoMm}x${formato.altoMm}mm`;
-      galeriaTira = new File([tira], `etiquetas-tira-${medida}.png`, { type: 'image/png' });
+      galeriaTira = tira ? new File([tira], `etiquetas-tira-${medida}.png`, { type: 'image/png' }) : null;
       galeriaPdf = new File([pdf], `etiquetas-${medida}.pdf`, { type: 'application/pdf' });
       galeriaSueltas = sueltas;
       if (incluirSueltas) {
@@ -881,9 +883,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     galeriaImagenes.innerHTML = '';
   }
 
-  /** Abre la galería con esas etiquetas (hasta MAX_ETIQUETAS_POR_TIRA por vez) lista para mandarla a la impresora. */
+  /** Abre la galería con esas etiquetas (hasta MAX_ETIQUETAS_POR_PDF por vez, en un PDF) lista para mandarla a la impresora. */
   async function abrirGaleria(etiquetas: { codigo: string; nombre: string }[], esReimpresion: boolean) {
-    const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_TIRA);
+    const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_PDF);
+    const muchas = envio.length > MAX_ETIQUETAS_POR_TIRA;
+    for (const opcion of Array.from(galeriaModo.options)) if (opcion.value !== 'pdf') opcion.disabled = muchas;
     galeriaEsReimpresion = esReimpresion;
     galeriaAnotada = false;
     galeriaHayRestantes = etiquetas.length > envio.length;
@@ -893,7 +897,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const boton = esReimpresion ? 'Reimprimir etiquetas' : 'Imprimir etiquetas';
     $('ig-galeria-titulo').textContent = boton;
     $('ig-galeria-cuenta').textContent =
-      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}`;
+      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}${muchas ? ` · el PDF las incluye todas; abajo solo se ven las primeras ${MAX_ETIQUETAS_POR_TIRA}` : ''}`;
     galeriaModo.value = 'pdf';
     galeriaImagenes.innerHTML = '';
     copiarMedidaAGaleria();
@@ -1017,9 +1021,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   function actualizarCuentaReimp() {
     const n = reimpSeleccion.size;
-    const aImprimir = Math.min(n, MAX_ETIQUETAS_POR_TIRA);
+    const aImprimir = Math.min(n, MAX_ETIQUETAS_POR_PDF);
     $('ig-reimp-cuenta').textContent = n
-      ? `${n} seleccionada${n === 1 ? '' : 's'}${n > MAX_ETIQUETAS_POR_TIRA ? ` · se preparan ${MAX_ETIQUETAS_POR_TIRA} por vez` : ''}`
+      ? `${n} seleccionada${n === 1 ? '' : 's'}${n > MAX_ETIQUETAS_POR_PDF ? ` · se preparan ${MAX_ETIQUETAS_POR_PDF} por vez` : ''}`
       : 'Ninguna seleccionada';
     reimpImprimir.disabled = n === 0;
     reimpImprimir.textContent = n ? `Reimprimir ${aImprimir} etiqueta${aImprimir === 1 ? '' : 's'}` : 'Reimprimir';
