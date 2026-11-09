@@ -207,7 +207,7 @@ const claseBotonSecundario =
   import { animarLista, contarHasta } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { calcularRango, type RangoPreestablecido } from '../utils/dateRange';
-  import { esMetodoBolivares, etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
+  import { bsDeMas, esMetodoBolivares, etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
   import { resumirPorMetodo } from '../utils/ventasResumen';
   import { montoInstalacion, nombreQuienInstala, totalLinea } from '../utils/instalacion';
   import { escaparHtml, normalizarTexto } from '../utils/productosUI';
@@ -369,6 +369,13 @@ import { alCambiarDatos } from '../lib/realtime';
           ${v.vuelto ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Vuelto: ${v.vuelto.monto_bs != null ? formatearBolivares(v.vuelto.monto_bs) : formatearMoneda(v.vuelto.monto_usd)} (${escaparHtml(etiquetaMetodoPago(v.vuelto.metodo))})</p>` : ''}
           ${esAdministrador && v.comprobante_path ? `<a href="${hrefComprobante(v.comprobante_path)}" target="_blank" rel="noopener" data-comprobante="${escaparHtml(v.comprobante_path.startsWith('data:') ? 'local' : 'servidor')}" data-ruta-comprobante="${escaparHtml(v.id)}" class="mt-1.5 inline-block text-[11px] font-semibold text-brand-700 hover:underline dark:text-brand-300">Ver comprobante</a>` : ''}
           ${v.referencia_pago_movil ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Ref. pago móvil: <span class="font-mono font-semibold text-slate-700 dark:text-slate-200">${escaparHtml(v.referencia_pago_movil)}</span></p>` : ''}
+          ${pagos
+            .filter((p) => bsDeMas(p) > 0)
+            .map(
+              (p) =>
+                `<p class="mt-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">Redondeo: el cliente pagó ${formatearBolivares(p.monto_bs!)} y debía pagar ${formatearBolivares(p.monto_bs_debido!)} (${formatearBolivares(bsDeMas(p))} de más)${pagos.length > 1 ? ` · ${escaparHtml(etiquetaMetodoPago(p.metodo))}` : ''}</p>`
+            )
+            .join('')}
           ${pagos.length > 1 ? `<ul class="mt-1.5 space-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">${pagos.map((p) => `<li class="flex justify-between gap-3"><span>${escaparHtml(etiquetaMetodoPago(p.metodo))}</span><span class="shrink-0 tabular-nums">${p.monto_bs != null ? formatearBolivares(p.monto_bs) : formatearMoneda(p.monto_usd)}</span></li>`).join('')}</ul>` : ''}
         </td>
         <td data-label="Productos" class="px-4 py-3">
@@ -668,7 +675,7 @@ import { alCambiarDatos } from '../lib/realtime';
         telefono: v.cliente_telefono,
         tipo_de_cobro: etiquetaMetodoPago(v.metodo_pago),
         detalle_pagos: pagosDeVenta(v)
-          .map((p) => `${etiquetaMetodoPago(p.metodo)}: ${p.monto_bs != null ? `Bs. ${p.monto_bs.toFixed(2)} ($${p.monto_usd.toFixed(2)})` : `$${p.monto_usd.toFixed(2)}`}`)
+          .map((p) => `${etiquetaMetodoPago(p.metodo)}: ${p.monto_bs != null ? `Bs. ${p.monto_bs.toFixed(2)} ($${p.monto_usd.toFixed(2)})` : `$${p.monto_usd.toFixed(2)}`}${bsDeMas(p) > 0 ? ` [debía Bs. ${p.monto_bs_debido!.toFixed(2)}; de más Bs. ${bsDeMas(p).toFixed(2)}]` : ''}`)
           .join('; '),
         total_usd: v.total.toFixed(2),
         tasa_bs_por_usd: v.tasa_cambio ?? '',

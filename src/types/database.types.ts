@@ -213,6 +213,11 @@ export interface PagoVenta {
   monto_usd: number;
   /** Bolívares recibidos (solo en los tipos de cobro en Bs; null en dólares/USDT) */
   monto_bs: number | null;
+  /**
+   * Solo si el cliente pagó de más en bolívares (redondeo): los Bs que DEBÍA pagar según la tasa. `monto_bs` es lo que de verdad
+   * entregó, así que `monto_bs − monto_bs_debido` es lo que dejó de más; `monto_usd` sigue siendo lo que cuenta para el total.
+   */
+  monto_bs_debido?: number | null;
 }
 
 /** Dinero que sale hacia el cliente: vuelto de una venta o reembolso de una devolución. */

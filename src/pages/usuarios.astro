@@ -71,10 +71,16 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
   >
     <form id="ed-form" novalidate>
       <div class="space-y-4 px-5 pb-4 pt-5">
-        <div class="min-w-0">
-          <h2 id="ed-titulo" class="text-base font-semibold">Editar usuario</h2>
-          <p id="ed-nombre" class="mt-0.5 truncate text-sm font-medium"></p>
-          <p id="ed-correo" class="truncate text-xs text-slate-500 dark:text-slate-400"></p>
+        <h2 id="ed-titulo" class="text-base font-semibold">Editar usuario</h2>
+
+        <div>
+          <label for="ed-nombre" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nombre</label>
+          <input id="ed-nombre" type="text" maxlength="120" autocomplete="off" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+        <div>
+          <label for="ed-correo" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Correo</label>
+          <input id="ed-correo" type="email" maxlength="254" autocomplete="off" autocapitalize="none" spellcheck="false" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Es el correo con el que entra al sistema: si lo cambias, tiene que usar el nuevo.</p>
         </div>
 
         <div id="ed-bloque-rol">
@@ -293,8 +299,8 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
   // ---------------------------------------------------------------------------
   const dialogo = document.getElementById('ed-dialogo') as HTMLDialogElement;
   const edForm = document.getElementById('ed-form') as HTMLFormElement;
-  const edNombre = document.getElementById('ed-nombre') as HTMLParagraphElement;
-  const edCorreo = document.getElementById('ed-correo') as HTMLParagraphElement;
+  const edNombre = document.getElementById('ed-nombre') as HTMLInputElement;
+  const edCorreo = document.getElementById('ed-correo') as HTMLInputElement;
   const edRol = document.getElementById('ed-rol') as HTMLSelectElement;
   const edLocal = document.getElementById('ed-local') as HTMLSelectElement;
   const edBloqueRol = document.getElementById('ed-bloque-rol') as HTMLDivElement;
@@ -313,8 +319,8 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     if (!usuario) return;
     editando = usuario;
     const yo = usuario.id === miId;
-    edNombre.textContent = usuario.nombre;
-    edCorreo.textContent = usuario.email || '';
+    edNombre.value = usuario.nombre;
+    edCorreo.value = usuario.email || '';
     // Rol y local: solo de quienes están por debajo (uno mismo solo cambia su contraseña)
     edBloqueRol.classList.toggle('hidden', yo);
     edRol.innerHTML = opcionesRol(usuario.rol);
@@ -372,13 +378,23 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     const yo = editando.id === miId;
     const clave = edClave.value;
     try {
+      // Todo lo que cambió (nombre, correo, rol y local) viaja en UNA sola petición: o se guarda todo o nada
+      const cambios: { nombre?: string; email?: string; rol?: Rol; local_id?: string | null } = {};
+      const nombre = edNombre.value.trim().replace(/\s+/g, ' ');
+      const correo = edCorreo.value.trim().toLowerCase();
+      if (!nombre) throw new Error('Escribe el nombre del usuario.');
+      if (!correo) throw new Error('Escribe el correo del usuario.');
+      if (nombre !== editando.nombre) cambios.nombre = nombre;
+      if (correo !== (editando.email || '').toLowerCase()) cambios.email = correo;
       if (!yo) {
         const rol = edRol.value as Rol;
         const local_id = esSinLocal(rol) ? null : edLocal.value || null;
         if (rol !== editando.rol || (local_id ?? null) !== (editando.local_id ?? null)) {
-          await actualizarAccesoUsuario(editando.id, { rol, local_id });
+          cambios.rol = rol;
+          cambios.local_id = local_id;
         }
       }
+      if (Object.keys(cambios).length > 0) await actualizarAccesoUsuario(editando.id, cambios);
       if (clave) await cambiarClaveUsuario(editando.id, clave);
 
       await cargarUsuarios();

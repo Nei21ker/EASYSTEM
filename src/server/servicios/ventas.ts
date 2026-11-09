@@ -15,6 +15,7 @@ import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './
 import { sentenciasBorrarComisiones, sentenciasComisionPromotor } from './pendientes';
 import { descripcionInstalacionPromotor, instalacionDelPromotor, limpiarInstalacion } from '../../utils/instalacion';
 import { normalizarPromotor } from '../../utils/promotor';
+import { redondeoValido } from '../../utils/pagos';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -204,6 +205,10 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   if (!Number.isFinite(datos.total) || datos.total < 0) throw new ErrorApi(400, 'El total de la venta no es válido.', 'datos_invalidos');
   if (!METODOS.includes(datos.metodo_pago)) throw new ErrorApi(400, 'Tipo de cobro inválido.', 'datos_invalidos');
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
+  // Pagó de más en bolívares (redondeo): solo se guarda si es coherente (tipo de cobro en Bs, dentro del tope y con una tasa del día)
+  if ((datos.pagos ?? []).some((p) => !redondeoValido(p, datos.tasa_cambio ?? 0))) {
+    throw new ErrorApi(400, 'El redondeo de un pago en bolívares no es válido: pasa del límite o no corresponde al tipo de cobro.', 'datos_invalidos');
+  }
   const comprobante = await validarComprobantePagoMovil(env, datos);
   const precios = await aplicarPrecioPromotor(env, sesion, datos);
   const itemsGuardados = limpiarDanados(sesion, await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items.map(limpiarInstalacion)));

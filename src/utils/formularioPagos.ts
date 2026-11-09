@@ -5,7 +5,7 @@
 import { tasaActual } from '../stores/tasa';
 import type { DineroEntregado, MetodoPago, PagoVenta } from '../types/database.types';
 import { convertirABs, formatearBolivares, formatearMoneda, parsearMonto } from './format';
-import { esMetodoBolivares, etiquetaMetodoPago, METODOS_PAGO, METODOS_VUELTO } from './pagos';
+import { absorberExcesoEnBs, bsDeMas, esMetodoBolivares, etiquetaMetodoPago, METODOS_PAGO, METODOS_VUELTO } from './pagos';
 
 interface FilaPago {
   metodo: MetodoPago | '';
@@ -255,10 +255,42 @@ export class FormularioPagos {
     } else if (this.darVuelto) {
       resumen.className = verde;
       resumen.textContent = `✓ Recibido ${formatearMoneda(this.total + dif)} · Total ${formatearMoneda(this.total)} · Vuelto ${formatearMoneda(dif)}`;
+    } else if (this.redondeoAbsorbido(dif)) {
+      // El cliente redondeó en bolívares: la venta sigue y queda anotado lo que pagó y lo que debía
+      const p = this.redondeoAbsorbido(dif)!.find((x) => bsDeMas(x) > 0)!;
+      resumen.className = ambar;
+      resumen.textContent = `Pagó ${formatearBolivares(p.monto_bs!)} y debía ${formatearBolivares(p.monto_bs_debido!)}: ${formatearBolivares(bsDeMas(p))} de más (≈ ${formatearMoneda(dif)}). La venta se registra igual y queda anotado en el historial.`;
     } else {
       resumen.className = rojo;
       resumen.textContent = `Los pagos se pasan por ${formatearMoneda(dif)}. Corrige los montos o marca "Sí" en ¿Se debe dar vuelto?`;
     }
+  }
+
+  /** Las filas ya leídas como pagos (sin validar contra el total), o null si algún campo no se puede leer todavía. */
+  private pagosLeidos(): PagoVenta[] | null {
+    const tasa = tasaActual.get();
+    const pagos: PagoVenta[] = [];
+    for (const f of this.filas) {
+      const valor = f.metodo ? parsearMonto(f.monto) : null;
+      if (!f.metodo || valor === null) return null;
+      if (esMetodoBolivares(f.metodo)) {
+        if (!tasa) return null;
+        const bs = redondear(valor);
+        pagos.push({ metodo: f.metodo, monto_bs: bs, monto_usd: redondear(bs / tasa) });
+      } else {
+        pagos.push({ metodo: f.metodo, monto_bs: null, monto_usd: redondear(valor) });
+      }
+    }
+    return pagos;
+  }
+
+  /** Si lo recibido de más se puede registrar como redondeo en bolívares (sin dar vuelto), los pagos ya ajustados; si no, null. */
+  private redondeoAbsorbido(dif: number): PagoVenta[] | null {
+    const tasa = tasaActual.get();
+    const pagos = this.pagosLeidos();
+    if (!pagos || !tasa || dif <= 0.01 || this.darVuelto) return null;
+    const exceso = redondear(pagos.reduce((suma, p) => suma + p.monto_usd, 0) - this.total);
+    return absorberExcesoEnBs(pagos, exceso, tasa);
   }
 
   private armarVuelto(excesoUsd: number): DineroEntregado | null {
@@ -298,6 +330,9 @@ export class FormularioPagos {
     let vuelto: DineroEntregado | null = null;
     if (dif > 0.01) {
       if (!this.darVuelto) {
+        // Pagó de más en bolívares (redondeo): se acepta y se anota lo que pagó y lo que debía
+        const absorbidos = tasa ? absorberExcesoEnBs(pagos, dif, tasa) : null;
+        if (absorbidos) return { ok: true, pagos: absorbidos, vuelto: null };
         return error(`Los pagos se pasan por ${formatearMoneda(dif)}. Corrige los montos o marca "Sí" en ¿Se debe dar vuelto?`, ultimo);
       }
       vuelto = this.armarVuelto(dif);

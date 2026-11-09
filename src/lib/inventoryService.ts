@@ -50,7 +50,7 @@ import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
-import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
+import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO, redondeoValido } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
 import { MOTIVOS_BAJA, MOTIVOS_MERMA, sumaStock } from '../types/database.types';
 import type {
@@ -2338,7 +2338,8 @@ function ajustarPagos(
   const centavos = (n: number) => Math.round(n * 100) / 100;
   const ajustados = pagos.map((p) => {
     const usd = centavos(p.monto_usd * factor);
-    return { ...p, monto_usd: usd, monto_bs: p.monto_bs != null ? convertirABs(usd, tasa) : null };
+    const { monto_bs_debido: _redondeo, ...resto } = p; // venta parcial: se reparte todo en proporción, sin el aviso de redondeo
+    return { ...resto, monto_usd: usd, monto_bs: p.monto_bs != null ? convertirABs(usd, tasa) : null };
   });
   let vueltoAjustado: DineroEntregado | null = null;
   if (vuelto) {
@@ -2381,6 +2382,9 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   }
   if (new Set(datos.pagos.map((p) => p.metodo)).size !== datos.pagos.length) {
     throw new Error('No repitas un tipo de cobro: suma sus montos en una sola forma de pago.');
+  }
+  if (datos.pagos.some((p) => !redondeoValido(p, datos.tasa_cambio))) {
+    throw new Error('El redondeo de un pago en bolívares no es válido: pasa del límite o no corresponde al tipo de cobro.');
   }
   const totalSolicitado = totalDeItems(items);
   validarVuelto(datos.vuelto, 'El vuelto', METODOS_VUELTO);

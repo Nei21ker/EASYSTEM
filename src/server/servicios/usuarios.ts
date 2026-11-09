@@ -91,7 +91,7 @@ export async function actualizarUsuario(
   env: Entorno,
   actor: Sesion,
   id: string,
-  cambios: { rol?: Rol; localId?: string | null; status?: 'active' | 'inactive' }
+  cambios: { rol?: Rol; localId?: string | null; status?: 'active' | 'inactive'; nombre?: string; email?: string }
 ): Promise<void> {
   await exigirGestion(env, actor, 'Solo un administrador o gerente puede modificar usuarios.');
   const objetivo = await perfilDe(env, id);
@@ -99,7 +99,8 @@ export async function actualizarUsuario(
   const cambiaRol = cambios.rol !== undefined && cambios.rol !== objetivo.rol;
   const cambiaEstado = cambios.status !== undefined && cambios.status !== objetivo.status;
   if (id === actor.userId && (cambiaRol || cambiaEstado)) throw sinPermiso('No puedes cambiar tu propio rol ni tu propio estado.');
-  if (!puedeGestionarUsuario(actor.rol, objetivo.rol)) throw sinPermiso('No tienes permiso para modificar a este usuario.');
+  // Cada quien puede corregir su propio nombre y correo (su rol y su estado no: eso se comprobó arriba)
+  if (id !== actor.userId && !puedeGestionarUsuario(actor.rol, objetivo.rol)) throw sinPermiso('No tienes permiso para modificar a este usuario.');
   if (cambios.rol && !rolesAsignables(actor.rol).includes(cambios.rol)) throw sinPermiso('No puedes asignar ese rol.');
   if (cambios.status && cambios.status !== 'active' && cambios.status !== 'inactive') throw new ErrorApi(400, 'Estado de usuario inválido.');
 
@@ -113,10 +114,32 @@ export async function actualizarUsuario(
     if (localFinal !== objetivo.local_id) await exigirLocalExistente(env, localFinal);
   }
 
-  await env.DB
-    .prepare('UPDATE perfiles SET rol = ?, local_id = ?, status = ? WHERE id = ?')
-    .bind(rolFinal, localFinal, cambios.status ?? objetivo.status, id)
-    .run();
+  // Nombre y correo (los dos viven en la cuenta de acceso y en el perfil: se cambian juntos en un solo lote)
+  const nombreFinal = cambios.nombre !== undefined ? cambios.nombre.trim().replace(/\s+/g, ' ') : objetivo.nombre;
+  if (cambios.nombre !== undefined && (nombreFinal.length < 2 || nombreFinal.length > 120)) throw new ErrorApi(400, 'Escribe el nombre del usuario (entre 2 y 120 letras).', 'nombre_invalido');
+  const emailFinal = cambios.email !== undefined ? cambios.email.trim().toLowerCase() : objetivo.email;
+  if (cambios.email !== undefined && (emailFinal.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailFinal))) throw new ErrorApi(400, 'Escribe un correo válido.', 'correo_invalido');
+  const cambiaCuenta = nombreFinal !== objetivo.nombre || emailFinal !== objetivo.email;
+  if (emailFinal !== objetivo.email) {
+    const repetido = await env.DB
+      .prepare('SELECT 1 AS ok FROM user WHERE lower(email) = ? AND id <> ? UNION SELECT 1 FROM perfiles WHERE lower(email) = ? AND id <> ?')
+      .bind(emailFinal, id, emailFinal, id)
+      .first();
+    if (repetido) throw new ErrorApi(409, 'Ya existe un usuario con ese correo.', 'correo_repetido');
+  }
+
+  const lote = [
+    env.DB
+      .prepare('UPDATE perfiles SET rol = ?, local_id = ?, status = ?, nombre = ?, email = ? WHERE id = ?')
+      .bind(rolFinal, localFinal, cambios.status ?? objetivo.status, nombreFinal, emailFinal, id),
+  ];
+  if (cambiaCuenta) lote.push(env.DB.prepare('UPDATE user SET name = ?, email = ?, updatedAt = ? WHERE id = ?').bind(nombreFinal, emailFinal, Date.now(), id));
+  try {
+    await env.DB.batch(lote);
+  } catch (err) {
+    if (err instanceof Error && /UNIQUE constraint failed: (user|perfiles)\.email/i.test(err.message)) throw new ErrorApi(409, 'Ya existe un usuario con ese correo.', 'correo_repetido');
+    throw err;
+  }
   await avisarCambio(env.DB, ['perfiles']);
 }
 

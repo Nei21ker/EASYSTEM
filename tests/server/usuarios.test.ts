@@ -152,6 +152,55 @@ describe('actualizarUsuario', () => {
   it('el vendedor recibe 403', async () => {
     await rechazo(actualizarUsuario(env, await sesionDe(vendedor), encargado.id, { status: 'inactive' }), 403);
   });
+
+  describe('nombre y correo', () => {
+    const entrar = (email: string, password: string) =>
+      crearAuth(env, 'http://localhost:8787').handler(
+        new Request('http://localhost:8787/api/auth/sign-in/email', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', origin: 'http://localhost:8787' },
+          body: JSON.stringify({ email, password }),
+        })
+      );
+
+    it('el gerente cambia el nombre y el correo de un vendedor: entra con el correo nuevo (en minúsculas) y el viejo ya no sirve', async () => {
+      await actualizarUsuario(env, await sesionDe(gerente), vendedor.id, { nombre: '  Vera   Nueva ', email: ' Vera.Nueva@Prueba.COM ' });
+      expect(await env.DB.prepare('SELECT nombre, email FROM perfiles WHERE id = ?').bind(vendedor.id).first()).toEqual({ nombre: 'Vera Nueva', email: 'vera.nueva@prueba.com' });
+      expect(await env.DB.prepare('SELECT name, email FROM user WHERE id = ?').bind(vendedor.id).first()).toEqual({ name: 'Vera Nueva', email: 'vera.nueva@prueba.com' });
+      expect((await entrar('vera.nueva@prueba.com', vendedor.clave)).status).toBe(200);
+      expect((await entrar(vendedor.email, vendedor.clave)).status).not.toBe(200);
+    });
+
+    it('un correo que ya usa otra persona se rechaza con 409 y no cambia nada (ni el nombre ni el rol que iban en la misma petición)', async () => {
+      const a = await sesionDe(admin);
+      await rechazo(actualizarUsuario(env, a, vendedor.id, { nombre: 'Otro nombre', rol: 'tecnico', email: encargado.email.toUpperCase() }), 409, /ya existe un usuario con ese correo/i);
+      expect(await env.DB.prepare('SELECT nombre, email, rol FROM perfiles WHERE id = ?').bind(vendedor.id).first()).toEqual({ nombre: expect.not.stringMatching(/^Otro nombre$/), email: vendedor.email, rol: 'vendedor' });
+    });
+
+    it('dejar el mismo correo no es un conflicto consigo mismo; un correo o nombre inválido da 400', async () => {
+      const a = await sesionDe(admin);
+      await actualizarUsuario(env, a, vendedor.id, { email: vendedor.email.toUpperCase(), nombre: 'Vera' });
+      await rechazo(actualizarUsuario(env, a, vendedor.id, { email: 'sin-arroba' }), 400, /correo válido/i);
+      await rechazo(actualizarUsuario(env, a, vendedor.id, { nombre: ' x ' }), 400, /nombre/i);
+    });
+
+    it('cada quien cambia su propio nombre y correo; el gerente no toca a un administrador ni a otro gerente; el vendedor recibe 403', async () => {
+      const g = await sesionDe(gerente);
+      await actualizarUsuario(env, g, gerente.id, { nombre: 'Gerente Renovado' });
+      expect(await env.DB.prepare('SELECT nombre FROM perfiles WHERE id = ?').bind(gerente.id).first()).toEqual({ nombre: 'Gerente Renovado' });
+      await rechazo(actualizarUsuario(env, g, admin.id, { nombre: 'Intruso' }), 403);
+      await rechazo(actualizarUsuario(env, g, admin.id, { email: 'intruso@prueba.com' }), 403);
+      const otroGerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null });
+      await rechazo(actualizarUsuario(env, g, otroGerente.id, { nombre: 'Intruso' }), 403);
+      await rechazo(actualizarUsuario(env, await sesionDe(vendedor), encargado.id, { nombre: 'Intruso' }), 403);
+    });
+
+    it('un cambio solo de nombre no toca el correo ni cierra la sesión de la persona', async () => {
+      await actualizarUsuario(env, await sesionDe(admin), vendedor.id, { nombre: 'Solo Nombre' });
+      expect(await env.DB.prepare('SELECT email FROM user WHERE id = ?').bind(vendedor.id).first()).toEqual({ email: vendedor.email });
+      expect((await sesionDe(vendedor)).nombre).toBe('Solo Nombre');
+    });
+  });
 });
 
 describe('eliminarUsuario', () => {

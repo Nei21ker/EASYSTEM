@@ -399,19 +399,27 @@ export async function listarUsuarios(): Promise<SesionUsuario[]> {
 }
 
 /**
- * Cambia el rol, el local y/o el estado (activo/inactivo) de un empleado. El administrador puede con cualquiera;
+ * Cambia el nombre, el correo, el rol, el local y/o el estado (activo/inactivo) de un empleado. El administrador puede con cualquiera;
  * el gerente solo con encargados, vendedores y técnicos (y solo puede dejarlos con uno de esos roles). La base de datos
  * lo exige con RLS + el trigger proteger_perfil.
  */
 export async function actualizarAccesoUsuario(
   id: string,
-  cambios: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' }
+  cambios: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive'; nombre?: string; email?: string }
 ): Promise<void> {
-  const parche: { rol?: Rol; local_id?: string | null; status?: 'active' | 'inactive' } = { ...cambios };
+  const parche = { ...cambios };
   if (cambios.rol && esSinLocal(cambios.rol)) parche.local_id = null; // administrador, gerente y contador no tienen local
+  if (parche.nombre !== undefined) {
+    parche.nombre = parche.nombre.trim().replace(/\s+/g, ' ');
+    if (parche.nombre.length < 2) throw new Error('Escribe el nombre del usuario.');
+  }
+  if (parche.email !== undefined) {
+    parche.email = parche.email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(parche.email)) throw new Error('Escribe un correo válido.');
+  }
 
   if (modoServidor) {
-    await api.patch(`/api/usuarios/${id}`, { rol: parche.rol, localId: parche.local_id, status: parche.status });
+    await api.patch(`/api/usuarios/${id}`, { rol: parche.rol, localId: parche.local_id, status: parche.status, nombre: parche.nombre, email: parche.email });
     return;
   }
 
@@ -422,6 +430,7 @@ export async function actualizarAccesoUsuario(
   if (!usuario) throw new Error('Usuario no encontrado.');
   if (!puedeGestionarUsuario(actor?.rol, usuario.rol)) throw new Error('No tienes permiso para modificar a este usuario.');
   if (cambios.rol && !rolesAsignables(actor?.rol).includes(cambios.rol)) throw new Error('No puedes asignar ese rol.');
+  if (parche.email !== undefined && usuarios.some((u) => u.id !== id && u.email.toLowerCase() === parche.email)) throw new Error('Ya existe un usuario con ese correo.');
   Object.assign(usuario, parche);
   guardarUsuariosLocales(usuarios);
 }

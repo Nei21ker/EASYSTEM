@@ -9,9 +9,11 @@ const esquemaCambios = z.object({
   rol: z.enum(ROLES as [string, ...string[]]).optional(),
   localId: z.string().min(1).nullable().optional(),
   status: z.enum(['active', 'inactive']).optional(),
+  nombre: z.string().min(2, 'Escribe el nombre del usuario.').max(120).optional(),
+  email: z.string().email('Escribe un correo válido.').max(254).optional(),
 });
 
-/** Cambia el rol, el local y/o el estado de un usuario. */
+/** Cambia el nombre, el correo, el rol, el local y/o el estado de un usuario. */
 export const PATCH = conSesion(async ({ env, sesion, request, params }) => {
   const cambios = await leerJson(request, esquemaCambios);
   await actualizarUsuario(env, sesion, params.id as string, cambios as never);

@@ -30,6 +30,42 @@ export function esMetodoBolivares(valor: string): boolean {
   return valor.startsWith('BS_');
 }
 
+/** Lo máximo que se acepta como "pagó de más por redondeo" en un pago en bolívares (para que un error de tecleo no pase como redondeo). */
+export const REDONDEO_MAXIMO_USD = 5;
+
+const aCentavos = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * El cliente entregó de más en bolívares (redondeó el monto): en vez de exigir vuelto, la venta se registra con lo que de verdad pagó
+ * (`monto_bs`) y lo que debía (`monto_bs_debido`). El exceso se descuenta del ÚLTIMO pago en Bs, de modo que Σ `monto_usd` sigue siendo
+ * el total. Devuelve null si no se puede absorber: no hay pago en Bs, el exceso pasa de REDONDEO_MAXIMO_USD o dejaría ese pago en cero.
+ */
+export function absorberExcesoEnBs(pagos: PagoVenta[], excesoUsd: number, tasa: number): PagoVenta[] | null {
+  if (!(excesoUsd > 0.004) || excesoUsd > REDONDEO_MAXIMO_USD || !(tasa > 0)) return null;
+  const indice = pagos.map((p) => p.monto_bs != null).lastIndexOf(true);
+  if (indice < 0) return null;
+  const destino = pagos[indice];
+  const usd = aCentavos(destino.monto_usd - excesoUsd);
+  if (!(usd > 0)) return null;
+  const debido = aCentavos(usd * tasa);
+  if (!(destino.monto_bs! > debido)) return null;
+  return pagos.map((p, i) => (i === indice ? { ...p, monto_usd: usd, monto_bs_debido: debido } : p));
+}
+
+/** Bolívares que el cliente dejó de más en este pago (0 si pagó lo justo). */
+export function bsDeMas(p: Pick<PagoVenta, 'monto_bs' | 'monto_bs_debido'>): number {
+  if (p.monto_bs == null || p.monto_bs_debido == null) return 0;
+  return Math.max(0, aCentavos(p.monto_bs - p.monto_bs_debido));
+}
+
+/** ¿El pago trae un redondeo válido? Lo usa el servidor para no guardar datos incoherentes. */
+export function redondeoValido(p: Pick<PagoVenta, 'metodo' | 'monto_bs' | 'monto_bs_debido'>, tasa: number): boolean {
+  if (p.monto_bs_debido == null) return true;
+  if (!esMetodoBolivares(p.metodo) || p.monto_bs == null) return false;
+  if (!(p.monto_bs_debido > 0) || !(p.monto_bs > p.monto_bs_debido)) return false;
+  return !(tasa > 0) || p.monto_bs - p.monto_bs_debido <= REDONDEO_MAXIMO_USD * tasa * 1.01;
+}
+
 /**
  * Pagos de una venta. Las ventas hechas antes de los pagos múltiples no traen `pagos`:
  * se reconstruye un único pago por el total con su tipo de cobro.

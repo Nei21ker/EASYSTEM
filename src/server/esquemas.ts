@@ -87,7 +87,7 @@ export const esquemaCerrarPendiente = z.object({
   nota: z.string().max(300).nullable().optional(),
 });
 export const esquemaAsignarPromotor = z.object({ promotorId: z.string().min(1).max(100) });
-export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
+export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable(), monto_bs_debido: z.number().nullable().optional() });
 export const esquemaDinero = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
 
 export const esquemaVenta = z.object({

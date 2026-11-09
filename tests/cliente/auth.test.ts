@@ -184,3 +184,40 @@ describe('al entrar a una página se consulta el estado de la cuenta UNA sola ve
     await expect(estadoDeEntrada()).resolves.toBeDefined();
   });
 });
+
+describe('editar nombre y correo de un usuario', () => {
+  it('en modo servidor viajan en el PATCH junto con lo demás (correo en minúsculas, nombre sin espacios de más)', async () => {
+    const llamadas: { url: string; cuerpo: Record<string, unknown> }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      llamadas.push({ url: String(url), cuerpo: JSON.parse(String(init?.body ?? '{}')) });
+      return json({ ok: true });
+    }));
+    const { actualizarAccesoUsuario } = await cargarAuth(true);
+    await actualizarAccesoUsuario('u1', { nombre: '  Vera   Nueva ', email: ' VERA@X.COM ', rol: 'tecnico', local_id: 'L2' });
+    expect(llamadas).toHaveLength(1);
+    expect(llamadas[0].url).toMatch(/\/api\/usuarios\/u1$/);
+    expect(llamadas[0].cuerpo).toMatchObject({ nombre: 'Vera Nueva', email: 'vera@x.com', rol: 'tecnico', localId: 'L2' });
+  });
+
+  it('rechaza un correo o un nombre inválido antes de llamar al servidor', async () => {
+    const fetchSimulado = vi.fn(async () => json({ ok: true }));
+    vi.stubGlobal('fetch', fetchSimulado);
+    const { actualizarAccesoUsuario } = await cargarAuth(true);
+    await expect(actualizarAccesoUsuario('u1', { email: 'sin-arroba' })).rejects.toThrow(/correo válido/i);
+    await expect(actualizarAccesoUsuario('u1', { nombre: ' a ' })).rejects.toThrow(/nombre/i);
+    expect(fetchSimulado).not.toHaveBeenCalled();
+  });
+
+  it('en la demo cambia el nombre y el correo, y rechaza un correo que ya usa otra cuenta', async () => {
+    const { iniciarSesion, actualizarAccesoUsuario, listarUsuarios } = await cargarAuth(false);
+    await iniciarSesion('admin@edwardaccesorios.com', 'admin123');
+    const vendedor = (await listarUsuarios()).find((u) => u.rol === 'vendedor')!;
+    const encargado = (await listarUsuarios()).find((u) => u.rol === 'encargado')!;
+    await actualizarAccesoUsuario(vendedor.id, { nombre: 'Vera Nueva', email: 'Vera.Nueva@edwardaccesorios.com' });
+    const despues = (await listarUsuarios()).find((u) => u.id === vendedor.id)!;
+    expect(despues).toMatchObject({ nombre: 'Vera Nueva', email: 'vera.nueva@edwardaccesorios.com' });
+    await expect(actualizarAccesoUsuario(vendedor.id, { email: encargado.email.toUpperCase() })).rejects.toThrow(/ya existe un usuario con ese correo/i);
+    // Entra con el correo nuevo y la misma contraseña
+    await expect(iniciarSesion('vera.nueva@edwardaccesorios.com', 'vendedor123')).resolves.toMatchObject({ id: vendedor.id });
+  });
+});
