@@ -44,6 +44,7 @@ import { imagenDemoParaProducto } from './imagenes-demo';
 import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
 import { convertirABs, fechaLocalISO } from '../utils/format';
+import { normalizarNombre } from '../utils/altaRapida';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
@@ -1185,6 +1186,27 @@ export async function listarProductosStockBajo(): Promise<ProductoStockBajo[]> {
   }
 }
 
+/**
+ * Modo demo: un producto no se repite por nombre (sin importar mayúsculas, acentos ni espacios de más). Mismo rechazo y mismo texto que
+ * el servidor (`exigirNombresLibres`). `excluirId` es el producto que se renombra.
+ */
+function exigirNombreLibreLocal(productos: Producto[], nombres: string[], excluirId?: string): void {
+  const dentro = new Set<string>();
+  for (const nombre of nombres) {
+    const clave = normalizarNombre(nombre);
+    if (dentro.has(clave)) throw new Error(`El nombre «${nombre.trim()}» está repetido en la lista.`);
+    dentro.add(clave);
+  }
+  for (const nombre of nombres) {
+    const existente = productos.find((p) => p.id !== excluirId && normalizarNombre(p.nombre) === normalizarNombre(nombre));
+    if (existente) {
+      throw new Error(
+        `Ya existe un producto con ese nombre: «${existente.nombre}»${existente.referencia ? ` (${existente.referencia})` : ''}. Para agregarle unidades usa «+ Stock» (Ingreso de mercancía); si es otro producto, cámbiale el nombre.`
+      );
+    }
+  }
+}
+
 export async function crearProducto(
   input: Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>
 ): Promise<Producto> {
@@ -1201,6 +1223,7 @@ export async function crearProducto(
   if (db.productos.some((p) => p.codigo_barras === input.codigo_barras)) {
     throw new Error(`Ya existe un producto con el código de barras ${input.codigo_barras}.`);
   }
+  exigirNombreLibreLocal(db.productos, [input.nombre]);
 
   const producto: Producto = {
     id: generarId(),
@@ -1236,6 +1259,8 @@ export async function crearProductosRapidos(filas: FilaAltaRapida[]): Promise<Pr
   }
 
   const db = leerDB();
+  // Todo o nada, como en el servidor: se revisan los nombres de toda la lista antes de crear el primero
+  exigirNombreLibreLocal(db.productos, filas.map((f) => f.nombre));
   const codigos = generarCodigosInternos(db.productos.map((p) => p.codigo_barras), filas.length);
   const creados: ProductoCreadoRapido[] = [];
   for (const [i, f] of filas.entries()) {
@@ -1271,6 +1296,10 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   const producto = db.productos.find((p) => p.id === id);
   if (!producto) throw new Error('Producto no encontrado.');
   if (cambios.prefijo_codigo !== undefined) cambios.prefijo_codigo = prefijoValidoODemo(cambios.prefijo_codigo);
+  // Solo si de verdad cambia el nombre: los que ya estaban repetidos se pueden seguir editando sin tocarlo
+  if (cambios.nombre !== undefined && normalizarNombre(cambios.nombre) !== normalizarNombre(producto.nombre)) {
+    exigirNombreLibreLocal(db.productos, [cambios.nombre], id);
+  }
   Object.assign(producto, cambios);
   if (localId && cambios.stock_minimo !== undefined) {
     const fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === id);
@@ -2638,6 +2667,7 @@ export async function importarProductos(filas: FilaImportacion[]): Promise<Resul
     const codigos = new Set(db.productos.map((p) => p.codigo_barras));
     const repetido = nuevas.find((f) => codigos.has(f.codigo_barras));
     if (repetido) throw new Error(`El código ${repetido.codigo_barras} ya existe en el inventario.`);
+    exigirNombreLibreLocal(db.productos, nuevas.map((f) => f.nombre));
 
     const ahora = new Date().toISOString();
     const filaInventario = (productoId: string) => {

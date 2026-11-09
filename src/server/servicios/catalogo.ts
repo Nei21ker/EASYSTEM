@@ -12,6 +12,7 @@ import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
+import { normalizarNombre } from '../../utils/altaRapida';
 import { construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
@@ -93,6 +94,37 @@ const duplicado = (codigo: string) => new ErrorApi(409, `Ya existe un producto c
 const esViolacionUnica = (err: unknown) => err instanceof Error && /UNIQUE constraint failed/i.test(err.message);
 const esViolacionForanea = (err: unknown) => err instanceof Error && /FOREIGN KEY constraint failed/i.test(err.message);
 
+/**
+ * Un producto no se repite por nombre: si ya existe uno igual (sin importar mayúsculas, acentos ni espacios de más) se rechaza con 409
+ * y se dice cuál es, para sumarle unidades con «+ Stock» en vez de crear otro ítem. También rechaza nombres repetidos dentro de la
+ * misma petición. `excluirId` es el producto que se está renombrando (no choca consigo mismo). Se compara en JS porque SQLite no
+ * quita acentos; el catálogo es de unos miles de filas y crear productos es poco frecuente.
+ */
+async function exigirNombresLibres(env: Entorno, nombres: string[], excluirId?: string): Promise<void> {
+  const dentro = new Set<string>();
+  for (const nombre of nombres) {
+    const clave = normalizarNombre(nombre);
+    if (dentro.has(clave)) throw new ErrorApi(400, `El nombre «${nombre.trim()}» está repetido en la lista.`, 'nombre_repetido');
+    dentro.add(clave);
+  }
+  const filas = await env.DB.prepare('SELECT id, nombre, referencia FROM productos').all<{ id: string; nombre: string; referencia: string | null }>();
+  const porNombre = new Map<string, { id: string; nombre: string; referencia: string | null }>();
+  for (const f of filas.results) {
+    const clave = normalizarNombre(f.nombre);
+    if (!porNombre.has(clave) || f.id === excluirId) porNombre.set(clave, f);
+  }
+  for (const nombre of nombres) {
+    const existente = porNombre.get(normalizarNombre(nombre));
+    if (existente && existente.id !== excluirId) {
+      throw new ErrorApi(
+        409,
+        `Ya existe un producto con ese nombre: «${existente.nombre}»${existente.referencia ? ` (${existente.referencia})` : ''}. Para agregarle unidades usa «+ Stock» (Ingreso de mercancía); si es otro producto, cámbiale el nombre.`,
+        'nombre_repetido'
+      );
+    }
+  }
+}
+
 // --- Lectura ------------------------------------------------------------------------------------------------
 export async function listarProductos(env: Entorno, sesion: Sesion): Promise<ProductoConInventario[]> {
   return listarConInventario(env, await alcanceDe(env, sesion));
@@ -115,6 +147,7 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
   exigirGerencia(sesion);
   await alcanceDe(env, sesion);
   validarProducto(datos, true);
+  await exigirNombresLibres(env, [datos.nombre]);
 
   const fila = {
     id: nuevoId(),
@@ -151,6 +184,10 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
 
   const actual = await env.DB.prepare('SELECT * FROM productos WHERE id = ?').bind(id).first<Producto>();
   if (!actual) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+  // Solo si de verdad cambia el nombre: los productos que ya estaban repetidos se pueden seguir editando sin tocarlo
+  if (cambios.nombre !== undefined && normalizarNombre(cambios.nombre) !== normalizarNombre(actual.nombre)) {
+    await exigirNombresLibres(env, [cambios.nombre], id);
+  }
 
   // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
   const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url', 'prefijo_codigo'];
@@ -244,6 +281,7 @@ export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: Da
   if (filas.length > LIMITE_LOTE) throw new ErrorApi(400, `Se pueden crear hasta ${LIMITE_LOTE} productos por petición.`, 'lote_grande');
   filas.forEach((f) => validarProducto(f, true));
   if (filas.length === 0) return [];
+  await exigirNombresLibres(env, filas.map((f) => f.nombre));
 
   const codigos = filas.map((f) => f.codigo_barras.trim());
   if (new Set(codigos).size !== codigos.length) throw new ErrorApi(400, 'Hay códigos de barras repetidos en el lote.', 'codigo_repetido');
@@ -313,6 +351,7 @@ export async function crearProductosRapidos(env: Entorno, sesion: Sesion, filas:
   for (const f of filas) {
     if (f.nombre.trim().length > MAX_NOMBRE_ALTA) throw new ErrorApi(400, `El nombre "${f.nombre.trim().slice(0, 30)}…" es demasiado largo (máximo ${MAX_NOMBRE_ALTA} letras).`, 'datos_invalidos');
   }
+  await exigirNombresLibres(env, filas.map((f) => f.nombre));
 
   // Dos personas dando de alta a la vez pueden elegir el mismo código interno: la segunda se reintenta con los siguientes
   for (let intento = 1; ; intento++) {
