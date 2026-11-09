@@ -39,6 +39,8 @@ export const esquemaItemVenta = z.object({
   cantidad: z.number(),
   precio_unitario: z.number(),
   precio_lista: z.number().optional(),
+  instalacion_por: z.enum(['LOCAL', 'PROMOTOR']).optional(),
+  instalacion_usd: z.number().positive().max(100).optional(),
   unidades: z.array(z.string()).optional(),
   codigos_manuales: z.array(z.string()).max(500).optional(),
   autorizacion_codigo: z.string().max(2000).optional(),

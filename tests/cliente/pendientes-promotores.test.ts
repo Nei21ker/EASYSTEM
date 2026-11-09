@@ -124,6 +124,33 @@ describe('demo: comisión por venta con precio de promotor', () => {
     expect((await s.listarPendientes({ tipo: 'COMISION' })).map((x) => x.estado)).toEqual(['PAGADO']);
   });
 
+  it('instalación: la del local suma al total sin comisión; la del promotor suma al total y a lo que se le debe', async () => {
+    const s = await admin();
+    const prod = await s.crearProducto(vidrio);
+    await s.registrarMovimiento({ producto_id: prod.id, tipo: 'ENTRADA', cantidad: 10, motivo: 'Compra' });
+    const linea = (extra: Record<string, unknown>) => ({ producto_id: prod.id, nombre: prod.nombre, codigo_barras: prod.codigo_barras, cantidad: 2, precio_unitario: 5, ...extra });
+    const datos = (total: number, extra: Record<string, unknown> = {}) => ({
+      cliente: { cedula: 'V-11111111', nombre: 'Ana', apellido: 'Pérez', telefono: '04141234567' },
+      pagos: [{ metodo: 'USD_EFECTIVO' as const, monto_usd: total, monto_bs: null }],
+      tasa_cambio: 40,
+      ...extra,
+    });
+
+    // La instala el local: 2 × ($5 + $3) = $16, sin pendiente
+    const v1 = await s.registrarVenta([linea({ instalacion_por: 'LOCAL', instalacion_usd: 3 })], datos(16));
+    expect(v1.total).toBe(16);
+    expect(await s.listarPendientes({ tipo: 'COMISION' })).toHaveLength(0);
+    await expect(s.registrarVenta([linea({ instalacion_por: 'LOCAL', instalacion_usd: 3 })], datos(10))).rejects.toThrow(/deben coincidir/);
+
+    // La instala el promotor: el cliente paga $16 y se le deben $6 (2 × $3)
+    const v2 = await s.registrarVenta([linea({ instalacion_por: 'PROMOTOR', instalacion_usd: 3 })], datos(16, { promotorInstalacion: promotor }));
+    expect(v2.total).toBe(16);
+    expect(v2.comision).toBe(6);
+    const [c] = await s.listarPendientes({ tipo: 'COMISION' });
+    expect(c).toMatchObject({ monto_usd: 6, promotor_cedula: 'V-12345678', promotor_banco: 'Banesco' });
+    expect(c.descripcion).toMatch(/Instalación hecha por el promotor/);
+  });
+
   it('el encargado no puede pagar ni anular una comisión', async () => {
     const a = await admin();
     await ventaConPromotor(a, promotor);

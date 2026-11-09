@@ -209,6 +209,7 @@ import { alCambiarDatos } from '../lib/realtime';
   import { calcularRango, type RangoPreestablecido } from '../utils/dateRange';
   import { esMetodoBolivares, etiquetaMetodoPago, pagosDeVenta } from '../utils/pagos';
   import { resumirPorMetodo } from '../utils/ventasResumen';
+  import { montoInstalacion, nombreQuienInstala, totalLinea } from '../utils/instalacion';
   import { escaparHtml, normalizarTexto } from '../utils/productosUI';
   import type { Devolucion } from '../types/database.types';
   import type { VentaRegistrada } from '../lib/inventoryService';
@@ -338,7 +339,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const devs = devolucionesDe(v);
     const detalle = v.items
       .map(
-        (i) => `<li class="flex justify-between gap-3"><span class="min-w-0 break-words">${i.cantidad} × ${escaparHtml(i.nombre)}${(i.danados ?? 0) > 0 ? `<span class="mt-0.5 block text-[10px] text-orange-700 dark:text-orange-400">${i.danados} defectuosa${i.danados === 1 ? '' : 's'} (no se cobr${i.danados === 1 ? 'ó' : 'aron'})${i.danados_motivo === 'DEFECTO_FABRICA' ? ' · venía defectuosa' : i.danados_motivo === 'DANADO_AL_COLOCAR' ? ' · se dañó al colocar' : ''}</span>` : ''}${i.seleccion_manual ? `<span class="mt-0.5 block text-[10px] text-amber-700 dark:text-amber-400">Código a mano: ${escaparHtml(i.seleccion_manual.codigos.join(', '))} · autorizó ${escaparHtml(i.seleccion_manual.autorizado_nombre)}</span>` : ''}</span><span class="shrink-0 tabular-nums">${formatearMoneda(i.precio_unitario * i.cantidad)}${i.precio_lista !== undefined ? ` <span class="text-[10px] text-amber-700 dark:text-amber-400">(lista ${formatearMoneda(i.precio_lista)})</span>` : ''}</span></li>`
+        (i) => `<li class="flex justify-between gap-3"><span class="min-w-0 break-words">${i.cantidad} × ${escaparHtml(i.nombre)}${(i.danados ?? 0) > 0 ? `<span class="mt-0.5 block text-[10px] text-orange-700 dark:text-orange-400">${i.danados} defectuosa${i.danados === 1 ? '' : 's'} (no se cobr${i.danados === 1 ? 'ó' : 'aron'})${i.danados_motivo === 'DEFECTO_FABRICA' ? ' · venía defectuosa' : i.danados_motivo === 'DANADO_AL_COLOCAR' ? ' · se dañó al colocar' : ''}</span>` : ''}${montoInstalacion(i) > 0 ? `<span class="mt-0.5 block text-[10px] text-sky-700 dark:text-sky-400">Instalación ${formatearMoneda(montoInstalacion(i))} · ${nombreQuienInstala(i.instalacion_por)}</span>` : ''}${i.seleccion_manual ? `<span class="mt-0.5 block text-[10px] text-amber-700 dark:text-amber-400">Código a mano: ${escaparHtml(i.seleccion_manual.codigos.join(', '))} · autorizó ${escaparHtml(i.seleccion_manual.autorizado_nombre)}</span>` : ''}</span><span class="shrink-0 tabular-nums">${formatearMoneda(totalLinea(i))}${i.precio_lista !== undefined ? ` <span class="text-[10px] text-amber-700 dark:text-amber-400">(lista ${formatearMoneda(i.precio_lista)})</span>` : ''}</span></li>`
       )
       .join('');
     const folio = v.folio

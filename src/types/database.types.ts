@@ -237,6 +237,9 @@ export interface VentaItem {
   precio_lista?: number;
   /** Quién fijó el precio distinto al del catálogo: "local" = la tienda cambió el precio (sin promotor ni comisión). Ausente = precio de promotor o descuento anteriores. Lo pone el servidor */
   precio_tipo?: 'local';
+  /** Instalación de vidrios (Local Vidrios): quién la hizo y su precio POR UNIDAD; suma al total de la línea (ver utils/instalacion.ts) */
+  instalacion_por?: 'LOCAL' | 'PROMOTOR';
+  instalacion_usd?: number;
   /** Códigos de las unidades concretas que salieron (migración 0033); las ventas anteriores no lo traen */
   unidades?: string[];
   /** Solo al enviar la venta: cuáles de esas unidades se eligieron a mano (la etiqueta no se leía) y la autorización firmada de un supervisor */

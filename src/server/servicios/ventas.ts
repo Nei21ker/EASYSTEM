@@ -13,6 +13,8 @@ import { normalizarCedula, separarNombre } from './clientes';
 import { verificarCodigoManual, verificarPrecioPromotor, type PrecioPromotorVerificado } from './autorizaciones';
 import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './movimientos';
 import { sentenciasBorrarComisiones, sentenciasComisionPromotor } from './pendientes';
+import { descripcionInstalacionPromotor, instalacionDelPromotor, limpiarInstalacion } from '../../utils/instalacion';
+import { normalizarPromotor } from '../../utils/promotor';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
@@ -175,6 +177,20 @@ function descripcionComision(items: VentaItem[]): string {
   return `Comisión por venta con precio de promotor: ${texto}`;
 }
 
+type PromotorDeVenta = { cedula: string | null; nombre: string | null; nombrePropio: string; apellido: string; telefono: string | null; banco: string | null };
+
+function identidadDeAutorizacion(p: PrecioPromotorVerificado): PromotorDeVenta {
+  return { cedula: p.promotor_cedula, nombre: p.promotor_nombre, nombrePropio: p.promotor_nombre_propio, apellido: p.promotor_apellido, telefono: p.promotor_telefono, banco: p.promotor_banco };
+}
+
+/** Texto del pendiente: la comisión por el precio y/o la instalación que hizo el promotor. */
+function descripcionPendiente(items: VentaItem[], comisionPrecio: number, instalacionPromotor: number): string {
+  const partes: string[] = [];
+  if (comisionPrecio > 0) partes.push(descripcionComision(items));
+  if (instalacionPromotor > 0) partes.push(`Instalación hecha por el promotor: ${descripcionInstalacionPromotor(items)}`);
+  return partes.join(' · ');
+}
+
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
@@ -190,7 +206,18 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   const fecha = fechaValida(datos.fecha, 'La fecha de la venta no es válida.');
   const comprobante = await validarComprobantePagoMovil(env, datos);
   const precios = await aplicarPrecioPromotor(env, sesion, datos);
-  const itemsGuardados = limpiarDanados(sesion, await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items));
+  const itemsGuardados = limpiarDanados(sesion, await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items.map(limpiarInstalacion)));
+
+  // Instalación hecha por el promotor: es dinero que la tienda le entrega, así que se suma a lo que se le debe (comisión del precio + instalación).
+  // El promotor sale de la autorización del precio si la hay; si no, de los datos que anotó quien vendió.
+  const instalacionPromotor = instalacionDelPromotor(itemsGuardados);
+  let identidad: PromotorDeVenta | null = precios.promotor?.modo === 'promotor' ? identidadDeAutorizacion(precios.promotor) : null;
+  if (!identidad && instalacionPromotor > 0) {
+    const r = normalizarPromotor(datos.promotor ?? null);
+    if (!r.ok) throw new ErrorApi(400, r.mensaje, 'datos_invalidos');
+    identidad = r.promotor;
+  }
+  const comisionTotal = redondear2(precios.comision + instalacionPromotor);
 
   const id = nuevoId();
   const db = env.DB;
@@ -206,7 +233,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
       .bind(
         id, fecha, datos.local_id, cedula, nombre, telefono, datos.metodo_pago, redondear2(datos.total), JSON.stringify(itemsGuardados),
         json(datos.pagos), json(datos.vuelto), datos.tasa_cambio ?? null, datos.total_bs ?? null, sesion.userId, sesion.nombre, comprobante.ruta, comprobante.referencia,
-        null, precios.promotor?.promotor_nombre ?? null, precios.promotor?.promotor_cedula ?? null, precios.promotor?.promotor_telefono ?? null, precios.promotor?.promotor_banco ?? null, precios.comision,
+        null, identidad?.nombre ?? precios.promotor?.promotor_nombre ?? null, identidad?.cedula ?? precios.promotor?.promotor_cedula ?? null, identidad?.telefono ?? precios.promotor?.promotor_telefono ?? null, identidad?.banco ?? precios.promotor?.promotor_banco ?? null, comisionTotal,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),
     // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
@@ -217,20 +244,13 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
       )
       .bind(cedula, separado.nombre, separado.apellido, telefono, new Date().toISOString()),
     // La comisión del promotor queda anotada en Pendientes (y el promotor en el directorio) en el MISMO lote que la venta
-    ...(precios.promotor?.modo === 'promotor' && precios.comision > 0
+    ...(identidad && comisionTotal > 0
       ? sentenciasComisionPromotor(db, sesion, {
           ventaId: id,
           localId: datos.local_id,
-          comision: precios.comision,
-          descripcion: descripcionComision(precios.items),
-          promotor: {
-            cedula: precios.promotor.promotor_cedula,
-            nombre: precios.promotor.promotor_nombre,
-            nombrePropio: precios.promotor.promotor_nombre_propio,
-            apellido: precios.promotor.promotor_apellido,
-            telefono: precios.promotor.promotor_telefono,
-            banco: precios.promotor.promotor_banco,
-          },
+          comision: comisionTotal,
+          descripcion: descripcionPendiente(itemsGuardados, precios.comision, instalacionPromotor),
+          promotor: identidad,
         })
       : []),
     ...sentenciasCambio(db, ['ventas'], datos.local_id),

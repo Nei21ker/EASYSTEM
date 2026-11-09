@@ -17,6 +17,7 @@
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
 import { normalizarPromotor, type PromotorNormalizado } from '../utils/promotor';
+import { descripcionInstalacionPromotor, hayInstalacionDelPromotor, instalacionDelPromotor, limpiarInstalacion, totalDeItems } from '../utils/instalacion';
 import { ErrorDeApi } from './api';
 import { partirEnTandas } from '../utils/tandas';
 import type { ResultadoEliminacion } from './db/productos';
@@ -1769,6 +1770,11 @@ export interface DatosVenta {
   precioPromotor?: { promotor?: DatosPromotor | null; autorizacion: AutorizacionPrecio } | null;
   /** Autorización (`autorizarDanados`) de un gerente o administrador: obligatoria si las piezas defectuosas de la venta son 3 o más (UMBRAL_CLAVE_DANADOS) */
   autorizacionDanados?: AutorizacionCodigo | null;
+  /**
+   * Datos del promotor cuando alguna línea la instala el promotor y NO hay precio de promotor (si lo hay, el promotor sale de la
+   * autorización del precio). La instalación se suma a lo que la tienda le debe al promotor.
+   */
+  promotorInstalacion?: DatosPromotor | null;
 }
 
 /** Piezas defectuosas que se botan en esta venta (suma de todas las líneas; solo productos por cantidad, no se cobran). */
@@ -2211,7 +2217,10 @@ function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormal
     }
   }
   const lineas = venta.items.filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista).map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
-  const texto = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
+  const textoPrecio = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
+  const partes: string[] = [];
+  if (lineas.length > 0) partes.push(`Comisión por venta con precio de promotor: ${textoPrecio}`);
+  if (instalacionDelPromotor(venta.items) > 0) partes.push(`Instalación hecha por el promotor: ${descripcionInstalacionPromotor(venta.items)}`);
   (db.pendientes ?? (db.pendientes = [])).unshift({
     id: generarId(),
     local_id: venta.local_id,
@@ -2221,7 +2230,7 @@ function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormal
     promotor_nombre: p.nombre,
     promotor_telefono: p.telefono,
     promotor_banco: p.banco,
-    descripcion: `Comisión por venta con precio de promotor: ${texto}`.slice(0, 500),
+    descripcion: partes.join(' · ').slice(0, 500),
     monto_usd: venta.comision ?? 0,
     estado: 'PENDIENTE',
     venta_id: venta.id,
@@ -2275,6 +2284,18 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
       if (!codigos_manuales?.length || !aut) return limpio;
       return { ...limpio, seleccion_manual: { codigos: codigos_manuales, autorizado_por: aut.supervisor_id, autorizado_nombre: aut.supervisor_nombre } };
     });
+    // Instalación hecha por el promotor: se suma a lo que se le debe y, si no hay precio de promotor, el promotor sale de los datos anotados
+    base.items = base.items.map(limpiarInstalacion);
+    const instalacionPromotor = instalacionDelPromotor(base.items);
+    if (instalacionPromotor > 0) {
+      if (!promotorNormalizado) {
+        const r = normalizarPromotor(registro.promotor ?? null);
+        if (!r.ok) throw new Error(r.mensaje);
+        promotorNormalizado = r.promotor;
+        promotorDeLaVenta = { ...promotorDeLaVenta, promotor_nombre: r.promotor.nombre, promotor_cedula: r.promotor.cedula, promotor_telefono: r.promotor.telefono, promotor_banco: r.promotor.banco };
+      }
+      promotorDeLaVenta = { ...promotorDeLaVenta, comision: Math.round(((promotorDeLaVenta.comision ?? 0) + instalacionPromotor) * 100) / 100 };
+    }
     const { promotor: _anotado, ...baseSinPromotor } = base;
     const venta: Venta = { ...baseSinPromotor, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
     ventas.unshift(venta);
@@ -2361,7 +2382,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   if (new Set(datos.pagos.map((p) => p.metodo)).size !== datos.pagos.length) {
     throw new Error('No repitas un tipo de cobro: suma sus montos en una sola forma de pago.');
   }
-  const totalSolicitado = Math.round(items.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
+  const totalSolicitado = totalDeItems(items);
   validarVuelto(datos.vuelto, 'El vuelto', METODOS_VUELTO);
   const totalPagos = Math.round((datos.pagos.reduce((suma, p) => suma + p.monto_usd, 0) - (datos.vuelto?.monto_usd ?? 0)) * 100) / 100;
   if (Math.abs(totalPagos - totalSolicitado) > 0.011) {
@@ -2474,7 +2495,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     throw fallo; // se puede reintentar tal cual
   }
 
-  const totalUsd = Math.round(registradas.reduce((suma, i) => suma + i.precio_unitario * i.cantidad, 0) * 100) / 100;
+  const totalUsd = totalDeItems(registradas);
   // Si solo se alcanzaron a registrar algunas líneas, los pagos se reparten en proporción al nuevo total.
   const reparto =
     registradas.length === items.length
@@ -2499,6 +2520,10 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     referencia_pago_movil: referenciaPagoMovil || null,
     ...(conPrecioPromotor && datos.precioPromotor
       ? { promotor: datos.precioPromotor.promotor ?? null, autorizacion_precio: datos.precioPromotor.autorizacion.token }
+      : {}),
+    // Instalación del promotor sin precio de promotor (o con precio del local): el promotor viaja con los datos anotados al elegir la instalación
+    ...(hayInstalacionDelPromotor(items) && (!conPrecioPromotor || datos.precioPromotor?.autorizacion.modo === 'local')
+      ? { promotor: datos.promotorInstalacion ?? null }
       : {}),
     // Bolívares netos: lo recibido en Bs menos el vuelto entregado en Bs
     total_bs:

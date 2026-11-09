@@ -6,6 +6,7 @@
 import { formatearBolivares, formatearMoneda } from './format';
 import { etiquetaMetodoPago, pagosDeVenta } from './pagos';
 import { partirEnLineas } from './etiquetaImagen';
+import { montoInstalacion, totalLinea } from './instalacion';
 import { LOGO_TICKET, LOGO_TICKET_PROPORCION } from './logoTicket';
 import type { DineroEntregado, PagoVenta, Venta, VentaItem } from '../types/database.types';
 
@@ -97,11 +98,15 @@ export function svgTicket(venta: VentaParaTicket): string {
     y += 30;
     lineasNombre.forEach((linea, i) => {
       texto(linea, MARGEN, 27, { peso: 700 });
-      if (i === 0) texto(formatearMoneda(item.precio_unitario * item.cantidad), derecha, 27, { peso: 700, ancla: 'end' });
+      if (i === 0) texto(formatearMoneda(totalLinea(item)), derecha, 27, { peso: 700, ancla: 'end' });
       if (i < lineasNombre.length - 1) y += 33;
     });
     y += 32;
     texto(`${item.cantidad} × ${formatearMoneda(item.precio_unitario)}`, MARGEN, 23, { color: '#475569' });
+    if (montoInstalacion(item) > 0) {
+      y += 30;
+      texto(`+ Instalación ${item.cantidad} × ${formatearMoneda(item.instalacion_usd ?? 0)}`, MARGEN, 23, { color: '#475569' });
+    }
 
     const codigos = item.unidades ?? [];
     if (codigos.length > 0) {

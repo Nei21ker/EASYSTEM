@@ -507,6 +507,53 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </form>
   </dialog>
 
+  <dialog
+    id="pos-instalacion"
+    aria-labelledby="pos-inst-titulo"
+    class="anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <form id="pos-inst-form" class="flex max-h-[90dvh] flex-col" autocomplete="off" novalidate>
+      <div class="shrink-0 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800">
+        <h2 id="pos-inst-titulo" class="text-base font-semibold">Instalación</h2>
+        <p id="pos-inst-producto" class="mt-0.5 break-words text-sm text-slate-600 dark:text-slate-300"></p>
+      </div>
+      <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div class="space-y-2">
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 dark:border-slate-700 dark:text-slate-100 dark:has-[:checked]:bg-brand-500/10"><input type="radio" name="pos-inst-quien" value="NINGUNA" class="mt-0.5" /><span>Sin instalación</span></label>
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 dark:border-slate-700 dark:text-slate-100 dark:has-[:checked]:bg-brand-500/10"><input type="radio" name="pos-inst-quien" value="LOCAL" class="mt-0.5" /><span>La instala el local (encargado)<span class="block text-xs text-slate-500 dark:text-slate-400">Es ingreso de la tienda.</span></span></label>
+          <label class="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-800 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 dark:border-slate-700 dark:text-slate-100 dark:has-[:checked]:bg-brand-500/10"><input type="radio" name="pos-inst-quien" value="PROMOTOR" class="mt-0.5" /><span>La instala el promotor<span class="block text-xs text-slate-500 dark:text-slate-400">El cliente paga todo a la tienda y la tienda le entrega esta parte al promotor.</span></span></label>
+        </div>
+        <div id="pos-inst-precio-caja" class="hidden">
+          <label for="pos-inst-precio" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Precio de la instalación, por cada uno ($)</label>
+          <input id="pos-inst-precio" type="text" inputmode="decimal" class="mt-1 tabular-nums w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <p id="pos-inst-resumen" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <div id="pos-inst-promotor-caja" class="hidden space-y-2">
+          <p id="pos-inst-promotor-actual" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+          <fieldset id="pos-inst-promotor-campos" class="space-y-2">
+            <legend class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor que instala</legend>
+            <div class="flex gap-2">
+              <select id="pos-inst-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
+              <input id="pos-inst-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <input id="pos-inst-nombre" type="text" autocomplete="off" placeholder="Nombre" aria-label="Nombre del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              <input id="pos-inst-apellido" type="text" autocomplete="off" placeholder="Apellido" aria-label="Apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            </div>
+            <input id="pos-inst-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="Teléfono (ej. 0414-1234567)" aria-label="Teléfono del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <input id="pos-inst-banco" type="text" list="pos-promotor-bancos" autocomplete="off" placeholder="Banco receptor (donde se le paga)" aria-label="Banco receptor del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <p id="pos-inst-registrado" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
+          </fieldset>
+        </div>
+        <p id="pos-inst-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex shrink-0 gap-3 border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pos-inst-cancelar" type="button" class="flex-1 rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
+        <button id="pos-inst-guardar" type="submit" class="flex-1 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-700">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
   <CamaraEscaner />
 </DashboardLayout>
 
@@ -525,6 +572,7 @@ import { alCambiarDatos } from '../lib/realtime';
   import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
   import { MOTIVOS_MERMA, type MotivoMerma } from '../types/database.types';
   import { normalizarPromotor } from '../utils/promotor';
+  import { errorPrecioInstalacion, hayInstalacionDelPromotor, INSTALACION_PREDETERMINADA_USD, montoInstalacion, totalLinea, type QuienInstala } from '../utils/instalacion';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
@@ -545,6 +593,8 @@ import { alCambiarDatos } from '../lib/realtime';
     danados?: number;
     /** Motivo opcional de esas piezas defectuosas */
     danadosMotivo?: MotivoMerma | null;
+    /** Instalación del vidrio (Local Vidrios): quién la hace y su precio POR UNIDAD; se suma al total de la línea */
+    instalacion?: { por: QuienInstala; usd: number };
   }
 
   /** Lo que sale del stock por esa línea: lo que se cobra más lo que se bota */
@@ -562,7 +612,15 @@ import { alCambiarDatos } from '../lib/realtime';
   let autorizacionPrecio: AutorizacionPrecio | null = null;
   /** Lo que se cobra por unidad de esa línea (el del catálogo, o el de promotor si lo autorizó un supervisor) */
   const precioDe = (l: LineaCarrito): number => l.precioPromotor ?? l.producto.precio_venta;
-  const totalDelCarrito = (): number => carrito.reduce((suma, l) => suma + precioDe(l) * l.cantidad, 0);
+  /** Lo que cuesta instalar toda la línea (precio por unidad × cantidad); 0 sin instalación */
+  const instalacionDe = (l: LineaCarrito): number => (l.instalacion ? Math.round(l.instalacion.usd * l.cantidad * 100) / 100 : 0);
+  /** Lo que paga el cliente por la línea: producto + instalación */
+  const totalLineaCarrito = (l: LineaCarrito): number => Math.round((precioDe(l) * l.cantidad + instalacionDe(l)) * 100) / 100;
+  const totalDelCarrito = (): number => Math.round(carrito.reduce((suma, l) => suma + totalLineaCarrito(l), 0) * 100) / 100;
+  /** El botón de instalación solo existe en el Local Vidrios */
+  let instalacionDisponible = false;
+  /** Datos del promotor que instala (cuando no hay un promotor del precio ya autorizado); viajan con la venta */
+  let promotorInstalacion: DatosPromotor | null = null;
   let localActivoId = '';
 
   const campoCodigo = document.getElementById('pos-codigo') as HTMLInputElement;
@@ -709,6 +767,7 @@ import { alCambiarDatos } from '../lib/realtime';
       autorizacionPrecio = null;
     }
     if (totalDanadosCarrito() === 0) autorizacionDanados = null;
+    if (!carrito.some((l) => l.instalacion?.por === 'PROMOTOR')) promotorInstalacion = null;
     carritoVacio.classList.toggle('hidden', carrito.length > 0);
     carritoContador.textContent = `${carrito.length} línea${carrito.length === 1 ? '' : 's'}`;
     botonProcesar.disabled = carrito.length === 0;
@@ -717,7 +776,7 @@ import { alCambiarDatos } from '../lib/realtime';
       .map((linea) => {
         const { producto, cantidad, unidades } = linea;
         const precio = precioDe(linea);
-        const subtotal = precio * cantidad;
+        const subtotal = totalLineaCarrito(linea);
         const alMaximo = ocupadas(linea) >= producto.stock_actual;
         const danados = linea.danados ?? 0;
         const conPromotor = linea.precioPromotor !== undefined;
@@ -757,6 +816,9 @@ import { alCambiarDatos } from '../lib/realtime';
             : danados > 0
               ? `<p class="mt-1 text-xs font-medium text-orange-700 dark:text-orange-400">${danados} defectuosa${danados === 1 ? '' : 's'} (no se cobra${danados === 1 ? '' : 'n'})</p>`
               : '';
+        const detalleInstalacion = linea.instalacion
+          ? `<p class="text-xs font-medium text-sky-700 dark:text-sky-400">Instalación ${formatearMoneda(instalacionDe(linea))} · ${linea.instalacion.por === 'LOCAL' ? 'la instala el local' : 'la instala el promotor'}</p>`
+          : '';
         const codigos = unidades.length
           ? `<div class="mt-1 flex flex-wrap gap-1">${unidades
               .map(
@@ -773,17 +835,19 @@ import { alCambiarDatos } from '../lib/realtime';
                 <p class="text-sm font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
                 <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio)} c/u</p>
                 ${detallePrecio}
+                ${detalleInstalacion}
                 ${codigos}
                 ${esPorCantidad(producto) ? '<p class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400">Por cantidad: no se escanea cada pieza</p>' : ''}
               </div>
               <span class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
             </div>
-            <div class="mt-2 flex">
+            <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
               ${
                 conPromotor
                   ? `<button type="button" data-quitar-precio="${producto.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar precio modificado</button>`
                   : `<button type="button" data-precio-promotor="${producto.id}" class="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Modificar precio</button>`
               }
+              ${instalacionDisponible ? `<button type="button" data-instalacion="${producto.id}" class="text-xs font-medium text-sky-700 hover:underline dark:text-sky-400">${linea.instalacion ? 'Cambiar instalación' : '+ Instalación'}</button>` : ''}
             </div>
             ${bloqueDanados}
             <div class="mt-2 flex items-center justify-between gap-3">
@@ -946,8 +1010,8 @@ import { alCambiarDatos } from '../lib/realtime';
       .map(
         (item) => `
           <li class="flex justify-between gap-2">
-            <span>${escaparHtml(item.nombre)} <span class="text-slate-400 print:text-black">x${item.cantidad}</span>${htmlCodigosUnidades(item.unidades)}</span>
-            <span>${formatearMoneda(item.precio_unitario * item.cantidad)}</span>
+            <span>${escaparHtml(item.nombre)} <span class="text-slate-400 print:text-black">x${item.cantidad}</span>${montoInstalacion(item) > 0 ? `<span class="mt-0.5 block text-xs text-slate-500 print:text-black">+ Instalación ${formatearMoneda(montoInstalacion(item))}</span>` : ''}${htmlCodigosUnidades(item.unidades)}</span>
+            <span>${formatearMoneda(totalLinea(item))}</span>
           </li>
         `
       )
@@ -1260,6 +1324,7 @@ import { alCambiarDatos } from '../lib/realtime';
         precio_unitario: precioDe(l),
         // El precio de catálogo solo se anota en las líneas con precio modificado (el servidor lo vuelve a leer del catálogo)
         precio_lista: l.precioPromotor !== undefined ? l.producto.precio_venta : undefined,
+        ...(l.instalacion ? { instalacion_por: l.instalacion.por, instalacion_usd: l.instalacion.usd } : {}),
         unidades: l.unidades.length ? [...l.unidades] : undefined,
         // Piezas defectuosas (productos por cantidad): no se cobran, salen del stock como baja junto con la venta
         ...((l.danados ?? 0) > 0 ? { danados: l.danados, danados_motivo: l.danadosMotivo ?? null } : {}),
@@ -1278,6 +1343,7 @@ import { alCambiarDatos } from '../lib/realtime';
         comprobante: incluyePagoMovil(datos.pagos) && modoComprobante === 'foto' ? comprobante : null,
         referenciaPagoMovil: incluyePagoMovil(datos.pagos) && modoComprobante === 'referencia' ? campoReferencia.value : null,
         precioPromotor: autorizacionPrecio ? { promotor: promotorVenta?.datos ?? null, autorizacion: autorizacionPrecio } : null,
+        promotorInstalacion: hayInstalacionDelPromotor(items) ? promotorInstalacion : null,
         autorizacionDanados: totalDanadosCarrito() >= UMBRAL_CLAVE_DANADOS && autorizacionDanados ? { token: autorizacionDanados.token, vence_en: autorizacionDanados.vence_en, autorizado_por: autorizacionDanados.autorizado_por } : null,
       });
       mostrarTicket(venta);
@@ -1428,6 +1494,8 @@ import { alCambiarDatos } from '../lib/realtime';
     const sumar = objetivo.closest<HTMLButtonElement>('[data-sumar]');
     const restar = objetivo.closest<HTMLButtonElement>('[data-restar]');
     const eliminar = objetivo.closest<HTMLButtonElement>('[data-eliminar]');
+    const instalacion = objetivo.closest<HTMLButtonElement>('[data-instalacion]');
+    if (instalacion?.dataset.instalacion) return abrirInstalacion(instalacion.dataset.instalacion);
     const precioPromotor = objetivo.closest<HTMLButtonElement>('[data-precio-promotor]');
     const quitarPrecio = objetivo.closest<HTMLButtonElement>('[data-quitar-precio]');
     const danadosSumar = objetivo.closest<HTMLButtonElement>('[data-danados-sumar]');
@@ -1637,8 +1705,8 @@ import { alCambiarDatos } from '../lib/realtime';
       .map(
         (linea) => `
           <li class="flex items-center justify-between gap-3 px-3 py-2">
-            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? (linea.precioPromotor < linea.producto.precio_venta ? '<span class="ml-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">(con descuento)</span>' : autorizacionPrecio?.modo === 'local' ? '<span class="ml-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">(precio del local)</span>' : '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>') : ''}</span>
-            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(precioDe(linea) * linea.cantidad)}</span>
+            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? (linea.precioPromotor < linea.producto.precio_venta ? '<span class="ml-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">(con descuento)</span>' : autorizacionPrecio?.modo === 'local' ? '<span class="ml-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">(precio del local)</span>' : '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>') : ''}${linea.instalacion ? '<span class="ml-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">(con instalación)</span>' : ''}</span>
+            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(totalLineaCarrito(linea))}</span>
           </li>`
       )
       .join('');
@@ -1669,7 +1737,7 @@ import { alCambiarDatos } from '../lib/realtime';
     campoClaveSupervisor.value = '';
     errorPrecio.classList.add('hidden');
     // Un solo promotor por venta: si ya se anotó, sus datos quedan para corregirlos
-    const previo = mismoModo ? promotorVenta?.datos : undefined;
+    const previo = mismoModo ? (promotorVenta?.datos ?? promotorInstalacion ?? undefined) : undefined;
     const cedulaPrevia = (previo?.cedula ?? '').toUpperCase().match(/^([VE])-?(\d+)$/);
     promotorNac.value = cedulaPrevia?.[1] ?? 'V';
     promotorCedula.value = cedulaPrevia?.[2] ?? '';
@@ -1791,6 +1859,8 @@ import { alCambiarDatos } from '../lib/realtime';
       }
       promotorVenta = { datos: promotor.datos, nombre: aut.promotor };
       autorizacionPrecio = aut;
+      // Si el mismo promotor instala, sus datos se conservan aunque después se quite el precio de promotor
+      if (carrito.some((l) => l.instalacion?.por === 'PROMOTOR') && (promotor.datos.cedula || promotor.datos.nombre)) promotorInstalacion = promotor.datos;
       cerrarPrecioPromotor();
       renderCarrito();
       pintarResumenConfirmar();
@@ -2461,9 +2531,145 @@ import { alCambiarDatos } from '../lib/realtime';
     }
   });
 
+  // --- Instalación de vidrios (Local Vidrios) ---------------------------------------------------------------------
+  // Cada línea puede llevar instalación (precio por unidad, normalmente $3): «la instala el local» es ingreso de la tienda; «la instala el
+  // promotor» se le entrega después al promotor (queda como pendiente junto con su comisión). Suma al total de la venta.
+  const dialogoInst = document.getElementById('pos-instalacion') as HTMLDialogElement;
+  const formInst = document.getElementById('pos-inst-form') as HTMLFormElement;
+  const instPrecio = document.getElementById('pos-inst-precio') as HTMLInputElement;
+  const instError = document.getElementById('pos-inst-error') as HTMLParagraphElement;
+  const instNac = document.getElementById('pos-inst-nac') as HTMLSelectElement;
+  const instCedula = document.getElementById('pos-inst-cedula') as HTMLInputElement;
+  const instNombre = document.getElementById('pos-inst-nombre') as HTMLInputElement;
+  const instApellido = document.getElementById('pos-inst-apellido') as HTMLInputElement;
+  const instTelefono = document.getElementById('pos-inst-telefono') as HTMLInputElement;
+  const instBanco = document.getElementById('pos-inst-banco') as HTMLInputElement;
+  const instRegistrado = document.getElementById('pos-inst-registrado') as HTMLParagraphElement;
+  let instProductoId: string | null = null;
+
+  const quienInstala = (): string => formInst.querySelector<HTMLInputElement>('input[name="pos-inst-quien"]:checked')?.value ?? 'NINGUNA';
+  /** El promotor del precio (ya autorizado con su contraseña): si lo hay, la instalación del promotor es de ese mismo promotor */
+  const promotorYaAutorizado = (): DatosPromotor | null => {
+    const d = promotorVenta?.datos;
+    return d && (d.cedula || d.nombre) ? d : null;
+  };
+
+  function actualizarInstalacion() {
+    const por = quienInstala();
+    const linea = carrito.find((l) => l.producto.id === instProductoId);
+    const usd = numeroEscrito(instPrecio.value);
+    document.getElementById('pos-inst-precio-caja')!.classList.toggle('hidden', por === 'NINGUNA');
+    document.getElementById('pos-inst-promotor-caja')!.classList.toggle('hidden', por !== 'PROMOTOR');
+    const autorizado = promotorYaAutorizado();
+    const aviso = document.getElementById('pos-inst-promotor-actual')!;
+    aviso.classList.toggle('hidden', !autorizado);
+    if (autorizado) aviso.textContent = `Promotor de esta venta: ${promotorVenta?.nombre || autorizado.nombre || autorizado.cedula}. Esta instalación se le entrega a él.`;
+    document.getElementById('pos-inst-promotor-campos')!.classList.toggle('hidden', !!autorizado);
+    document.getElementById('pos-inst-resumen')!.textContent =
+      linea && por !== 'NINGUNA' && usd > 0
+        ? `${linea.cantidad} × ${formatearMoneda(usd)} = ${formatearMoneda(linea.cantidad * usd)}. Se suma al total de la venta.`
+        : '';
+  }
+
+  function abrirInstalacion(productoId: string) {
+    const linea = carrito.find((l) => l.producto.id === productoId);
+    if (!linea) return;
+    limpiarError();
+    instProductoId = productoId;
+    document.getElementById('pos-inst-producto')!.textContent = `${linea.cantidad} × ${linea.producto.nombre}`;
+    const actual = linea.instalacion;
+    formInst.querySelector<HTMLInputElement>(`input[name="pos-inst-quien"][value="${actual?.por ?? 'NINGUNA'}"]`)!.checked = true;
+    instPrecio.value = (actual?.usd ?? INSTALACION_PREDETERMINADA_USD).toFixed(2);
+    const previo = promotorInstalacion;
+    const cedulaPrevia = (previo?.cedula ?? '').toUpperCase().match(/^([VE])-?(\d+)$/);
+    instNac.value = cedulaPrevia?.[1] ?? 'V';
+    instCedula.value = cedulaPrevia?.[2] ?? '';
+    instNombre.value = previo?.nombre ?? '';
+    instApellido.value = previo?.apellido ?? '';
+    instTelefono.value = previo?.telefono ?? '';
+    instBanco.value = previo?.banco ?? '';
+    instRegistrado.classList.add('hidden');
+    instError.classList.add('hidden');
+    actualizarInstalacion();
+    dialogoInst.showModal();
+  }
+
+  formInst.addEventListener('change', actualizarInstalacion);
+  instPrecio.addEventListener('input', actualizarInstalacion);
+  document.getElementById('pos-inst-cancelar')!.addEventListener('click', () => dialogoInst.close());
+
+  // Al escribir la cédula de un promotor registrado se completan sus datos (solo lo que está vacío)
+  let esperaInst: number | undefined;
+  let consultaInst = 0;
+  async function completarPromotorInstalacion() {
+    const numero = instCedula.value.trim();
+    instRegistrado.classList.add('hidden');
+    if (numero.length < 5) return;
+    const actual = ++consultaInst;
+    try {
+      const encontrado = await inventoryService.buscarPromotorPorCedula(`${instNac.value}-${numero}`);
+      if (!encontrado || actual !== consultaInst) return;
+      if (!instNombre.value.trim()) instNombre.value = encontrado.nombre;
+      if (!instApellido.value.trim()) instApellido.value = encontrado.apellido;
+      if (!instTelefono.value.trim() && encontrado.telefono) instTelefono.value = encontrado.telefono;
+      if (!instBanco.value.trim() && encontrado.banco) instBanco.value = encontrado.banco;
+      instRegistrado.textContent = `Promotor registrado: ${`${encontrado.nombre} ${encontrado.apellido}`.trim()}. Se completaron sus datos.`;
+      instRegistrado.classList.remove('hidden');
+    } catch {
+      /* sin conexión o sin permiso: se escriben a mano */
+    }
+  }
+  const programarBusquedaInst = () => {
+    window.clearTimeout(esperaInst);
+    esperaInst = window.setTimeout(() => void completarPromotorInstalacion(), 350);
+  };
+  instNac.addEventListener('change', programarBusquedaInst);
+  instCedula.addEventListener('input', () => {
+    instCedula.value = instCedula.value.replace(/\D/g, '');
+    programarBusquedaInst();
+  });
+
+  function errorDeInstalacion(mensaje: string) {
+    instError.textContent = mensaje;
+    instError.classList.remove('hidden');
+  }
+
+  formInst.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const linea = carrito.find((l) => l.producto.id === instProductoId);
+    if (!linea) return dialogoInst.close();
+    const por = quienInstala();
+    if (por === 'NINGUNA') {
+      delete linea.instalacion;
+      dialogoInst.close();
+      renderCarrito();
+      return;
+    }
+    const usd = Math.round(numeroEscrito(instPrecio.value) * 100) / 100;
+    const problema = errorPrecioInstalacion(usd);
+    if (problema) return errorDeInstalacion(problema);
+    if (por === 'PROMOTOR' && !promotorYaAutorizado()) {
+      const datos: DatosPromotor = {
+        cedula: instCedula.value.trim() ? `${instNac.value}-${instCedula.value.trim()}` : null,
+        nombre: instNombre.value,
+        apellido: instApellido.value,
+        telefono: instTelefono.value,
+        banco: instBanco.value,
+      };
+      const r = normalizarPromotor(datos);
+      if (!r.ok) return errorDeInstalacion(r.mensaje);
+      if (!r.promotor.cedula || !r.promotor.nombrePropio || !r.promotor.apellido) return errorDeInstalacion('Para pagarle al promotor anota su cédula, nombre y apellido.');
+      promotorInstalacion = datos;
+    }
+    linea.instalacion = { por: por as QuienInstala, usd };
+    dialogoInst.close();
+    renderCarrito();
+  });
+
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
     puedeMarcarDanados = esGerencia(contexto?.sesion.rol);
+    instalacionDisponible = contexto?.local?.tipo === 'vidrios';
     if (contexto?.local) {
       localActivoId = contexto.local.id;
       cargarProductos();
