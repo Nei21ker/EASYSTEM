@@ -33,16 +33,22 @@ export function textoUsdYBs(usd: number, tasa: number | null | undefined): strin
 }
 
 /**
- * El monto en dos mitades iguales con una barra vertical en medio: a la izquierda los dólares y a la derecha los bolívares,
- * cada uno con su rótulo debajo. Sin tasa solo sale la mitad de dólares.
+ * Dos cifras en mitades iguales con una barra vertical en medio (dólares a la izquierda, bolívares a la derecha). Con `rotulos` cada cifra
+ * lleva debajo «dólares» / «bolívares» (y los Bs salen sin el «Bs.»); sin ellos se dejan los textos tal cual. Sin bolívares solo sale la mitad
+ * de dólares.
  */
+export function htmlDosMitades(usd: string, bs: string | null, tamano = 'text-2xl', rotulos = true): string {
+  const numero = `block whitespace-nowrap font-bold tabular-nums ${tamano}`;
+  const rotulo = 'block text-xs font-normal text-slate-500 dark:text-slate-400';
+  if (bs === null) return `<span class="block"><span class="${numero}">${usd}</span>${rotulos ? `<span class="${rotulo}">dólares</span>` : ''}</span>`;
+  const bsNumero = rotulos ? bs.replace(/^Bs\.\s*/, '') : bs;
+  return `<span class="grid grid-cols-2"><span class="min-w-0 pr-3"><span class="${numero}">${usd}</span>${rotulos ? `<span class="${rotulo}">dólares</span>` : ''}</span><span class="min-w-0 border-l border-slate-300 pl-3 dark:border-slate-600"><span class="${numero}">${bsNumero}</span>${rotulos ? `<span class="${rotulo}">bolívares</span>` : ''}</span></span>`;
+}
+
+/** El monto de una comisión o pendiente en dos mitades: dólares y, al cambio de hoy, bolívares. */
 export function htmlMontoDividido(usd: number, tasa: number | null | undefined): string {
   const p = partesUsdYBs(usd, tasa);
-  const numero = 'block whitespace-nowrap text-2xl font-bold tabular-nums';
-  const rotulo = 'block text-xs font-normal text-slate-500 dark:text-slate-400';
-  if (p.bs === null) return `<span class="block"><span class="${numero}">${p.usd}</span><span class="${rotulo}">dólares</span></span>`;
-  const bsNumero = p.bs.replace(/^Bs\.\s*/, '');
-  return `<span class="grid grid-cols-2"><span class="min-w-0 pr-3"><span class="${numero}">${p.usd}</span><span class="${rotulo}">dólares</span></span><span class="min-w-0 border-l border-slate-300 pl-3 dark:border-slate-600"><span class="${numero}">${bsNumero}</span><span class="${rotulo}">bolívares</span></span></span>`;
+  return htmlDosMitades(p.usd, p.bs);
 }
 
 /** Todos los datos del pago en varias líneas, para pegarlos en un mensaje o una nota. */

@@ -50,6 +50,9 @@ import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
+import * as inversionDb from './db/inversion';
+import { claveProveedor, limpiarNombreProveedor, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
+import type { DatosInversion, DatosProveedor, Inversion, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO, redondeoValido } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
@@ -156,6 +159,9 @@ interface LocalDB {
   /** Directorio de promotores y pendientes con ellos (mercancía que se llevaron y comisiones por pagar) */
   promotores?: Promotor[];
   pendientes?: Pendiente[];
+  /** Módulo de Inversión: compras y pérdidas anotadas a mano, y la lista de proveedores */
+  inversiones?: Inversion[];
+  proveedores?: Proveedor[];
 }
 
 function generarId(): string {
@@ -4034,4 +4040,171 @@ export async function reabrirCuadre(localId: string, fecha: string): Promise<Cua
 export async function urlFotoCuadre(ruta: string): Promise<string> {
   if (!modoServidor) return ruta;
   return cuadresDb.urlFirmada(ruta);
+}
+
+// --- Inversión (solo administrador y gerente) ---------------------------------------------------------------------
+// Compras de mercancía nueva y pérdidas anotadas a mano, por local, y la lista de proveedores. NO están ligadas al inventario. Mismas reglas
+// que el servidor (servicios/inversion.ts); en la demo viven en `db.inversiones` y `db.proveedores`.
+
+async function sesionDeInversion(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGlobal(sesion.rol)) throw new Error('Solo el administrador y el gerente ven la inversión.');
+  return sesion;
+}
+
+function validarInversionDemo(datos: DatosInversion) {
+  return validarDatosInversion(datos, fechaLocalISO());
+}
+
+/** Compras y pérdidas anotadas; `localId` = un local, sin él todos. Filtros por fecha ("aaaa-mm-dd") y tipo. */
+export async function listarInversiones(opciones: { desde?: string; hasta?: string; localId?: string | null; tipo?: TipoInversion; limite?: number } = {}): Promise<Inversion[]> {
+  await sesionDeInversion();
+  if (modoServidor) return inversionDb.listarInversiones(opciones);
+  return (leerDB().inversiones ?? [])
+    .filter((i) => (!opciones.localId || i.local_id === opciones.localId) && (!opciones.desde || i.fecha >= opciones.desde) && (!opciones.hasta || i.fecha <= opciones.hasta) && (!opciones.tipo || i.tipo === opciones.tipo))
+    .sort((a, b) => (a.fecha === b.fecha ? b.created_at.localeCompare(a.created_at) : b.fecha.localeCompare(a.fecha)))
+    .slice(0, opciones.limite ?? 1000);
+}
+
+/** Si el nombre ya está en la lista usa ese proveedor; si no, lo agrega. Sin nombre, sin proveedor. */
+function resolverProveedorDemo(db: LocalDB, nombre: string | null, quien: string): Proveedor | null {
+  if (!nombre) return null;
+  const lista = db.proveedores ?? (db.proveedores = []);
+  const existente = lista.find((p) => claveProveedor(p.nombre) === claveProveedor(nombre));
+  if (existente) return existente;
+  const ahora = new Date().toISOString();
+  const nuevo: Proveedor = { id: generarId(), nombre, telefono: null, nota: null, creado_por_nombre: quien, created_at: ahora, updated_at: ahora };
+  lista.push(nuevo);
+  return nuevo;
+}
+
+export async function crearInversion(datos: DatosInversion): Promise<Inversion> {
+  const sesion = await sesionDeInversion();
+  const d = validarInversionDemo(datos);
+  if (modoServidor) return inversionDb.crearInversion(datos);
+  const db = leerDB();
+  if (!db.locales.some((l) => l.id === d.localId)) throw new Error('El local no existe.');
+  const proveedor = resolverProveedorDemo(db, d.proveedor, sesion.nombre);
+  const ahora = new Date().toISOString();
+  const nueva: Inversion = {
+    id: generarId(),
+    local_id: d.localId,
+    tipo: d.tipo,
+    fecha: d.fecha,
+    descripcion: d.descripcion,
+    proveedor_id: proveedor?.id ?? null,
+    proveedor_nombre: proveedor?.nombre ?? null,
+    monto_usd: d.monto_usd,
+    tasa_bcv: tasaParaFecha(db.tasas ?? [], d.fecha),
+    creado_por_nombre: sesion.nombre,
+    created_at: ahora,
+    updated_at: ahora,
+  };
+  (db.inversiones ?? (db.inversiones = [])).unshift(nueva);
+  guardarDB(db);
+  return nueva;
+}
+
+/** Corrige un registro. La tasa BCV se vuelve a tomar solo si cambió la fecha (o si no tenía). */
+export async function actualizarInversion(id: string, datos: DatosInversion): Promise<Inversion> {
+  const sesion = await sesionDeInversion();
+  const d = validarInversionDemo(datos);
+  if (modoServidor) return inversionDb.actualizarInversion(id, datos);
+  const db = leerDB();
+  const actual = (db.inversiones ?? []).find((i) => i.id === id);
+  if (!actual) throw new Error('El registro no existe.');
+  if (!db.locales.some((l) => l.id === d.localId)) throw new Error('El local no existe.');
+  const proveedor = resolverProveedorDemo(db, d.proveedor, sesion.nombre);
+  Object.assign(actual, {
+    local_id: d.localId,
+    tipo: d.tipo,
+    descripcion: d.descripcion,
+    proveedor_id: proveedor?.id ?? null,
+    proveedor_nombre: proveedor?.nombre ?? null,
+    monto_usd: d.monto_usd,
+    tasa_bcv: d.fecha !== actual.fecha || actual.tasa_bcv === null ? tasaParaFecha(db.tasas ?? [], d.fecha) : actual.tasa_bcv,
+    fecha: d.fecha,
+    updated_at: new Date().toISOString(),
+  });
+  guardarDB(db);
+  return actual;
+}
+
+export async function eliminarInversion(id: string): Promise<void> {
+  await sesionDeInversion();
+  if (modoServidor) {
+    await inversionDb.eliminarInversion(id);
+    return;
+  }
+  const db = leerDB();
+  if (!(db.inversiones ?? []).some((i) => i.id === id)) throw new Error('El registro no existe.');
+  db.inversiones = (db.inversiones ?? []).filter((i) => i.id !== id);
+  guardarDB(db);
+}
+
+function datosProveedorDemo(datos: DatosProveedor) {
+  const nombre = limpiarNombreProveedor(datos.nombre);
+  if (!nombre || nombre.length < 2 || nombre.length > 80) throw new Error('Escribe el nombre del proveedor (de 2 a 80 caracteres).');
+  const nota = (datos.nota ?? '').replace(/\s+/g, ' ').trim() || null;
+  if (nota && nota.length > 300) throw new Error('La nota es demasiado larga (máximo 300 caracteres).');
+  return { nombre, telefono: (datos.telefono ?? '').trim() || null, nota };
+}
+
+/** La lista de proveedores con cuántas compras y cuánto se les ha comprado. */
+export async function listarProveedores(): Promise<ProveedorResumen[]> {
+  await sesionDeInversion();
+  if (modoServidor) return inversionDb.listarProveedores();
+  const db = leerDB();
+  const compras = (db.inversiones ?? []).filter((i) => i.tipo === 'COMPRA');
+  return (db.proveedores ?? [])
+    .map((p): ProveedorResumen => {
+      const suyas = compras.filter((i) => i.proveedor_id === p.id);
+      return { ...p, n_compras: suyas.length, total_usd: Math.round(suyas.reduce((s, i) => s + i.monto_usd, 0) * 100) / 100 };
+    })
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+}
+
+export async function crearProveedor(datos: DatosProveedor): Promise<Proveedor> {
+  const sesion = await sesionDeInversion();
+  const p = datosProveedorDemo(datos);
+  if (modoServidor) return inversionDb.crearProveedor(datos);
+  const db = leerDB();
+  const lista = db.proveedores ?? (db.proveedores = []);
+  const repetido = lista.find((x) => claveProveedor(x.nombre) === claveProveedor(p.nombre));
+  if (repetido) throw new Error(`Ya existe un proveedor llamado «${repetido.nombre}».`);
+  const ahora = new Date().toISOString();
+  const nuevo: Proveedor = { id: generarId(), ...p, creado_por_nombre: sesion.nombre, created_at: ahora, updated_at: ahora };
+  lista.push(nuevo);
+  guardarDB(db);
+  return nuevo;
+}
+
+/** Corrige un proveedor; los registros ya anotados con él cambian al nombre nuevo. */
+export async function actualizarProveedor(id: string, datos: DatosProveedor): Promise<Proveedor> {
+  await sesionDeInversion();
+  const p = datosProveedorDemo(datos);
+  if (modoServidor) return inversionDb.actualizarProveedor(id, datos);
+  const db = leerDB();
+  const actual = (db.proveedores ?? []).find((x) => x.id === id);
+  if (!actual) throw new Error('El proveedor no existe.');
+  const otro = (db.proveedores ?? []).find((x) => x.id !== id && claveProveedor(x.nombre) === claveProveedor(p.nombre));
+  if (otro) throw new Error(`Ya existe otro proveedor llamado «${otro.nombre}».`);
+  Object.assign(actual, { ...p, updated_at: new Date().toISOString() });
+  for (const i of db.inversiones ?? []) if (i.proveedor_id === id) i.proveedor_nombre = p.nombre;
+  guardarDB(db);
+  return actual;
+}
+
+/** Quita un proveedor de la lista; los registros ya anotados conservan su nombre. */
+export async function eliminarProveedor(id: string): Promise<void> {
+  await sesionDeInversion();
+  if (modoServidor) {
+    await inversionDb.eliminarProveedor(id);
+    return;
+  }
+  const db = leerDB();
+  if (!(db.proveedores ?? []).some((x) => x.id === id)) throw new Error('El proveedor no existe.');
+  db.proveedores = (db.proveedores ?? []).filter((x) => x.id !== id);
+  for (const i of db.inversiones ?? []) if (i.proveedor_id === id) i.proveedor_id = null;
+  guardarDB(db);
 }

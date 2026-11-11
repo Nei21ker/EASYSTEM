@@ -171,3 +171,18 @@ export const esquemaBajaPorCantidad = z.object({
   motivo: motivoMerma.nullable().optional(),
   nota: z.string().max(300).nullable().optional(),
 });
+
+// Módulo de Inversión (administrador y gerente): compras de mercancía nueva y pérdidas, anotadas a mano, y la lista de proveedores
+export const esquemaInversion = z.object({
+  localId: z.string().min(1).max(100),
+  tipo: z.enum(['COMPRA', 'PERDIDA']),
+  fecha: z.string().min(1).max(10),
+  descripcion: z.string().min(1).max(300),
+  proveedor: z.string().max(80).nullable().optional(),
+  monto_usd: z.number(),
+});
+export const esquemaProveedor = z.object({
+  nombre: z.string().min(1).max(80),
+  telefono: z.string().max(30).nullable().optional(),
+  nota: z.string().max(300).nullable().optional(),
+});

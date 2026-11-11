@@ -209,6 +209,34 @@ export const pendientes = sqliteTable('pendientes', {
   nota_cierre: text('nota_cierre'),
 });
 
+// Módulo de Inversión (migración 0021): proveedores y lo que se invierte en mercancía nueva (anotado a mano)
+export const proveedores = sqliteTable('proveedores', {
+  id: text('id').primaryKey(),
+  nombre: text('nombre').notNull(),
+  nombre_normalizado: text('nombre_normalizado').notNull().unique(),
+  telefono: text('telefono'),
+  nota: text('nota'),
+  creado_por_nombre: text('creado_por_nombre'),
+  created_at: marca('created_at'),
+  updated_at: marca('updated_at'),
+});
+
+export const inversiones = sqliteTable('inversiones', {
+  id: text('id').primaryKey(),
+  local_id: text('local_id').notNull(),
+  tipo: text('tipo', { enum: ['COMPRA', 'PERDIDA'] }).notNull(),
+  fecha: text('fecha').notNull(),
+  descripcion: text('descripcion').notNull(),
+  proveedor_id: text('proveedor_id'),
+  proveedor_nombre: text('proveedor_nombre'),
+  monto_usd: real('monto_usd').notNull(),
+  tasa_bcv: real('tasa_bcv'),
+  creado_por: text('creado_por'),
+  creado_por_nombre: text('creado_por_nombre').notNull(),
+  created_at: marca('created_at'),
+  updated_at: marca('updated_at'),
+});
+
 export const compatibilidades = sqliteTable('compatibilidades', {
   id: text('id').primaryKey(),
   producto_id: text('producto_id').notNull(),

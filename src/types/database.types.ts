@@ -426,6 +426,58 @@ export interface DatosNuevoPromotor {
 }
 
 /** MERCANCIA = se llevó mercancía y vendrá a pagarla · COMISION = se le debe la comisión de una venta que trajo */
+// --- Inversión (solo administrador y gerente): compras de mercancía nueva y pérdidas, anotadas a mano ---
+export type TipoInversion = 'COMPRA' | 'PERDIDA';
+
+export interface Proveedor {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  nota: string | null;
+  creado_por_nombre?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Un proveedor con cuántas compras y cuánto se le ha comprado en total (en dólares) */
+export interface ProveedorResumen extends Proveedor {
+  n_compras: number;
+  total_usd: number;
+}
+
+export interface DatosProveedor {
+  nombre: string;
+  telefono?: string | null;
+  nota?: string | null;
+}
+
+export interface Inversion {
+  id: string;
+  local_id: string;
+  tipo: TipoInversion;
+  /** Día de la compra o de la pérdida: "aaaa-mm-dd" */
+  fecha: string;
+  descripcion: string;
+  proveedor_id: string | null;
+  proveedor_nombre: string | null;
+  monto_usd: number;
+  /** Bolívares por $1 (BCV) vigentes a la fecha, para mostrar el equivalente en Bs; null si no había tasa registrada */
+  tasa_bcv: number | null;
+  creado_por_nombre: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DatosInversion {
+  localId: string;
+  tipo: TipoInversion;
+  fecha: string;
+  descripcion: string;
+  /** Nombre del proveedor: si no está en la lista, se agrega solo. Vacío = sin proveedor */
+  proveedor?: string | null;
+  monto_usd: number;
+}
+
 export type TipoPendiente = 'MERCANCIA' | 'COMISION';
 export type EstadoPendiente = 'PENDIENTE' | 'PAGADO' | 'ANULADO';
 

@@ -89,6 +89,13 @@ export const enlacesNav: EnlaceNav[] = [
     roles: ['encargado'],
   },
   {
+    // Compras de mercancía nueva y pérdidas por local, anotadas a mano (solo administrador y gerente)
+    href: '/inversion',
+    etiqueta: 'Inversión',
+    icono: 'M3 17l6-6 4 4 8-8M14 7h7v7',
+    roles: ['administrador', 'gerente'],
+  },
+  {
     href: '/usuarios',
     etiqueta: 'Usuarios',
     icono: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',

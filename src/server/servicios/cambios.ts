@@ -1,7 +1,7 @@
 // Consulta de versiones para la actualización en vivo. El cliente pregunta cada pocos segundos y solo
 // recarga las pantallas de las tablas cuya versión cambió. Solo se revelan las versiones de lo que el rol
 // puede leer (reemplaza el filtrado por RLS del sistema anterior); el contenido nunca viaja aquí.
-import { alcanceDe, alcanceNomina, esGerencia, type Alcance, type Sesion } from '../authz';
+import { alcanceDe, alcanceNomina, esGerencia, esGlobal, type Alcance, type Sesion } from '../authz';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 
@@ -20,6 +20,9 @@ const TABLAS_CUADRE = ['cuadres_caja'];
 const TABLA_PENDIENTES = 'pendientes';
 const TABLA_PROMOTORES = 'promotores';
 const TABLAS_NOMINA = ['empleados', 'nominas', 'nomina_reventas'];
+// Inversión (solo administrador y gerente): los registros por local y la lista de proveedores, global
+const TABLA_INVERSIONES = 'inversiones';
+const TABLA_PROVEEDORES = 'proveedores';
 // Los avisos de cuenta (suspensión, cierre de sesión, desactivación) los necesita todo el que tenga sesión
 const TABLAS_CUENTA = ['locales', 'perfiles'];
 
@@ -46,6 +49,8 @@ export async function versionesVisibles(env: Entorno, sesion: Sesion): Promise<V
       if (TABLAS_CUENTA.includes(f.tabla)) return f.local_id === '';
       if (TABLAS_CATALOGO.includes(f.tabla)) return alcanceNegocio !== null && f.local_id === '';
       if (TABLAS_LOCAL.includes(f.tabla)) return permitido(alcanceNegocio, f.tabla, f.local_id, TABLAS_LOCAL);
+      if (f.tabla === TABLA_INVERSIONES) return esGlobal(sesion.rol) && permitido(alcanceNegocio, f.tabla, f.local_id, [TABLA_INVERSIONES]);
+      if (f.tabla === TABLA_PROVEEDORES) return esGlobal(sesion.rol) && alcanceNegocio !== null && f.local_id === '';
       if (f.tabla === TABLA_PROMOTORES) return (alcanceNegocio !== null || alcanceNom !== null) && f.local_id === '';
       if (f.tabla === TABLA_PENDIENTES) return permitido(alcanceNegocio, f.tabla, f.local_id, [TABLA_PENDIENTES]) || permitido(alcanceNom, f.tabla, f.local_id, [TABLA_PENDIENTES]);
       if (TABLAS_CUADRE.includes(f.tabla)) return esGerencia(sesion.rol) && permitido(alcanceNegocio, f.tabla, f.local_id, TABLAS_CUADRE);

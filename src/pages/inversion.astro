@@ -1,0 +1,625 @@
+---
+import DashboardLayout from '../layouts/DashboardLayout.astro';
+
+const campo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const tarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+const claseDialogo =
+  'group anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/70 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100';
+const botonCancelar =
+  'flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700';
+const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60';
+---
+
+<!-- Inversión (solo administrador y gerente): lo que se invierte en mercancía NUEVA, anotado a mano, por local. No está ligado al inventario
+     (mucha mercancía vieja todavía no está cargada). Montos en dólares con los bolívares de referencia a la tasa BCV de cada fecha. -->
+<DashboardLayout titulo="Inversión" subtitulo="Compras de mercancía nueva por local, por día, semana y mes" tituloPestana="Inversión · EASYSTEM" roles={['administrador', 'gerente']}>
+  <div class="flex flex-wrap gap-2" role="tablist" aria-label="Secciones de inversión">
+    <button id="iv-tab-inversion" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">Inversión</button>
+    <button id="iv-tab-proveedores" type="button" role="tab" aria-selected="false" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">Proveedores</button>
+  </div>
+
+  <p id="iv-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+  <p id="iv-exito" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
+
+  <!-- Inversión -->
+  <div id="iv-panel-inversion" class="space-y-5">
+    <div class="grid grid-cols-2 gap-3 sm:flex">
+      <button id="iv-nueva-compra" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110">+ Registrar compra</button>
+      <button id="iv-nueva-perdida" type="button" class="rounded-lg border border-rose-300 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/50 dark:text-rose-300 dark:hover:bg-rose-500/10">+ Registrar pérdida</button>
+    </div>
+
+    <section aria-label="Inversión por local">
+      <h2 class="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Inversión por local</h2>
+      <div id="iv-locales" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+    </section>
+
+    <section class={tarjeta} aria-label="Filtros">
+      <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div>
+          <label for="iv-periodo" class={etiqueta}>Período</label>
+          <select id="iv-periodo" class={`mt-1 ${campo}`}>
+            <option value="hoy">Hoy</option>
+            <option value="semana">Esta semana</option>
+            <option value="mes" selected>Este mes</option>
+            <option value="mes_pasado">Mes pasado</option>
+            <option value="personalizado">Rango de fechas</option>
+          </select>
+        </div>
+        <div>
+          <label for="iv-local" class={etiqueta}>Local</label>
+          <select id="iv-local" class={`mt-1 ${campo}`}></select>
+        </div>
+        <div id="iv-rango" class="col-span-2 hidden grid-cols-2 gap-3">
+          <div>
+            <label for="iv-desde" class={etiqueta}>Desde</label>
+            <input id="iv-desde" type="date" class={`mt-1 ${campo}`} />
+          </div>
+          <div>
+            <label for="iv-hasta" class={etiqueta}>Hasta</label>
+            <input id="iv-hasta" type="date" class={`mt-1 ${campo}`} />
+          </div>
+        </div>
+        <div>
+          <label for="iv-tipo" class={etiqueta}>Mostrar</label>
+          <select id="iv-tipo" class={`mt-1 ${campo}`}>
+            <option value="">Compras y pérdidas</option>
+            <option value="COMPRA">Solo compras</option>
+            <option value="PERDIDA">Solo pérdidas</option>
+          </select>
+        </div>
+        <div class="col-span-2 lg:col-span-1">
+          <label for="iv-buscar" class={etiqueta}>Buscar</label>
+          <input id="iv-buscar" type="search" autocomplete="off" placeholder="Proveedor o descripción" class={`mt-1 ${campo}`} />
+        </div>
+      </div>
+    </section>
+
+    <section aria-label="Totales del período" class="space-y-3">
+      <p id="iv-rango-texto" class="text-sm font-semibold text-slate-700 dark:text-slate-200"></p>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div class={tarjeta}>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Invertido (compras) · <span id="iv-n-compras">0</span> registros</p>
+          <div id="iv-total-compras" class="mt-2 text-sky-700 dark:text-sky-300"></div>
+        </div>
+        <div class={tarjeta}>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Pérdidas · <span id="iv-n-perdidas">0</span> registros</p>
+          <div id="iv-total-perdidas" class="mt-2 text-rose-600 dark:text-rose-400"></div>
+        </div>
+      </div>
+      <p id="iv-sin-tasa" class="hidden text-xs text-amber-700 dark:text-amber-400"></p>
+    </section>
+
+    <section class={tarjeta} aria-label="Compras por día">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Compras por día</h2>
+      <div id="iv-grafico" class="mt-3"></div>
+    </section>
+
+    <section class={tarjeta} aria-label="Compras por proveedor">
+      <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Compras por proveedor</h2>
+      <div id="iv-por-proveedor" class="mt-3 space-y-2"></div>
+    </section>
+
+    <section aria-label="Registros" class="space-y-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <h2 class="text-sm font-semibold text-slate-700 dark:text-slate-200">Registros</h2>
+        <button id="iv-csv" type="button" class="ml-auto rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar CSV</button>
+      </div>
+      <p id="iv-vacio" class="hidden rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"></p>
+      <div id="iv-lista" class="grid grid-cols-1 gap-3 xl:grid-cols-2"></div>
+      <p id="iv-mas" class="hidden text-center text-xs text-slate-500 dark:text-slate-400"></p>
+    </section>
+  </div>
+
+  <!-- Proveedores -->
+  <div id="iv-panel-proveedores" class="hidden space-y-3">
+    <div class="flex flex-wrap items-center gap-2">
+      <button id="iv-nuevo-proveedor" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110">+ Agregar proveedor</button>
+      <p class="text-xs text-slate-500 dark:text-slate-400">También se agregan solos al escribir un proveedor nuevo en una compra.</p>
+    </div>
+    <p id="iv-prov-vacio" class="hidden rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">Todavía no hay proveedores.</p>
+    <div id="iv-prov-lista" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
+  </div>
+
+  <!-- Registrar o corregir una compra o pérdida -->
+  <dialog id="iv-dialogo" aria-labelledby="iv-dialogo-titulo" class={claseDialogo}>
+    <form id="iv-form" novalidate class="flex max-h-[90vh] flex-col">
+      <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+        <div>
+          <h2 id="iv-dialogo-titulo" class="text-base font-semibold">Registrar compra</h2>
+          <p id="iv-dialogo-ayuda" class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Anota lo que se compró en mercancía nueva.</p>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="iv-f-tipo" class={etiqueta}>Tipo *</label>
+            <select id="iv-f-tipo" class={`mt-1 ${campo}`}>
+              <option value="COMPRA">Compra</option>
+              <option value="PERDIDA">Pérdida</option>
+            </select>
+          </div>
+          <div>
+            <label for="iv-f-fecha" class={etiqueta}>Fecha *</label>
+            <input id="iv-f-fecha" type="date" class={`mt-1 ${campo}`} />
+          </div>
+        </div>
+        <div>
+          <label for="iv-f-local" class={etiqueta}>Local *</label>
+          <select id="iv-f-local" class={`mt-1 ${campo}`}></select>
+        </div>
+        <div>
+          <label for="iv-f-descripcion" class={etiqueta}>Qué se compró *</label>
+          <input id="iv-f-descripcion" type="text" maxlength="300" autocomplete="off" placeholder="Ej: 200 vidrios blindados Samsung A15" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="iv-f-proveedor" class={etiqueta}>Proveedor</label>
+          <input id="iv-f-proveedor" type="text" maxlength="80" list="iv-proveedores-datos" autocomplete="off" placeholder="Escribe o elige uno de la lista" class={`mt-1 ${campo}`} />
+          <datalist id="iv-proveedores-datos"></datalist>
+          <p class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Si no está en la lista, se agrega solo.</p>
+        </div>
+        <div>
+          <label for="iv-f-monto" class={etiqueta}>Monto en dólares ($) *</label>
+          <input id="iv-f-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" class={`mt-1 ${campo}`} />
+          <p id="iv-f-bs" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <p id="iv-f-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="iv-f-cancelar" type="button" class={botonCancelar}>Cancelar</button>
+        <button id="iv-f-guardar" type="submit" class={botonGuardar}>Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Agregar o corregir un proveedor -->
+  <dialog id="iv-pv-dialogo" aria-labelledby="iv-pv-titulo" class={claseDialogo}>
+    <form id="iv-pv-form" novalidate class="flex max-h-[90vh] flex-col">
+      <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
+        <h2 id="iv-pv-titulo" class="text-base font-semibold">Agregar proveedor</h2>
+        <div>
+          <label for="iv-pv-nombre" class={etiqueta}>Nombre *</label>
+          <input id="iv-pv-nombre" type="text" maxlength="80" autocomplete="off" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="iv-pv-telefono" class={etiqueta}>Teléfono</label>
+          <input id="iv-pv-telefono" type="tel" maxlength="30" autocomplete="off" class={`mt-1 ${campo}`} />
+        </div>
+        <div>
+          <label for="iv-pv-nota" class={etiqueta}>Nota</label>
+          <input id="iv-pv-nota" type="text" maxlength="300" autocomplete="off" placeholder="Ej: paga a 15 días" class={`mt-1 ${campo}`} />
+        </div>
+        <p id="iv-pv-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="iv-pv-cancelar" type="button" class={botonCancelar}>Cancelar</button>
+        <button id="iv-pv-guardar" type="submit" class={botonGuardar}>Guardar</button>
+      </div>
+    </form>
+  </dialog>
+</DashboardLayout>
+
+<script>
+  import * as inventoryService from '../lib/inventoryService';
+  import { esGlobal } from '../lib/auth';
+  import { alCambiarDatos } from '../lib/realtime';
+  import { formatearBolivares, formatearMoneda, fechaLocalISO } from '../utils/format';
+  import { htmlDosMitades } from '../utils/pagoMovil';
+  import { leerPrecioEscrito, textoPrecioCampo } from '../utils/precioBs';
+  import { escaparHtml } from '../utils/productosUI';
+  import {
+    bsDeInversion, comprasPorDia, comprasPorProveedor, csvInversiones, lunesDeSemana, primerDiaDelMes, totalizar, totalizarPorLocal, type TotalInversion,
+  } from '../utils/inversion';
+  import { tasaActual } from '../stores/tasa';
+  import type { Inversion, Local, ProveedorResumen, TipoInversion } from '../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const CLASE_TAB_ACTIVA = ['border-brand-600', 'bg-brand-600', 'text-white', 'shadow-sm'];
+  const CLASE_TAB_INACTIVA = ['border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50', 'dark:border-slate-700', 'dark:bg-slate-900', 'dark:text-slate-200', 'dark:hover:bg-slate-800'];
+  const claseBoton = 'rounded-lg border px-3 py-2 text-xs font-semibold transition';
+  const botonNeutro = `${claseBoton} border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800`;
+  const botonPeligro = `${claseBoton} border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/50 dark:text-rose-300 dark:hover:bg-rose-500/10`;
+  const MAX_REGISTROS_VISIBLES = 100;
+
+  const hoy = fechaLocalISO();
+  let locales: Local[] = [];
+  let registros: Inversion[] = []; // los de la ventana cargada (cubre el período elegido, la semana y el mes)
+  let proveedores: ProveedorResumen[] = [];
+  let editando: Inversion | null = null;
+  let proveedorEditando: ProveedorResumen | null = null;
+  let tasaDelDia: number | null = tasaActual.get();
+
+  const nombreLocal = (id: string) => locales.find((l) => l.id === id)?.nombre ?? 'Local';
+  const dosMitades = (usd: number, bs: number, tamano: string, rotulos: boolean) => htmlDosMitades(formatearMoneda(usd), formatearBolivares(bs), tamano, rotulos);
+  const fechaCorta = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}/${f.slice(0, 4)}`;
+
+  function aviso(el: HTMLElement, texto: string) {
+    el.textContent = texto;
+    el.classList.remove('hidden');
+  }
+  function exito(texto: string) {
+    aviso($('iv-exito'), texto);
+    $('iv-error').classList.add('hidden');
+    window.setTimeout(() => $('iv-exito').classList.add('hidden'), 6000);
+  }
+
+  // --- Pestañas ---
+  function aplicarPestana(pestana: 'inversion' | 'proveedores') {
+    for (const [id, activa] of [['iv-tab-inversion', pestana === 'inversion'], ['iv-tab-proveedores', pestana === 'proveedores']] as const) {
+      const tab = $(id);
+      tab.setAttribute('aria-selected', String(activa));
+      tab.classList.remove(...CLASE_TAB_ACTIVA, ...CLASE_TAB_INACTIVA);
+      tab.classList.add(...(activa ? CLASE_TAB_ACTIVA : CLASE_TAB_INACTIVA));
+    }
+    $('iv-panel-inversion').classList.toggle('hidden', pestana !== 'inversion');
+    $('iv-panel-proveedores').classList.toggle('hidden', pestana !== 'proveedores');
+  }
+
+  // --- Período elegido ---
+  const diaAnterior = (f: string) => new Date(Date.UTC(+f.slice(0, 4), +f.slice(5, 7) - 1, +f.slice(8, 10) - 1)).toISOString().slice(0, 10);
+  function rangoElegido(): { desde: string; hasta: string } {
+    const periodo = ($('iv-periodo') as HTMLSelectElement).value;
+    if (periodo === 'hoy') return { desde: hoy, hasta: hoy };
+    if (periodo === 'semana') return { desde: lunesDeSemana(hoy), hasta: hoy };
+    if (periodo === 'mes_pasado') {
+      const hasta = diaAnterior(primerDiaDelMes(hoy));
+      return { desde: primerDiaDelMes(hasta), hasta };
+    }
+    if (periodo === 'personalizado') {
+      const desde = ($('iv-desde') as HTMLInputElement).value || primerDiaDelMes(hoy);
+      const hasta = ($('iv-hasta') as HTMLInputElement).value || hoy;
+      return desde <= hasta ? { desde, hasta } : { desde: hasta, hasta: desde };
+    }
+    return { desde: primerDiaDelMes(hoy), hasta: hoy };
+  }
+
+  /** Los registros del período y los filtros elegidos (local, tipo y búsqueda). */
+  function filtrados(): Inversion[] {
+    const { desde, hasta } = rangoElegido();
+    const local = ($('iv-local') as HTMLSelectElement).value;
+    const tipo = ($('iv-tipo') as HTMLSelectElement).value as TipoInversion | '';
+    const q = ($('iv-buscar') as HTMLInputElement).value.trim().toLowerCase();
+    return registros.filter(
+      (r) => r.fecha >= desde && r.fecha <= hasta && (!local || r.local_id === local) && (!tipo || r.tipo === tipo) && (!q || `${r.descripcion} ${r.proveedor_nombre ?? ''}`.toLowerCase().includes(q))
+    );
+  }
+
+  // --- Pintado ---
+  function bloquePeriodo(rotulo: string, t: TotalInversion): string {
+    const perdidas = t.perdidas_usd > 0 ? `<p class="mt-0.5 text-[11px] text-rose-600 dark:text-rose-400">Pérdidas: ${formatearMoneda(t.perdidas_usd)}${t.perdidas_bs > 0 ? ` | ${formatearBolivares(t.perdidas_bs)}` : ''}</p>` : '';
+    return `<div><p class="text-xs text-slate-500 dark:text-slate-400">${rotulo}</p>${dosMitades(t.compras_usd, t.compras_bs, 'text-base', false)}${perdidas}</div>`;
+  }
+
+  function pintarLocales() {
+    const semana = lunesDeSemana(hoy);
+    const mes = primerDiaDelMes(hoy);
+    const ids = locales.map((l) => l.id);
+    const entre = (desde: string) => registros.filter((r) => r.fecha >= desde && r.fecha <= hoy);
+    const periodos: [string, Map<string, TotalInversion>, TotalInversion][] = [
+      ['Hoy', totalizarPorLocal(entre(hoy), ids), totalizar(entre(hoy))],
+      ['Esta semana', totalizarPorLocal(entre(semana), ids), totalizar(entre(semana))],
+      ['Este mes', totalizarPorLocal(entre(mes), ids), totalizar(entre(mes))],
+    ];
+    const tarjeta = (titulo: string, total: boolean, valor: (m: Map<string, TotalInversion>, t: TotalInversion) => TotalInversion) =>
+      `<article class="rounded-xl border ${total ? 'border-brand-300 bg-brand-50/50 dark:border-brand-500/40 dark:bg-brand-500/5' : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'} p-4 shadow-sm">
+        <h3 class="text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(titulo)}</h3>
+        <div class="mt-3 space-y-3">${periodos.map(([rotulo, porLocal, todos]) => bloquePeriodo(rotulo, valor(porLocal, todos))).join('')}</div>
+      </article>`;
+    $('iv-locales').innerHTML =
+      tarjeta('Todos los locales', true, (_m, t) => t) + locales.map((l) => tarjeta(l.nombre, false, (m) => m.get(l.id) ?? totalizar([]))).join('');
+  }
+
+  function pintarGrafico(compras: Inversion[], desde: string, hasta: string) {
+    const dias = comprasPorDia(compras, desde, hasta);
+    const cont = $('iv-grafico');
+    if (dias.length > 31) {
+      cont.innerHTML = '<p class="text-xs text-slate-500 dark:text-slate-400">Elige un período de hasta 31 días para ver el gráfico por día.</p>';
+      return;
+    }
+    const max = Math.max(...dias.map((d) => d.usd), 0);
+    if (max <= 0) {
+      cont.innerHTML = '<p class="text-xs text-slate-500 dark:text-slate-400">No hay compras en este período.</p>';
+      return;
+    }
+    cont.innerHTML = `<p class="mb-1 text-[11px] text-slate-500 dark:text-slate-400">Día con más compras: ${formatearMoneda(max)}</p>
+      <div class="flex items-end gap-0.5" style="height:7rem">${dias
+        .map((d) => `<div class="flex h-full min-w-0 flex-1 items-end" title="${fechaCorta(d.fecha)}: ${formatearMoneda(d.usd)}"><div class="w-full rounded-t ${d.usd > 0 ? 'bg-brand-500' : 'bg-slate-200 dark:bg-slate-700'}" style="height:${d.usd > 0 ? Math.max(4, Math.round((d.usd / max) * 100)) : 2}%"></div></div>`)
+        .join('')}</div>
+      <div class="mt-1 flex gap-0.5 text-[9px] text-slate-500 dark:text-slate-400">${dias.map((d) => `<span class="min-w-0 flex-1 text-center">${d.fecha.slice(8, 10)}</span>`).join('')}</div>`;
+  }
+
+  function pintarProveedoresDelPeriodo(compras: Inversion[]) {
+    const lista = comprasPorProveedor(compras);
+    const total = lista.reduce((s, x) => s + x.usd, 0);
+    $('iv-por-proveedor').innerHTML = lista.length
+      ? lista
+          .map(
+            (x) => `<div><div class="flex items-baseline justify-between gap-2 text-sm"><span class="min-w-0 truncate font-medium text-slate-800 dark:text-slate-100">${escaparHtml(x.proveedor)}</span><span class="shrink-0 tabular-nums">${formatearMoneda(x.usd)} <span class="text-xs text-slate-500 dark:text-slate-400">· ${x.n}</span></span></div>
+            <div class="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div class="h-full rounded-full bg-brand-500" style="width:${total > 0 ? Math.max(2, Math.round((x.usd / total) * 100)) : 0}%"></div></div></div>`
+          )
+          .join('')
+      : '<p class="text-xs text-slate-500 dark:text-slate-400">No hay compras en este período.</p>';
+  }
+
+  function htmlRegistro(r: Inversion): string {
+    const bs = bsDeInversion(r);
+    const esCompra = r.tipo === 'COMPRA';
+    const etiquetaTipo = esCompra
+      ? '<span class="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">Compra</span>'
+      : '<span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-300">Pérdida</span>';
+    return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-wrap items-center gap-2">${etiquetaTipo}
+        <span class="text-xs text-slate-500 dark:text-slate-400">${fechaCorta(r.fecha)} · ${escaparHtml(nombreLocal(r.local_id))}</span>
+        <strong class="ml-auto text-right text-base tabular-nums"><span class="block">${formatearMoneda(r.monto_usd)}</span>${bs !== null ? `<span class="block text-xs font-medium text-slate-500 dark:text-slate-400">${formatearBolivares(bs)}</span>` : ''}</strong></div>
+      <p class="mt-2 text-sm text-slate-800 dark:text-slate-100">${escaparHtml(r.descripcion)}</p>
+      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${r.proveedor_nombre ? `Proveedor: <strong class="text-slate-700 dark:text-slate-200">${escaparHtml(r.proveedor_nombre)}</strong> · ` : ''}anotó ${escaparHtml(r.creado_por_nombre)}${r.tasa_bcv ? ` · BCV ${formatearBolivares(r.tasa_bcv).replace('Bs. ', '')}` : ' · sin tasa BCV'}</p>
+      <div class="mt-3 flex gap-2"><button type="button" data-editar="${r.id}" class="${botonNeutro}">Editar</button><button type="button" data-eliminar="${r.id}" class="${botonPeligro}">Eliminar</button></div>
+    </article>`;
+  }
+
+  function pintar() {
+    pintarLocales();
+    const { desde, hasta } = rangoElegido();
+    const visibles = filtrados();
+    const t = totalizar(visibles);
+    $('iv-rango-texto').textContent = desde === hasta ? `Día ${fechaCorta(desde)}` : `Del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`;
+    $('iv-total-compras').innerHTML = dosMitades(t.compras_usd, t.compras_bs, 'text-2xl', true);
+    $('iv-total-perdidas').innerHTML = dosMitades(t.perdidas_usd, t.perdidas_bs, 'text-2xl', true);
+    $('iv-n-compras').textContent = String(t.n_compras);
+    $('iv-n-perdidas').textContent = String(t.n_perdidas);
+    const sinTasa = $('iv-sin-tasa');
+    sinTasa.classList.toggle('hidden', t.sin_tasa === 0);
+    sinTasa.textContent = t.sin_tasa ? `${t.sin_tasa} registro(s) no tienen tasa BCV: sus bolívares no se suman.` : '';
+    pintarGrafico(visibles.filter((r) => r.tipo === 'COMPRA'), desde, hasta);
+    pintarProveedoresDelPeriodo(visibles);
+
+    $('iv-lista').innerHTML = visibles.slice(0, MAX_REGISTROS_VISIBLES).map(htmlRegistro).join('');
+    const vacio = $('iv-vacio');
+    vacio.classList.toggle('hidden', visibles.length > 0);
+    vacio.textContent = registros.length === 0 ? 'Todavía no hay registros. Anota la primera compra con «+ Registrar compra».' : 'No hay registros con esos filtros.';
+    const mas = $('iv-mas');
+    mas.classList.toggle('hidden', visibles.length <= MAX_REGISTROS_VISIBLES);
+    mas.textContent = `Se muestran los ${MAX_REGISTROS_VISIBLES} más recientes de ${visibles.length}; los totales sí incluyen todos. Acota el período para ver el resto.`;
+  }
+
+  function pintarProveedores() {
+    $('iv-prov-vacio').classList.toggle('hidden', proveedores.length > 0);
+    $('iv-prov-lista').innerHTML = proveedores
+      .map(
+        (p) => `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <p class="text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">${p.telefono ? escaparHtml(p.telefono) : 'Sin teléfono'}</p>
+          ${p.nota ? `<p class="mt-1 text-xs text-slate-600 dark:text-slate-300">${escaparHtml(p.nota)}</p>` : ''}
+          <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">Compras: <strong class="text-slate-800 dark:text-slate-100">${p.n_compras}</strong> · Total comprado: <strong class="text-slate-800 dark:text-slate-100">${formatearMoneda(p.total_usd)}</strong></p>
+          <div class="mt-3 flex gap-2"><button type="button" data-prov-editar="${p.id}" class="${botonNeutro}">Editar</button><button type="button" data-prov-eliminar="${p.id}" class="${botonPeligro}">Eliminar</button></div>
+        </article>`
+      )
+      .join('');
+    $('iv-proveedores-datos').innerHTML = proveedores.map((p) => `<option value="${escaparHtml(p.nombre)}"></option>`).join('');
+  }
+
+  function pintarSelectoresDeLocal() {
+    const filtro = $('iv-local') as HTMLSelectElement;
+    const anterior = filtro.value;
+    filtro.innerHTML = `<option value="">Todos los locales</option>${locales.map((l) => `<option value="${l.id}">${escaparHtml(l.nombre)}</option>`).join('')}`;
+    filtro.value = anterior;
+    $('iv-f-local').innerHTML = locales.map((l) => `<option value="${l.id}">${escaparHtml(l.nombre)}</option>`).join('');
+  }
+
+  // --- Carga ---
+  async function recargar() {
+    try {
+      const { desde, hasta } = rangoElegido();
+      const ventana = {
+        desde: [desde, lunesDeSemana(hoy), primerDiaDelMes(hoy)].sort()[0],
+        hasta: [hasta, hoy].sort().reverse()[0],
+      };
+      [registros, proveedores] = await Promise.all([inventoryService.listarInversiones({ ...ventana, limite: 5000 }), inventoryService.listarProveedores()]);
+      $('iv-error').classList.add('hidden');
+      pintar();
+      pintarProveedores();
+    } catch (err) {
+      aviso($('iv-error'), err instanceof Error ? err.message : 'No se pudo cargar la inversión.');
+    }
+  }
+
+  // --- Registrar o corregir ---
+  const dialogo = $<HTMLDialogElement>('iv-dialogo');
+  const form = $<HTMLFormElement>('iv-form');
+  const guardar = $<HTMLButtonElement>('iv-f-guardar');
+  const errorForm = $('iv-f-error');
+
+  function actualizarVistaBs() {
+    const monto = leerPrecioEscrito(($('iv-f-monto') as HTMLInputElement).value, 'USD');
+    const fecha = ($('iv-f-fecha') as HTMLInputElement).value;
+    const nota = $('iv-f-bs');
+    if (monto === null || monto <= 0) nota.textContent = '';
+    else if (fecha === hoy && tasaDelDia) nota.textContent = `≈ ${formatearBolivares(Math.round(monto * tasaDelDia * 100) / 100)} al BCV de hoy (${formatearBolivares(tasaDelDia)} por $1).`;
+    else nota.textContent = 'Los bolívares de referencia se calculan con la tasa BCV de esa fecha al guardar.';
+  }
+
+  function textosSegunTipo() {
+    const perdida = ($('iv-f-tipo') as HTMLSelectElement).value === 'PERDIDA';
+    $('iv-dialogo-titulo').textContent = `${editando ? 'Corregir' : 'Registrar'} ${perdida ? 'pérdida' : 'compra'}`;
+    $('iv-dialogo-ayuda').textContent = perdida ? 'Anota lo que se perdió (se muestra aparte, no se resta de la inversión).' : 'Anota lo que se compró en mercancía nueva.';
+    (document.querySelector('label[for="iv-f-descripcion"]') as HTMLElement).textContent = perdida ? 'Qué se perdió *' : 'Qué se compró *';
+  }
+
+  function abrirRegistro(tipo: TipoInversion, registro?: Inversion) {
+    editando = registro ?? null;
+    errorForm.classList.add('hidden');
+    ($('iv-f-tipo') as HTMLSelectElement).value = registro?.tipo ?? tipo;
+    const fecha = $('iv-f-fecha') as HTMLInputElement;
+    fecha.value = registro?.fecha ?? hoy;
+    fecha.max = hoy;
+    ($('iv-f-local') as HTMLSelectElement).value = registro?.local_id ?? (($('iv-local') as HTMLSelectElement).value || locales[0]?.id || '');
+    ($('iv-f-descripcion') as HTMLInputElement).value = registro?.descripcion ?? '';
+    ($('iv-f-proveedor') as HTMLInputElement).value = registro?.proveedor_nombre ?? '';
+    ($('iv-f-monto') as HTMLInputElement).value = registro ? textoPrecioCampo(registro.monto_usd) : '';
+    guardar.disabled = false;
+    textosSegunTipo();
+    actualizarVistaBs();
+    if (!dialogo.open) dialogo.showModal();
+  }
+
+  $('iv-nueva-compra').addEventListener('click', () => abrirRegistro('COMPRA'));
+  $('iv-nueva-perdida').addEventListener('click', () => abrirRegistro('PERDIDA'));
+  $('iv-f-tipo').addEventListener('change', textosSegunTipo);
+  $('iv-f-monto').addEventListener('input', actualizarVistaBs);
+  $('iv-f-fecha').addEventListener('change', actualizarVistaBs);
+  $('iv-f-cancelar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorForm.classList.add('hidden');
+    guardar.disabled = true;
+    try {
+      const monto = leerPrecioEscrito(($('iv-f-monto') as HTMLInputElement).value, 'USD');
+      if (monto === null || monto <= 0) throw new Error('Escribe el monto en dólares (mayor a 0).');
+      const datos = {
+        localId: ($('iv-f-local') as HTMLSelectElement).value,
+        tipo: ($('iv-f-tipo') as HTMLSelectElement).value as TipoInversion,
+        fecha: ($('iv-f-fecha') as HTMLInputElement).value,
+        descripcion: ($('iv-f-descripcion') as HTMLInputElement).value,
+        proveedor: ($('iv-f-proveedor') as HTMLInputElement).value,
+        monto_usd: monto,
+      };
+      if (editando) await inventoryService.actualizarInversion(editando.id, datos);
+      else await inventoryService.crearInversion(datos);
+      dialogo.close();
+      exito(editando ? 'Registro corregido.' : datos.tipo === 'PERDIDA' ? 'Pérdida anotada.' : 'Compra anotada.');
+      editando = null;
+      await recargar();
+    } catch (err) {
+      aviso(errorForm, err instanceof Error ? err.message : 'No se pudo guardar.');
+    } finally {
+      guardar.disabled = false;
+    }
+  });
+
+  $('iv-lista').addEventListener('click', async (e) => {
+    const destino = e.target as HTMLElement;
+    const editar = destino.closest<HTMLElement>('[data-editar]');
+    const eliminar = destino.closest<HTMLElement>('[data-eliminar]');
+    if (editar) {
+      const r = registros.find((x) => x.id === editar.dataset.editar);
+      if (r) abrirRegistro(r.tipo, r);
+    } else if (eliminar) {
+      const r = registros.find((x) => x.id === eliminar.dataset.eliminar);
+      if (!r || !window.confirm(`¿Eliminar este registro de ${formatearMoneda(r.monto_usd)} (${r.descripcion})? No se puede deshacer.`)) return;
+      try {
+        await inventoryService.eliminarInversion(r.id);
+        exito('Registro eliminado.');
+        await recargar();
+      } catch (err) {
+        aviso($('iv-error'), err instanceof Error ? err.message : 'No se pudo eliminar.');
+      }
+    }
+  });
+
+  // --- Proveedores ---
+  const dlgProv = $<HTMLDialogElement>('iv-pv-dialogo');
+  const errorProv = $('iv-pv-error');
+  function abrirProveedor(p?: ProveedorResumen) {
+    proveedorEditando = p ?? null;
+    errorProv.classList.add('hidden');
+    $('iv-pv-titulo').textContent = p ? 'Corregir proveedor' : 'Agregar proveedor';
+    ($('iv-pv-nombre') as HTMLInputElement).value = p?.nombre ?? '';
+    ($('iv-pv-telefono') as HTMLInputElement).value = p?.telefono ?? '';
+    ($('iv-pv-nota') as HTMLInputElement).value = p?.nota ?? '';
+    if (!dlgProv.open) dlgProv.showModal();
+  }
+  $('iv-nuevo-proveedor').addEventListener('click', () => abrirProveedor());
+  $('iv-pv-cancelar').addEventListener('click', () => dlgProv.close());
+  dlgProv.addEventListener('mousedown', (e) => {
+    if (e.target === dlgProv) dlgProv.close();
+  });
+  $('iv-pv-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorProv.classList.add('hidden');
+    const boton = $<HTMLButtonElement>('iv-pv-guardar');
+    boton.disabled = true;
+    try {
+      const datos = { nombre: ($('iv-pv-nombre') as HTMLInputElement).value, telefono: ($('iv-pv-telefono') as HTMLInputElement).value, nota: ($('iv-pv-nota') as HTMLInputElement).value };
+      if (proveedorEditando) await inventoryService.actualizarProveedor(proveedorEditando.id, datos);
+      else await inventoryService.crearProveedor(datos);
+      dlgProv.close();
+      exito(proveedorEditando ? 'Proveedor corregido.' : 'Proveedor agregado.');
+      proveedorEditando = null;
+      await recargar();
+    } catch (err) {
+      aviso(errorProv, err instanceof Error ? err.message : 'No se pudo guardar el proveedor.');
+    } finally {
+      boton.disabled = false;
+    }
+  });
+  $('iv-prov-lista').addEventListener('click', async (e) => {
+    const destino = e.target as HTMLElement;
+    const editar = destino.closest<HTMLElement>('[data-prov-editar]');
+    const eliminar = destino.closest<HTMLElement>('[data-prov-eliminar]');
+    if (editar) {
+      const p = proveedores.find((x) => x.id === editar.dataset.provEditar);
+      if (p) abrirProveedor(p);
+    } else if (eliminar) {
+      const p = proveedores.find((x) => x.id === eliminar.dataset.provEliminar);
+      if (!p || !window.confirm(`¿Quitar a «${p.nombre}» de la lista de proveedores? Sus compras ya anotadas conservan el nombre.`)) return;
+      try {
+        await inventoryService.eliminarProveedor(p.id);
+        exito('Proveedor eliminado.');
+        await recargar();
+      } catch (err) {
+        aviso($('iv-error'), err instanceof Error ? err.message : 'No se pudo eliminar el proveedor.');
+      }
+    }
+  });
+
+  // --- Filtros, pestañas y CSV ---
+  $('iv-tab-inversion').addEventListener('click', () => aplicarPestana('inversion'));
+  $('iv-tab-proveedores').addEventListener('click', () => aplicarPestana('proveedores'));
+  $('iv-periodo').addEventListener('change', () => {
+    const personalizado = ($('iv-periodo') as HTMLSelectElement).value === 'personalizado';
+    const caja = $('iv-rango');
+    caja.classList.toggle('hidden', !personalizado);
+    caja.classList.toggle('grid', personalizado);
+    if (personalizado) {
+      ($('iv-desde') as HTMLInputElement).value ||= primerDiaDelMes(hoy);
+      ($('iv-hasta') as HTMLInputElement).value ||= hoy;
+    }
+    void recargar();
+  });
+  $('iv-desde').addEventListener('change', () => void recargar());
+  $('iv-hasta').addEventListener('change', () => void recargar());
+  $('iv-local').addEventListener('change', pintar);
+  $('iv-tipo').addEventListener('change', pintar);
+  $('iv-buscar').addEventListener('input', pintar);
+  $('iv-csv').addEventListener('click', () => {
+    const filas = filtrados();
+    if (filas.length === 0) return aviso($('iv-error'), 'No hay registros que descargar con esos filtros.');
+    const { desde, hasta } = rangoElegido();
+    const blob = new Blob(['﻿' + csvInversiones(filas, nombreLocal)], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `inversion-${desde}-a-${hasta}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+
+  tasaActual.listen((t) => {
+    tasaDelDia = t;
+    actualizarVistaBs();
+  });
+
+  aplicarPestana('inversion');
+  inventoryService
+    .obtenerContextoLocal()
+    .then(async (contexto) => {
+      if (!contexto || !esGlobal(contexto.sesion.rol)) return;
+      locales = await inventoryService.listarLocales();
+      pintarSelectoresDeLocal();
+      await recargar();
+      alCambiarDatos(['inversiones', 'proveedores', 'tasas_cambio'], recargar);
+    })
+    .catch((err) => aviso($('iv-error'), err instanceof Error ? err.message : 'No se pudo cargar la inversión.'));
+</script>

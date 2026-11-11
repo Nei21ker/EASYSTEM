@@ -102,6 +102,15 @@ function casos(): Caso[] {
     { archivo: 'pendientes/index.ts', metodo: 'POST', url: '/api/pendientes', cuerpo: { localId: accesorios, promotorId: 'no-existe', descripcion: 'Vidrios', monto_usd: 5 }, permitidos: GERENCIA },
     { archivo: 'pendientes/[id]/cerrar.ts', metodo: 'POST', url: '/api/pendientes/no-existe/cerrar', params: { id: 'no-existe' }, cuerpo: { accion: 'pagar' }, permitidos: PENDIENTES },
     { archivo: 'pendientes/[id]/promotor.ts', metodo: 'PUT', url: '/api/pendientes/no-existe/promotor', params: { id: 'no-existe' }, cuerpo: { promotorId: 'x' }, permitidos: PENDIENTES },
+    // Inversión (compras y pérdidas anotadas a mano) y proveedores: solo administrador y gerente
+    { archivo: 'inversiones/index.ts', metodo: 'GET', url: '/api/inversiones', permitidos: GLOBAL },
+    { archivo: 'inversiones/index.ts', metodo: 'POST', url: '/api/inversiones', cuerpo: { localId: accesorios, tipo: 'COMPRA', fecha: dia, descripcion: 'Vidrios nuevos', proveedor: 'Matriz', monto_usd: 20 }, permitidos: GLOBAL },
+    { archivo: 'inversiones/[id].ts', metodo: 'PUT', url: '/api/inversiones/no-existe', params: { id: 'no-existe' }, cuerpo: { localId: accesorios, tipo: 'COMPRA', fecha: dia, descripcion: 'Vidrios nuevos', monto_usd: 20 }, permitidos: GLOBAL },
+    { archivo: 'inversiones/[id].ts', metodo: 'DELETE', url: '/api/inversiones/no-existe', params: { id: 'no-existe' }, permitidos: GLOBAL },
+    { archivo: 'proveedores/index.ts', metodo: 'GET', url: '/api/proveedores', permitidos: GLOBAL },
+    { archivo: 'proveedores/index.ts', metodo: 'POST', url: '/api/proveedores', cuerpo: { nombre: 'Proveedor matriz' }, permitidos: GLOBAL },
+    { archivo: 'proveedores/[id].ts', metodo: 'PUT', url: '/api/proveedores/no-existe', params: { id: 'no-existe' }, cuerpo: { nombre: 'Proveedor matriz' }, permitidos: GLOBAL },
+    { archivo: 'proveedores/[id].ts', metodo: 'DELETE', url: '/api/proveedores/no-existe', params: { id: 'no-existe' }, permitidos: GLOBAL },
     { archivo: 'mermas/index.ts', metodo: 'POST', url: '/api/mermas', cuerpo: { productoId: p, localId: accesorios, cantidad: 1 }, permitidos: GERENCIA },
     // Ventas, devoluciones y órdenes
     { archivo: 'ventas/index.ts', metodo: 'GET', url: '/api/ventas', permitidos: NEGOCIO },
