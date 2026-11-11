@@ -28,6 +28,26 @@ export const BANCOS_SUGERIDOS = [
 ];
 const limpiar = (texto: string | null | undefined): string => (texto ?? '').trim().replace(/\s+/g, ' ');
 
+/**
+ * Parte «Nombre y apellido» escrito corrido en las dos piezas que se guardan: 1 palabra = solo nombre; 2 = nombre y apellido; 3 = el
+ * primero es el nombre y el resto el apellido; 4 o más, mitad y mitad ("María José Pérez Lara"). Siempre se muestra junto, así que
+ * lo importante es que `unirNombre(...)` devuelva lo mismo que se escribió.
+ */
+export function separarNombreCompleto(texto: string | null | undefined): { nombre: string; apellido: string } {
+  const partes = limpiar(texto).split(' ').filter(Boolean);
+  if (partes.length <= 1) return { nombre: partes[0] ?? '', apellido: '' };
+  const corte = partes.length === 2 ? 1 : partes.length === 3 ? 1 : Math.floor(partes.length / 2);
+  return { nombre: partes.slice(0, corte).join(' '), apellido: partes.slice(corte).join(' ') };
+}
+
+/** Nombre y apellido guardados por separado, juntos para mostrarlos en un solo campo (sin repetir el apellido si ya venía dentro). */
+export function unirNombre(nombre: string | null | undefined, apellido: string | null | undefined): string {
+  const n = limpiar(nombre);
+  const a = limpiar(apellido);
+  if (!a || n.toLowerCase().endsWith(a.toLowerCase())) return n;
+  return `${n} ${a}`.trim();
+}
+
 export function normalizarPromotor(datos: DatosPromotor | null | undefined): ResultadoPromotor {
   let cedula: string | null = null;
   const cedulaTexto = limpiar(datos?.cedula).toUpperCase();

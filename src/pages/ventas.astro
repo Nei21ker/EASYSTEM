@@ -302,15 +302,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <p id="pos-cli-aviso" role="status" class="mt-1 hidden rounded-lg bg-emerald-50 px-3 py-1.5 text-xs text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400"></p>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label for="pos-cli-nombre" class={claseEtiqueta}>Nombre *</label>
-              <input id="pos-cli-nombre" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
-            </div>
-            <div>
-              <label for="pos-cli-apellido" class={claseEtiqueta}>Apellido *</label>
-              <input id="pos-cli-apellido" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
-            </div>
+          <div>
+            <label for="pos-cli-nombre" class={claseEtiqueta}>Nombre y apellido *</label>
+            <input id="pos-cli-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="120" placeholder="Ej: María Pérez" class={claseCampo} />
           </div>
 
           <div>
@@ -484,10 +478,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <select id="pos-promotor-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
             <input id="pos-promotor-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           </div>
-          <div class="grid grid-cols-2 gap-2">
-            <input id="pos-promotor-nombre" type="text" autocomplete="off" placeholder="Nombre" aria-label="Nombre del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-            <input id="pos-promotor-apellido" type="text" autocomplete="off" placeholder="Apellido" aria-label="Apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-          </div>
+          <input id="pos-promotor-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="120" placeholder="Nombre y apellido" aria-label="Nombre y apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           <input id="pos-promotor-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="Teléfono (ej. 0414-1234567)" aria-label="Teléfono del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           <input id="pos-promotor-banco" type="text" list="pos-promotor-bancos" autocomplete="off" placeholder="Banco receptor (donde se le paga)" aria-label="Banco receptor del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           <datalist id="pos-promotor-bancos">{BANCOS_SUGERIDOS.map((b) => <option value={b} />)}</datalist>
@@ -536,10 +527,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
               <select id="pos-inst-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
               <input id="pos-inst-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             </div>
-            <div class="grid grid-cols-2 gap-2">
-              <input id="pos-inst-nombre" type="text" autocomplete="off" placeholder="Nombre" aria-label="Nombre del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-              <input id="pos-inst-apellido" type="text" autocomplete="off" placeholder="Apellido" aria-label="Apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-            </div>
+            <input id="pos-inst-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="120" placeholder="Nombre y apellido" aria-label="Nombre y apellido del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <input id="pos-inst-telefono" type="tel" inputmode="tel" autocomplete="off" placeholder="Teléfono (ej. 0414-1234567)" aria-label="Teléfono del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <input id="pos-inst-banco" type="text" list="pos-promotor-bancos" autocomplete="off" placeholder="Banco receptor (donde se le paga)" aria-label="Banco receptor del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <p id="pos-inst-registrado" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
@@ -572,7 +560,7 @@ import { alCambiarDatos } from '../lib/realtime';
   import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo } from '../utils/codigos';
   import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
   import { MOTIVOS_MERMA, type MotivoMerma } from '../types/database.types';
-  import { normalizarPromotor } from '../utils/promotor';
+  import { normalizarPromotor, separarNombreCompleto, unirNombre } from '../utils/promotor';
   import { errorPrecioInstalacion, hayInstalacionDelPromotor, INSTALACION_PREDETERMINADA_USD, montoInstalacion, totalLinea, type QuienInstala } from '../utils/instalacion';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
@@ -1080,20 +1068,18 @@ import { alCambiarDatos } from '../lib/realtime';
   const campoNac = campo('pos-cli-nac');
   const campoCedula = campo('pos-cli-cedula');
   const campoNombre = campo('pos-cli-nombre');
-  const campoApellido = campo('pos-cli-apellido');
   const campoTelefono = campo('pos-cli-telefono');
   const avisoCliente = document.getElementById('pos-cli-aviso') as HTMLParagraphElement;
 
   // --- Cliente que ya compró: al escribir su cédula se rellenan sus datos de la compra anterior -------------------------------
-  let autollenado: { cedula: string; nombre: string; apellido: string; telefono: string } | null = null;
+  let autollenado: { cedula: string; nombre: string; telefono: string } | null = null;
   let consultaCliente = 0;
   let temporizadorCliente: number | undefined;
 
   function limpiarAutollenado() {
     // Si los datos siguen siendo los rellenados (nadie los editó), se vacían para no dejar los de OTRO cliente
-    if (autollenado && campoNombre.value === autollenado.nombre && campoApellido.value === autollenado.apellido && campoTelefono.value === autollenado.telefono) {
+    if (autollenado && campoNombre.value === autollenado.nombre && campoTelefono.value === autollenado.telefono) {
       campoNombre.value = '';
-      campoApellido.value = '';
       campoTelefono.value = '';
     }
     autollenado = null;
@@ -1109,10 +1095,9 @@ import { alCambiarDatos } from '../lib/realtime';
     const cliente = await inventoryService.buscarCliente(cedulaCompleta);
     if (turno !== consultaCliente || !cliente) return; // llegó una consulta más nueva, o es un cliente nuevo
     // Solo se rellena lo que está vacío: lo que el cajero ya escribió no se pisa
-    if (!campoNombre.value.trim()) campoNombre.value = cliente.nombre;
-    if (!campoApellido.value.trim()) campoApellido.value = cliente.apellido;
+    if (!campoNombre.value.trim()) campoNombre.value = unirNombre(cliente.nombre, cliente.apellido);
     if (!campoTelefono.value.trim()) campoTelefono.value = cliente.telefono;
-    autollenado = { cedula: cedulaCompleta, nombre: campoNombre.value, apellido: campoApellido.value, telefono: campoTelefono.value };
+    autollenado = { cedula: cedulaCompleta, nombre: campoNombre.value, telefono: campoTelefono.value };
     avisoCliente.textContent = 'Cliente registrado: se cargaron los datos de su compra anterior. Revísalos y corrígelos si cambiaron.';
     avisoCliente.classList.remove('hidden');
   }
@@ -1206,7 +1191,7 @@ import { alCambiarDatos } from '../lib/realtime';
 
   // Los datos del cliente solo viven mientras dura la venta (se borran al cobrar).
   function limpiarDatosCliente() {
-    for (const c of [campoCedula, campoNombre, campoApellido, campoTelefono]) c.value = '';
+    for (const c of [campoCedula, campoNombre, campoTelefono]) c.value = '';
     campoNac.value = 'V';
     autollenado = null;
     avisoCliente.classList.add('hidden');
@@ -1225,14 +1210,14 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Los datos del cliente ya validados, o muestra el primer error y devuelve null. */
   function validarCliente(): ClienteVenta | null {
     const cedula = campoCedula.value.replace(/\D/g, '');
-    const nombre = campoNombre.value.trim().replace(/\s+/g, ' ');
-    const apellido = campoApellido.value.trim().replace(/\s+/g, ' ');
+    // Un solo campo «Nombre y apellido» escrito corrido: se parte en las dos piezas que guarda el sistema
+    const { nombre, apellido } = separarNombreCompleto(campoNombre.value);
     const telefono = campoTelefono.value.trim();
     const patronNombre = /^[\p{L}][\p{L} '.-]*$/u;
 
     if (!/^\d{5,9}$/.test(cedula)) return fallar('La cédula debe tener entre 5 y 9 dígitos (solo números).', campoCedula);
-    if (nombre.length < 2 || !patronNombre.test(nombre)) return fallar('Escribe el nombre del cliente.', campoNombre);
-    if (apellido.length < 2 || !patronNombre.test(apellido)) return fallar('Escribe el apellido del cliente.', campoApellido);
+    if (nombre.length < 2 || !patronNombre.test(nombre)) return fallar('Escribe el nombre y el apellido del cliente.', campoNombre);
+    if (apellido.length < 2 || !patronNombre.test(apellido)) return fallar('Escribe también el apellido del cliente (nombre y apellido).', campoNombre);
     const digitos = telefono.replace(/\D/g, '');
     if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
       return fallar('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', campoTelefono);
@@ -1646,7 +1631,6 @@ import { alCambiarDatos } from '../lib/realtime';
   const promotorNac = document.getElementById('pos-promotor-nac') as HTMLSelectElement;
   const promotorCedula = document.getElementById('pos-promotor-cedula') as HTMLInputElement;
   const promotorNombre = document.getElementById('pos-promotor-nombre') as HTMLInputElement;
-  const promotorApellido = document.getElementById('pos-promotor-apellido') as HTMLInputElement;
   const promotorTelefono = document.getElementById('pos-promotor-telefono') as HTMLInputElement;
   const promotorBanco = document.getElementById('pos-promotor-banco') as HTMLInputElement;
   const promotorRegistrado = document.getElementById('pos-promotor-registrado') as HTMLParagraphElement;
@@ -1763,8 +1747,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const cedulaPrevia = (previo?.cedula ?? '').toUpperCase().match(/^([VE])-?(\d+)$/);
     promotorNac.value = cedulaPrevia?.[1] ?? 'V';
     promotorCedula.value = cedulaPrevia?.[2] ?? '';
-    promotorNombre.value = previo?.nombre ?? '';
-    promotorApellido.value = previo?.apellido ?? '';
+    promotorNombre.value = unirNombre(previo?.nombre, previo?.apellido);
     promotorTelefono.value = previo?.telefono ?? '';
     promotorBanco.value = previo?.banco ?? '';
     promotorRegistrado.classList.add('hidden');
@@ -1779,8 +1762,7 @@ import { alCambiarDatos } from '../lib/realtime';
   function leerPromotor(): { datos: DatosPromotor } | { error: string } {
     const datos: DatosPromotor = {
       cedula: promotorCedula.value.trim() ? `${promotorNac.value}-${promotorCedula.value.trim()}` : null,
-      nombre: promotorNombre.value,
-      apellido: promotorApellido.value,
+      ...separarNombreCompleto(promotorNombre.value),
       telefono: promotorTelefono.value,
       banco: promotorBanco.value,
     };
@@ -1804,8 +1786,7 @@ import { alCambiarDatos } from '../lib/realtime';
     try {
       const encontrado = await inventoryService.buscarPromotorPorCedula(`${promotorNac.value}-${numero}`);
       if (!encontrado || actual !== consultaPromotor) return;
-      if (!promotorNombre.value.trim()) promotorNombre.value = encontrado.nombre;
-      if (!promotorApellido.value.trim()) promotorApellido.value = encontrado.apellido;
+      if (!promotorNombre.value.trim()) promotorNombre.value = unirNombre(encontrado.nombre, encontrado.apellido);
       if (!promotorTelefono.value.trim() && encontrado.telefono) promotorTelefono.value = encontrado.telefono;
       if (!promotorBanco.value.trim() && encontrado.banco) promotorBanco.value = encontrado.banco;
       promotorRegistrado.textContent = `Promotor registrado: ${`${encontrado.nombre} ${encontrado.apellido}`.trim()}. Se completaron sus datos.`;
@@ -2563,7 +2544,6 @@ import { alCambiarDatos } from '../lib/realtime';
   const instNac = document.getElementById('pos-inst-nac') as HTMLSelectElement;
   const instCedula = document.getElementById('pos-inst-cedula') as HTMLInputElement;
   const instNombre = document.getElementById('pos-inst-nombre') as HTMLInputElement;
-  const instApellido = document.getElementById('pos-inst-apellido') as HTMLInputElement;
   const instTelefono = document.getElementById('pos-inst-telefono') as HTMLInputElement;
   const instBanco = document.getElementById('pos-inst-banco') as HTMLInputElement;
   const instRegistrado = document.getElementById('pos-inst-registrado') as HTMLParagraphElement;
@@ -2606,8 +2586,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const cedulaPrevia = (previo?.cedula ?? '').toUpperCase().match(/^([VE])-?(\d+)$/);
     instNac.value = cedulaPrevia?.[1] ?? 'V';
     instCedula.value = cedulaPrevia?.[2] ?? '';
-    instNombre.value = previo?.nombre ?? '';
-    instApellido.value = previo?.apellido ?? '';
+    instNombre.value = unirNombre(previo?.nombre, previo?.apellido);
     instTelefono.value = previo?.telefono ?? '';
     instBanco.value = previo?.banco ?? '';
     instRegistrado.classList.add('hidden');
@@ -2631,8 +2610,7 @@ import { alCambiarDatos } from '../lib/realtime';
     try {
       const encontrado = await inventoryService.buscarPromotorPorCedula(`${instNac.value}-${numero}`);
       if (!encontrado || actual !== consultaInst) return;
-      if (!instNombre.value.trim()) instNombre.value = encontrado.nombre;
-      if (!instApellido.value.trim()) instApellido.value = encontrado.apellido;
+      if (!instNombre.value.trim()) instNombre.value = unirNombre(encontrado.nombre, encontrado.apellido);
       if (!instTelefono.value.trim() && encontrado.telefono) instTelefono.value = encontrado.telefono;
       if (!instBanco.value.trim() && encontrado.banco) instBanco.value = encontrado.banco;
       instRegistrado.textContent = `Promotor registrado: ${`${encontrado.nombre} ${encontrado.apellido}`.trim()}. Se completaron sus datos.`;
@@ -2673,14 +2651,13 @@ import { alCambiarDatos } from '../lib/realtime';
     if (por === 'PROMOTOR' && !promotorYaAutorizado()) {
       const datos: DatosPromotor = {
         cedula: instCedula.value.trim() ? `${instNac.value}-${instCedula.value.trim()}` : null,
-        nombre: instNombre.value,
-        apellido: instApellido.value,
+        ...separarNombreCompleto(instNombre.value),
         telefono: instTelefono.value,
         banco: instBanco.value,
       };
       const r = normalizarPromotor(datos);
       if (!r.ok) return errorDeInstalacion(r.mensaje);
-      if (!r.promotor.cedula || !r.promotor.nombrePropio || !r.promotor.apellido) return errorDeInstalacion('Para pagarle al promotor anota su cédula, nombre y apellido.');
+      if (!r.promotor.cedula || !r.promotor.nombrePropio || !r.promotor.apellido) return errorDeInstalacion('Para pagarle al promotor anota su cédula, nombre y apellido (en el mismo campo).');
       promotorInstalacion = datos;
     }
     linea.instalacion = { por: por as QuienInstala, usd };
