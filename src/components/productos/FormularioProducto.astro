@@ -90,8 +90,15 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
-          <label for="fp-precio-venta" class={claseEtiqueta}>Precio venta ($) *</label>
+          <div class="flex items-center justify-between gap-2">
+            <label for="fp-precio-venta" id="fp-precio-etiqueta" class={claseEtiqueta}>Precio venta ($) *</label>
+            <div role="group" aria-label="Moneda del precio de venta" class="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
+              <button type="button" id="fp-moneda-usd" aria-pressed="true" class="px-2.5 py-1">$</button>
+              <button type="button" id="fp-moneda-bs" aria-pressed="false" class="border-l border-slate-200 px-2.5 py-1 dark:border-slate-700">Bs</button>
+            </div>
+          </div>
           <input id="fp-precio-venta" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
+          <p id="fp-aviso-bs" class="mt-1 hidden text-[11px] text-sky-700 dark:text-sky-300">Precio fijo en Bs: no sigue al dólar, lo cambias tú a mano.</p>
         </div>
         <div id="fp-grupo-compra">
           <label for="fp-precio-compra" class={claseEtiqueta}>Precio compra ($)</label>
@@ -139,6 +146,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { errorPrecioPorCantidad, esPorCantidad } from '../../utils/controlPorCantidad';
+  import { errorPrecioBs, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
 
@@ -336,7 +344,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       prefijoManual = true;
       $('fp-referencia-valor').textContent = editando.referencia || 'sin asignar';
       $('fp-prefijo-ayuda').textContent = 'Si lo cambias, solo afecta a las piezas que ingreses desde ahora: las que ya tienen código lo conservan.';
-      campos.precioVenta.value = String(editando.precio_venta);
+      moneda = tienePrecioEnBs(editando) ? 'BS' : 'USD';
+      campos.precioVenta.value = String(moneda === 'BS' ? editando.precio_bs : editando.precio_venta);
       campos.precioCompra.value = String(editando.precio_compra);
       campos.minimo.value = String(editando.stock_minimo);
       campos.porCantidad.checked = esPorCantidad(editando);
@@ -353,6 +362,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     } else {
       titulo.textContent = 'Nuevo producto';
       form.reset();
+      moneda = 'USD';
       campos.precioCompra.value = '0';
       campos.stock.value = '0';
       campos.minimo.value = '0';
@@ -366,6 +376,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       $('fp-prefijo-ayuda').textContent = TEXTO_AYUDA_PREFIJO;
     }
 
+    pintarMoneda();
     fotoNueva = null;
     quitarFoto = false;
     errorFoto.classList.add('hidden');
@@ -376,6 +387,38 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     campos.nombre.focus();
   }
 
+  let moneda: MonedaPrecio = 'USD';
+  const botonUsd = $<HTMLButtonElement>('fp-moneda-usd');
+  const botonBs = $<HTMLButtonElement>('fp-moneda-bs');
+
+  /** Marca la moneda elegida; un producto por cantidad cuesta menos de $3 y no se mezcla con un precio fijo en Bs. */
+  function pintarMoneda() {
+    for (const [boton, activo] of [[botonUsd, moneda === 'USD'], [botonBs, moneda === 'BS']] as const) {
+      boton.setAttribute('aria-pressed', String(activo));
+      boton.className = `${boton === botonBs ? 'border-l border-slate-200 dark:border-slate-700 ' : ''}px-2.5 py-1 ${activo ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300'}`;
+    }
+    $('fp-precio-etiqueta').textContent = moneda === 'BS' ? 'Precio venta (Bs, fijo) *' : 'Precio venta ($) *';
+    $('fp-aviso-bs').classList.toggle('hidden', moneda !== 'BS');
+    if (moneda === 'BS') {
+      campos.porCantidad.checked = false;
+      campos.porCantidad.disabled = true;
+    } else if (!editando || (veCosto && editando.stock_actual === 0)) {
+      campos.porCantidad.disabled = false;
+    }
+  }
+  for (const [boton, valor] of [[botonUsd, 'USD'], [botonBs, 'BS']] as const) {
+    boton.addEventListener('click', () => {
+      if (moneda === valor) return;
+      moneda = valor;
+      pintarMoneda();
+    });
+  }
+
+  /** Los campos de precio que viajan al guardar: en dólares como siempre, o el precio fijo en Bs (el servidor calcula los dólares). */
+  function precioDelFormulario(valor: number) {
+    return moneda === 'BS' ? { moneda_precio: 'BS' as const, precio_bs: valor } : { moneda_precio: 'USD' as const, precio_venta: valor };
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     error.classList.add('hidden');
@@ -383,6 +426,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const nombre = campos.nombre.value.trim();
     const categoria = campos.categoria.value.trim();
     const precioVenta = Number(campos.precioVenta.value);
+    const enBs = moneda === 'BS';
     const precioCompra = Number(campos.precioCompra.value || 0);
     const stock = sinStockInicial ? 0 : Number(campos.stock.value || 0);
     const minimo = Number(campos.minimo.value || 0);
@@ -391,9 +435,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (!nombre) return mostrarError('El nombre es obligatorio.');
     if (!categoria) return mostrarError('La categoría es obligatoria.');
     if (!esPrefijoValido(prefijo)) return mostrarError('El prefijo del código debe tener de 2 a 4 letras (A-Z), por ejemplo INF.');
-    if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
+    if (enBs) {
+      const mensajeBs = errorPrecioBs(precioVenta);
+      if (mensajeBs) return mostrarError(mensajeBs);
+    } else if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
-    if (campos.porCantidad.checked && !campos.porCantidad.disabled) {
+    if (campos.porCantidad.checked && !campos.porCantidad.disabled && !enBs) {
       const motivoPrecio = errorPrecioPorCantidad(precioVenta);
       if (motivoPrecio) return mostrarError(motivoPrecio);
     }
@@ -422,7 +469,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           categoria,
           codigo_barras: codigo,
           prefijo_codigo: prefijo,
-          precio_venta: precioVenta,
+          ...precioDelFormulario(precioVenta),
           ...(veCosto ? { precio_compra: precioCompra } : {}),
           stock_minimo: minimo,
           // Solo si cambió (y se pudo cambiar): el servidor lo rechaza si el producto tiene stock o el rol no puede
@@ -437,7 +484,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           nombre,
           categoria,
           prefijo_codigo: prefijo,
-          precio_venta: precioVenta,
+          ...precioDelFormulario(precioVenta),
           precio_compra: veCosto ? precioCompra : 0,
           stock_actual: 0,
           stock_minimo: minimo,

@@ -6,7 +6,7 @@
 //   · inventario por local: administrador y gerente (cualquier local accesible) y el encargado (el suyo), y solo el
 //     MÍNIMO y el alta: el stock cambia únicamente por movimientos (trigger de la base de datos)
 import { alcanceDe, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
-import { avisarCambio } from '../cambios';
+import { avisarCambio, sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo, obtenerPorId, type ProductoConInventario } from '../repos/productos';
@@ -15,6 +15,8 @@ import { ahoraISO, nuevoId, redondear2 } from '../util';
 import { normalizarNombre } from '../../utils/altaRapida';
 import { construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
 import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
+import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
+import { tasaVigente } from './tasas';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
 export type { ProductoConInventario } from '../repos/productos';
@@ -36,6 +38,9 @@ export interface DatosProducto {
   categoria: string;
   precio_compra?: number;
   precio_venta?: number;
+  /** 'BS' = el precio se fija en bolívares (`precio_bs`) y no sigue a la tasa; `precio_venta` se calcula con la tasa de hoy. Por defecto 'USD'. */
+  moneda_precio?: MonedaPrecio;
+  precio_bs?: number | null;
   stock_minimo?: number;
   imagen_url?: string | null;
   /** Prefijo del código de sus unidades (2 a 4 letras). Si no se indica se sugiere por la marca del nombre o la categoría. */
@@ -90,14 +95,46 @@ function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
   if (d.stock_minimo !== undefined && !(Number.isInteger(d.stock_minimo) && d.stock_minimo >= 0)) {
     throw new ErrorApi(400, 'El stock mínimo debe ser un número entero mayor o igual a 0.', 'datos_invalidos');
   }
+  if (d.moneda_precio !== undefined && !esMonedaPrecio(d.moneda_precio)) throw new ErrorApi(400, 'La moneda del precio debe ser USD o BS.', 'datos_invalidos');
+  if (d.moneda_precio === 'BS' || (d.moneda_precio === undefined && d.precio_bs != null)) {
+    const mensaje = errorPrecioBs(d.precio_bs ?? Number.NaN);
+    if (mensaje) throw new ErrorApi(400, mensaje, 'precio_bs_invalido');
+  }
   if (d.prefijo_codigo !== undefined) prefijoIndicado(d.prefijo_codigo);
   if (d.control_por_cantidad !== undefined && d.control_por_cantidad !== 0 && d.control_por_cantidad !== 1) {
     throw new ErrorApi(400, 'El control por cantidad debe ser 0 o 1.', 'datos_invalidos');
   }
-  if (completo && d.control_por_cantidad === 1) {
-    const mensaje = errorPrecioPorCantidad(d.precio_venta ?? 0);
+  // (el tope de $3 de los productos por cantidad se comprueba con el precio en dólares ya resuelto: ver `resolverPrecio`)
+}
+
+/** Los tres valores de precio que se guardan de un producto. */
+interface PrecioResuelto {
+  precio_venta: number;
+  moneda_precio: MonedaPrecio;
+  precio_bs: number | null;
+}
+
+const SIN_TASA = 'Para fijar un precio en bolívares primero hay que registrar la tasa del dólar del día (chip «$1 = Bs.» arriba).';
+
+/**
+ * Decide el precio que se guarda: en dólares (como siempre) o fijo en bolívares, en cuyo caso el equivalente en dólares sale de la tasa
+ * vigente (409 si todavía no hay ninguna). Con `control_por_cantidad` el equivalente debe ser menor a $3.
+ */
+async function resolverPrecio(env: Entorno, d: Pick<DatosProducto, 'moneda_precio' | 'precio_bs' | 'precio_venta' | 'control_por_cantidad'>): Promise<PrecioResuelto> {
+  let precio: PrecioResuelto;
+  if (d.moneda_precio === 'BS') {
+    const tasa = await tasaVigente(env);
+    if (!tasa) throw new ErrorApi(409, SIN_TASA, 'sin_tasa');
+    const bs = normalizarPrecioBs(d.precio_bs!);
+    precio = { precio_venta: usdDesdeBs(bs, tasa), moneda_precio: 'BS', precio_bs: bs };
+  } else {
+    precio = { precio_venta: redondear2(d.precio_venta ?? 0), moneda_precio: 'USD', precio_bs: null };
+  }
+  if (d.control_por_cantidad === 1) {
+    const mensaje = errorPrecioPorCantidad(precio.precio_venta);
     if (mensaje) throw new ErrorApi(400, mensaje, 'precio_no_permitido');
   }
+  return precio;
 }
 
 const duplicado = (codigo: string) => new ErrorApi(409, `Ya existe un producto con el código de barras ${codigo}.`, 'codigo_repetido');
@@ -159,6 +196,7 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
   validarProducto(datos, true);
   await exigirNombresLibres(env, [datos.nombre]);
 
+  const precio = await resolverPrecio(env, datos);
   const fila = {
     id: nuevoId(),
     codigo_barras: datos.codigo_barras.trim(),
@@ -166,7 +204,7 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     categoria: datos.categoria.trim(),
     // El encargado no ve ni fija el precio de compra
     precio_compra: sesion.rol === 'encargado' ? 0 : redondear2(datos.precio_compra ?? 0),
-    precio_venta: redondear2(datos.precio_venta ?? 0),
+    ...precio,
     stock_minimo: datos.stock_minimo ?? 5,
     imagen_url: datos.imagen_url ?? null,
     prefijo_codigo: datos.prefijo_codigo !== undefined ? prefijoIndicado(datos.prefijo_codigo) : sugerirPrefijo(datos.nombre.trim(), datos.categoria.trim(), await marcasConocidas(env)),
@@ -177,8 +215,8 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
   fila.referencia = (await reservarReferencias(env, [fila.prefijo_codigo]))[0];
   try {
     await env.DB
-      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.referencia, fila.control_por_cantidad, fila.created_at)
+      .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, moneda_precio, precio_bs, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.codigo_barras, fila.nombre, fila.categoria, fila.precio_compra, fila.precio_venta, fila.moneda_precio, fila.precio_bs, fila.stock_minimo, fila.imagen_url, fila.prefijo_codigo, fila.referencia, fila.control_por_cantidad, fila.created_at)
       .run();
   } catch (err) {
     if (esViolacionUnica(err)) throw duplicado(fila.codigo_barras);
@@ -221,14 +259,36 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
     }
   }
 
+  // Precio: en dólares o fijo en bolívares. Un producto con precio en Bs no cambia de moneda por un `precio_venta` suelto (lo mandaría una
+  // pantalla vieja o el importador CSV): ese valor se ignora y hay que pedir el cambio con `moneda_precio`.
+  const tocaMoneda = cambios.moneda_precio !== undefined || cambios.precio_bs !== undefined;
+  const precioActualEnBs = actual.moneda_precio === 'BS';
+  let precioNuevo: PrecioResuelto | null = null;
+  if (tocaMoneda) {
+    const moneda: MonedaPrecio = cambios.moneda_precio ?? (precioActualEnBs ? 'BS' : 'USD');
+    precioNuevo = await resolverPrecio(env, {
+      moneda_precio: moneda,
+      precio_bs: cambios.precio_bs ?? actual.precio_bs ?? undefined,
+      precio_venta: cambios.precio_venta ?? actual.precio_venta,
+      control_por_cantidad: 0,
+    });
+  } else if (precioActualEnBs) {
+    delete cambios.precio_venta;
+  }
+
   // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
   const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url', 'prefijo_codigo'];
   if (cambiaControl) permitidos.push('control_por_cantidad');
   if (sesion.rol !== 'encargado') permitidos.push('precio_compra');
   const columnas: string[] = [];
   const valores: unknown[] = [];
+  if (precioNuevo) {
+    columnas.push('precio_venta = ?', 'moneda_precio = ?', 'precio_bs = ?');
+    valores.push(precioNuevo.precio_venta, precioNuevo.moneda_precio, precioNuevo.precio_bs);
+  }
   for (const campo of permitidos) {
     if (cambios[campo] === undefined) continue;
+    if (precioNuevo && campo === 'precio_venta') continue;
     const valor = cambios[campo];
     columnas.push(`${campo} = ?`);
     valores.push(campo === 'prefijo_codigo' ? prefijoIndicado(String(valor)) : typeof valor === 'string' ? valor.trim() : typeof valor === 'number' && campo.startsWith('precio') ? redondear2(valor) : valor);
@@ -307,6 +367,74 @@ export async function eliminarProductosLote(
   };
 }
 
+/** Máximo de productos que cambian de precio en una sola petición de «Cambiar precios en lote». */
+const LIMITE_PRECIOS_LOTE = 3000;
+/** Ids por sentencia UPDATE (D1 admite ~100 parámetros por sentencia; 3 son del precio). */
+const IDS_POR_SENTENCIA = 90;
+
+export interface CambioPreciosLote {
+  ids: string[];
+  moneda: MonedaPrecio;
+  /** Dólares si `moneda` es USD; bolívares si es BS. */
+  precio: number;
+}
+
+/**
+ * Pone el MISMO precio a muchos productos de una vez (administrador y gerente): por ejemplo todos los vidrios a Bs 1100 cuando el
+ * cliente cambia el precio de la semana. En bolívares el precio queda fijo (no sigue a la tasa) y el equivalente en dólares sale de la
+ * tasa de hoy; en dólares se quita el precio fijo en Bs. Todo o nada, en un solo lote. Los ids desconocidos se ignoran.
+ */
+export async function cambiarPreciosLote(env: Entorno, sesion: Sesion, datos: CambioPreciosLote): Promise<{ actualizados: number; precio_venta: number }> {
+  exigirGlobal(sesion);
+  await alcanceDe(env, sesion);
+  if (!esMonedaPrecio(datos.moneda)) throw new ErrorApi(400, 'La moneda del precio debe ser USD o BS.', 'datos_invalidos');
+  const unicos = [...new Set(datos.ids)];
+  if (unicos.length === 0) throw new ErrorApi(400, 'Elige al menos un producto.', 'datos_invalidos');
+  if (unicos.length > LIMITE_PRECIOS_LOTE) throw new ErrorApi(400, `Se pueden cambiar hasta ${LIMITE_PRECIOS_LOTE} productos por vez.`, 'lote_grande');
+
+  let precioVenta: number;
+  let precioBs: number | null;
+  if (datos.moneda === 'BS') {
+    const mensaje = errorPrecioBs(datos.precio);
+    if (mensaje) throw new ErrorApi(400, mensaje, 'precio_bs_invalido');
+    const tasa = await tasaVigente(env);
+    if (!tasa) throw new ErrorApi(409, SIN_TASA, 'sin_tasa');
+    precioBs = normalizarPrecioBs(datos.precio);
+    precioVenta = usdDesdeBs(precioBs, tasa);
+  } else {
+    if (!Number.isFinite(datos.precio) || datos.precio < 0) throw new ErrorApi(400, 'El precio debe ser un número mayor o igual a 0.', 'datos_invalidos');
+    precioVenta = redondear2(datos.precio);
+    precioBs = null;
+  }
+
+  // Un producto por cantidad no puede costar $3 o más: si alguno de los elegidos lo es, no se cambia nada
+  if (errorPrecioPorCantidad(precioVenta)) {
+    for (let i = 0; i < unicos.length; i += IDS_POR_SENTENCIA) {
+      const trozo = unicos.slice(i, i + IDS_POR_SENTENCIA);
+      const fila = await env.DB
+        .prepare(`SELECT nombre FROM productos WHERE control_por_cantidad = 1 AND id IN (${trozo.map(() => '?').join(', ')}) LIMIT 1`)
+        .bind(...trozo)
+        .first<{ nombre: string }>();
+      if (fila) {
+        throw new ErrorApi(409, `«${fila.nombre}» se controla por cantidad y solo puede costar menos de $3 (este precio equivale a $${precioVenta}). No se cambió ningún precio.`, 'precio_no_permitido');
+      }
+    }
+  }
+
+  const sentencias: D1PreparedStatement[] = [];
+  for (let i = 0; i < unicos.length; i += IDS_POR_SENTENCIA) {
+    const trozo = unicos.slice(i, i + IDS_POR_SENTENCIA);
+    sentencias.push(
+      env.DB
+        .prepare(`UPDATE productos SET precio_venta = ?, moneda_precio = ?, precio_bs = ? WHERE id IN (${trozo.map(() => '?').join(', ')})`)
+        .bind(precioVenta, datos.moneda, precioBs, ...trozo)
+    );
+  }
+  const resultados = await env.DB.batch([...sentencias, ...sentenciasCambio(env.DB, ['productos'], null)]);
+  const actualizados = resultados.slice(0, sentencias.length).reduce((suma, r) => suma + (r.meta.changes ?? 0), 0);
+  return { actualizados, precio_venta: precioVenta };
+}
+
 /** Importador CSV: crea productos nuevos (solo administrador y gerente). Hasta 100 por petición; todo o nada. */
 export async function crearProductosLote(env: Entorno, sesion: Sesion, filas: DatosProducto[]): Promise<{ id: string; codigo_barras: string }[]> {
   exigirGlobal(sesion);
@@ -342,13 +470,14 @@ async function insertarProductosNuevos(env: Entorno, sesion: Sesion, filas: Dato
     f,
   }));
   const ahora = ahoraISO();
+  const precios = await Promise.all(filas.map((f) => resolverPrecio(env, f)));
   try {
     await env.DB.batch(
-      creados.map(({ id, codigo_barras, prefijo, referencia, f }) =>
+      creados.map(({ id, codigo_barras, prefijo, referencia, f }, i) =>
         env.DB
-          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+          .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, moneda_precio, precio_bs, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           // El encargado no ve ni fija el precio de compra
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), redondear2(f.precio_venta ?? 0), f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, f.control_por_cantidad === 1 ? 1 : 0, ahora)
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), precios[i].precio_venta, precios[i].moneda_precio, precios[i].precio_bs, f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, f.control_por_cantidad === 1 ? 1 : 0, ahora)
       )
     );
   } catch (err) {
@@ -363,6 +492,8 @@ export interface FilaAltaRapida {
   nombre: string;
   categoria: string;
   precio_venta: number;
+  moneda_precio?: MonedaPrecio;
+  precio_bs?: number | null;
   /** Solo lo toman administrador y gerente; para el encargado se guarda 0 */
   precio_compra?: number;
   /** Si no se indica se sugiere por la marca del nombre o la categoría */
@@ -397,6 +528,8 @@ export async function crearProductosRapidos(env: Entorno, sesion: Sesion, filas:
       nombre: f.nombre,
       categoria: f.categoria,
       precio_venta: f.precio_venta,
+      moneda_precio: f.moneda_precio,
+      precio_bs: f.precio_bs,
       precio_compra: f.precio_compra,
       stock_minimo: 0,
       prefijo_codigo: f.prefijo_codigo?.trim() ? f.prefijo_codigo : undefined,

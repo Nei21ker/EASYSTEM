@@ -46,6 +46,7 @@ const claseSelect =
           <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
           <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
           <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
+          <button id="pr-cambiar-precios" type="button" class={claseBotonAdmin} title="Poner el mismo precio (en $ o fijo en Bs) a muchos productos de una vez">Cambiar precios</button>
           <button id="pr-seleccionar" type="button" class={claseBotonAdmin} title="Elegir productos para eliminarlos (por ejemplo, los de un ingreso equivocado)">Seleccionar</button>
           <!-- Ingreso de mercancía (producto nuevo, entradas de stock y etiquetas): módulo propio -->
           <a
@@ -155,12 +156,54 @@ const claseSelect =
   <CamaraEscaner />
   <FormularioProducto />
   <ImportadorCsv />
+
+  <!-- Cambiar el precio de muchos productos a la vez (administrador y gerente) -->
+  <dialog
+    id="pr-precios-dialogo"
+    class="anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] max-h-[92dvh] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+  >
+    <form id="pr-precios-form" class="space-y-4 p-5" novalidate>
+      <div>
+        <h2 class="text-base font-semibold">Cambiar precios en lote</h2>
+        <p id="pr-precios-alcance" class="mt-1 text-sm text-slate-600 dark:text-slate-300"></p>
+      </div>
+
+      <fieldset id="pr-precios-opciones" class="hidden space-y-1 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
+        <label class="flex items-center gap-2"><input type="radio" name="pr-precios-alcance" value="seleccion" checked /> <span id="pr-precios-txt-seleccion"></span></label>
+        <label class="flex items-center gap-2"><input type="radio" name="pr-precios-alcance" value="lista" /> <span id="pr-precios-txt-lista"></span></label>
+      </fieldset>
+
+      <div>
+        <div class="flex items-center justify-between gap-2">
+          <label for="pr-precios-valor" id="pr-precios-etiqueta" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nuevo precio de venta (Bs, fijo)</label>
+          <div role="group" aria-label="Moneda del precio" class="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
+            <button type="button" id="pr-precios-usd" aria-pressed="false" class="px-2.5 py-1">$</button>
+            <button type="button" id="pr-precios-bs" aria-pressed="true" class="border-l border-slate-200 px-2.5 py-1 dark:border-slate-700">Bs</button>
+          </div>
+        </div>
+        <input id="pr-precios-valor" type="text" inputmode="decimal" autocomplete="off" placeholder="1100" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-3 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white sm:py-2.5 sm:text-sm" />
+        <p id="pr-precios-vista" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+
+      <p class="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-500/10 dark:text-sky-300">
+        En bolívares el precio queda <strong>fijo</strong>: no sube ni baja con el dólar y se cambia solo cuando haces esto de nuevo. Lo que ya está vendido no cambia.
+      </p>
+
+      <p id="pr-precios-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+
+      <div class="flex justify-end gap-2">
+        <button type="button" id="pr-precios-cancelar" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Cancelar</button>
+        <button type="submit" id="pr-precios-aplicar" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-50">Cambiar precios</button>
+      </div>
+    </form>
+  </dialog>
 </DashboardLayout>
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, esGlobal } from '../../lib/auth';
-  import { formatearMoneda, htmlPrecioDual } from '../../utils/format';
+  import { formatearBolivares, formatearMoneda, htmlPrecioDual, parsearMonto } from '../../utils/format';
+  import { errorPrecioBs, PRECIO_BS_MAXIMO, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
   import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
@@ -191,7 +234,7 @@ const claseSelect =
   // Precio de compra e importar CSV: administrador y gerente. Editar productos e ir al ingreso de mercancía: también el encargado.
   const COLUMNAS_COSTO = ['pr-th-costo', 'pr-col-costo'];
   const COLUMNAS_ACCIONES = ['pr-th-acciones', 'pr-col-acciones'];
-  const BOTONES_ADMIN = ['pr-importar', 'pr-seleccionar'];
+  const BOTONES_ADMIN = ['pr-importar', 'pr-cambiar-precios', 'pr-seleccionar'];
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
@@ -289,7 +332,7 @@ const claseSelect =
             ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
             : ''
         }
-        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</td>
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get(), '', tienePrecioEnBs(p) ? p.precio_bs! : null)}${tienePrecioEnBs(p) ? '<span class="block text-[10px] font-semibold uppercase text-sky-600 dark:text-sky-400">Bs fijo</span>' : ''}</td>
         <td data-label="Stock" class="px-4 py-3"><div class="text-left">${pildoraStock(p)}${desgloseStock(p)}</div></td>
         ${
           puedeEntradas
@@ -445,6 +488,108 @@ const claseSelect =
     if (casilla.checked) seleccion.add(casilla.dataset.sel!);
     else seleccion.delete(casilla.dataset.sel!);
     pintarBarraSeleccion(filtrar());
+  });
+
+  // --- Cambiar precios en lote (administrador y gerente) ---------------------------------
+  const dlgPrecios = $<HTMLDialogElement>('pr-precios-dialogo');
+  const campoPrecioLote = $<HTMLInputElement>('pr-precios-valor');
+  const errorPrecioLote = $('pr-precios-error');
+  const botonAplicarPrecios = $<HTMLButtonElement>('pr-precios-aplicar');
+  let monedaLote: MonedaPrecio = 'BS';
+  let aplicandoPrecios = false;
+
+  /** A qué productos se aplica: los marcados (si hay) o todos los de la lista que se ve (categoría + búsqueda). */
+  function destinoPrecios(): { ids: string[]; texto: string } {
+    const lista = filtrar();
+    const elegirSeleccion = modoSeleccion && seleccion.size > 0 && (document.querySelector<HTMLInputElement>('input[name="pr-precios-alcance"]:checked')?.value ?? 'seleccion') === 'seleccion';
+    if (elegirSeleccion) return { ids: [...seleccion], texto: `${seleccion.size} producto${seleccion.size === 1 ? '' : 's'} marcado${seleccion.size === 1 ? '' : 's'}` };
+    const filtros = [categoriaActiva ? `categoría «${categoriaActiva}»` : '', buscador.value.trim() ? `búsqueda «${buscador.value.trim()}»` : ''].filter(Boolean);
+    return { ids: lista.map((p) => p.id), texto: `${lista.length} producto${lista.length === 1 ? '' : 's'} de la lista${filtros.length ? ` (${filtros.join(' · ')})` : ' (todo el catálogo)'}` };
+  }
+
+  function pintarPreciosLote() {
+    for (const [id, activo] of [['pr-precios-usd', monedaLote === 'USD'], ['pr-precios-bs', monedaLote === 'BS']] as const) {
+      const boton = $(id);
+      boton.setAttribute('aria-pressed', String(activo));
+      boton.className = `${id === 'pr-precios-bs' ? 'border-l border-slate-200 dark:border-slate-700 ' : ''}px-2.5 py-1 ${activo ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300'}`;
+    }
+    $('pr-precios-etiqueta').textContent = monedaLote === 'BS' ? 'Nuevo precio de venta (Bs, fijo)' : 'Nuevo precio de venta ($)';
+    campoPrecioLote.placeholder = monedaLote === 'BS' ? '1100' : '0,00';
+
+    const destino = destinoPrecios();
+    $('pr-precios-alcance').textContent = destino.ids.length === 0 ? 'No hay productos en la lista: ajusta la categoría o la búsqueda.' : `Se cambiará el precio de ${destino.texto}.`;
+    const hayMarcados = modoSeleccion && seleccion.size > 0;
+    $('pr-precios-opciones').classList.toggle('hidden', !hayMarcados);
+    $('pr-precios-txt-seleccion').textContent = `Solo los ${seleccion.size} marcados`;
+    $('pr-precios-txt-lista').textContent = `Todos los ${filtrar().length} de la lista`;
+
+    const valor = parsearMonto(campoPrecioLote.value);
+    const tasa = tasaActual.get();
+    const vista = $('pr-precios-vista');
+    if (valor === null || !(valor >= 0)) vista.textContent = '';
+    else if (monedaLote === 'BS') vista.textContent = tasa ? `Hoy equivale a ${formatearMoneda(usdDesdeBs(valor, tasa))} (tasa ${formatearBolivares(tasa)}). Si la tasa cambia, el precio en Bs no.` : 'Falta registrar la tasa del día para fijar precios en Bs.';
+    else vista.textContent = tasa ? `Equivale a ${formatearBolivares(Math.round(valor * tasa * 100) / 100)} con la tasa de hoy.` : '';
+  }
+
+  function abrirPreciosLote() {
+    errorPrecioLote.classList.add('hidden');
+    campoPrecioLote.value = '';
+    pintarPreciosLote();
+    dlgPrecios.showModal();
+    campoPrecioLote.focus();
+  }
+  $('pr-cambiar-precios').addEventListener('click', abrirPreciosLote);
+  $('pr-precios-cancelar').addEventListener('click', () => {
+    if (!aplicandoPrecios) dlgPrecios.close();
+  });
+  dlgPrecios.addEventListener('cancel', (e) => {
+    if (aplicandoPrecios) e.preventDefault();
+  });
+  campoPrecioLote.addEventListener('input', pintarPreciosLote);
+  for (const radio of document.querySelectorAll('input[name="pr-precios-alcance"]')) radio.addEventListener('change', pintarPreciosLote);
+  for (const [id, valor] of [['pr-precios-usd', 'USD'], ['pr-precios-bs', 'BS']] as const) {
+    $(id).addEventListener('click', () => {
+      monedaLote = valor;
+      pintarPreciosLote();
+    });
+  }
+
+  $('pr-precios-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (aplicandoPrecios) return;
+    const falla = (texto: string) => {
+      errorPrecioLote.textContent = texto;
+      errorPrecioLote.classList.remove('hidden');
+    };
+    errorPrecioLote.classList.add('hidden');
+    const destino = destinoPrecios();
+    if (destino.ids.length === 0) return falla('No hay productos a los que aplicar el precio.');
+    const valor = parsearMonto(campoPrecioLote.value);
+    if (valor === null) return falla('Escribe el precio (por ejemplo 1100).');
+    if (monedaLote === 'BS') {
+      const mensaje = errorPrecioBs(valor);
+      if (mensaje) return falla(mensaje);
+      if (valor > PRECIO_BS_MAXIMO) return falla('El precio en bolívares es demasiado grande.');
+    } else if (!(valor >= 0)) return falla('El precio no es válido.');
+
+    const textoPrecio = monedaLote === 'BS' ? formatearBolivares(valor) : formatearMoneda(valor);
+    if (!confirm(`Vas a poner ${textoPrecio}${monedaLote === 'BS' ? ' (precio fijo en bolívares)' : ''} a ${destino.texto}.\n\nEl precio anterior de cada uno se pierde. ¿Continuar?`)) return;
+
+    aplicandoPrecios = true;
+    botonAplicarPrecios.disabled = true;
+    botonAplicarPrecios.textContent = 'Cambiando...';
+    try {
+      const r = await inventoryService.cambiarPreciosLote(destino.ids, monedaLote, valor);
+      dlgPrecios.close();
+      mostrarMensaje(`Listo: ${r.actualizados} producto${r.actualizados === 1 ? '' : 's'} con precio ${textoPrecio}${monedaLote === 'BS' ? ' fijo' : ''}.`, true);
+      await recargarProductos();
+    } catch (err) {
+      falla(err instanceof Error ? err.message : 'No se pudieron cambiar los precios.');
+    } finally {
+      aplicandoPrecios = false;
+      botonAplicarPrecios.disabled = false;
+      botonAplicarPrecios.textContent = 'Cambiar precios';
+    }
   });
 
   $('pr-eliminar').addEventListener('click', async () => {

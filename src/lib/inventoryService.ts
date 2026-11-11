@@ -47,6 +47,7 @@ import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
+import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
@@ -1230,6 +1231,26 @@ function exigirPrecioPorCantidad(precioVenta: number): void {
   if (mensaje) throw new Error(mensaje);
 }
 
+/** Última tasa registrada en la demo (la lista guarda la más nueva primero); null si no hay. */
+function tasaDeLaDemo(db: LocalDB): number | null {
+  const tasa = db.tasas?.[0]?.tasa;
+  return tasa && tasa > 0 ? tasa : null;
+}
+
+/** Demo: decide el precio que se guarda (en $ o fijo en Bs), con las mismas reglas del servidor. */
+function resolverPrecioDemo(db: LocalDB, d: { moneda_precio?: MonedaPrecio; precio_bs?: number | null; precio_venta?: number }): { precio_venta: number; moneda_precio: MonedaPrecio; precio_bs: number | null } {
+  if (d.moneda_precio !== undefined && !esMonedaPrecio(d.moneda_precio)) throw new Error('La moneda del precio debe ser USD o BS.');
+  if (d.moneda_precio === 'BS') {
+    const mensaje = errorPrecioBs(d.precio_bs ?? Number.NaN);
+    if (mensaje) throw new Error(mensaje);
+    const tasa = tasaDeLaDemo(db);
+    if (!tasa) throw new Error('Para fijar un precio en bolívares primero hay que registrar la tasa del dólar del día (chip «$1 = Bs.» arriba).');
+    const bs = normalizarPrecioBs(d.precio_bs!);
+    return { precio_venta: usdDesdeBs(bs, tasa), moneda_precio: 'BS', precio_bs: bs };
+  }
+  return { precio_venta: Math.round((d.precio_venta ?? 0) * 100) / 100, moneda_precio: 'USD', precio_bs: null };
+}
+
 export async function crearProducto(
   input: Partial<Producto> & Pick<Producto, 'codigo_barras' | 'nombre' | 'categoria'>
 ): Promise<Producto> {
@@ -1247,16 +1268,17 @@ export async function crearProducto(
     throw new Error(`Ya existe un producto con el código de barras ${input.codigo_barras}.`);
   }
   exigirNombreLibreLocal(db.productos, [input.nombre]);
-  if (input.control_por_cantidad) exigirPrecioPorCantidad(input.precio_venta ?? 0);
+  const precio = resolverPrecioDemo(db, input);
+  if (input.control_por_cantidad) exigirPrecioPorCantidad(precio.precio_venta);
 
   const producto: Producto = {
     id: generarId(),
     precio_compra: 0,
-    precio_venta: 0,
     stock_actual: 0,
     stock_minimo: 5,
     created_at: new Date().toISOString(),
     ...input,
+    ...precio,
     control_por_cantidad: input.control_por_cantidad ? 1 : 0,
   };
   producto.prefijo_codigo = input.prefijo_codigo ? prefijoValidoODemo(input.prefijo_codigo) : undefined;
@@ -1294,6 +1316,8 @@ export async function crearProductosRapidos(filas: FilaAltaRapida[]): Promise<Pr
       nombre: f.nombre.trim(),
       categoria: f.categoria.trim(),
       precio_venta: f.precio_venta,
+      moneda_precio: f.moneda_precio,
+      precio_bs: f.precio_bs,
       precio_compra: f.precio_compra ?? 0,
       stock_minimo: 0,
       prefijo_codigo: f.prefijo_codigo?.trim() || undefined,
@@ -1339,6 +1363,20 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   } else {
     delete cambios.control_por_cantidad;
   }
+  // Precio: en dólares o fijo en Bs. Un producto con precio en Bs no cambia por un `precio_venta` suelto (pantalla vieja o importador CSV)
+  if (cambios.moneda_precio !== undefined || cambios.precio_bs !== undefined) {
+    const moneda: MonedaPrecio = cambios.moneda_precio ?? (producto.moneda_precio === 'BS' ? 'BS' : 'USD');
+    const precio = resolverPrecioDemo(db, {
+      moneda_precio: moneda,
+      precio_bs: cambios.precio_bs ?? producto.precio_bs ?? undefined,
+      precio_venta: cambios.precio_venta ?? producto.precio_venta,
+    });
+    cambios.precio_venta = precio.precio_venta;
+    cambios.moneda_precio = precio.moneda_precio;
+    cambios.precio_bs = precio.precio_bs;
+  } else if (producto.moneda_precio === 'BS') {
+    delete cambios.precio_venta;
+  }
   Object.assign(producto, cambios);
   if (localId && cambios.stock_minimo !== undefined) {
     const fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === id);
@@ -1347,6 +1385,29 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
   }
   guardarDB(db);
   return producto;
+}
+
+/**
+ * Pone el mismo precio (en $ o fijo en Bs) a muchos productos de una vez (administrador y gerente). En bolívares el precio no sigue a la
+ * tasa; su equivalente en dólares sale de la tasa de hoy. Todo o nada. Mismas reglas en modo servidor y en modo demo.
+ */
+export async function cambiarPreciosLote(ids: string[], moneda: MonedaPrecio, precio: number): Promise<{ actualizados: number; precio_venta: number }> {
+  if (modoServidor) return productosDb.cambiarPreciosLote(ids, moneda, precio);
+
+  if (!esGlobal((await obtenerSesionActual())?.rol)) throw new Error('Tu rol no tiene permiso para hacer esto.');
+  const unicos = new Set(ids);
+  if (unicos.size === 0) throw new Error('Elige al menos un producto.');
+  const db = leerDB();
+  if (moneda !== 'BS' && (!Number.isFinite(precio) || precio < 0)) throw new Error('El precio debe ser un número mayor o igual a 0.');
+  const nuevo = resolverPrecioDemo(db, { moneda_precio: moneda, precio_bs: moneda === 'BS' ? precio : null, precio_venta: precio });
+  const elegidos = db.productos.filter((p) => unicos.has(p.id));
+  const porCantidad = elegidos.find((p) => p.control_por_cantidad);
+  if (porCantidad && errorPrecioPorCantidad(nuevo.precio_venta)) {
+    throw new Error(`«${porCantidad.nombre}» se controla por cantidad y solo puede costar menos de $3 (este precio equivale a $${nuevo.precio_venta}). No se cambió ningún precio.`);
+  }
+  for (const p of elegidos) Object.assign(p, nuevo);
+  guardarDB(db);
+  return { actualizados: elegidos.length, precio_venta: nuevo.precio_venta };
 }
 
 /** Como guardarDB, pero avisa si no cabe (las fotos en base64 pueden llenar el cupo del navegador). */
@@ -1547,6 +1608,10 @@ export async function registrarTasa(tasa: number, registradoNombre?: string): Pr
     const db = leerDB();
     guardada = { ...nueva, id: generarId(), created_at: new Date().toISOString() };
     (db.tasas ?? (db.tasas = [])).unshift(guardada);
+    // Los productos con precio fijo en bolívares cambian su equivalente en dólares con la tasa nueva
+    for (const p of db.productos) {
+      if (p.moneda_precio === 'BS' && (p.precio_bs ?? 0) > 0) p.precio_venta = usdDesdeBs(p.precio_bs!, guardada.tasa);
+    }
     guardarDB(db);
   } else {
     try {

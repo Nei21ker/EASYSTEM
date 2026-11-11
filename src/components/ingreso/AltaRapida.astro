@@ -38,7 +38,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <input id="ar-cantidad" type="number" inputmode="numeric" min="0" max="999" step="1" value="1" enterkeyhint="next" class={claseCampo} />
         </div>
         <div>
-          <label for="ar-precio" class={claseEtiqueta}>Precio venta ($)</label>
+          <div class="flex items-center justify-between gap-2">
+            <label for="ar-precio" id="ar-precio-etiqueta" class={claseEtiqueta}>Precio venta ($)</label>
+            <div role="group" aria-label="Moneda del precio de venta" class="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
+              <button type="button" id="ar-moneda-usd" aria-pressed="true" class="px-2.5 py-1">$</button>
+              <button type="button" id="ar-moneda-bs" aria-pressed="false" class="border-l border-slate-200 px-2.5 py-1 dark:border-slate-700">Bs</button>
+            </div>
+          </div>
           <input id="ar-precio" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="0,00" class={claseCampo} />
         </div>
         <div id="ar-grupo-compra">
@@ -46,6 +52,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <input id="ar-compra" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="next" placeholder="0,00" class={claseCampo} />
         </div>
       </div>
+      <p id="ar-aviso-bs" class="-mt-2 hidden rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-500/10 dark:text-sky-300">
+        <strong>Precio fijo en bolívares:</strong> no sigue al dólar; lo cambias tú a mano (en Productos → «Cambiar precios en lote» se cambia el de muchos de una vez). Tampoco sirve para productos por cantidad.
+      </p>
       <p id="ar-prefijo-ayuda" class="-mt-2 text-xs text-slate-400">
         El prefijo (2 a 4 letras) arma el código de cada pieza: CTL → CTL000001. Vacío = el sistema lo sugiere por la marca o la categoría.
       </p>
@@ -69,7 +78,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           placeholder={'Control A/C Samsung\nControl A/C LG x3\nControl convertidor Roku $12'}
           class={`${claseCampo} font-mono leading-relaxed`}></textarea>
         <p class="mt-1 text-xs text-slate-400">
-          Al final de una línea puedes poner <strong>x3</strong> (cuántas unidades entran) y/o <strong>$12</strong> (su precio, si es distinto). Repetir un nombre suma las cantidades; lo que ya existe no se duplica: solo se agrega al lote.
+          Al final de una línea puedes poner <strong>x3</strong> (cuántas unidades entran) y/o <strong id="ar-ejemplo-precio">$12</strong> (su precio, si es distinto). Repetir un nombre suma las cantidades; lo que ya existe no se duplica: solo se agrega al lote.
         </p>
       </div>
 
@@ -104,6 +113,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esPrefijoValido } from '../../utils/codigos';
   import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
   import { leerPrecio, normalizarNombre, parsearAltaRapida, problemaDeAlta, MAX_LINEAS_ALTA } from '../../utils/altaRapida';
+  import { PRECIO_BS_MAXIMO, type MonedaPrecio } from '../../utils/precioBs';
   import { reanimar } from '../../utils/animaciones';
   import type { FilaAltaRapida, ProductoConRelaciones } from '../../types/database.types';
 
@@ -131,6 +141,26 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let porNombre = new Map<string, ProductoConRelaciones>();
   let veCosto = false;
   let ocupado = false;
+  let moneda: MonedaPrecio = 'USD';
+
+  const botonUsd = $<HTMLButtonElement>('ar-moneda-usd');
+  const botonBs = $<HTMLButtonElement>('ar-moneda-bs');
+  const maximoPrecio = () => (moneda === 'BS' ? PRECIO_BS_MAXIMO : 100000);
+
+  /** Marca la moneda elegida y ajusta etiqueta, ejemplo y avisos (sin tocar lo que ya se escribió). */
+  function pintarMoneda() {
+    for (const [boton, activo] of [[botonUsd, moneda === 'USD'], [botonBs, moneda === 'BS']] as const) {
+      boton.setAttribute('aria-pressed', String(activo));
+      boton.className = `${boton === botonBs ? 'border-l border-slate-200 dark:border-slate-700 ' : ''}px-2.5 py-1 ${activo ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300'}`;
+    }
+    $('ar-precio-etiqueta').textContent = moneda === 'BS' ? 'Precio venta (Bs, fijo)' : 'Precio venta ($)';
+    $('ar-ejemplo-precio').textContent = moneda === 'BS' ? 'Bs1100' : '$12';
+    campoPrecio.placeholder = moneda === 'BS' ? '1100' : '0,00';
+    $('ar-aviso-bs').classList.toggle('hidden', moneda !== 'BS');
+    // Un producto por cantidad cuesta menos de $3: no se mezcla con un precio fijo en Bs
+    campoPorCantidad.disabled = moneda === 'BS';
+    if (moneda === 'BS') campoPorCantidad.checked = false;
+  }
 
   const escapar = (t: string) => {
     const d = document.createElement('div');
@@ -142,7 +172,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     try {
       localStorage.setItem(
         LS,
-        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, compra: campoCompra.value, texto: campoTexto.value, porCantidad: campoPorCantidad.checked ? '1' : '' })
+        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, moneda, compra: campoCompra.value, texto: campoTexto.value, porCantidad: campoPorCantidad.checked ? '1' : '' })
       );
     } catch {
       /* sin almacenamiento: no se recuerda nada */
@@ -157,6 +187,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campoPrefijo.value = b.prefijo ?? '';
       campoCantidad.value = b.cantidad ?? '1';
       campoPrecio.value = b.precio ?? '';
+      moneda = b.moneda === 'BS' ? 'BS' : 'USD';
       campoCompra.value = b.compra ?? '';
       campoTexto.value = b.texto ?? '';
       campoPorCantidad.checked = b.porCantidad === '1';
@@ -173,7 +204,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   function defectos() {
     const cantidad = Math.floor(Number(campoCantidad.value));
-    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecio(campoPrecio.value) : null };
+    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecio(campoPrecio.value, maximoPrecio()) : null, maximoPrecio: maximoPrecio() };
   }
 
   function pintarVista(limpiarError = true) {
@@ -194,7 +225,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           : existe
             ? '<span class="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-800 dark:bg-amber-500/20 dark:text-amber-300">Ya existe: se suma al lote</span>'
             : '<span class="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">Nuevo</span>';
-        const detalle = l.error ? '' : `<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${l.cantidad} u.${!existe && l.precio !== null ? ` · $${l.precio}` : ''}</span>`;
+        const detalle = l.error ? '' : `<span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${l.cantidad} u.${!existe && l.precio !== null ? ` · ${moneda === 'BS' ? 'Bs ' : '$'}${l.precio}` : ''}</span>`;
         return `<li class="flex flex-col gap-1 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
           <span class="min-w-0 break-words font-medium">${escapar(l.nombre) || '<em class="text-slate-400">(vacío)</em>'}</span>
           <span class="flex shrink-0 items-center gap-2">${detalle}${etiqueta}</span>
@@ -213,6 +244,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const categorias = [...new Set([...CATEGORIAS_BASE, ...catalogo.map((p) => p.categoria)])].sort();
     $('ar-categorias').innerHTML = categorias.map((c) => `<option value="${escapar(c)}"></option>`).join('');
     leerBorrador();
+    pintarMoneda();
     error.classList.add('hidden');
     pintarVista();
     if (!dialogo.open) dialogo.showModal();
@@ -241,6 +273,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   });
   for (const campo of [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto]) campo.addEventListener('input', () => pintarVista());
   campoPorCantidad.addEventListener('change', () => pintarVista());
+  for (const [boton, valor] of [[botonUsd, 'USD'], [botonBs, 'BS']] as const) {
+    boton.addEventListener('click', () => {
+      moneda = valor;
+      pintarMoneda();
+      pintarVista();
+    });
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -259,7 +298,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (problema) return mostrarError(problema);
 
     const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
-    if (campoPorCantidad.checked) {
+    if (campoPorCantidad.checked && moneda === 'USD') {
       const cara = aCrear.find((l) => errorPrecioPorCantidad(l.precio ?? 0));
       if (cara) return mostrarError(`«${cara.nombre}»: ${errorPrecioPorCantidad(cara.precio ?? 0)}`);
     }
@@ -275,7 +314,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       const filas: FilaAltaRapida[] = aCrear.map((l) => ({
         nombre: l.nombre,
         categoria,
-        precio_venta: l.precio ?? 0,
+        // En bolívares el precio es fijo (`precio_bs`); el servidor calcula el equivalente en dólares con la tasa de hoy
+        ...(moneda === 'BS' ? { moneda_precio: 'BS' as const, precio_bs: l.precio ?? 0, precio_venta: 0 } : { precio_venta: l.precio ?? 0 }),
         precio_compra: compra ?? 0,
         prefijo_codigo: prefijo || undefined,
         ...(campoPorCantidad.checked ? { control_por_cantidad: 1 } : {}),

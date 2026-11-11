@@ -14,6 +14,8 @@ export interface DefectosAlta {
   cantidad: number;
   /** Precio de venta cuando la línea no trae "$P" (null = no se escribió: cada línea debe traer el suyo) */
   precio: number | null;
+  /** Tope de un precio (por defecto 100.000; en bolívares es mayor). */
+  maximoPrecio?: number;
 }
 
 export interface LineaAlta {
@@ -37,16 +39,16 @@ export function normalizarNombre(texto: string): string {
 }
 
 /** Un precio escrito a la venezolana o a la gringa ("12,50" / "12.50" / "12"), o null si no es un monto válido. */
-export function leerPrecio(texto: string): number | null {
+export function leerPrecio(texto: string, maximo = 100000): number | null {
   const limpio = texto.trim().replace(',', '.');
   if (!/^\d+(\.\d{1,2})?$/.test(limpio)) return null;
   const valor = Number(limpio);
-  return Number.isFinite(valor) && valor <= 100000 ? valor : null;
+  return Number.isFinite(valor) && valor <= maximo ? valor : null;
 }
 
-// Lo que puede venir al FINAL de la línea, separado por espacio: x5 / ×5 / *5 (cantidad) o $8 / $8,50 (precio)
+// Lo que puede venir al FINAL de la línea, separado por espacio: x5 / ×5 / *5 (cantidad) o $8 / $8,50 / Bs1100 (precio)
 const FINAL_CANTIDAD = /\s+[x×*]\s*(\d{1,4})$/i;
-const FINAL_PRECIO = /\s+\$\s*(\d+(?:[.,]\d{1,2})?)$/;
+const FINAL_PRECIO = /\s+(?:\$|bs\.?)\s*(\d+(?:[.,]\d{1,2})?)$/i;
 
 /**
  * Lee lo escrito y devuelve una fila por producto. Las líneas vacías se ignoran; si el mismo nombre aparece dos veces se junta en una
@@ -72,7 +74,7 @@ export function parsearAltaRapida(texto: string, defectos: DefectosAlta): LineaA
       }
       const p: RegExpExecArray | null = precio === null ? FINAL_PRECIO.exec(resto) : null;
       if (p) {
-        precio = leerPrecio(p[1]);
+        precio = leerPrecio(p[1], defectos.maximoPrecio);
         resto = resto.slice(0, p.index).trimEnd();
         continue;
       }

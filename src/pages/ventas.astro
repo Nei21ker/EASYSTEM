@@ -565,6 +565,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
+  import { tienePrecioEnBs } from '../utils/precioBs';
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura, reducirImagen } from '../utils/imagenes';
@@ -617,6 +618,27 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Lo que paga el cliente por la línea: producto + instalación */
   const totalLineaCarrito = (l: LineaCarrito): number => Math.round((precioDe(l) * l.cantidad + instalacionDe(l)) * 100) / 100;
   const totalDelCarrito = (): number => Math.round(carrito.reduce((suma, l) => suma + totalLineaCarrito(l), 0) * 100) / 100;
+  /** Precio fijo en Bs de un producto (null si su precio es en dólares) */
+  const bsFijoDe = (p: ProductoConRelaciones): number | null => (tienePrecioEnBs(p) ? p.precio_bs! : null);
+  /**
+   * Bs EXACTOS de una línea con precio fijo en bolívares (sin precio de promotor): el total en dólares se redondea a centavos y, con una
+   * tasa alta, cada centavo son varios bolívares (1100 Bs saldrían como 1.098). La instalación sigue en dólares y se convierte con la tasa.
+   */
+  const bsExactoDeLinea = (l: LineaCarrito, tasa: number | null): number | null => {
+    if (!tasa || l.precioPromotor !== undefined || !tienePrecioEnBs(l.producto)) return null;
+    return Math.round((l.producto.precio_bs! * l.cantidad + convertirABs(instalacionDe(l), tasa)) * 100) / 100;
+  };
+  /** Total del carrito en bolívares cuando alguna línea tiene precio fijo en Bs (null = el normal: total en $ × tasa) */
+  const totalBsExactoDelCarrito = (): number | null => {
+    const tasa = tasaActual.get();
+    if (!tasa || !carrito.some((l) => bsExactoDeLinea(l, tasa) !== null)) return null;
+    return Math.round(carrito.reduce((suma, l) => suma + (bsExactoDeLinea(l, tasa) ?? convertirABs(totalLineaCarrito(l), tasa)), 0) * 100) / 100;
+  };
+  /** El total en Bs que se muestra: el exacto si lo hay, o el del dólar × tasa */
+  const totalEnBsParaMostrar = (usd: number): number | null => {
+    const tasa = tasaActual.get();
+    return totalBsExactoDelCarrito() ?? (tasa ? convertirABs(usd, tasa) : null);
+  };
   /** El botón de instalación solo existe en el Local Vidrios */
   let instalacionDisponible = false;
   /** Datos del promotor que instala (cuando no hay un promotor del precio ya autorizado); viajan con la venta */
@@ -649,9 +671,9 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   /** "$5.00 · Bs. 182,50" (solo "$5.00" mientras no haya tasa). */
-  function precioEnLinea(usd: number): string {
+  function precioEnLinea(usd: number, bsFijo: number | null = null): string {
     const tasa = tasaActual.get();
-    return tasa ? `${formatearMoneda(usd)} · ${formatearBolivares(convertirABs(usd, tasa))}` : formatearMoneda(usd);
+    return tasa || bsFijo !== null ? `${formatearMoneda(usd)} · ${formatearBolivares(bsFijo ?? convertirABs(usd, tasa!))}` : formatearMoneda(usd);
   }
 
   function mostrarError(mensaje: string) {
@@ -740,7 +762,7 @@ import { alCambiarDatos } from '../lib/realtime';
               </p>
               <p class="mt-1 text-xs">
                 <span class="rounded-full px-2 py-0.5 font-medium ${estilosBadge[estado]}">${disponible} disponible${disponible === 1 ? '' : 's'}</span>
-                <span class="ml-1 text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta)}</span>
+                <span class="ml-1 text-slate-500 dark:text-slate-400">${precioEnLinea(producto.precio_venta, bsFijoDe(producto))}</span>
               </p>
             </div>
             <button
@@ -833,13 +855,13 @@ import { alCambiarDatos } from '../lib/realtime';
               ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio)} c/u</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio, linea.precioPromotor === undefined ? bsFijoDe(producto) : null)} c/u</p>
                 ${detallePrecio}
                 ${detalleInstalacion}
                 ${codigos}
                 ${esPorCantidad(producto) ? '<p class="mt-0.5 text-[11px] text-sky-700 dark:text-sky-400">Por cantidad: no se escanea cada pieza</p>' : ''}
               </div>
-              <span class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get())}</span>
+              <span class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(subtotal, tasaActual.get(), '', bsExactoDeLinea(linea, tasaActual.get()))}</span>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
               ${
@@ -867,8 +889,8 @@ import { alCambiarDatos } from '../lib/realtime';
       .join('');
 
     const total = totalDelCarrito();
-    const tasa = tasaActual.get();
-    const totalBs = tasa && carrito.length > 0 ? formatearBolivares(convertirABs(total, tasa)) : '';
+    const totalBsNumero = carrito.length > 0 ? totalEnBsParaMostrar(total) : null;
+    const totalBs = totalBsNumero !== null ? formatearBolivares(totalBsNumero) : '';
     totalEl.textContent = formatearMoneda(total);
     document.getElementById('pos-total-bs')!.textContent = totalBs;
 
@@ -1255,7 +1277,7 @@ import { alCambiarDatos } from '../lib/realtime';
 
   function pedirConfirmacionActualiza() {
     const tasaDia = tasaActual.get();
-    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(totalAConfirmar, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
+    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(totalEnBsParaMostrar(totalAConfirmar)!)} (tasa ${formatearBolivares(tasaDia)})` : '';
     formPagos.refrescar();
   }
 
@@ -1698,9 +1720,9 @@ import { alCambiarDatos } from '../lib/realtime';
     const total = totalDelCarrito();
     document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
     totalAConfirmar = total;
-    formPagos.establecerTotal(total);
+    formPagos.establecerTotal(total, totalBsExactoDelCarrito());
     const tasaDia = tasaActual.get();
-    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(convertirABs(total, tasaDia))} (tasa ${formatearBolivares(tasaDia)})` : '';
+    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(totalEnBsParaMostrar(total)!)} (tasa ${formatearBolivares(tasaDia)})` : '';
     document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
       .map(
         (linea) => `
@@ -2083,7 +2105,7 @@ import { alCambiarDatos } from '../lib/realtime';
               ${htmlMiniatura(p.imagen_url, p.nombre, 'h-10 w-10')}
               <span class="min-w-0 flex-1">
                 <span class="block break-words text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</span>
-                <span class="block break-words text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.categoria)} · ${precioEnLinea(p.precio_venta)}</span>
+                <span class="block break-words text-xs text-slate-500 dark:text-slate-400">${escaparHtml(p.categoria)} · ${precioEnLinea(p.precio_venta, bsFijoDe(p))}</span>
               </span>
               <span class="shrink-0 text-xs text-slate-500 dark:text-slate-400">${p.stock_actual} u.</span>
             </button>

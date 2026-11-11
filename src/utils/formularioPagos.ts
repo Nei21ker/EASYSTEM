@@ -37,6 +37,8 @@ const CLASE_MONTO =
 export class FormularioPagos {
   private filas: FilaPago[] = [{ metodo: '', monto: '' }];
   private total = 0;
+  /** Total en bolívares cuando el carrito tiene precios FIJOS en Bs (null = el total en dólares × tasa) */
+  private totalBs: number | null = null;
   private totalDeLasFilas = -1; // total con el que se armaron las filas (si cambia, se reinician)
   private darVuelto = false;
   private metodoVuelto: MetodoPago = 'USD_EFECTIVO';
@@ -97,8 +99,9 @@ export class FormularioPagos {
   }
 
   /** Fija el total a pagar. Si cambió desde la última vez, las filas se reinician. */
-  establecerTotal(usd: number) {
+  establecerTotal(usd: number, totalBs: number | null = null) {
     this.total = usd;
+    this.totalBs = totalBs;
     if (this.totalDeLasFilas !== usd) this.reiniciar();
     else this.pintar();
   }
@@ -133,6 +136,8 @@ export class FormularioPagos {
   /** Un monto en dólares expresado en la moneda de ese tipo de cobro, como texto para el campo. */
   private montoEnMoneda(usd: number, metodo: MetodoPago): string {
     if (!esMetodoBolivares(metodo)) return textoMonto(redondear(usd));
+    // Si lo que falta es el total completo y hay precios fijos en Bs, se propone el monto exacto en bolívares (no el del dólar redondeado)
+    if (this.totalBs !== null && Math.abs(usd - this.total) < 0.005) return textoMonto(this.totalBs);
     const tasa = tasaActual.get();
     return tasa ? textoMonto(redondear(usd * tasa)) : '';
   }

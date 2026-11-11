@@ -11,12 +11,16 @@ export const esquemaProducto = z.object({
   imagen_url: z.string().nullable().optional(),
   prefijo_codigo: z.string().optional(),
   control_por_cantidad: z.number().int().min(0).max(1).optional(),
+  moneda_precio: z.enum(['USD', 'BS']).optional(),
+  precio_bs: z.number().nullable().optional(),
 });
 
 export const esquemaProductoRapido = z.object({
   nombre: z.string(),
   categoria: z.string(),
   precio_venta: z.number(),
+  moneda_precio: z.enum(['USD', 'BS']).optional(),
+  precio_bs: z.number().nullable().optional(),
   precio_compra: z.number().optional(),
   prefijo_codigo: z.string().optional(),
   control_por_cantidad: z.number().int().min(0).max(1).optional(),

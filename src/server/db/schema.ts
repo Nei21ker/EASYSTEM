@@ -153,6 +153,8 @@ export const productos = sqliteTable('productos', {
   prefijo_codigo: text('prefijo_codigo').notNull().default('GEN'),
   referencia: text('referencia'),
   control_por_cantidad: integer('control_por_cantidad').notNull().default(0),
+  moneda_precio: text('moneda_precio').notNull().default('USD'),
+  precio_bs: real('precio_bs'),
   created_at: marca('created_at'),
 });
 

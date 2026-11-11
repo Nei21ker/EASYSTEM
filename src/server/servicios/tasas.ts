@@ -4,7 +4,14 @@ import { avisarCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { ahoraISO, nuevoId } from '../util';
+import { usdDesdeBs } from '../../utils/precioBs';
 import type { TasaCambio } from '../../types/database.types';
+
+/** Bolívares por $1 de la última tasa registrada (null si todavía no hay ninguna). Sin comprobar permisos: quien llama ya los comprobó. */
+export async function tasaVigente(env: Entorno): Promise<number | null> {
+  const fila = await env.DB.prepare('SELECT tasa FROM tasas_cambio ORDER BY created_at DESC, rowid DESC LIMIT 1').first<{ tasa: number }>();
+  return fila && fila.tasa > 0 ? fila.tasa : null;
+}
 
 export async function obtenerUltimaTasa(env: Entorno, sesion: Sesion): Promise<TasaCambio | null> {
   await alcanceDe(env, sesion); // acceso al catálogo (el contador no lo tiene)
@@ -29,11 +36,17 @@ export async function registrarTasa(
     registrado_nombre: datos.registrado_nombre ?? sesion.nombre,
     registrado_por: sesion.userId,
   };
-  await env.DB
-    .prepare('INSERT INTO tasas_cambio (id, fecha, tasa, created_at, registrado_por, registrado_nombre) VALUES (?, ?, ?, ?, ?, ?)')
-    .bind(fila.id, fila.fecha, fila.tasa, fila.created_at, fila.registrado_por, fila.registrado_nombre)
-    .run();
-  await avisarCambio(env.DB, ['tasas_cambio']);
+  // Los productos con precio FIJO en bolívares cambian su equivalente en dólares con la tasa nueva (en el mismo lote que la tasa)
+  const resultados = await env.DB.batch([
+    env.DB
+      .prepare('INSERT INTO tasas_cambio (id, fecha, tasa, created_at, registrado_por, registrado_nombre) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(fila.id, fila.fecha, fila.tasa, fila.created_at, fila.registrado_por, fila.registrado_nombre),
+    env.DB
+      .prepare("UPDATE productos SET precio_venta = round(precio_bs / ?, 6) WHERE moneda_precio = 'BS' AND precio_bs > 0")
+      .bind(fila.tasa),
+  ]);
+  const productosAjustados = (resultados[1].meta.changes ?? 0) > 0;
+  await avisarCambio(env.DB, productosAjustados ? ['tasas_cambio', 'productos'] : ['tasas_cambio']);
   const { registrado_por: _quien, ...tasa } = fila;
   return tasa;
 }

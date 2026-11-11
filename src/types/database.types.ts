@@ -55,6 +55,10 @@ export interface Producto {
   categoria: string;
   precio_compra: number;
   precio_venta: number;
+  /** 'BS' = el precio se fija en bolívares (no sigue a la tasa) y `precio_venta` es solo su equivalente de hoy en dólares. Ausente = 'USD'. */
+  moneda_precio?: MonedaPrecio;
+  /** Precio fijo en bolívares (solo si `moneda_precio` es 'BS') */
+  precio_bs?: number | null;
   /** Stock en el alcance activo: el del local elegido, o el total entre locales en la vista "Todos" */
   stock_actual: number;
   /** Mínimo del local elegido (en la vista "Todos", la suma de los mínimos de los locales que lo controlan) */
@@ -204,6 +208,9 @@ export interface ProductoStockBajo {
   local_nombre?: string;
 }
 
+/** Moneda en la que se fija el precio de venta de un producto: dólares (se convierte a Bs con la tasa) o bolívares fijos. */
+export type MonedaPrecio = 'USD' | 'BS';
+
 export type MetodoPago = 'BS_PAGO_MOVIL' | 'BS_PUNTO_VENTA' | 'BS_EFECTIVO' | 'USD_EFECTIVO' | 'BINANCE_USDT';
 
 /** Lo que se cobró con un tipo de cobro dentro de una venta (una venta puede tener varios). */
@@ -281,7 +288,11 @@ export interface ClienteVenta {
 export interface FilaAltaRapida {
   nombre: string;
   categoria: string;
+  /** En dólares (si `moneda_precio` es 'BS' lo ignora el servidor: lo deriva del precio en bolívares) */
   precio_venta: number;
+  moneda_precio?: MonedaPrecio;
+  /** Precio fijo en bolívares (obligatorio si `moneda_precio` es 'BS') */
+  precio_bs?: number | null;
   /** Solo lo toman administrador y gerente; para el encargado queda en 0 */
   precio_compra?: number;
   /** 2 a 4 letras; vacío = el sistema lo sugiere por la marca o la categoría */

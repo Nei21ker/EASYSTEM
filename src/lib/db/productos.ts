@@ -48,6 +48,11 @@ export async function eliminarProductosLote(ids: string[]): Promise<ResultadoEli
   return api.post<ResultadoEliminacion>('/api/productos/eliminar-lote', { ids });
 }
 
+/** Pone el mismo precio (en $ o fijo en Bs) a muchos productos de una vez. */
+export async function cambiarPreciosLote(ids: string[], moneda: 'USD' | 'BS', precio: number): Promise<{ actualizados: number; precio_venta: number }> {
+  return api.post<{ actualizados: number; precio_venta: number }>('/api/productos/precios-lote', { ids, moneda, precio });
+}
+
 /** Sube la foto (R2) y devuelve su URL; el servidor la sirve sin sesión para poder mostrarla en cualquier pantalla. */
 export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
   return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, imagen.type || 'image/jpeg');
