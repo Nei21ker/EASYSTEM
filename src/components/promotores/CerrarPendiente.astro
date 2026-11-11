@@ -31,7 +31,8 @@ const campo =
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { formatearMoneda } from '../../utils/format';
+  import { activarBotonesCopiar, htmlBotonesCopiarPago, textoUsdYBs } from '../../utils/pagoMovil';
+  import { tasaActual } from '../../stores/tasa';
   import { escaparHtml } from '../../utils/productosUI';
   import type { Pendiente } from '../../types/database.types';
 
@@ -49,9 +50,10 @@ const campo =
     const pagar = accion === 'pagar';
     const comision = pendiente.tipo === 'COMISION';
     $('cp-titulo').textContent = pagar ? (comision ? 'Marcar comisión como pagada' : 'Marcar como pagado') : 'Anular pendiente';
-    $('cp-resumen').innerHTML = `<p class="font-semibold">${escaparHtml(pendiente.promotor_nombre || 'Promotor sin datos')} · ${formatearMoneda(pendiente.monto_usd)}</p>
+    $('cp-resumen').innerHTML = `<p class="font-semibold">${escaparHtml(pendiente.promotor_nombre || 'Promotor sin datos')} · ${textoUsdYBs(pendiente.monto_usd, tasaActual.get())}</p>
       <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">${escaparHtml(pendiente.descripcion)}</p>
-      ${pendiente.promotor_banco ? `<p class="mt-1 text-xs"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> <strong>${escaparHtml(pendiente.promotor_banco)}</strong></p>` : ''}`;
+      ${pendiente.promotor_banco ? `<p class="mt-1 text-xs"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> <strong>${escaparHtml(pendiente.promotor_banco)}</strong></p>` : ''}
+      ${comision && pagar ? `<div class="mt-2">${htmlBotonesCopiarPago({ nombre: pendiente.promotor_nombre, cedula: pendiente.promotor_cedula, telefono: pendiente.promotor_telefono, banco: pendiente.promotor_banco, montoUsd: pendiente.monto_usd }, tasaActual.get())}</div>` : ''}`;
     $('cp-aviso').textContent = pagar
       ? comision
         ? 'Confirma cuando ya le hayas pagado esta comisión. No se puede deshacer.'
@@ -64,6 +66,7 @@ const campo =
     if (!dialogo.open) dialogo.showModal();
   });
 
+  activarBotonesCopiar($('cp-resumen'));
   $('cp-cancelar').addEventListener('click', () => dialogo.close());
   dialogo.addEventListener('mousedown', (e) => {
     if (e.target === dialogo) dialogo.close();

@@ -97,7 +97,9 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import { esGerencia } from '../lib/auth';
   import { alCambiarDatos } from '../lib/realtime';
   import { ALCANCE_TODOS } from '../lib/constantes-locales';
-  import { formatearFecha, formatearMoneda } from '../utils/format';
+  import { formatearFecha } from '../utils/format';
+  import { activarBotonesCopiar, htmlBotonesCopiarPago, textoUsdYBs } from '../utils/pagoMovil';
+  import { tasaActual } from '../stores/tasa';
   import { escaparHtml } from '../utils/productosUI';
   import type { EstadoPendiente, Pendiente, TipoPendiente } from '../types/database.types';
 
@@ -142,6 +144,12 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
         ? '<span class="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">Anulado</span>'
         : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Pendiente</span>';
 
+  /** "$3.78" y debajo "Bs. 3.400,00" al cambio de hoy (anclado al dólar) */
+  function htmlMontoDual(usd: number): string {
+    const [d, bs] = textoUsdYBs(usd, tasaActual.get()).split(' · ');
+    return `<span class="block">${d}</span>${bs ? `<span class="block text-xs font-medium text-slate-500 dark:text-slate-400">${bs}</span>` : ''}`;
+  }
+
   function htmlPendiente(p: Pendiente): string {
     const comision = p.tipo === 'COMISION';
     const tipo = comision
@@ -151,12 +159,13 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
       <div class="flex flex-wrap items-center gap-2">${tipo}${estadoBadge(p.estado)}
         <span class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(p.fecha))}${p.venta_folio ? ` · venta #${p.venta_folio}` : ''}${verTodosLosLocales ? ` · ${escaparHtml(nombresLocal.get(p.local_id) ?? '')}` : ''}</span>
-        <strong class="ml-auto text-base tabular-nums">${formatearMoneda(p.monto_usd)}</strong></div>
+        <strong class="ml-auto text-right text-base tabular-nums">${htmlMontoDual(p.monto_usd)}</strong></div>
       <p class="mt-2 text-sm font-semibold text-slate-900 dark:text-white">${escaparHtml(p.promotor_nombre || 'Promotor sin datos')}</p>
       <p class="text-xs text-slate-500 dark:text-slate-400">${p.promotor_cedula ? escaparHtml(p.promotor_cedula) : 'Sin cédula'}${p.promotor_telefono ? ` · ${escaparHtml(p.promotor_telefono)}` : ''}</p>
       ${comision ? `<p class="mt-1 text-xs ${p.promotor_banco ? 'text-slate-700 dark:text-slate-200' : 'text-amber-700 dark:text-amber-400'}"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> ${p.promotor_banco ? `<strong>${escaparHtml(p.promotor_banco)}</strong>` : 'sin registrar'}</p>` : ''}
       <p class="mt-2 text-sm text-slate-700 dark:text-slate-200">${escaparHtml(p.descripcion)}</p>
       ${cerrado}
+      ${p.estado === 'PENDIENTE' && comision ? `<div class="mt-3">${htmlBotonesCopiarPago({ nombre: p.promotor_nombre, cedula: p.promotor_cedula, telefono: p.promotor_telefono, banco: p.promotor_banco, montoUsd: p.monto_usd }, tasaActual.get())}</div>` : ''}
       ${p.estado === 'PENDIENTE' ? `<div class="mt-3 flex flex-wrap gap-2">
         ${puedePagar(p) ? `<button type="button" data-accion="pagar" data-id="${p.id}" class="${botonPagar}">${comision ? 'Marcar pagada' : 'Marcar cobrada'}</button>` : ''}
         ${puedeAnular(p) ? `<button type="button" data-accion="anular" data-id="${p.id}" class="${botonNeutro}">Anular</button>` : ''}
@@ -167,8 +176,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
   function pintar() {
     const suma = (tipo: TipoPendiente) => abiertos.filter((p) => p.tipo === tipo).reduce((s, p) => s + p.monto_usd, 0);
-    $('pd-r-comisiones').textContent = formatearMoneda(suma('COMISION'));
-    $('pd-r-mercancia').textContent = formatearMoneda(suma('MERCANCIA'));
+    $('pd-r-comisiones').textContent = textoUsdYBs(suma('COMISION'), tasaActual.get());
+    $('pd-r-mercancia').textContent = textoUsdYBs(suma('MERCANCIA'), tasaActual.get());
     $('pd-r-abiertos').textContent = String(abiertos.length);
 
     const q = ($('pd-buscar') as HTMLInputElement).value.trim().toLowerCase();
@@ -213,6 +222,10 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   });
 
   $('pd-nueva').addEventListener('click', () => window.dispatchEvent(new CustomEvent('easystem:abrir-mercancia-pendiente')));
+
+  activarBotonesCopiar($('pd-lista'));
+  // Con una tasa nueva los Bs. de hoy cambian
+  tasaActual.listen(() => pintar());
 
   $('pd-lista').addEventListener('click', (e) => {
     const boton = (e.target as HTMLElement).closest<HTMLElement>('[data-accion]');
