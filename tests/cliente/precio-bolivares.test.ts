@@ -1,7 +1,7 @@
 // Modo demo (LocalStorage): mismas reglas que el servidor para el precio fijo en bolívares y el cambio de precios en lote.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { htmlPrecioDual } from '../../src/utils/format';
-import { PRECIO_BS_MAXIMO, errorPrecioBs, precioEnBolivares, tienePrecioEnBs, usdDesdeBs } from '../../src/utils/precioBs';
+import { PRECIO_BS_MAXIMO, errorPrecioBs, leerPrecioEscrito, textoPrecioCampo, precioEnBolivares, tienePrecioEnBs, usdDesdeBs } from '../../src/utils/precioBs';
 
 function almacenSimulado() {
   const datos = new Map<string, string>();
@@ -58,6 +58,34 @@ describe('utils/precioBs', () => {
     expect(precioEnBolivares({ moneda_precio: 'BS', precio_bs: 1100, precio_venta: 1.22 }, 900)).toBe(1100);
     expect(precioEnBolivares({ moneda_precio: 'USD', precio_bs: null, precio_venta: 2 }, 900)).toBe(1800);
     expect(precioEnBolivares({ moneda_precio: 'USD', precio_bs: null, precio_venta: 2 }, null)).toBeNull();
+  });
+});
+
+describe('leerPrecioEscrito (la coma del teclado del teléfono)', () => {
+  it('en dólares: coma o punto decimal, hasta 2 decimales, 0 vale', () => {
+    expect(leerPrecioEscrito('1,22', 'USD')).toBe(1.22);
+    expect(leerPrecioEscrito('1.22', 'USD')).toBe(1.22);
+    expect(leerPrecioEscrito('122', 'USD')).toBe(122);
+    expect(leerPrecioEscrito('0', 'USD')).toBe(0);
+    expect(leerPrecioEscrito(' $7,5 ', 'USD')).toBe(7.5);
+    expect(leerPrecioEscrito('1,2,3', 'USD')).toBeNull();
+    expect(leerPrecioEscrito('1,222', 'USD')).toBeNull();
+    expect(leerPrecioEscrito('abc', 'USD')).toBeNull();
+    expect(leerPrecioEscrito('', 'USD')).toBeNull();
+  });
+
+  it('en bolívares: los miles con punto o coma se entienden como miles (1.100 = 1100)', () => {
+    expect(leerPrecioEscrito('1100', 'BS')).toBe(1100);
+    expect(leerPrecioEscrito('1.100', 'BS')).toBe(1100);
+    expect(leerPrecioEscrito('1.100,50', 'BS')).toBe(1100.5);
+    expect(leerPrecioEscrito('1,100', 'BS')).toBe(1100);
+    expect(leerPrecioEscrito('Bs. 1.250', 'BS')).toBe(1250);
+    expect(leerPrecioEscrito('950,5', 'BS')).toBe(950.5);
+  });
+
+  it('textoPrecioCampo muestra la coma decimal', () => {
+    expect(textoPrecioCampo(1.22)).toBe('1,22');
+    expect(textoPrecioCampo(1100)).toBe('1100');
   });
 });
 

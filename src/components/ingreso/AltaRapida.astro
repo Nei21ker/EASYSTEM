@@ -113,7 +113,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esPrefijoValido } from '../../utils/codigos';
   import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
   import { leerPrecio, normalizarNombre, parsearAltaRapida, problemaDeAlta, MAX_LINEAS_ALTA } from '../../utils/altaRapida';
-  import { PRECIO_BS_MAXIMO, type MonedaPrecio } from '../../utils/precioBs';
+  import { leerPrecioEscrito, PRECIO_BS_MAXIMO, type MonedaPrecio } from '../../utils/precioBs';
   import { reanimar } from '../../utils/animaciones';
   import type { FilaAltaRapida, ProductoConRelaciones } from '../../types/database.types';
 
@@ -204,7 +204,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   function defectos() {
     const cantidad = Math.floor(Number(campoCantidad.value));
-    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecio(campoPrecio.value, maximoPrecio()) : null, maximoPrecio: maximoPrecio() };
+    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecioEscrito(campoPrecio.value, moneda) : null, maximoPrecio: maximoPrecio() };
   }
 
   function pintarVista(limpiarError = true) {

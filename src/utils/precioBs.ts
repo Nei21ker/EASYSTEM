@@ -33,6 +33,24 @@ export function errorPrecioBs(bs: number): string | null {
   return null;
 }
 
+/**
+ * Lee un precio escrito a mano ("1,22", "1.22", "1100", "1.100,50"): la coma es decimal (el teclado del teléfono en español la pone) y,
+ * en bolívares, los puntos o comas de miles ("1.100") se entienden como miles. Hasta 2 decimales. null si no es un número válido (0 sí vale).
+ */
+export function leerPrecioEscrito(texto: string, moneda: MonedaPrecio): number | null {
+  let t = texto.trim().replace(/\s/g, '').replace(/^(bs\.?|\$)/i, '');
+  if (!/^[\d.,]+$/.test(t) || !/\d/.test(t)) return null;
+  if (moneda === 'BS' && /^\d{1,3}(\.\d{3})+(,\d{1,2})?$/.test(t)) t = t.replace(/\./g, '').replace(',', '.');
+  else if (moneda === 'BS' && /^\d{1,3}(,\d{3})+(\.\d{1,2})?$/.test(t)) t = t.replace(/,/g, '');
+  else t = t.replace(',', '.');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return null;
+  const valor = Number(t);
+  return Number.isFinite(valor) ? valor : null;
+}
+
+/** Un número para mostrarlo en un campo de precio, con coma decimal ("1,22"). */
+export const textoPrecioCampo = (n: number): string => String(n).replace('.', ',');
+
 /** ¿El producto tiene su precio fijado en bolívares? */
 export const tienePrecioEnBs = (p: Pick<Producto, 'moneda_precio' | 'precio_bs'>): boolean => p.moneda_precio === 'BS' && (p.precio_bs ?? 0) > 0;
 

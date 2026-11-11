@@ -253,9 +253,32 @@
   }
 
   // --- Cámara ----------------------------------------------------------------------------------------------------
+  // El teléfono (sobre todo el iPhone) vuelve a pedir permiso cada vez que se abre la cámara de nuevo. Para que solo lo pida UNA vez, al
+  // cerrar la ventana la cámara se deja "aparcada" (sin mostrarse) unos minutos y la siguiente ráfaga la reutiliza sin volver a preguntar.
+  const MINUTOS_APARCADA = 10;
+  let flujoAparcado: MediaStream | null = null;
+  let temporizadorAparcada: ReturnType<typeof setTimeout> | undefined;
+
+  const flujoVivo = (f: MediaStream | null): boolean => !!f && f.getVideoTracks().some((t) => t.readyState === 'live');
+
+  /** Suelta de verdad la cámara aparcada (apaga la luz de la cámara). */
+  function soltarCamaraAparcada() {
+    clearTimeout(temporizadorAparcada);
+    flujoAparcado?.getTracks().forEach((t) => t.stop());
+    flujoAparcado = null;
+  }
+
   function detenerCamara() {
     fichaCamara++;
-    flujo?.getTracks().forEach((t) => t.stop());
+    const actual = flujo;
+    if (actual && flujoVivo(actual)) {
+      soltarCamaraAparcada();
+      flujoAparcado = actual;
+      actual.getTracks().forEach((t) => (t.enabled = false));
+      temporizadorAparcada = setTimeout(soltarCamaraAparcada, MINUTOS_APARCADA * 60_000);
+    } else {
+      actual?.getTracks().forEach((t) => t.stop());
+    }
     flujo = null;
     video.srcObject = null;
   }
@@ -281,6 +304,20 @@
     cargandoTexto.textContent = 'Abriendo la cámara…';
     if (!navigator.mediaDevices?.getUserMedia) return usarArchivo('Este navegador no puede abrir la cámara dentro del sistema.');
     try {
+      // La cámara que quedó aparcada de la ráfaga anterior se reutiliza: no vuelve a pedir permiso
+      if (flujoAparcado && flujoVivo(flujoAparcado)) {
+        const f = flujoAparcado;
+        clearTimeout(temporizadorAparcada);
+        flujoAparcado = null;
+        f.getTracks().forEach((t) => (t.enabled = true));
+        flujo = f;
+        video.srcObject = f;
+        await video.play().catch(() => undefined);
+        cargando.classList.add('hidden');
+        botonObturador.disabled = false;
+        return;
+      }
+      soltarCamaraAparcada();
       const f = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
         audio: false,
@@ -393,6 +430,7 @@
     if (document.visibilityState !== 'visible' || !dialogo.open || vistaCaptura.classList.contains('hidden') || modoArchivo) return;
     if (!flujo || flujo.getTracks().every((t) => t.readyState === 'ended')) void iniciarCamara();
   });
+  window.addEventListener('pagehide', soltarCamaraAparcada);
   window.addEventListener('beforeunload', (e) => {
     if (pendientes() > 0) {
       e.preventDefault();

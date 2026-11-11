@@ -97,12 +97,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
               <button type="button" id="fp-moneda-bs" aria-pressed="false" class="border-l border-slate-200 px-2.5 py-1 dark:border-slate-700">Bs</button>
             </div>
           </div>
-          <input id="fp-precio-venta" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
+          <input id="fp-precio-venta" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" class={claseCampo} />
           <p id="fp-aviso-bs" class="mt-1 hidden text-[11px] text-sky-700 dark:text-sky-300">Precio fijo en Bs: no sigue al dólar, lo cambias tú a mano.</p>
         </div>
         <div id="fp-grupo-compra">
           <label for="fp-precio-compra" class={claseEtiqueta}>Precio compra ($)</label>
-          <input id="fp-precio-compra" type="number" inputmode="decimal" min="0" step="0.01" value="0" class={claseCampo} />
+          <input id="fp-precio-compra" type="text" inputmode="decimal" autocomplete="off" value="0" class={claseCampo} />
         </div>
         <div id="fp-grupo-stock">
           <label for="fp-stock" class={claseEtiqueta}>Stock inicial</label>
@@ -146,7 +146,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { errorPrecioPorCantidad, esPorCantidad } from '../../utils/controlPorCantidad';
-  import { errorPrecioBs, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
+  import { errorPrecioBs, leerPrecioEscrito, textoPrecioCampo, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
 
@@ -345,8 +345,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       $('fp-referencia-valor').textContent = editando.referencia || 'sin asignar';
       $('fp-prefijo-ayuda').textContent = 'Si lo cambias, solo afecta a las piezas que ingreses desde ahora: las que ya tienen código lo conservan.';
       moneda = tienePrecioEnBs(editando) ? 'BS' : 'USD';
-      campos.precioVenta.value = String(moneda === 'BS' ? editando.precio_bs : editando.precio_venta);
-      campos.precioCompra.value = String(editando.precio_compra);
+      campos.precioVenta.value = textoPrecioCampo((moneda === 'BS' ? editando.precio_bs : editando.precio_venta) ?? 0);
+      campos.precioCompra.value = textoPrecioCampo(editando.precio_compra);
       campos.minimo.value = String(editando.stock_minimo);
       campos.porCantidad.checked = esPorCantidad(editando);
       // Cambiar cómo se cuenta el producto solo lo hacen administrador y gerente, y solo con el stock en 0
@@ -425,9 +425,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     const nombre = campos.nombre.value.trim();
     const categoria = campos.categoria.value.trim();
-    const precioVenta = Number(campos.precioVenta.value);
     const enBs = moneda === 'BS';
-    const precioCompra = Number(campos.precioCompra.value || 0);
+    // La coma es el decimal (así escribe el teclado del teléfono en español); si no se puede leer queda NaN y se avisa abajo
+    const precioVenta = leerPrecioEscrito(campos.precioVenta.value, moneda) ?? Number.NaN;
+    const precioCompra = campos.precioCompra.value.trim() ? (leerPrecioEscrito(campos.precioCompra.value, 'USD') ?? Number.NaN) : 0;
     const stock = sinStockInicial ? 0 : Number(campos.stock.value || 0);
     const minimo = Number(campos.minimo.value || 0);
 
@@ -438,7 +439,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (enBs) {
       const mensajeBs = errorPrecioBs(precioVenta);
       if (mensajeBs) return mostrarError(mensajeBs);
-    } else if (campos.precioVenta.value === '' || !(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido.');
+    } else if (!(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido (puedes usar coma para los céntimos: 1,22).');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
     if (campos.porCantidad.checked && !campos.porCantidad.disabled && !enBs) {
       const motivoPrecio = errorPrecioPorCantidad(precioVenta);

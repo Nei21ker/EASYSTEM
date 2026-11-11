@@ -202,8 +202,8 @@ const claseSelect =
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, esGlobal } from '../../lib/auth';
-  import { formatearBolivares, formatearMoneda, htmlPrecioDual, parsearMonto } from '../../utils/format';
-  import { errorPrecioBs, PRECIO_BS_MAXIMO, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
+  import { formatearBolivares, formatearMoneda, htmlPrecioDual } from '../../utils/format';
+  import { errorPrecioBs, leerPrecioEscrito, PRECIO_BS_MAXIMO, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
   import { tasaActual } from '../../stores/tasa';
   import { descargarCSV } from '../../utils/csv';
   import { animarLista } from '../../utils/animaciones';
@@ -523,7 +523,7 @@ const claseSelect =
     $('pr-precios-txt-seleccion').textContent = `Solo los ${seleccion.size} marcados`;
     $('pr-precios-txt-lista').textContent = `Todos los ${filtrar().length} de la lista`;
 
-    const valor = parsearMonto(campoPrecioLote.value);
+    const valor = leerPrecioEscrito(campoPrecioLote.value, monedaLote);
     const tasa = tasaActual.get();
     const vista = $('pr-precios-vista');
     if (valor === null || !(valor >= 0)) vista.textContent = '';
@@ -564,8 +564,8 @@ const claseSelect =
     errorPrecioLote.classList.add('hidden');
     const destino = destinoPrecios();
     if (destino.ids.length === 0) return falla('No hay productos a los que aplicar el precio.');
-    const valor = parsearMonto(campoPrecioLote.value);
-    if (valor === null) return falla('Escribe el precio (por ejemplo 1100).');
+    const valor = leerPrecioEscrito(campoPrecioLote.value, monedaLote);
+    if (valor === null) return falla('Escribe el precio (por ejemplo 1100 o 1,22).');
     if (monedaLote === 'BS') {
       const mensaje = errorPrecioBs(valor);
       if (mensaje) return falla(mensaje);
