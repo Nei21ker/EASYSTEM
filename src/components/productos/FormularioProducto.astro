@@ -391,7 +391,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const botonUsd = $<HTMLButtonElement>('fp-moneda-usd');
   const botonBs = $<HTMLButtonElement>('fp-moneda-bs');
 
-  /** Marca la moneda elegida; un producto por cantidad cuesta menos de $3 y no se mezcla con un precio fijo en Bs. */
+  /** Marca la moneda elegida y ajusta la etiqueta y el aviso. */
   function pintarMoneda() {
     for (const [boton, activo] of [[botonUsd, moneda === 'USD'], [botonBs, moneda === 'BS']] as const) {
       boton.setAttribute('aria-pressed', String(activo));
@@ -399,12 +399,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     }
     $('fp-precio-etiqueta').textContent = moneda === 'BS' ? 'Precio venta (Bs, fijo) *' : 'Precio venta ($) *';
     $('fp-aviso-bs').classList.toggle('hidden', moneda !== 'BS');
-    if (moneda === 'BS') {
-      campos.porCantidad.checked = false;
-      campos.porCantidad.disabled = true;
-    } else if (!editando || (veCosto && editando.stock_actual === 0)) {
-      campos.porCantidad.disabled = false;
-    }
   }
   for (const [boton, valor] of [[botonUsd, 'USD'], [botonBs, 'BS']] as const) {
     boton.addEventListener('click', () => {
@@ -441,6 +435,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       if (mensajeBs) return mostrarError(mensajeBs);
     } else if (!(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido (puedes usar coma para los céntimos: 1,22).');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
+    // En bolívares el tope de $3 de los productos por cantidad lo revisa el servidor con la tasa de hoy
     if (campos.porCantidad.checked && !campos.porCantidad.disabled && !enBs) {
       const motivoPrecio = errorPrecioPorCantidad(precioVenta);
       if (motivoPrecio) return mostrarError(motivoPrecio);

@@ -380,12 +380,12 @@ export interface CambioPreciosLote {
 }
 
 /**
- * Pone el MISMO precio a muchos productos de una vez (administrador y gerente): por ejemplo todos los vidrios a Bs 1100 cuando el
+ * Pone el MISMO precio a muchos productos de una vez (administrador, gerente y encargado; el catálogo es compartido): por ejemplo todos los vidrios a Bs 1100 cuando el
  * cliente cambia el precio de la semana. En bolívares el precio queda fijo (no sigue a la tasa) y el equivalente en dólares sale de la
  * tasa de hoy; en dólares se quita el precio fijo en Bs. Todo o nada, en un solo lote. Los ids desconocidos se ignoran.
  */
 export async function cambiarPreciosLote(env: Entorno, sesion: Sesion, datos: CambioPreciosLote): Promise<{ actualizados: number; precio_venta: number }> {
-  exigirGlobal(sesion);
+  exigirGerencia(sesion);
   await alcanceDe(env, sesion);
   if (!esMonedaPrecio(datos.moneda)) throw new ErrorApi(400, 'La moneda del precio debe ser USD o BS.', 'datos_invalidos');
   const unicos = [...new Set(datos.ids)];

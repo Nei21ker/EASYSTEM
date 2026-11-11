@@ -199,11 +199,26 @@ describe('cambiar los precios en lote', () => {
     await rechazo(cambiarPreciosLote(env, admin, { ids: Array.from({ length: 3001 }, (_, i) => `p${i}`), moneda: 'USD', precio: 1 }), 400, 'lote_grande');
   });
 
-  it('solo administrador y gerente: el encargado recibe 403', async () => {
+  it('el encargado también cambia precios en lote (el catálogo es compartido); el vendedor no (403)', async () => {
     await tasa(900);
     const p = await crearProducto(env, admin, vidrio(1));
-    await rechazo(cambiarPreciosLote(env, encargado, { ids: [p.id], moneda: 'BS', precio: 1100 }), 403, 'sin_permiso');
-    expect(await fila(p.id)).toMatchObject({ moneda_precio: 'USD' });
+    await cambiarPreciosLote(env, encargado, { ids: [p.id], moneda: 'BS', precio: 1100 });
+    expect(await fila(p.id)).toMatchObject({ moneda_precio: 'BS', precio_bs: 1100 });
+    const vendedor = await cargarSesion(env, peticionComo(await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: IDS_LOCALES.vidrios })));
+    await rechazo(cambiarPreciosLote(env, vendedor, { ids: [p.id], moneda: 'USD', precio: 9 }), 403, 'sin_permiso');
+    expect(await fila(p.id)).toMatchObject({ moneda_precio: 'BS' });
+  });
+
+  it('un producto por cantidad (vidrio de $1,22) pasa a Bs 1100 y a Bs 2200 en lote, y el encargado también puede crearlo así', async () => {
+    await tasa(901.62);
+    const a = await crearProducto(env, admin, vidrio(1, { control_por_cantidad: 1 }));
+    const b = await crearProducto(env, admin, vidrio(2, { control_por_cantidad: 1 }));
+    await cambiarPreciosLote(env, encargado, { ids: [a.id], moneda: 'BS', precio: 1100 });
+    await cambiarPreciosLote(env, encargado, { ids: [b.id], moneda: 'BS', precio: 2200 });
+    expect(await fila(a.id)).toMatchObject({ moneda_precio: 'BS', precio_bs: 1100 });
+    expect((await fila(b.id))!.precio_venta).toBeCloseTo(2200 / 901.62, 6);
+    const c = await crearProducto(env, encargado, vidrio(3, { control_por_cantidad: 1, moneda_precio: 'BS', precio_bs: 1100 }));
+    expect(c.control_por_cantidad).toBe(1);
   });
 });
 

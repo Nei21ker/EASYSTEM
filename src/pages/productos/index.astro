@@ -234,7 +234,7 @@ const claseSelect =
   // Precio de compra e importar CSV: administrador y gerente. Editar productos e ir al ingreso de mercancía: también el encargado.
   const COLUMNAS_COSTO = ['pr-th-costo', 'pr-col-costo'];
   const COLUMNAS_ACCIONES = ['pr-th-acciones', 'pr-col-acciones'];
-  const BOTONES_ADMIN = ['pr-importar', 'pr-cambiar-precios', 'pr-seleccionar'];
+  const BOTONES_ADMIN = ['pr-importar', 'pr-seleccionar'];
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
@@ -670,6 +670,8 @@ const claseSelect =
     for (const id of COLUMNAS_ACCIONES) $(id).classList.toggle('hidden', !puedeEntradas);
     for (const id of BOTONES_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
     $('pr-ingreso').classList.toggle('hidden', !puedeEntradas);
+    // Cambiar precios en lote: también el encargado (el catálogo es compartido, como al editar un producto)
+    $('pr-cambiar-precios').classList.toggle('hidden', !puedeEntradas);
     reconstruirIndice();
     pintarCategorias();
     animarLista(filas);

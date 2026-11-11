@@ -1388,13 +1388,13 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
 }
 
 /**
- * Pone el mismo precio (en $ o fijo en Bs) a muchos productos de una vez (administrador y gerente). En bolívares el precio no sigue a la
+ * Pone el mismo precio (en $ o fijo en Bs) a muchos productos de una vez (administrador, gerente y encargado). En bolívares el precio no sigue a la
  * tasa; su equivalente en dólares sale de la tasa de hoy. Todo o nada. Mismas reglas en modo servidor y en modo demo.
  */
 export async function cambiarPreciosLote(ids: string[], moneda: MonedaPrecio, precio: number): Promise<{ actualizados: number; precio_venta: number }> {
   if (modoServidor) return productosDb.cambiarPreciosLote(ids, moneda, precio);
 
-  if (!esGlobal((await obtenerSesionActual())?.rol)) throw new Error('Tu rol no tiene permiso para hacer esto.');
+  if (!esGerencia((await obtenerSesionActual())?.rol)) throw new Error('Tu rol no tiene permiso para hacer esto.');
   const unicos = new Set(ids);
   if (unicos.size === 0) throw new Error('Elige al menos un producto.');
   const db = leerDB();

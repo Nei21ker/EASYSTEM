@@ -53,7 +53,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
       </div>
       <p id="ar-aviso-bs" class="-mt-2 hidden rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-500/10 dark:text-sky-300">
-        <strong>Precio fijo en bolívares:</strong> no sigue al dólar; lo cambias tú a mano (en Productos → «Cambiar precios en lote» se cambia el de muchos de una vez). Tampoco sirve para productos por cantidad.
+        <strong>Precio fijo en bolívares:</strong> no sigue al dólar; lo cambias tú a mano (en Productos → «Cambiar precios en lote» se cambia el de muchos de una vez). Un producto por cantidad puede tener precio en Bs mientras su equivalente en dólares de hoy sea menos de $3.
       </p>
       <p id="ar-prefijo-ayuda" class="-mt-2 text-xs text-slate-400">
         El prefijo (2 a 4 letras) arma el código de cada pieza: CTL → CTL000001. Vacío = el sistema lo sugiere por la marca o la categoría.
@@ -157,9 +157,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('ar-ejemplo-precio').textContent = moneda === 'BS' ? 'Bs1100' : '$12';
     campoPrecio.placeholder = moneda === 'BS' ? '1100' : '0,00';
     $('ar-aviso-bs').classList.toggle('hidden', moneda !== 'BS');
-    // Un producto por cantidad cuesta menos de $3: no se mezcla con un precio fijo en Bs
-    campoPorCantidad.disabled = moneda === 'BS';
-    if (moneda === 'BS') campoPorCantidad.checked = false;
   }
 
   const escapar = (t: string) => {
@@ -298,6 +295,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (problema) return mostrarError(problema);
 
     const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
+    // En bolívares el tope de $3 de los productos por cantidad lo revisa el servidor con la tasa de hoy
     if (campoPorCantidad.checked && moneda === 'USD') {
       const cara = aCrear.find((l) => errorPrecioPorCantidad(l.precio ?? 0));
       if (cara) return mostrarError(`«${cara.nombre}»: ${errorPrecioPorCantidad(cara.precio ?? 0)}`);
