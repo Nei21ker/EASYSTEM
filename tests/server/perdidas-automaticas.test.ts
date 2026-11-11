@@ -8,7 +8,7 @@ import { actualizarProducto, crearProducto } from '../../src/server/servicios/ca
 import { actualizarInversion, eliminarInversion, hoyDelNegocio, listarInversiones } from '../../src/server/servicios/inversion';
 import { darDeBajaPorCantidad, registrarSalidaConMerma } from '../../src/server/servicios/mermas';
 import { registrarMovimiento } from '../../src/server/servicios/movimientos';
-import { totalizar } from '../../src/utils/inversion';
+import { bsDeInversion, totalizar } from '../../src/utils/inversion';
 
 const env = crearEntornoDePrueba();
 const { vidrios, accesorios } = IDS_LOCALES;
@@ -87,6 +87,34 @@ describe('pérdidas automáticas de vidrios en Inversión', () => {
     expect(await listarInversiones(env, gerente, { localId: vidrios })).toHaveLength(2);
     expect(await listarInversiones(env, gerente, { desde: hoy, hasta: hoy })).toHaveLength(2);
     expect(await listarInversiones(env, gerente, { desde: '2020-01-01', hasta: '2020-01-31' })).toHaveLength(0);
+  });
+
+  it('un vidrio con precio fijo en Bs se pierde en bolívares exactos (no se convierte con la tasa BCV)', async () => {
+    const hoy = hoyDelNegocio(env);
+    await env.DB.prepare("INSERT INTO tasas_cambio (id, fecha, tasa, created_at) VALUES ('t9', ?, 901.62, ?)").bind(hoy, new Date().toISOString()).run();
+    const p = await crearProducto(env, admin, { codigo_barras: '2000000000060', nombre: 'Vdr antiespia iPhone 12', categoria: 'Vidrios Templados', moneda_precio: 'BS', precio_bs: 2200, control_por_cantidad: 1 });
+    await registrarMovimiento(env, encargado, { productoId: p.id, tipo: 'ENTRADA', cantidad: 10, localId: vidrios, motivo: 'Compra' });
+    await registrarSalidaConMerma(env, encargado, { productoId: p.id, localId: vidrios, cantidad: 1, danados: 2 });
+    const [r] = await listarInversiones(env, gerente);
+    expect(r).toMatchObject({ automatica: true, monto_bs_fijo: 4400 });
+    expect(r.monto_usd).toBeCloseTo((2 * 2200) / 901.62, 1);
+    expect(bsDeInversion(r)).toBe(4400);
+    expect(totalizar([r])).toMatchObject({ perdidas_bs: 4400, sin_tasa: 0 });
+    // Si luego sube la tasa o cambia el precio en Bs, lo ya perdido no cambia
+    await env.DB.prepare("INSERT INTO tasas_cambio (id, fecha, tasa, created_at) VALUES ('t10', ?, 1000, ?)").bind(hoy, new Date(Date.now() + 1000).toISOString()).run();
+    expect(bsDeInversion((await listarInversiones(env, gerente))[0])).toBe(4400);
+  });
+
+  it('con costo de compra cargado manda el costo en dólares aunque el precio de venta sea fijo en Bs', async () => {
+    const hoy = hoyDelNegocio(env);
+    await env.DB.prepare("INSERT INTO tasas_cambio (id, fecha, tasa, created_at) VALUES ('t9', ?, 901.62, ?)").bind(hoy, new Date().toISOString()).run();
+    const p = await crearProducto(env, admin, { codigo_barras: '2000000000077', nombre: 'Vdr con costo', categoria: 'Vidrios Templados', moneda_precio: 'BS', precio_bs: 2200, precio_compra: 1, control_por_cantidad: 1 });
+    await registrarMovimiento(env, encargado, { productoId: p.id, tipo: 'ENTRADA', cantidad: 10, localId: vidrios, motivo: 'Compra' });
+    await darDeBajaPorCantidad(env, encargado, { productoId: p.id, localId: vidrios, cantidad: 2 });
+    const [r] = await listarInversiones(env, gerente);
+    expect(r.monto_usd).toBe(2);
+    expect(r.monto_bs_fijo ?? null).toBeNull();
+    expect(bsDeInversion(r)).toBeCloseTo(2 * 901.62, 1);
   });
 
   it('las automáticas no se editan ni se eliminan desde Inversión (400); el encargado no las ve (403)', async () => {

@@ -293,10 +293,11 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
       sentencias.push(
         db
           .prepare(
-            `INSERT INTO mermas (id, movimiento_id, producto_id, local_id, cantidad, origen, motivo, nota, por_id, por_nombre, autorizado_por, autorizado_nombre, fecha, valor_unitario_usd)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT CASE WHEN precio_compra > 0 THEN precio_compra ELSE precio_venta END FROM productos WHERE id = ?))`
+            `INSERT INTO mermas (id, movimiento_id, producto_id, local_id, cantidad, origen, motivo, nota, por_id, por_nombre, autorizado_por, autorizado_nombre, fecha, valor_unitario_usd, valor_unitario_bs)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT CASE WHEN precio_compra > 0 THEN precio_compra ELSE precio_venta END FROM productos WHERE id = ?),
+             (SELECT CASE WHEN precio_compra <= 0 AND moneda_precio = 'BS' AND precio_bs > 0 THEN precio_bs END FROM productos WHERE id = ?))`
           )
-          .bind(nuevoId(), movimiento.id, e.productoId, e.localId, e.cantidad, m.origen, m.motivo ?? null, m.nota ?? null, sesion.userId, sesion.nombre, m.autorizadoPor ?? null, m.autorizadoNombre ?? null, ahora, e.productoId)
+          .bind(nuevoId(), movimiento.id, e.productoId, e.localId, e.cantidad, m.origen, m.motivo ?? null, m.nota ?? null, sesion.userId, sesion.nombre, m.autorizadoPor ?? null, m.autorizadoNombre ?? null, ahora, e.productoId, e.productoId)
       );
     }
     resultados.push({ movimiento, unidadCodigos: codigos });

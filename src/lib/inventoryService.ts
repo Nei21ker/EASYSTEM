@@ -47,7 +47,7 @@ import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
-import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
+import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import * as inversionDb from './db/inversion';
@@ -2039,6 +2039,7 @@ async function registrarSalidaConMerma(input: {
     autorizado_nombre: autorizado?.nombre ?? null,
     fecha: baja.fecha,
     valor_unitario_usd: valorPiezaDemo(producto),
+    valor_unitario_bs: valorPiezaBsDemo(producto),
   });
   guardarDB(db);
   return { salida, baja };
@@ -2046,6 +2047,8 @@ async function registrarSalidaConMerma(input: {
 
 /** Valor de UNA pieza para valorar una merma: su precio de compra si lo tiene y, si no, el de venta (igual que el servidor). */
 const valorPiezaDemo = (p: Producto): number => (p.precio_compra > 0 ? p.precio_compra : p.precio_venta);
+/** Valor de una pieza en Bs si el producto tiene precio fijo en bolívares y no tiene costo cargado (no sigue a la tasa). */
+const valorPiezaBsDemo = (p: Producto): number | null => (p.precio_compra <= 0 && tienePrecioEnBs(p) ? p.precio_bs! : null);
 
 /** Bota piezas de un producto por cantidad sin que haya una venta (Mercancía → Descargo). Administrador, gerente y encargado de ese local. */
 export async function darDeBajaPorCantidad(datos: { productoId: string; localId: string; cantidad: number; motivo?: MotivoMerma | null; nota?: string | null }): Promise<void> {
@@ -2079,6 +2082,7 @@ export async function darDeBajaPorCantidad(datos: { productoId: string; localId:
     autorizado_nombre: null,
     fecha: baja.fecha,
     valor_unitario_usd: valorPiezaDemo(producto),
+    valor_unitario_bs: valorPiezaBsDemo(producto),
   });
   guardarDB(db);
 }

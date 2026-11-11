@@ -130,6 +130,8 @@ export interface Merma {
   fecha: string;
   /** Valor de UNA pieza en dólares al registrar la merma (compra, o venta si no hay costo); alimenta las pérdidas de Inversión */
   valor_unitario_usd?: number | null;
+  /** Valor de UNA pieza en bolívares cuando el producto tiene precio fijo en Bs (y no hay costo): ese valor no sigue a la tasa BCV */
+  valor_unitario_bs?: number | null;
 }
 export const MOTIVOS_BAJA: { id: MotivoBaja; nombre: string; ayuda: string }[] = [
   { id: 'DANADA', nombre: 'Dañada', ayuda: 'Se rompió o no funciona.' },
@@ -470,6 +472,8 @@ export interface Inversion {
   updated_at: string;
   /** Pérdida anotada sola a partir de una merma (vidrios defectuosos o dados de baja): no se edita ni se elimina aquí */
   automatica?: boolean;
+  /** Monto EXACTO en bolívares de una pérdida de producto con precio fijo en Bs (no se calcula con la tasa BCV); null/ausente = monto_usd × tasa_bcv */
+  monto_bs_fijo?: number | null;
 }
 
 export interface DatosInversion {

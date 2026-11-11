@@ -173,6 +173,7 @@ export const mermas = sqliteTable('mermas', {
   autorizado_nombre: text('autorizado_nombre'),
   fecha: marca('fecha'),
   valor_unitario_usd: real('valor_unitario_usd'),
+  valor_unitario_bs: real('valor_unitario_bs'),
 });
 
 // Promotores registrados y pendientes con ellos (migración 0018)

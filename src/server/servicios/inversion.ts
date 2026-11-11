@@ -95,12 +95,12 @@ async function perdidasDeMermas(env: Entorno, alcance: Alcance, opciones: { desd
   }
   const filas = await env.DB
     .prepare(
-      `SELECT m.id, m.local_id, p.nombre AS producto_nombre, m.cantidad, m.origen, m.motivo, m.nota, m.por_nombre, m.fecha, m.valor_unitario_usd
+      `SELECT m.id, m.local_id, p.nombre AS producto_nombre, m.cantidad, m.origen, m.motivo, m.nota, m.por_nombre, m.fecha, m.valor_unitario_usd, m.valor_unitario_bs
        FROM mermas m LEFT JOIN productos p ON p.id = m.producto_id
        WHERE ${condiciones.join(' AND ')} ORDER BY m.fecha DESC LIMIT 5000`
     )
     .bind(...params)
-    .all<{ id: string; local_id: string; producto_nombre: string | null; cantidad: number; origen: 'VENTA' | 'DESCARGO'; motivo: string | null; nota: string | null; por_nombre: string; fecha: string; valor_unitario_usd: number | null }>();
+    .all<{ id: string; local_id: string; producto_nombre: string | null; cantidad: number; origen: 'VENTA' | 'DESCARGO'; motivo: string | null; nota: string | null; por_nombre: string; fecha: string; valor_unitario_usd: number | null; valor_unitario_bs: number | null }>();
   if (filas.results.length === 0) return [];
   const zona = env.ZONA_HORARIA ?? ZONA_POR_DEFECTO;
   const tasas = await env.DB.prepare('SELECT fecha, tasa, created_at FROM tasas_cambio ORDER BY fecha DESC, created_at DESC LIMIT 400').all<{ fecha: string; tasa: number; created_at: string }>();

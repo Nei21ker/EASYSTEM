@@ -113,6 +113,13 @@ describe('pérdidas automáticas desde mermas (reglas puras)', () => {
     expect(bsDeInversion(r)).toBe(180);
   });
 
+  it('con valor fijo en Bs lleva los bolívares exactos y no depende de la tasa', () => {
+    const r = mermaComoPerdida({ ...merma, valor_unitario_usd: 2.44, valor_unitario_bs: 2200 }, '2026-11-10', 901.62);
+    expect(r).toMatchObject({ monto_usd: 7.32, monto_bs_fijo: 6600 });
+    expect(bsDeInversion(r)).toBe(6600);
+    expect(bsDeInversion({ ...r, tasa_bcv: null })).toBe(6600);
+  });
+
   it('sin valor guardado vale 0 y un producto borrado se nombra igual', () => {
     const r = mermaComoPerdida({ ...merma, producto_nombre: null, origen: 'DESCARGO', motivo: null, valor_unitario_usd: null }, '2026-11-10', null);
     expect(r.monto_usd).toBe(0);

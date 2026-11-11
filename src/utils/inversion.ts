@@ -60,7 +60,8 @@ export function tasaParaFecha(tasas: { fecha: string; tasa: number; created_at: 
 }
 
 /** Bolívares de referencia de un registro (monto en dólares × la tasa BCV de su fecha); null si no había tasa. */
-export const bsDeInversion = (i: Pick<Inversion, 'monto_usd' | 'tasa_bcv'>): number | null => (i.tasa_bcv && i.tasa_bcv > 0 ? redondear2(i.monto_usd * i.tasa_bcv) : null);
+export const bsDeInversion = (i: Pick<Inversion, 'monto_usd' | 'tasa_bcv'> & { monto_bs_fijo?: number | null }): number | null =>
+  i.monto_bs_fijo != null ? redondear2(i.monto_bs_fijo) : i.tasa_bcv && i.tasa_bcv > 0 ? redondear2(i.monto_usd * i.tasa_bcv) : null;
 
 export interface TotalInversion {
   /** Lo invertido en compras */
@@ -174,11 +175,13 @@ export interface MermaParaInversion {
   por_nombre: string;
   fecha: string;
   valor_unitario_usd?: number | null;
+  /** Valor de una pieza en Bs si el producto tiene precio fijo en bolívares (no se convierte con la tasa) */
+  valor_unitario_bs?: number | null;
 }
 
 /**
  * Una merma como registro de PÉRDIDA de Inversión (id `merma:<id>`, `automatica`): «3 × Vidrio blindado Samsung A15 — defectuoso en una
- * venta (venía defectuoso)». El monto es cantidad × valor de una pieza (compra, o venta si no hay costo; 0 si no se pudo valorar).
+ * venta (venía defectuoso)». El monto es cantidad × valor de una pieza (compra, o venta si no hay costo; 0 si no se pudo valorar); si el producto tiene precio FIJO en bolívares, `monto_bs_fijo` lleva los Bs exactos (cantidad × Bs de una pieza) y NO se convierten con la tasa.
  * `dia` es el día del negocio de la merma y `tasa` la BCV de ese día (la pone quien llama).
  */
 export function mermaComoPerdida(m: MermaParaInversion, dia: string, tasa: number | null): Inversion {
@@ -195,6 +198,7 @@ export function mermaComoPerdida(m: MermaParaInversion, dia: string, tasa: numbe
     proveedor_id: null,
     proveedor_nombre: null,
     monto_usd: redondear2(m.cantidad * (m.valor_unitario_usd ?? 0)),
+    monto_bs_fijo: m.valor_unitario_bs != null ? redondear2(m.cantidad * m.valor_unitario_bs) : null,
     tasa_bcv: tasa,
     creado_por_nombre: m.por_nombre,
     created_at: m.fecha,

@@ -357,7 +357,7 @@ const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibo
         <span class="text-xs text-slate-500 dark:text-slate-400">${fechaCorta(r.fecha)} · ${escaparHtml(nombreLocal(r.local_id))}</span>
         <strong class="ml-auto text-right text-base tabular-nums"><span class="block">${formatearMoneda(r.monto_usd)}</span>${bs !== null ? `<span class="block text-xs font-medium text-slate-500 dark:text-slate-400">${formatearBolivares(bs)}</span>` : ''}</strong></div>
       <p class="mt-2 text-sm text-slate-800 dark:text-slate-100">${escaparHtml(r.descripcion)}</p>
-      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${r.proveedor_nombre ? `Proveedor: <strong class="text-slate-700 dark:text-slate-200">${escaparHtml(r.proveedor_nombre)}</strong> · ` : ''}${r.automatica ? 'marcó' : 'anotó'} ${escaparHtml(r.creado_por_nombre)}${r.tasa_bcv ? ` · BCV ${formatearBolivares(r.tasa_bcv).replace('Bs. ', '')}` : ' · sin tasa BCV'}</p>
+      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${r.proveedor_nombre ? `Proveedor: <strong class="text-slate-700 dark:text-slate-200">${escaparHtml(r.proveedor_nombre)}</strong> · ` : ''}${r.automatica ? 'marcó' : 'anotó'} ${escaparHtml(r.creado_por_nombre)}${r.monto_bs_fijo != null ? ' · precio fijo en Bs (no sigue al BCV)' : r.tasa_bcv ? ` · BCV ${formatearBolivares(r.tasa_bcv).replace('Bs. ', '')}` : ' · sin tasa BCV'}</p>
       ${acciones}
     </article>`;
   }
