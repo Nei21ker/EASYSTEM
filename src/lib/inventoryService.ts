@@ -51,7 +51,7 @@ import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type Mon
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import * as inversionDb from './db/inversion';
-import { claveProveedor, limpiarNombreProveedor, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
+import { claveProveedor, compararInversiones, limpiarNombreProveedor, mermaComoPerdida, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
 import type { DatosInversion, DatosProveedor, Inversion, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO, redondeoValido } from '../utils/pagos';
@@ -2038,10 +2038,14 @@ async function registrarSalidaConMerma(input: {
     por_nombre: sesion.nombre,
     autorizado_nombre: autorizado?.nombre ?? null,
     fecha: baja.fecha,
+    valor_unitario_usd: valorPiezaDemo(producto),
   });
   guardarDB(db);
   return { salida, baja };
 }
+
+/** Valor de UNA pieza para valorar una merma: su precio de compra si lo tiene y, si no, el de venta (igual que el servidor). */
+const valorPiezaDemo = (p: Producto): number => (p.precio_compra > 0 ? p.precio_compra : p.precio_venta);
 
 /** Bota piezas de un producto por cantidad sin que haya una venta (Mercancía → Descargo). Administrador, gerente y encargado de ese local. */
 export async function darDeBajaPorCantidad(datos: { productoId: string; localId: string; cantidad: number; motivo?: MotivoMerma | null; nota?: string | null }): Promise<void> {
@@ -2074,6 +2078,7 @@ export async function darDeBajaPorCantidad(datos: { productoId: string; localId:
     por_nombre: sesion.nombre,
     autorizado_nombre: null,
     fecha: baja.fecha,
+    valor_unitario_usd: valorPiezaDemo(producto),
   });
   guardarDB(db);
 }
@@ -4060,10 +4065,13 @@ function validarInversionDemo(datos: DatosInversion) {
 export async function listarInversiones(opciones: { desde?: string; hasta?: string; localId?: string | null; tipo?: TipoInversion; limite?: number } = {}): Promise<Inversion[]> {
   await sesionDeInversion();
   if (modoServidor) return inversionDb.listarInversiones(opciones);
-  return (leerDB().inversiones ?? [])
-    .filter((i) => (!opciones.localId || i.local_id === opciones.localId) && (!opciones.desde || i.fecha >= opciones.desde) && (!opciones.hasta || i.fecha <= opciones.hasta) && (!opciones.tipo || i.tipo === opciones.tipo))
-    .sort((a, b) => (a.fecha === b.fecha ? b.created_at.localeCompare(a.created_at) : b.fecha.localeCompare(a.fecha)))
-    .slice(0, opciones.limite ?? 1000);
+  const db = leerDB();
+  const dentro = (i: Inversion) =>
+    (!opciones.localId || i.local_id === opciones.localId) && (!opciones.desde || i.fecha >= opciones.desde) && (!opciones.hasta || i.fecha <= opciones.hasta) && (!opciones.tipo || i.tipo === opciones.tipo);
+  // Las mermas (vidrios defectuosos o dados de baja) aparecen solas como pérdidas, igual que en el servidor
+  const automaticas = (db.mermas ?? []).map((m) => mermaComoPerdida({ ...m, producto_nombre: m.producto_nombre ?? null }, fechaLocalISO(new Date(m.fecha)), null));
+  for (const a of automaticas) a.tasa_bcv = tasaParaFecha(db.tasas ?? [], a.fecha);
+  return [...(db.inversiones ?? []), ...automaticas].filter(dentro).sort(compararInversiones).slice(0, opciones.limite ?? 1000);
 }
 
 /** Si el nombre ya está en la lista usa ese proveedor; si no, lo agrega. Sin nombre, sin proveedor. */
@@ -4106,11 +4114,14 @@ export async function crearInversion(datos: DatosInversion): Promise<Inversion> 
 }
 
 /** Corrige un registro. La tasa BCV se vuelve a tomar solo si cambió la fecha (o si no tenía). */
+const MENSAJE_REGISTRO_AUTOMATICO = 'Esta pérdida se anotó sola desde un vidrio defectuoso o dado de baja: no se edita ni se elimina aquí (se corrige en la venta o en Descargo).';
+
 export async function actualizarInversion(id: string, datos: DatosInversion): Promise<Inversion> {
   const sesion = await sesionDeInversion();
   const d = validarInversionDemo(datos);
   if (modoServidor) return inversionDb.actualizarInversion(id, datos);
   const db = leerDB();
+  if (id.startsWith('merma:')) throw new Error(MENSAJE_REGISTRO_AUTOMATICO);
   const actual = (db.inversiones ?? []).find((i) => i.id === id);
   if (!actual) throw new Error('El registro no existe.');
   if (!db.locales.some((l) => l.id === d.localId)) throw new Error('El local no existe.');
@@ -4136,6 +4147,7 @@ export async function eliminarInversion(id: string): Promise<void> {
     await inversionDb.eliminarInversion(id);
     return;
   }
+  if (id.startsWith('merma:')) throw new Error(MENSAJE_REGISTRO_AUTOMATICO);
   const db = leerDB();
   if (!(db.inversiones ?? []).some((i) => i.id === id)) throw new Error('El registro no existe.');
   db.inversiones = (db.inversiones ?? []).filter((i) => i.id !== id);

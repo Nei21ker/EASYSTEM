@@ -153,3 +153,55 @@ export function lunesDeSemana(fecha: string): string {
 
 /** Primer día del mes de una fecha "aaaa-mm-dd". */
 export const primerDiaDelMes = (fecha: string): string => `${fecha.slice(0, 7)}-01`;
+
+// --- Pérdidas automáticas: las mermas (vidrios defectuosos o dados de baja) se ven como PÉRDIDA ----------------------
+
+/** El día del negocio ("aaaa-mm-dd") de una marca de tiempo ISO, en la zona horaria dada. */
+export function diaDelNegocioDe(iso: string, zona: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+}
+
+const TEXTO_MOTIVO_MERMA: Record<string, string> = { DEFECTO_FABRICA: 'venía defectuoso', DANADO_AL_COLOCAR: 'se dañó al colocar', OTRO: 'otro motivo' };
+
+export interface MermaParaInversion {
+  id: string;
+  local_id: string;
+  producto_nombre: string | null;
+  cantidad: number;
+  origen: 'VENTA' | 'DESCARGO';
+  motivo: string | null;
+  nota: string | null;
+  por_nombre: string;
+  fecha: string;
+  valor_unitario_usd?: number | null;
+}
+
+/**
+ * Una merma como registro de PÉRDIDA de Inversión (id `merma:<id>`, `automatica`): «3 × Vidrio blindado Samsung A15 — defectuoso en una
+ * venta (venía defectuoso)». El monto es cantidad × valor de una pieza (compra, o venta si no hay costo; 0 si no se pudo valorar).
+ * `dia` es el día del negocio de la merma y `tasa` la BCV de ese día (la pone quien llama).
+ */
+export function mermaComoPerdida(m: MermaParaInversion, dia: string, tasa: number | null): Inversion {
+  const motivo = m.motivo ? TEXTO_MOTIVO_MERMA[m.motivo] : null;
+  const origen = m.origen === 'VENTA' ? 'defectuoso en una venta' : 'dado de baja en Descargo';
+  const detalle = [motivo, m.nota].filter(Boolean).join(', ');
+  const descripcion = `${m.cantidad} × ${m.producto_nombre ?? 'Producto eliminado'} — ${origen}${detalle ? ` (${detalle})` : ''}`;
+  return {
+    id: `merma:${m.id}`,
+    local_id: m.local_id,
+    tipo: 'PERDIDA',
+    fecha: dia,
+    descripcion,
+    proveedor_id: null,
+    proveedor_nombre: null,
+    monto_usd: redondear2(m.cantidad * (m.valor_unitario_usd ?? 0)),
+    tasa_bcv: tasa,
+    creado_por_nombre: m.por_nombre,
+    created_at: m.fecha,
+    updated_at: m.fecha,
+    automatica: true,
+  };
+}
+
+/** Ordena como la lista de Inversión: día más reciente primero y, dentro del día, lo último anotado primero. */
+export const compararInversiones = (a: Inversion, b: Inversion): number => (a.fecha === b.fecha ? b.created_at.localeCompare(a.created_at) : b.fecha.localeCompare(a.fecha));

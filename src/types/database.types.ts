@@ -128,6 +128,8 @@ export interface Merma {
   por_nombre: string;
   autorizado_nombre: string | null;
   fecha: string;
+  /** Valor de UNA pieza en dólares al registrar la merma (compra, o venta si no hay costo); alimenta las pérdidas de Inversión */
+  valor_unitario_usd?: number | null;
 }
 export const MOTIVOS_BAJA: { id: MotivoBaja; nombre: string; ayuda: string }[] = [
   { id: 'DANADA', nombre: 'Dañada', ayuda: 'Se rompió o no funciona.' },
@@ -466,6 +468,8 @@ export interface Inversion {
   creado_por_nombre: string;
   created_at: string;
   updated_at: string;
+  /** Pérdida anotada sola a partir de una merma (vidrios defectuosos o dados de baja): no se edita ni se elimina aquí */
+  automatica?: boolean;
 }
 
 export interface DatosInversion {

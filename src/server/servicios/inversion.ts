@@ -9,7 +9,7 @@ import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { limiteSeguro, nuevoId } from '../util';
-import { claveProveedor, limpiarNombreProveedor, tasaParaFecha, validarDatosInversion, type DatosInversionValidados } from '../../utils/inversion';
+import { claveProveedor, compararInversiones, diaDelNegocioDe, diaSiguiente, limpiarNombreProveedor, mermaComoPerdida, tasaParaFecha, validarDatosInversion, type DatosInversionValidados } from '../../utils/inversion';
 import type { DatosInversion, DatosProveedor, Inversion, Proveedor, ProveedorResumen } from '../../types/database.types';
 
 const ZONA_POR_DEFECTO = 'America/Caracas';
@@ -64,14 +64,57 @@ export async function listarInversiones(
     condiciones.push('tipo = ?');
     params.push(opciones.tipo);
   }
+  const limite = limiteSeguro(opciones.limite, 1000, 5000);
   const filas = await env.DB
     .prepare(`SELECT ${SELECCION} FROM inversiones WHERE ${condiciones.join(' AND ')} ORDER BY fecha DESC, created_at DESC, rowid DESC LIMIT ?`)
-    .bind(...params, limiteSeguro(opciones.limite, 1000, 5000))
+    .bind(...params, limite)
     .all<Inversion>();
-  return filas.results;
+  if (opciones.tipo === 'COMPRA') return filas.results;
+  const automaticas = await perdidasDeMermas(env, alcance, opciones);
+  if (automaticas.length === 0) return filas.results;
+  return [...filas.results, ...automaticas].sort(compararInversiones).slice(0, limite);
+}
+
+/**
+ * Las mermas (vidrios defectuosos marcados al cobrar o dados de baja por cantidad en Descargo) como registros de PÉRDIDA automáticos.
+ * Se leen de `mermas` en el momento (si se borra la venta que las originó, desaparecen solas). El día es el del negocio, así que se
+ * piden con un día de margen y se filtran después por ese día.
+ */
+async function perdidasDeMermas(env: Entorno, alcance: Alcance, opciones: { desde?: string; hasta?: string }): Promise<Inversion[]> {
+  const { sql, valores } = condicionAlcance(alcance, 'm.local_id');
+  const condiciones = [sql];
+  const params: unknown[] = [...valores];
+  const esFecha = (f?: string) => !!f && /^\d{4}-\d{2}-\d{2}$/.test(f);
+  if (esFecha(opciones.desde)) {
+    condiciones.push('m.fecha >= ?');
+    params.push(`${new Date(Date.parse(`${opciones.desde}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)}T00:00:00.000Z`);
+  }
+  if (esFecha(opciones.hasta)) {
+    condiciones.push('m.fecha < ?');
+    params.push(`${diaSiguiente(diaSiguiente(opciones.hasta!))}T00:00:00.000Z`);
+  }
+  const filas = await env.DB
+    .prepare(
+      `SELECT m.id, m.local_id, p.nombre AS producto_nombre, m.cantidad, m.origen, m.motivo, m.nota, m.por_nombre, m.fecha, m.valor_unitario_usd
+       FROM mermas m LEFT JOIN productos p ON p.id = m.producto_id
+       WHERE ${condiciones.join(' AND ')} ORDER BY m.fecha DESC LIMIT 5000`
+    )
+    .bind(...params)
+    .all<{ id: string; local_id: string; producto_nombre: string | null; cantidad: number; origen: 'VENTA' | 'DESCARGO'; motivo: string | null; nota: string | null; por_nombre: string; fecha: string; valor_unitario_usd: number | null }>();
+  if (filas.results.length === 0) return [];
+  const zona = env.ZONA_HORARIA ?? ZONA_POR_DEFECTO;
+  const tasas = await env.DB.prepare('SELECT fecha, tasa, created_at FROM tasas_cambio ORDER BY fecha DESC, created_at DESC LIMIT 400').all<{ fecha: string; tasa: number; created_at: string }>();
+  const out: Inversion[] = [];
+  for (const m of filas.results) {
+    const dia = diaDelNegocioDe(m.fecha, zona);
+    if ((esFecha(opciones.desde) && dia < opciones.desde!) || (esFecha(opciones.hasta) && dia > opciones.hasta!)) continue;
+    out.push(mermaComoPerdida(m, dia, tasaParaFecha(tasas.results, dia)));
+  }
+  return out;
 }
 
 async function inversionDelAlcance(env: Entorno, sesion: Sesion, id: string): Promise<Inversion> {
+  if (id.startsWith('merma:')) throw new ErrorApi(400, 'Esta pérdida se anotó sola desde un vidrio defectuoso o dado de baja: no se edita ni se elimina aquí (se corrige en la venta o en Descargo).', 'registro_automatico');
   const alcance = await acceso(env, sesion);
   const { sql, valores } = condicionAlcance(alcance, 'local_id');
   const fila = await env.DB.prepare(`SELECT ${SELECCION} FROM inversiones WHERE id = ? AND ${sql}`).bind(id, ...valores).first<Inversion>();

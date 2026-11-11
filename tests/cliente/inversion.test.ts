@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCAL_ACCESORIOS_ID, LOCAL_VIDRIOS_ID } from '../../src/lib/constantes-locales';
 import {
-  bsDeInversion, comprasPorDia, comprasPorProveedor, csvInversiones, diaSiguiente, limpiarNombreProveedor, lunesDeSemana, primerDiaDelMes, tasaParaFecha, totalizar, totalizarPorLocal,
+  bsDeInversion, mermaComoPerdida, comprasPorDia, comprasPorProveedor, csvInversiones, diaSiguiente, limpiarNombreProveedor, lunesDeSemana, primerDiaDelMes, tasaParaFecha, totalizar, totalizarPorLocal,
   validarDatosInversion,
 } from '../../src/utils/inversion';
 import type { DatosInversion, Inversion } from '../../src/types/database.types';
@@ -103,6 +103,23 @@ async function comoUsuario(correo: string, clave: string) {
   return import('../../src/lib/inventoryService');
 }
 
+describe('pérdidas automáticas desde mermas (reglas puras)', () => {
+  const merma = { id: 'm1', local_id: LOCAL_VIDRIOS_ID, producto_nombre: 'Vidrio sencillo A15', cantidad: 3, origen: 'VENTA' as const, motivo: 'OTRO', nota: null, por_nombre: 'Eli', fecha: '2026-11-10T15:00:00.000Z', valor_unitario_usd: 1.5 };
+
+  it('describe qué vidrios fueron y vale cantidad × valor de una pieza', () => {
+    const r = mermaComoPerdida(merma, '2026-11-10', 40);
+    expect(r).toMatchObject({ id: 'merma:m1', tipo: 'PERDIDA', fecha: '2026-11-10', monto_usd: 4.5, tasa_bcv: 40, automatica: true, creado_por_nombre: 'Eli' });
+    expect(r.descripcion).toBe('3 × Vidrio sencillo A15 — defectuoso en una venta (otro motivo)');
+    expect(bsDeInversion(r)).toBe(180);
+  });
+
+  it('sin valor guardado vale 0 y un producto borrado se nombra igual', () => {
+    const r = mermaComoPerdida({ ...merma, producto_nombre: null, origen: 'DESCARGO', motivo: null, valor_unitario_usd: null }, '2026-11-10', null);
+    expect(r.monto_usd).toBe(0);
+    expect(r.descripcion).toBe('3 × Producto eliminado — dado de baja en Descargo');
+  });
+});
+
 describe('demo (LocalStorage): inversión con las mismas reglas del servidor', () => {
   beforeEach(() => {
     const almacen = almacenSimulado();
@@ -144,6 +161,21 @@ describe('demo (LocalStorage): inversión con las mismas reglas del servidor', (
     await expect(s.crearProveedor({ nombre: 'TECNO IMPORT C.A.' })).rejects.toThrow(/Ya existe/);
     await s.eliminarProveedor(a.proveedor_id!);
     expect((await s.listarInversiones())[0]).toMatchObject({ proveedor_id: null, proveedor_nombre: 'Tecno Import C.A.' });
+  });
+
+  it('un vidrio botado (al cobrar o en Descargo) aparece solo como pérdida automática y no se edita ni se borra', async () => {
+    localStorage.setItem('easystem:local-activo', LOCAL_VIDRIOS_ID);
+    const s = await comoUsuario('admin@edwardaccesorios.com', 'admin123');
+    const p = await s.crearProducto({ codigo_barras: '2000000000015', nombre: 'Vidrio sencillo Infinix Note 40', categoria: 'Vidrios Templados', precio_venta: 2, control_por_cantidad: 1 });
+    await s.registrarMovimiento({ producto_id: p.id, tipo: 'ENTRADA', cantidad: 20, motivo: 'Compra' });
+    await s.darDeBajaPorCantidad({ productoId: p.id, localId: LOCAL_VIDRIOS_ID, cantidad: 3, motivo: 'DEFECTO_FABRICA' });
+    const lista = await s.listarInversiones();
+    expect(lista).toHaveLength(1);
+    expect(lista[0]).toMatchObject({ tipo: 'PERDIDA', local_id: LOCAL_VIDRIOS_ID, monto_usd: 6, automatica: true });
+    expect(lista[0].descripcion).toBe('3 × Vidrio sencillo Infinix Note 40 — dado de baja en Descargo (venía defectuoso)');
+    expect(await s.listarInversiones({ tipo: 'COMPRA' })).toHaveLength(0);
+    await expect(s.eliminarInversion(lista[0].id)).rejects.toThrow(/se anotó sola/);
+    await expect(s.actualizarInversion(lista[0].id, compra())).rejects.toThrow(/se anotó sola/);
   });
 
   it('guarda la tasa BCV de la fecha, filtra por período y tipo, corrige y borra', async () => {

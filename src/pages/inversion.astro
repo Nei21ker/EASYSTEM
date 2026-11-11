@@ -30,11 +30,6 @@ const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibo
       <button id="iv-nueva-perdida" type="button" class="rounded-lg border border-rose-300 px-4 py-2.5 text-sm font-semibold text-rose-700 transition hover:bg-rose-50 dark:border-rose-500/50 dark:text-rose-300 dark:hover:bg-rose-500/10">+ Registrar pérdida</button>
     </div>
 
-    <section aria-label="Inversión por local">
-      <h2 class="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Inversión por local</h2>
-      <div id="iv-locales" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
-    </section>
-
     <section class={tarjeta} aria-label="Filtros">
       <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div>
@@ -89,6 +84,11 @@ const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibo
         </div>
       </div>
       <p id="iv-sin-tasa" class="hidden text-xs text-amber-700 dark:text-amber-400"></p>
+    </section>
+
+    <section aria-label="Inversión por local">
+      <h2 class="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Inversión por local</h2>
+      <div id="iv-locales" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3"></div>
     </section>
 
     <section class={tarjeta} aria-label="Compras por día">
@@ -346,13 +346,19 @@ const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibo
     const etiquetaTipo = esCompra
       ? '<span class="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">Compra</span>'
       : '<span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 dark:bg-rose-500/15 dark:text-rose-300">Pérdida</span>';
+    const etiquetaAuto = r.automatica
+      ? '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">Automática</span>'
+      : '';
+    const acciones = r.automatica
+      ? '<p class="mt-3 text-xs text-slate-500 dark:text-slate-400">Se anotó sola desde un vidrio defectuoso o dado de baja. Para corregirla, cambia la venta o la baja.</p>'
+      : `<div class="mt-3 flex gap-2"><button type="button" data-editar="${r.id}" class="${botonNeutro}">Editar</button><button type="button" data-eliminar="${r.id}" class="${botonPeligro}">Eliminar</button></div>`;
     return `<article class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="flex flex-wrap items-center gap-2">${etiquetaTipo}
+      <div class="flex flex-wrap items-center gap-2">${etiquetaTipo}${etiquetaAuto}
         <span class="text-xs text-slate-500 dark:text-slate-400">${fechaCorta(r.fecha)} · ${escaparHtml(nombreLocal(r.local_id))}</span>
         <strong class="ml-auto text-right text-base tabular-nums"><span class="block">${formatearMoneda(r.monto_usd)}</span>${bs !== null ? `<span class="block text-xs font-medium text-slate-500 dark:text-slate-400">${formatearBolivares(bs)}</span>` : ''}</strong></div>
       <p class="mt-2 text-sm text-slate-800 dark:text-slate-100">${escaparHtml(r.descripcion)}</p>
-      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${r.proveedor_nombre ? `Proveedor: <strong class="text-slate-700 dark:text-slate-200">${escaparHtml(r.proveedor_nombre)}</strong> · ` : ''}anotó ${escaparHtml(r.creado_por_nombre)}${r.tasa_bcv ? ` · BCV ${formatearBolivares(r.tasa_bcv).replace('Bs. ', '')}` : ' · sin tasa BCV'}</p>
-      <div class="mt-3 flex gap-2"><button type="button" data-editar="${r.id}" class="${botonNeutro}">Editar</button><button type="button" data-eliminar="${r.id}" class="${botonPeligro}">Eliminar</button></div>
+      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${r.proveedor_nombre ? `Proveedor: <strong class="text-slate-700 dark:text-slate-200">${escaparHtml(r.proveedor_nombre)}</strong> · ` : ''}${r.automatica ? 'marcó' : 'anotó'} ${escaparHtml(r.creado_por_nombre)}${r.tasa_bcv ? ` · BCV ${formatearBolivares(r.tasa_bcv).replace('Bs. ', '')}` : ' · sin tasa BCV'}</p>
+      ${acciones}
     </article>`;
   }
 
@@ -619,7 +625,7 @@ const botonGuardar = 'bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibo
       locales = await inventoryService.listarLocales();
       pintarSelectoresDeLocal();
       await recargar();
-      alCambiarDatos(['inversiones', 'proveedores', 'tasas_cambio'], recargar);
+      alCambiarDatos(['inversiones', 'proveedores', 'tasas_cambio', 'mermas'], recargar);
     })
     .catch((err) => aviso($('iv-error'), err instanceof Error ? err.message : 'No se pudo cargar la inversión.'));
 </script>
