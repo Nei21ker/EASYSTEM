@@ -332,7 +332,7 @@ const claseSelect =
             ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
             : ''
         }
-        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white"><span class="inline-block text-right">${htmlPrecioDual(p.precio_venta, tasaActual.get(), '', tienePrecioEnBs(p) ? p.precio_bs! : null)}${tienePrecioEnBs(p) ? '<span class="block text-[10px] font-semibold uppercase text-sky-600 dark:text-sky-400">Bs fijo</span>' : ''}</span></td>
+        <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get(), '', tienePrecioEnBs(p) ? p.precio_bs! : null, tienePrecioEnBs(p) ? 'Fijo ' : '')}</td>
         <td data-label="Stock" class="px-4 py-3"><div class="text-left">${pildoraStock(p)}${desgloseStock(p)}</div></td>
         ${
           puedeEntradas

@@ -65,12 +65,12 @@ export const parsearMonto = parsearTasa;
  * Precio en dólares con su equivalente en bolívares debajo (si ya hay tasa).
  * El texto de Bs. va en un <span> en bloque, pensado para celdas y filas de lista.
  */
-export function htmlPrecioDual(usd: number, tasa: number | null, clasesBs = '', bsExacto: number | null = null): string {
+export function htmlPrecioDual(usd: number, tasa: number | null, clasesBs = '', bsExacto: number | null = null, prefijoBs = ''): string {
   // `bsExacto`: precio FIJO en bolívares (no se recalcula con la tasa: 1100 Bs se ven como 1.100,00 y no como 1.098,00)
   const montoBs = bsExacto ?? (tasa ? convertirABs(usd, tasa) : null);
   const bs =
     montoBs !== null
-      ? `<span class="block whitespace-nowrap text-[11px] font-medium tabular-nums text-slate-500 dark:text-slate-400 ${clasesBs}">${formatearBolivares(montoBs)}</span>`
+      ? `<span class="block whitespace-nowrap text-[11px] font-medium tabular-nums text-slate-500 dark:text-slate-400 ${clasesBs}">${prefijoBs}${formatearBolivares(montoBs)}</span>`
       : '';
   // Un solo elemento: en las tarjetas móviles (celdas flex) el precio no se parte en dos columnas
   return `<span class="inline-block text-right"><span class="block">${formatearMoneda(usd)}</span>${bs}</span>`;
