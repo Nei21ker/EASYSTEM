@@ -27,13 +27,9 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
           <label for="fpr-cedula" class={etiqueta}>Cédula *</label>
           <input id="fpr-cedula" type="text" inputmode="text" autocomplete="off" placeholder="V-12345678" class={`mt-1 ${campo}`} />
         </div>
-        <div>
-          <label for="fpr-nombre" class={etiqueta}>Nombre *</label>
-          <input id="fpr-nombre" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
-        </div>
-        <div>
-          <label for="fpr-apellido" class={etiqueta}>Apellido *</label>
-          <input id="fpr-apellido" type="text" autocomplete="off" class={`mt-1 ${campo}`} />
+        <div class="sm:col-span-2">
+          <label for="fpr-nombre" class={etiqueta}>Nombre y apellido *</label>
+          <input id="fpr-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="120" placeholder="Ej: Pedro Salas" class={`mt-1 ${campo}`} />
         </div>
         <div>
           <label for="fpr-telefono" class={etiqueta}>Teléfono</label>
@@ -57,6 +53,7 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import type { Promotor } from '../../types/database.types';
+  import { separarNombreCompleto, unirNombre } from '../../utils/promotor';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('fpr-dialogo');
@@ -66,7 +63,6 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
   const campos = {
     cedula: $<HTMLInputElement>('fpr-cedula'),
     nombre: $<HTMLInputElement>('fpr-nombre'),
-    apellido: $<HTMLInputElement>('fpr-apellido'),
     telefono: $<HTMLInputElement>('fpr-telefono'),
     banco: $<HTMLInputElement>('fpr-banco'),
   };
@@ -77,8 +73,7 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     editando = detalle?.promotor ?? null;
     $('fpr-titulo').textContent = editando ? 'Corregir datos del promotor' : 'Agregar promotor';
     campos.cedula.value = editando?.cedula ?? detalle?.cedula ?? '';
-    campos.nombre.value = editando?.nombre ?? '';
-    campos.apellido.value = editando?.apellido ?? '';
+    campos.nombre.value = unirNombre(editando?.nombre, editando?.apellido);
     campos.telefono.value = editando?.telefono ?? '';
     campos.banco.value = editando?.banco ?? '';
     error.classList.add('hidden');
@@ -97,10 +92,16 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     error.classList.add('hidden');
     guardar.disabled = true;
     try {
+      // Un solo campo «Nombre y apellido» escrito corrido: se parte en las dos piezas que guarda el sistema
+      const { nombre, apellido } = separarNombreCompleto(campos.nombre.value);
+      if (!apellido) {
+        campos.nombre.focus();
+        throw new Error('Escribe el nombre y el apellido del promotor.');
+      }
       const datos = {
         cedula: campos.cedula.value,
-        nombre: campos.nombre.value,
-        apellido: campos.apellido.value,
+        nombre,
+        apellido,
         telefono: campos.telefono.value || null,
         banco: campos.banco.value || null,
       };
