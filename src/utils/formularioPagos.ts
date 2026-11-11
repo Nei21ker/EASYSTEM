@@ -255,8 +255,9 @@ export class FormularioPagos {
       resumen.className = verde;
       resumen.textContent = `✓ Pagos completos: ${formatearMoneda(this.total)}`;
     } else if (dif < 0) {
-      resumen.className = ambar;
-      resumen.textContent = `Falta por asignar: ${formatearMoneda(-dif)}${tasa ? ` (≈ ${formatearBolivares(convertirABs(-dif, tasa))})` : ''}`;
+      // Mientras falta por pagar no se muestra aviso (estorbaba en el celular); si se intenta cobrar así, `leer()` explica qué falta
+      resumen.className = 'hidden';
+      resumen.textContent = '';
     } else if (this.darVuelto) {
       resumen.className = verde;
       resumen.textContent = `✓ Recibido ${formatearMoneda(this.total + dif)} · Total ${formatearMoneda(this.total)} · Vuelto ${formatearMoneda(dif)}`;
