@@ -70,7 +70,7 @@ export function htmlPrecioDual(usd: number, tasa: number | null, clasesBs = '', 
   const montoBs = bsExacto ?? (tasa ? convertirABs(usd, tasa) : null);
   const bs =
     montoBs !== null
-      ? `<span class="block whitespace-nowrap text-[11px] font-medium tabular-nums text-slate-500 dark:text-slate-400 ${clasesBs}">${prefijoBs}${formatearBolivares(montoBs)}</span>`
+      ? `<span class="block whitespace-nowrap text-[11px] tabular-nums ${bsExacto !== null ? 'font-semibold text-sky-600 dark:text-sky-400' : 'font-medium text-slate-500 dark:text-slate-400'} ${clasesBs}">${prefijoBs}${formatearBolivares(montoBs)}</span>`
       : '';
   // Un solo elemento: en las tarjetas móviles (celdas flex) el precio no se parte en dos columnas
   return `<span class="inline-block text-right"><span class="block">${formatearMoneda(usd)}</span>${bs}</span>`;
