@@ -1,6 +1,6 @@
 // Datos del promotor para el pago móvil: monto en Bs al cambio de hoy y textos listos para copiar.
 import { describe, expect, it } from 'vitest';
-import { bsDeHoy, htmlBotonesCopiarPago, montoBsParaBanco, soloDigitos, textoDatosPagoMovil, textoUsdYBs } from '../../src/utils/pagoMovil';
+import { bsDeHoy, htmlBotonesCopiarPago, htmlMontoDividido, montoBsParaBanco, partesUsdYBs, soloDigitos, textoDatosPagoMovil, textoUsdYBs } from '../../src/utils/pagoMovil';
 
 const promotor = { nombre: 'Eliezer Vasquez', cedula: 'V-27868051', telefono: '0424-531 6626', banco: 'Provincial', montoUsd: 3.78 };
 
@@ -32,14 +32,27 @@ describe('pagoMovil', () => {
     expect(textoDatosPagoMovil({ ...promotor, banco: null }, 900)).toContain('Banco: (sin registrar)');
   });
 
-  it('los botones copian cada dato por separado y el de monto solo sale si hay tasa y monto', () => {
+  it('hay un solo botón de copiar y lleva todos los datos del pago', () => {
     const html = htmlBotonesCopiarPago(promotor, 900);
-    expect(html).toContain('data-copiar="27868051"');
-    expect(html).toContain('data-copiar="04245316626"');
-    expect(html).toContain('data-copiar="3402,00"');
-    expect(htmlBotonesCopiarPago(promotor, null)).not.toContain('Monto Bs');
-    expect(htmlBotonesCopiarPago({ ...promotor, montoUsd: null }, 900)).not.toContain('Monto Bs');
-    expect(htmlBotonesCopiarPago({ ...promotor, telefono: '' }, 900)).not.toContain('>Teléfono<');
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).toContain('Cédula: V-27868051');
+    expect(html).toContain('Teléfono: 0424-531 6626');
+    expect(html).toContain('Bs. 3.402,00');
+    expect(html).not.toContain('>Cédula<');
+    expect(html).not.toContain('Monto Bs');
+  });
+
+  it('el monto se parte en dos mitades con una barra: dólares a la izquierda y bolívares a la derecha', () => {
+    expect(partesUsdYBs(3.78, 900)).toEqual({ usd: '$3.78', bs: 'Bs. 3.402,00' });
+    expect(textoUsdYBs(3.78, 900)).toBe('$3.78 | Bs. 3.402,00');
+    const html = htmlMontoDividido(3.78, 900);
+    expect(html).toContain('grid-cols-2');
+    expect(html).toContain('border-l');
+    expect(html).toContain('3.402,00');
+    expect(html).not.toContain('·');
+    const sinTasa = htmlMontoDividido(3.78, null);
+    expect(sinTasa).not.toContain('border-l');
+    expect(sinTasa).toContain('$3.78');
   });
 
   it('un nombre con comillas no rompe el atributo del botón', () => {

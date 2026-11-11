@@ -27,7 +27,7 @@
   import * as inventoryService from '../../lib/inventoryService';
   import { alCambiarDatos } from '../../lib/realtime';
   import { formatearFecha } from '../../utils/format';
-  import { activarBotonesCopiar, htmlBotonesCopiarPago, textoUsdYBs } from '../../utils/pagoMovil';
+  import { activarBotonesCopiar, htmlBotonesCopiarPago, partesUsdYBs, textoUsdYBs } from '../../utils/pagoMovil';
   import { tasaActual } from '../../stores/tasa';
   import { escaparHtml } from '../../utils/productosUI';
   import type { Pendiente, PromotorResumen } from '../../types/database.types';
@@ -53,7 +53,7 @@
 
   /** "$3.78" y debajo "Bs. 3.400,00" al cambio de hoy (anclado al dólar) */
   function htmlMontoDual(usd: number): string {
-    const [d, bs] = textoUsdYBs(usd, tasaActual.get()).split(' · ');
+    const { usd: d, bs } = partesUsdYBs(usd, tasaActual.get());
     return `<span class="block">${d}</span>${bs ? `<span class="block text-[11px] font-medium text-slate-500 dark:text-slate-400">${bs}</span>` : ''}`;
   }
 

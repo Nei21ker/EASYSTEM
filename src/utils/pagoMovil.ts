@@ -20,10 +20,29 @@ export const montoBsParaBanco = (bs: number): string => bs.toFixed(2).replace('.
 /** Bs al cambio de hoy, o null si todavía no hay tasa. */
 export const bsDeHoy = (usd: number, tasa: number | null | undefined): number | null => (tasa && tasa > 0 ? convertirABs(usd, tasa) : null);
 
-/** "$3.78 · Bs. 3.400,00" (solo "$3.78" mientras no haya tasa). */
-export function textoUsdYBs(usd: number, tasa: number | null | undefined): string {
+/** "$3.78" y "Bs. 3.400,00" por separado (`bs` es null mientras no haya tasa). */
+export function partesUsdYBs(usd: number, tasa: number | null | undefined): { usd: string; bs: string | null } {
   const bs = bsDeHoy(usd, tasa);
-  return bs === null ? formatearMoneda(usd) : `${formatearMoneda(usd)} · ${formatearBolivares(bs)}`;
+  return { usd: formatearMoneda(usd), bs: bs === null ? null : formatearBolivares(bs) };
+}
+
+/** "$3.78 | Bs. 3.400,00" (solo "$3.78" mientras no haya tasa). */
+export function textoUsdYBs(usd: number, tasa: number | null | undefined): string {
+  const p = partesUsdYBs(usd, tasa);
+  return p.bs === null ? p.usd : `${p.usd} | ${p.bs}`;
+}
+
+/**
+ * El monto en dos mitades iguales con una barra vertical en medio: a la izquierda los dólares y a la derecha los bolívares,
+ * cada uno con su rótulo debajo. Sin tasa solo sale la mitad de dólares.
+ */
+export function htmlMontoDividido(usd: number, tasa: number | null | undefined): string {
+  const p = partesUsdYBs(usd, tasa);
+  const numero = 'block whitespace-nowrap text-2xl font-bold tabular-nums';
+  const rotulo = 'block text-xs font-normal text-slate-500 dark:text-slate-400';
+  if (p.bs === null) return `<span class="block"><span class="${numero}">${p.usd}</span><span class="${rotulo}">dólares</span></span>`;
+  const bsNumero = p.bs.replace(/^Bs\.\s*/, '');
+  return `<span class="grid grid-cols-2"><span class="min-w-0 pr-3"><span class="${numero}">${p.usd}</span><span class="${rotulo}">dólares</span></span><span class="min-w-0 border-l border-slate-300 pl-3 dark:border-slate-600"><span class="${numero}">${bsNumero}</span><span class="${rotulo}">bolívares</span></span></span>`;
 }
 
 /** Todos los datos del pago en varias líneas, para pegarlos en un mensaje o una nota. */
@@ -48,19 +67,10 @@ const CLASE_COPIAR =
 export const htmlBotonCopiar = (etiqueta: string, valor: string, extra = ''): string =>
   `<button type="button" data-copiar="${escaparAtributo(valor)}" data-etiqueta="${escaparAtributo(etiqueta)}" class="${CLASE_COPIAR} ${extra}">${escaparAtributo(etiqueta)}</button>`;
 
-/**
- * Fila de botones para copiar: todo junto, la cédula, el teléfono y el monto en Bs (cada campo del pago móvil se pega por separado).
- * Solo salen los que tienen dato.
- */
+/** Un solo botón que copia todos los datos del pago móvil (nombre, cédula, teléfono, banco y monto). */
 export function htmlBotonesCopiarPago(d: DatosPagoMovil, tasa: number | null | undefined): string {
-  const bs = d.montoUsd != null ? bsDeHoy(d.montoUsd, tasa) : null;
-  const botones = [
-    htmlBotonCopiar('Copiar datos', textoDatosPagoMovil(d, tasa), 'border-brand-300 text-brand-700 dark:border-brand-500/50 dark:text-brand-300'),
-    soloDigitos(d.cedula) ? htmlBotonCopiar('Cédula', soloDigitos(d.cedula)) : '',
-    soloDigitos(d.telefono) ? htmlBotonCopiar('Teléfono', soloDigitos(d.telefono)) : '',
-    bs !== null ? htmlBotonCopiar('Monto Bs', montoBsParaBanco(bs)) : '',
-  ];
-  return `<div class="flex flex-wrap gap-2" data-copiar-fila>${botones.join('')}</div>`;
+  const boton = htmlBotonCopiar('Copiar datos del pago móvil', textoDatosPagoMovil(d, tasa), 'border-brand-300 text-brand-700 dark:border-brand-500/50 dark:text-brand-300');
+  return `<div class="flex flex-wrap gap-2" data-copiar-fila>${boton}</div>`;
 }
 
 /** Copia al portapapeles (con respaldo para navegadores sin la API o sin https). */

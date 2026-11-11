@@ -32,11 +32,11 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     <section class="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Resumen">
       <div class={claseTarjeta}>
         <p class="text-xs text-slate-500 dark:text-slate-400">Comisiones por pagar</p>
-        <p id="pd-r-comisiones" class="mt-1 text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">—</p>
+        <p id="pd-r-comisiones" class="mt-2 text-amber-600 dark:text-amber-400">—</p>
       </div>
       <div class={claseTarjeta}>
         <p class="text-xs text-slate-500 dark:text-slate-400">Mercancía por cobrar</p>
-        <p id="pd-r-mercancia" class="mt-1 text-2xl font-bold tabular-nums text-rose-600 dark:text-rose-400">—</p>
+        <p id="pd-r-mercancia" class="mt-2 text-rose-600 dark:text-rose-400">—</p>
       </div>
       <div class={claseTarjeta}>
         <p class="text-xs text-slate-500 dark:text-slate-400">Pendientes abiertos</p>
@@ -98,7 +98,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import { alCambiarDatos } from '../lib/realtime';
   import { ALCANCE_TODOS } from '../lib/constantes-locales';
   import { formatearFecha } from '../utils/format';
-  import { activarBotonesCopiar, htmlBotonesCopiarPago, textoUsdYBs } from '../utils/pagoMovil';
+  import { activarBotonesCopiar, htmlBotonesCopiarPago, htmlMontoDividido, partesUsdYBs } from '../utils/pagoMovil';
   import { tasaActual } from '../stores/tasa';
   import { escaparHtml } from '../utils/productosUI';
   import type { EstadoPendiente, Pendiente, TipoPendiente } from '../types/database.types';
@@ -146,7 +146,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
   /** "$3.78" y debajo "Bs. 3.400,00" al cambio de hoy (anclado al dólar) */
   function htmlMontoDual(usd: number): string {
-    const [d, bs] = textoUsdYBs(usd, tasaActual.get()).split(' · ');
+    const { usd: d, bs } = partesUsdYBs(usd, tasaActual.get());
     return `<span class="block">${d}</span>${bs ? `<span class="block text-xs font-medium text-slate-500 dark:text-slate-400">${bs}</span>` : ''}`;
   }
 
@@ -176,8 +176,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
   function pintar() {
     const suma = (tipo: TipoPendiente) => abiertos.filter((p) => p.tipo === tipo).reduce((s, p) => s + p.monto_usd, 0);
-    $('pd-r-comisiones').textContent = textoUsdYBs(suma('COMISION'), tasaActual.get());
-    $('pd-r-mercancia').textContent = textoUsdYBs(suma('MERCANCIA'), tasaActual.get());
+    $('pd-r-comisiones').innerHTML = htmlMontoDividido(suma('COMISION'), tasaActual.get());
+    $('pd-r-mercancia').innerHTML = htmlMontoDividido(suma('MERCANCIA'), tasaActual.get());
     $('pd-r-abiertos').textContent = String(abiertos.length);
 
     const q = ($('pd-buscar') as HTMLInputElement).value.trim().toLowerCase();
