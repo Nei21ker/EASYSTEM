@@ -564,6 +564,8 @@ export interface Empleado {
   estado: EstadoEmpleado;
   /** "aaaa-mm-dd" */
   fecha_ingreso: string;
+  /** Promotor del directorio al que pertenece (solo los trabajadores independientes: son los promotores) */
+  promotor_id?: string | null;
   created_at: string;
 }
 

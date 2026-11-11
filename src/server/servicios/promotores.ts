@@ -117,11 +117,18 @@ export async function actualizarPromotor(env: Entorno, sesion: Sesion, id: strin
   if (!actual) throw new ErrorApi(404, 'El promotor no existe.', 'no_existe');
   const otro = await env.DB.prepare('SELECT nombre, apellido FROM promotores WHERE cedula = ? AND id <> ?').bind(p.cedula, id).first<{ nombre: string; apellido: string }>();
   if (otro) throw new ErrorApi(409, `Esa cédula ya es de otro promotor: ${`${otro.nombre} ${otro.apellido}`.trim()}.`, 'promotor_repetido');
-  await env.DB
-    .prepare('UPDATE promotores SET cedula = ?, nombre = ?, apellido = ?, telefono = ?, banco = ?, updated_at = ? WHERE id = ?')
-    .bind(p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, ahora(), id)
-    .run();
+  // Si el promotor ya cobra por día, su fila de nómina (migración 0020) lleva los mismos datos: no puede chocar con la cédula de un empleado
+  const choque = await env.DB.prepare('SELECT 1 AS x FROM empleados WHERE cedula = ? AND (promotor_id IS NULL OR promotor_id <> ?)').bind(p.cedula, id).first();
+  if (choque) throw new ErrorApi(409, `La cédula ${p.cedula} ya está registrada como empleado de nómina.`, 'cedula_repetida');
+  await env.DB.batch([
+    env.DB
+      .prepare('UPDATE promotores SET cedula = ?, nombre = ?, apellido = ?, telefono = ?, banco = ?, updated_at = ? WHERE id = ?')
+      .bind(p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, ahora(), id),
+    env.DB.prepare('UPDATE empleados SET cedula = ?, nombre = ?, apellido = ? WHERE promotor_id = ?').bind(p.cedula, p.nombrePropio, p.apellido, id),
+  ]);
   await avisarCambio(env.DB, ['promotores']);
+  const sombra = await env.DB.prepare('SELECT local_id FROM empleados WHERE promotor_id = ?').bind(id).first<{ local_id: string }>();
+  if (sombra) await avisarCambio(env.DB, ['empleados'], sombra.local_id);
   const fila = await env.DB.prepare('SELECT * FROM promotores WHERE id = ?').bind(id).first<Record<string, unknown>>();
   return aPromotor(fila!);
 }

@@ -75,6 +75,47 @@ export async function crearEmpleado(env: Entorno, sesion: Sesion, datos: NuevoEm
   return fila;
 }
 
+/**
+ * El promotor del directorio como trabajador de nómina: devuelve su fila de `empleados` (tipo INDEPENDIENTE) y, si todavía no la tiene, la
+ * crea en el local dado. Es lo que permite pagarle un día; sus datos se escriben una sola vez, en el directorio de promotores.
+ */
+export async function asegurarEmpleadoPromotor(env: Entorno, sesion: Sesion, promotorId: string, localId: string): Promise<Empleado> {
+  const alcance = await alcanceNomina(env, sesion);
+  if (!enAlcance(alcance, localId)) throw new ErrorApi(403, 'No tienes permiso para pagar en este local.', 'sin_permiso');
+  const promotor = await env.DB.prepare('SELECT id, cedula, nombre, apellido FROM promotores WHERE id = ?').bind(promotorId).first<{ id: string; cedula: string; nombre: string; apellido: string }>();
+  if (!promotor) throw new ErrorApi(404, 'El promotor no existe.', 'no_existe');
+  const existente = await env.DB.prepare('SELECT * FROM empleados WHERE promotor_id = ?').bind(promotorId).first<Empleado>();
+  if (existente) {
+    if (!enAlcance(alcance, existente.local_id)) throw new ErrorApi(404, 'El promotor no existe.', 'no_existe');
+    return existente;
+  }
+  const choque = await env.DB.prepare('SELECT nombre, apellido FROM empleados WHERE cedula = ?').bind(promotor.cedula).first<{ nombre: string; apellido: string }>();
+  if (choque) {
+    throw new ErrorApi(409, `La cédula ${promotor.cedula} ya está registrada como empleado de nómina (${`${choque.nombre} ${choque.apellido}`.trim()}).`, 'cedula_repetida');
+  }
+  const fila: Empleado = {
+    id: nuevoId(),
+    local_id: localId,
+    nombre: texto(promotor.nombre) || 'Promotor',
+    apellido: texto(promotor.apellido) || promotor.cedula,
+    cedula: promotor.cedula,
+    cargo: 'Promotor',
+    salario_base: 0,
+    tipo: 'INDEPENDIENTE',
+    frecuencia_pago: 'DIARIO',
+    estado: 'ACTIVO',
+    fecha_ingreso: ahoraISO().slice(0, 10),
+    promotor_id: promotorId,
+    created_at: ahoraISO(),
+  };
+  await env.DB
+    .prepare('INSERT INTO empleados (id, local_id, nombre, apellido, cedula, cargo, salario_base, tipo, frecuencia_pago, estado, fecha_ingreso, promotor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(fila.id, fila.local_id, fila.nombre, fila.apellido, fila.cedula, fila.cargo, 0, fila.tipo, fila.frecuencia_pago, fila.estado, fila.fecha_ingreso, promotorId, fila.created_at)
+    .run();
+  await env.DB.batch(sentenciasCambio(env.DB, ['empleados'], fila.local_id));
+  return fila;
+}
+
 async function obtenerEmpleado(env: Entorno, id: string): Promise<Empleado> {
   const e = await env.DB.prepare('SELECT * FROM empleados WHERE id = ?').bind(id).first<Empleado>();
   if (!e) throw new ErrorApi(404, 'El trabajador no existe', 'no_existe');

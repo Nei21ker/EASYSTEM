@@ -386,6 +386,8 @@ export const empleados = sqliteTable('empleados', {
   frecuencia_pago: text('frecuencia_pago', { enum: ['QUINCENAL', 'DIARIO'] }).notNull().default('QUINCENAL'),
   estado: text('estado', { enum: ['ACTIVO', 'INACTIVO'] }).notNull().default('ACTIVO'),
   fecha_ingreso: text('fecha_ingreso').notNull(),
+  // Si es la "sombra" de nómina de un promotor del directorio (migración 0020)
+  promotor_id: text('promotor_id'),
   created_at: marca('created_at'),
 });
 

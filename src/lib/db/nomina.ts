@@ -10,6 +10,11 @@ export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
   return api.post<Empleado>('/api/nomina/empleados', datos);
 }
 
+/** La fila de nómina de un promotor del directorio (la crea si no existe): hace falta para armarle la lista y pagarle el día. */
+export async function asegurarEmpleadoPromotor(promotorId: string, localId: string): Promise<Empleado> {
+  return api.post<Empleado>('/api/nomina/empleados/promotor', { promotorId, localId });
+}
+
 export async function actualizarEmpleado(id: string, cambios: Partial<NuevoEmpleado>): Promise<Empleado> {
   return api.patch<Empleado>(`/api/nomina/empleados/${encodeURIComponent(id)}`, cambios);
 }

@@ -3,8 +3,9 @@ import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, 
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { crearProducto } from '../../src/server/servicios/catalogo';
+import { actualizarPromotor, crearPromotor } from '../../src/server/servicios/promotores';
 import {
-  actualizarEmpleado, catalogoReventa, crearEmpleado, eliminarPagoPendiente, generarPagosPendientes, guardarPagoIndependiente,
+  actualizarEmpleado, asegurarEmpleadoPromotor, catalogoReventa, crearEmpleado, eliminarPagoPendiente, generarPagosPendientes, guardarPagoIndependiente,
   guardarPagoQuincenal, listarEmpleados, listarNominas, listarReventas, obtenerNomina,
 } from '../../src/server/servicios/nomina';
 
@@ -259,6 +260,56 @@ describe('trabajador independiente: pago diario por reventa', () => {
     await guardarPagoIndependiente(env, sG, { empleadoId: e.id, dia: DIA, lineas: [linea('A', 1, 5, 6)], bonos: 0, deducciones: 0, notas: null, pagar: false });
     const tablas = (await env.DB.prepare('SELECT tabla, local_id FROM cambios ORDER BY tabla').all<{ tabla: string; local_id: string }>()).results;
     expect(tablas).toEqual([{ tabla: 'nomina_reventas', local_id: accesorios }, { tabla: 'nominas', local_id: accesorios }]);
+  });
+});
+
+describe('una sola lista de promotores: el directorio es también la lista de pago diario', () => {
+  const nuevoPromotor = (extra: Record<string, unknown> = {}) => ({ cedula: 'V-26111222', nombre: 'Pedro', apellido: 'Salas', telefono: '0414-1112233', banco: 'Banesco', ...extra });
+
+  it('crea la fila de nómina del promotor una sola vez, con los datos del directorio, y la reutiliza', async () => {
+    const p = await crearPromotor(env, sG, nuevoPromotor());
+    const a = await asegurarEmpleadoPromotor(env, sG, p.id, vidrios);
+    expect(a).toMatchObject({ promotor_id: p.id, tipo: 'INDEPENDIENTE', frecuencia_pago: 'DIARIO', salario_base: 0, nombre: 'Pedro', apellido: 'Salas', cedula: p.cedula, local_id: vidrios });
+    const b = await asegurarEmpleadoPromotor(env, sC, p.id, vidrios);
+    expect(b.id).toBe(a.id);
+    expect((await listarEmpleados(env, sG)).filter((e) => e.promotor_id === p.id)).toHaveLength(1);
+  });
+
+  it('con esa fila se le arma la lista y se le paga el día (ganancia sobre el precio de lista)', async () => {
+    const p = await crearPromotor(env, sG, nuevoPromotor());
+    const e = await asegurarEmpleadoPromotor(env, sC, p.id, vidrios);
+    const id = await guardarPagoIndependiente(env, sC, { empleadoId: e.id, dia: '2026-10-05', lineas: [linea('Vidrio', 4, 5, 6.5)], bonos: 0, deducciones: 0, notas: null, pagar: true });
+    const n = await obtenerNomina(env, sC, id);
+    expect(n.pago_base).toBe(6);
+    expect(n.estado_pago).toBe('PAGADO');
+  });
+
+  it('corregir al promotor en el directorio corrige también su fila de nómina', async () => {
+    const p = await crearPromotor(env, sG, nuevoPromotor());
+    const e = await asegurarEmpleadoPromotor(env, sG, p.id, vidrios);
+    await actualizarPromotor(env, sG, p.id, nuevoPromotor({ nombre: 'Pedro José', apellido: 'Salas Rojas', cedula: 'V-26111999' }));
+    const despues = (await listarEmpleados(env, sG)).find((x) => x.id === e.id)!;
+    expect(despues).toMatchObject({ nombre: 'Pedro José', apellido: 'Salas Rojas', cedula: 'V-26111999' });
+  });
+
+  it('una cédula que ya es de un empleado de nómina no se puede usar para el promotor (409), ni al revés', async () => {
+    await crearEmpleado(env, sG, fijo({ cedula: 'V-26111222' }));
+    const p = await crearPromotor(env, sG, nuevoPromotor());
+    await rechazo(asegurarEmpleadoPromotor(env, sG, p.id, vidrios), 409, /ya está registrada como empleado/);
+    const otro = await crearPromotor(env, sG, nuevoPromotor({ cedula: 'V-28000111' }));
+    await rechazo(actualizarPromotor(env, sG, otro.id, nuevoPromotor({ cedula: 'V-26111222' })), 409);
+  });
+
+  it('el promotor sin nombre (creado por una venta) se llama «Promotor» y usa la cédula de apellido', async () => {
+    await env.DB.prepare("INSERT INTO promotores (id, cedula, nombre, apellido) VALUES ('p-sn', 'V-29000111', '', '')").run();
+    const e = await asegurarEmpleadoPromotor(env, sG, 'p-sn', vidrios);
+    expect(e).toMatchObject({ nombre: 'Promotor', apellido: 'V-29000111' });
+  });
+
+  it('promotor inexistente: 404; encargado, vendedor y técnico: 403; local fuera del alcance: 403', async () => {
+    await rechazo(asegurarEmpleadoPromotor(env, sG, 'no-existe', vidrios), 404);
+    const p = await crearPromotor(env, sG, nuevoPromotor());
+    for (const s of [sE, sV, sT]) await rechazo(asegurarEmpleadoPromotor(env, s, p.id, vidrios), 403);
   });
 });
 

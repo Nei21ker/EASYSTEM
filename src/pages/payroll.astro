@@ -174,7 +174,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
       <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
         <h2 id="em-titulo" class="text-base font-semibold">Nuevo empleado</h2>
 
-        <div>
+        <div class="hidden">
           <label for="em-tipo" class={etiqueta}>Tipo *</label>
           <select id="em-tipo" class={`mt-1 ${campo}`}>
             <option value="FIJO">Empleado (pago quincenal)</option>
@@ -336,7 +336,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import { formatearFecha, formatearMoneda } from '../utils/format';
   import { hoyISO, pagoBaseQuincenal, quincenaAnterior, quincenaDe, quincenaSiguiente, totalPago, validarAjustes, type Quincena } from '../utils/nomina';
   import { animarLista } from '../utils/animaciones';
-  import type { Empleado, LineaReventa, Local, Nomina, ProductoReventa } from '../types/database.types';
+  import { LOCAL_VIDRIOS_ID } from '../lib/constantes-locales';
+  import type { Empleado, LineaReventa, Local, Nomina, ProductoReventa, PromotorResumen } from '../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const filas = $<HTMLTableSectionElement>('pn-filas');
@@ -353,7 +354,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   let periodo: Quincena = quincenaDe();
   let dia = hoyISO();
   let locales: Local[] = [];
-  let empleados: Empleado[] = [];
+  let empleados: Empleado[] = []; // personal de nómina tal como está guardado (incluye la fila de nómina de los promotores que ya cobraron)
+  let promotores: PromotorResumen[] = []; // el directorio: ES la lista de «Promotores · pago diario»
   let nominas: Nomina[] = []; // pagos quincenales de la quincena elegida
   let nominasDia: Nomina[] = []; // pagos diarios del día elegido
   let reventasDia: Record<string, LineaReventa[]> = {}; // lista de reventa de cada pago diario, por id de pago
@@ -373,6 +375,34 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   };
   const redondear = (n: number) => Math.round(n * 100) / 100;
   const esIndep = (e: Empleado) => e.tipo === 'INDEPENDIENTE';
+  const PREFIJO_VIRTUAL = 'promotor:';
+  const esVirtual = (e: Empleado) => e.id.startsWith(PREFIJO_VIRTUAL);
+
+  /**
+   * Una sola lista de promotores: la pestaña «Promotores · pago diario» sale del directorio. Quien ya cobró alguna vez tiene su fila de
+   * nómina (la «sombra» ligada por `promotor_id`); quien no, se muestra como una fila virtual y su fila real se crea al armarle la
+   * primera lista (`asegurarEmpleadoPromotor`). Nombre, apellido y cédula siempre son los del directorio.
+   */
+  function promotoresComoEmpleados(): Empleado[] {
+    return promotores.map((p) => {
+      const real = empleados.find((e) => e.promotor_id === p.id);
+      const datos = { nombre: p.nombre.trim() || 'Promotor', apellido: p.apellido.trim() || p.cedula, cedula: p.cedula };
+      if (real) return { ...real, ...datos };
+      return {
+        id: PREFIJO_VIRTUAL + p.id,
+        local_id: LOCAL_VIDRIOS_ID,
+        ...datos,
+        cargo: 'Promotor',
+        salario_base: 0,
+        tipo: 'INDEPENDIENTE' as const,
+        frecuencia_pago: 'DIARIO' as const,
+        estado: 'ACTIVO' as const,
+        fecha_ingreso: hoyISO(),
+        promotor_id: p.id,
+        created_at: p.created_at,
+      };
+    });
+  }
   const etiquetaDia = (iso: string) => {
     const [a, m, d] = iso.split('-').map(Number);
     return new Date(a, m - 1, d).toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -448,7 +478,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   function construirFilasIndep(): Fila[] {
     const porEmpleado = new Map(nominasDia.map((n) => [n.empleado_id, n]));
     return filtrarEmpleados(
-      empleados.filter(esIndep),
+      promotoresComoEmpleados(),
       new Set(porEmpleado.keys())
     )
       .map((empleado) => {
@@ -613,12 +643,12 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     const lista = construirFilasIndep();
     pintarResumen(lista, ['Promotores activos', 'Pagos del día']);
 
-    const independientes = empleados.filter(esIndep);
+    const independientes = promotores;
     const vacio = $('pn-vacio-indep');
     vacio.classList.toggle('hidden', lista.length > 0);
     vacio.textContent =
       independientes.length === 0
-        ? 'Todavía no hay promotores con pago diario. Registra el primero con "+ Nuevo promotor".'
+        ? 'Todavía no hay promotores. Registra el primero con "+ Nuevo promotor": es la misma lista de Pendientes.'
         : 'Ningún promotor coincide con los filtros.';
 
     filasIndep.innerHTML = tablaAgrupada(lista, filaIndepHtml, 8, 'Total consolidado del día (todos los locales)');
@@ -768,13 +798,12 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   function abrirEmpleado(empleado?: Empleado) {
     editandoEmpleado = empleado ?? null;
     emError.classList.add('hidden');
-    $('em-titulo').textContent = empleado ? 'Editar' : 'Nuevo';
-    $('em-titulo').textContent += (empleado?.tipo ?? (vista === 'independientes' ? 'INDEPENDIENTE' : 'FIJO')) === 'INDEPENDIENTE' ? ' promotor' : ' empleado';
+    $('em-titulo').textContent = empleado ? 'Editar empleado' : 'Nuevo empleado';
     $('em-bloque-estado').classList.toggle('hidden', !empleado);
     em.local.innerHTML = locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
-    // El tipo se elige al registrar (por defecto, el de la pestaña visible) y no se cambia después
-    em.tipo.value = empleado?.tipo ?? (vista === 'independientes' ? 'INDEPENDIENTE' : 'FIJO');
-    em.tipo.disabled = !!empleado;
+    // Aquí solo se registran empleados fijos: los promotores se registran una sola vez, en el directorio de promotores
+    em.tipo.value = 'FIJO';
+    em.tipo.disabled = true;
     em.nombre.value = empleado?.nombre ?? '';
     em.apellido.value = empleado?.apellido ?? '';
     em.cedula.value = empleado?.cedula ?? '';
@@ -788,7 +817,24 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     em.nombre.focus();
   }
 
-  $('pn-nuevo').addEventListener('click', () => abrirEmpleado());
+  $('pn-nuevo').addEventListener('click', () => {
+    if (vista === 'independientes') window.dispatchEvent(new CustomEvent('easystem:abrir-promotor'));
+    else abrirEmpleado();
+  });
+
+  // Un promotor se agrega o corrige en el directorio (la misma lista de Pendientes); al guardarlo la tabla de pago diario lo muestra
+  async function recargarPromotores() {
+    promotores = await inventoryService.listarPromotores();
+    empleados = await inventoryService.listarEmpleados();
+  }
+  window.addEventListener('easystem:promotor-guardado', async () => {
+    try {
+      await recargarPromotores();
+      pintar();
+    } catch (err) {
+      avisar(error, mensajeDeError(err, 'No se pudo actualizar la lista de promotores.'));
+    }
+  });
   $('em-cancelar').addEventListener('click', () => emDialogo.close());
 
   emForm.addEventListener('submit', async (e) => {
@@ -1096,7 +1142,14 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
       const fila = construir().find((f) => f.empleado.id === idPago);
       if (fila) abrirPago(fila);
     } else if (idEditar) {
-      abrirEmpleado(empleados.find((x) => x.id === idEditar));
+      const fila = construir().find((f) => f.empleado.id === idEditar);
+      if (fila && esIndep(fila.empleado)) {
+        // Un promotor se corrige en el directorio
+        const promotor = promotores.find((x) => x.id === fila.empleado.promotor_id);
+        if (promotor) window.dispatchEvent(new CustomEvent('easystem:abrir-promotor', { detail: { promotor } }));
+      } else {
+        abrirEmpleado(empleados.find((x) => x.id === idEditar));
+      }
     }
   };
   filas.addEventListener('click', alHacerClicEnTabla(construirFilas));
@@ -1143,8 +1196,14 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     botones.forEach((b) => (b.disabled = true));
     try {
       if (independiente) {
+        // Un promotor que nunca ha cobrado aún no tiene su fila de nómina: se crea ahora (con los datos del directorio)
+        let empleadoPago = pagando.empleado;
+        if (esVirtual(empleadoPago)) {
+          empleadoPago = await inventoryService.asegurarEmpleadoPromotor(empleadoPago.promotor_id!, empleadoPago.local_id);
+          empleados = await inventoryService.listarEmpleados();
+        }
         await inventoryService.guardarPagoIndependiente({
-          empleado: pagando.empleado,
+          empleado: empleadoPago,
           dia,
           lineas: lineasEdicion,
           bonos,
@@ -1214,14 +1273,16 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
       locales = listaLocales;
       selectLocal.innerHTML = `<option value="todos">Todos los locales (consolidado)</option>` + locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
       empleados = await inventoryService.listarEmpleados();
+      promotores = await inventoryService.listarPromotores();
       aplicarVista();
       await cargarVista();
       pintar();
       emitirFiltroPromotores();
 
       // Otro dispositivo pagó, ajustó una lista o cambió un trabajador: la nómina se actualiza sola
-      alCambiarDatos(['nominas', 'nomina_reventas', 'empleados', 'locales'], async () => {
+      alCambiarDatos(['nominas', 'nomina_reventas', 'empleados', 'promotores', 'locales'], async () => {
         empleados = await inventoryService.listarEmpleados();
+        promotores = await inventoryService.listarPromotores();
         await cargarVista();
         pintar();
         // Si esta ventana de pago estaba abierta y ese pago ya se registró en otro dispositivo, no se puede seguir editando

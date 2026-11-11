@@ -39,7 +39,7 @@ import { esGerencia, esGlobal, leerSuscripcionesLocales, obtenerSesionActual, ve
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto, agregarLocalesFaltantes } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
-import { productosMock, modelosMock, movimientosMock, empleadosMock } from './mock-data';
+import { productosMock, modelosMock, movimientosMock, empleadosMock, promotoresMock } from './mock-data';
 import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
 import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../utils/codigos';
@@ -186,7 +186,7 @@ function construirSeedInicial(): LocalDB {
     local_id: localPorProducto.get(movimiento.producto_id) ?? LOCAL_ACCESORIOS_ID,
   }));
 
-  const db: LocalDB = { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [], imagenesDemo: true };
+  const db: LocalDB = { productos, modelos: modelosMock, compatibilidades, movimientos, locales: localesPorDefecto(), inventario, empleados: empleadosMock(), nominas: [], promotores: promotoresMock(), imagenesDemo: true };
   migrarUnidades(db);
   return db;
 }
@@ -384,6 +384,11 @@ function migrarNomina(db: LocalDB): boolean {
   }
   if (!db.reventas) {
     db.reventas = [];
+    cambio = true;
+  }
+  // Una sola lista de promotores (el directorio): los de ejemplo para quien aún no tiene ninguno
+  if (!db.promotores) {
+    db.promotores = promotoresMock();
     cambio = true;
   }
   // Datos de antes de los trabajadores independientes: todos eran fijos (quincenales)
@@ -2167,7 +2172,11 @@ export async function actualizarPromotor(id: string, datos: DatosNuevoPromotor):
   if (!actual) throw new Error('El promotor no existe.');
   const otro = lista.find((x) => x.cedula === p.cedula && x.id !== id);
   if (otro) throw new Error(`Esa cédula ya es de otro promotor: ${nombreCompleto(otro)}.`);
+  const choque = (db.empleados ?? []).find((e) => e.cedula.toLowerCase() === p.cedula!.toLowerCase() && e.promotor_id !== id);
+  if (choque) throw new Error(`La cédula ${p.cedula} ya está registrada como empleado de nómina.`);
   Object.assign(actual, { cedula: p.cedula!, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, updated_at: new Date().toISOString() });
+  // Si ya cobra por día, su fila de nómina lleva los mismos datos
+  for (const e of (db.empleados ?? []).filter((x) => x.promotor_id === id)) Object.assign(e, { cedula: p.cedula!, nombre: p.nombrePropio || 'Promotor', apellido: p.apellido || p.cedula! });
   guardarDB(db);
   return actual;
 }
@@ -3488,6 +3497,41 @@ export async function crearEmpleado(datos: NuevoEmpleado): Promise<Empleado> {
     fecha_ingreso: fechaLocalISO(new Date()),
     created_at: new Date().toISOString(),
     ...limpio,
+  };
+  empleados.push(empleado);
+  guardarDB(db);
+  return empleado;
+}
+
+/**
+ * El promotor del directorio como trabajador de nómina (tipo INDEPENDIENTE): la crea en el local dado si aún no existe. Es lo que permite
+ * armarle la lista y pagarle el día; los datos se escriben una sola vez, en el directorio de promotores.
+ */
+export async function asegurarEmpleadoPromotor(promotorId: string, localId: string): Promise<Empleado> {
+  await exigirAccesoNomina();
+  if (modoServidor) return nominaDb.asegurarEmpleadoPromotor(promotorId, localId);
+  const db = leerDB();
+  const promotor = (db.promotores ?? []).find((p) => p.id === promotorId);
+  if (!promotor) throw new Error('El promotor no existe.');
+  const empleados = db.empleados ?? (db.empleados = []);
+  const existente = empleados.find((e) => e.promotor_id === promotorId);
+  if (existente) return existente;
+  const choque = empleados.find((e) => e.cedula.toLowerCase() === promotor.cedula.toLowerCase());
+  if (choque) throw new Error(`La cédula ${promotor.cedula} ya está registrada como empleado de nómina (${`${choque.nombre} ${choque.apellido}`.trim()}).`);
+  const empleado: Empleado = {
+    id: generarId(),
+    local_id: localId,
+    nombre: textoLimpio(promotor.nombre) || 'Promotor',
+    apellido: textoLimpio(promotor.apellido) || promotor.cedula,
+    cedula: promotor.cedula,
+    cargo: 'Promotor',
+    salario_base: 0,
+    tipo: 'INDEPENDIENTE',
+    frecuencia_pago: 'DIARIO',
+    estado: 'ACTIVO',
+    fecha_ingreso: fechaLocalISO(new Date()),
+    promotor_id: promotorId,
+    created_at: new Date().toISOString(),
   };
   empleados.push(empleado);
   guardarDB(db);

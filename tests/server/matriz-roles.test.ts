@@ -150,6 +150,7 @@ function casos(): Caso[] {
     // Nómina
     { archivo: 'nomina/empleados/index.ts', metodo: 'GET', url: '/api/nomina/empleados', permitidos: NOMINA },
     { archivo: 'nomina/empleados/index.ts', metodo: 'POST', url: '/api/nomina/empleados', cuerpo: { local_id: accesorios, nombre: 'Mat', apellido: 'Riz', cedula: 'V-7000001', cargo: 'Cajero', salario_base: 100 }, permitidos: NOMINA },
+    { archivo: 'nomina/empleados/promotor/index.ts', metodo: 'POST', url: '/api/nomina/empleados/promotor', cuerpo: { promotorId: 'no-existe', localId: accesorios }, permitidos: NOMINA },
     { archivo: 'nomina/empleados/[id]/index.ts', metodo: 'PATCH', url: `/api/nomina/empleados/${ids.empleado}`, params: { id: ids.empleado }, cuerpo: { cargo: 'Jefe' }, permitidos: NOMINA },
     { archivo: 'nomina/nominas/index.ts', metodo: 'GET', url: `/api/nomina/nominas?desde=${dia}&hasta=${dia}`, permitidos: NOMINA },
     { archivo: 'nomina/nominas/[id]/index.ts', metodo: 'GET', url: `/api/nomina/nominas/${ids.nomina}`, params: { id: ids.nomina }, permitidos: NOMINA },
