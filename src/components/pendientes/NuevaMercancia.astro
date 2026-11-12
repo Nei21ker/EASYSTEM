@@ -30,8 +30,18 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
         <textarea id="nm-descripcion" rows="3" maxlength="500" placeholder="Ej: 10 vidrios blindados Samsung A15 y 5 hidrogeles" class={`mt-1 ${campo}`}></textarea>
       </div>
       <div>
-        <label for="nm-monto" class={etiqueta}>Lo que debe pagar ($) *</label>
-        <input id="nm-monto" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0.00" class={`mt-1 ${campo}`} />
+        <p class={etiqueta}>Lo que debe pagar *</p>
+        <div class="mt-1 grid grid-cols-2 gap-3">
+          <div>
+            <label for="nm-monto" class="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Dólares ($)</label>
+            <input id="nm-monto" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" class={`mt-0.5 ${campo}`} />
+          </div>
+          <div>
+            <label for="nm-monto-bs" class="block text-[11px] font-medium text-slate-500 dark:text-slate-400">Bolívares (Bs.)</label>
+            <input id="nm-monto-bs" type="text" inputmode="decimal" autocomplete="off" placeholder="0,00" class={`mt-0.5 ${campo}`} />
+          </div>
+        </div>
+        <p id="nm-monto-ayuda" class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <p id="nm-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
     </div>
@@ -45,6 +55,9 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { escaparHtml } from '../../utils/productosUI';
+  import { tasaActual } from '../../stores/tasa';
+  import { convertirABs, formatearBolivares } from '../../utils/format';
+  import { leerPrecioEscrito, textoPrecioCampo } from '../../utils/precioBs';
   import type { Promotor } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -69,10 +82,33 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     pintarPromotores(elegir);
   }
 
+  // El monto se escribe en dólares o en bolívares (al cambio de hoy): el otro campo se calcula solo. Lo que se guarda es el monto en dólares.
+  const campoUsd = $<HTMLInputElement>('nm-monto');
+  const campoBs = $<HTMLInputElement>('nm-monto-bs');
+  const ayudaMonto = $('nm-monto-ayuda');
+  function prepararMontos() {
+    const tasa = tasaActual.get();
+    campoBs.disabled = !tasa;
+    campoBs.placeholder = tasa ? '0,00' : 'Sin tasa';
+    ayudaMonto.textContent = tasa ? `Escribe en uno y el otro se calcula (${formatearBolivares(tasa)} por $1).` : 'Falta registrar la tasa del día para poder escribirlo en bolívares.';
+  }
+  campoUsd.addEventListener('input', () => {
+    const tasa = tasaActual.get();
+    const usd = leerPrecioEscrito(campoUsd.value, 'USD');
+    if (tasa) campoBs.value = usd !== null && usd > 0 ? textoPrecioCampo(convertirABs(usd, tasa)) : '';
+  });
+  campoBs.addEventListener('input', () => {
+    const tasa = tasaActual.get();
+    const bs = leerPrecioEscrito(campoBs.value, 'BS');
+    if (tasa) campoUsd.value = bs !== null && bs > 0 ? textoPrecioCampo(Math.round((bs / tasa) * 100) / 100) : '';
+  });
+
   window.addEventListener('easystem:abrir-mercancia-pendiente', async () => {
     error.classList.add('hidden');
     ($('nm-descripcion') as HTMLTextAreaElement).value = '';
-    ($('nm-monto') as HTMLInputElement).value = '';
+    campoUsd.value = '';
+    campoBs.value = '';
+    prepararMontos();
     guardar.disabled = false;
     try {
       await cargarPromotores();
@@ -110,7 +146,7 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
       await inventoryService.crearPendienteMercancia({
         promotorId: selectPromotor.value,
         descripcion: ($('nm-descripcion') as HTMLTextAreaElement).value,
-        monto_usd: Number(($('nm-monto') as HTMLInputElement).value),
+        monto_usd: leerPrecioEscrito(campoUsd.value, 'USD') ?? 0,
       });
       dialogo.close();
       window.dispatchEvent(new CustomEvent('easystem:pendiente-cambiado', { detail: { accion: 'crear' } }));
