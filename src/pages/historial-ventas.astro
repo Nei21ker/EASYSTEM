@@ -203,6 +203,7 @@ const claseBotonSecundario =
   import * as inventoryService from '../lib/inventoryService';
   import { esGerencia, esGlobal, obtenerSesionActual } from '../lib/auth';
   import { formatearBolivares, formatearFecha, formatearMoneda } from '../utils/format';
+  import { esClienteSinDatos } from '../utils/clienteSinDatos';
   import { descargarCSV } from '../utils/csv';
   import { animarLista, contarHasta } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
@@ -360,8 +361,12 @@ import { alCambiarDatos } from '../lib/realtime';
         </td>
         <td data-label="Cliente" class="px-4 py-3">
           <div class="min-w-0 text-right md:text-left">
-            <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(v.cliente_nombre)}</p>
-            <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(v.cliente_cedula)} · ${escaparHtml(v.cliente_telefono)}</p>
+            ${
+              esClienteSinDatos(v)
+                ? '<p class="italic text-slate-500 dark:text-slate-400">Sin datos del cliente</p>'
+                : `<p class="font-medium text-slate-900 dark:text-white">${escaparHtml(v.cliente_nombre)}</p>
+            <p class="mt-0.5 font-mono text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(v.cliente_cedula)} · ${escaparHtml(v.cliente_telefono)}</p>`
+            }
           </div>
         </td>
         <td data-label="Tipo de cobro" class="px-4 py-3">
@@ -670,9 +675,9 @@ import { alCambiarDatos } from '../lib/realtime';
         ...(verLocal ? { local: nombresLocales.get(v.local_id) ?? '' } : {}),
         folio: v.folio || 'pendiente',
         fecha: new Date(v.fecha).toLocaleString('es-GT'),
-        cedula: v.cliente_cedula,
-        cliente: v.cliente_nombre,
-        telefono: v.cliente_telefono,
+        cedula: esClienteSinDatos(v) ? '' : v.cliente_cedula,
+        cliente: esClienteSinDatos(v) ? 'Sin datos' : v.cliente_nombre,
+        telefono: esClienteSinDatos(v) ? '' : v.cliente_telefono,
         tipo_de_cobro: etiquetaMetodoPago(v.metodo_pago),
         detalle_pagos: pagosDeVenta(v)
           .map((p) => `${etiquetaMetodoPago(p.metodo)}: ${p.monto_bs != null ? `Bs. ${p.monto_bs.toFixed(2)} ($${p.monto_usd.toFixed(2)})` : `$${p.monto_usd.toFixed(2)}`}${bsDeMas(p) > 0 ? ` [debía Bs. ${p.monto_bs_debido!.toFixed(2)}; de más Bs. ${bsDeMas(p).toFixed(2)}]` : ''}`)

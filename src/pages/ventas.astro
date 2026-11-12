@@ -80,7 +80,16 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <div id="pos-carrito-seccion" class="flex scroll-mt-4 flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
         <div class="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Carrito de venta</h2>
-          <span id="pos-carrito-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</span>
+          <div class="flex items-center gap-3">
+            <button id="pos-espera-abrir" type="button" class="hidden rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+              En espera (<span id="pos-espera-n">0</span>)
+            </button>
+            <span id="pos-carrito-contador" class="text-xs text-slate-500 dark:text-slate-400">0 líneas</span>
+          </div>
+        </div>
+        <div id="pos-espera-banner" class="hidden items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-5 py-2 text-xs text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          <span id="pos-espera-banner-texto"></span>
+          <button id="pos-espera-banner-cancelar" type="button" class="shrink-0 font-semibold underline">Vaciar</button>
         </div>
 
         <ul id="pos-carrito" class="empty:hidden max-h-96 divide-y divide-slate-100 overflow-y-auto lg:max-h-none lg:min-h-0 lg:flex-1 dark:divide-slate-800"></ul>
@@ -94,6 +103,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <span id="pos-total" class="inline-block origin-right">$0.00</span>
           </div>
           <p id="pos-total-bs" class="-mt-2 text-right text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400"></p>
+          <p id="pos-espera-aviso" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
           <p id="pos-error" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
           <button
             id="pos-procesar"
@@ -324,13 +334,24 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <p id="pos-comprobante-error" role="alert" class="hidden text-xs text-red-700 dark:text-red-400"></p>
           </div>
+
+          <!-- Cobro rápido (Local Vidrios): datos del cliente opcionales, plegados; el paso «Datos del cliente» se mueve aquí -->
+          <div id="pos-cli-opcional-bloque" class="hidden border-t border-slate-200 pt-3 dark:border-slate-800">
+            <button id="pos-cli-toggle" type="button" aria-expanded="false" class="text-sm font-semibold text-brand-700 hover:underline dark:text-brand-300">+ Datos del cliente (opcional)</button>
+            <div id="pos-cli-opcional" class="mt-3 hidden">
+              <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">Déjalo en blanco si el cliente no quiere dar sus datos. Si escribes algo, completa cédula, nombre y teléfono.</p>
+            </div>
+          </div>
         </div>
 
         <p id="pos-confirmar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
         <p id="pos-confirmar-nota" class="hidden text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
       </div>
 
-      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <div class="flex flex-wrap gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pos-confirmar-espera" type="button" class="hidden basis-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+          Dejar en espera
+        </button>
         <button id="pos-confirmar-no" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
           Cancelar
         </button>
@@ -339,6 +360,55 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </button>
       </div>
     </form>
+  </dialog>
+
+  <!-- Dejar la venta en espera (Local Vidrios): el promotor se llevó el vidrio y vuelve a pagar; el carrito queda guardado y reservado -->
+  <dialog
+    id="pos-espera"
+    aria-labelledby="pos-espera-titulo"
+    class="group anim-escalar m-auto w-[min(26rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+  >
+    <form id="pos-espera-form" class="flex max-h-[92dvh] flex-col" novalidate>
+      <div class="space-y-3 overflow-y-auto px-5 pb-4 pt-5">
+        <div>
+          <h2 id="pos-espera-titulo" class="text-base font-semibold">Dejar la venta en espera</h2>
+          <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">El carrito queda guardado y la mercancía reservada; atiende al siguiente cliente. Cuando el promotor vuelva, retómala desde «En espera».</p>
+        </div>
+        <div>
+          <label for="pos-espera-nombre" class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">¿Quién vendrá a pagar? (opcional)</label>
+          <input id="pos-espera-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="80" placeholder="Nombre del promotor" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+        <div class="oculto-con-teclado">
+          <label for="pos-espera-nota" class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Nota (opcional)</label>
+          <input id="pos-espera-nota" type="text" autocomplete="off" maxlength="200" placeholder="Ej: viene en 10 minutos" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+        <p id="pos-espera-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      </div>
+      <div class="flex gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+        <button id="pos-espera-cancelar" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Cancelar</button>
+        <button id="pos-espera-guardar" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Dejar en espera</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Ventas en espera del local: retomar para cobrar, o liberar -->
+  <dialog
+    id="pos-espera-lista"
+    aria-labelledby="pos-espera-lista-titulo"
+    class="group anim-escalar m-auto w-[min(30rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+  >
+    <div class="flex max-h-[88dvh] flex-col">
+      <div class="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 pb-3 pt-5 dark:border-slate-800">
+        <div class="min-w-0">
+          <h2 id="pos-espera-lista-titulo" class="text-base font-semibold">Ventas en espera</h2>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Su mercancía está reservada. «Retomar» la pone en el carrito para cobrarla.</p>
+        </div>
+        <button id="pos-espera-lista-cerrar" type="button" aria-label="Cerrar" class="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200">✕</button>
+      </div>
+      <p id="pos-espera-lista-error" role="alert" class="mx-5 mt-3 hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      <ul id="pos-espera-items" class="min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+      <p id="pos-espera-vacia" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">No hay ventas en espera.</p>
+    </div>
   </dialog>
 
   <!-- Seleccionar código: producto → lista de los códigos de sus unidades disponibles (por si no se puede escanear) -->
@@ -526,7 +596,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../lib/inventoryService';
   import type { VentaRegistrada } from '../lib/inventoryService';
   import { esGerencia, obtenerSesionActual } from '../lib/auth';
-  import { etiquetaMetodoPago, incluyePagoMovil, pagosDeVenta } from '../utils/pagos';
+  import { etiquetaMetodoPago, incluyePagoMovil, METODOS_PAGO, pagosDeVenta } from '../utils/pagos';
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
@@ -542,9 +612,10 @@ import { alCambiarDatos } from '../lib/realtime';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
   import { urlWhatsApp } from '../utils/ticketWhatsApp';
+  import { esClienteSinDatos } from '../utils/clienteSinDatos';
   import { archivoDeTicket, copiarImagenAlPortapapeles } from '../utils/ticketImagen';
   import { compartirArchivos, descargarArchivos, puedeCompartirArchivos } from '../utils/etiquetaImagen';
-  import type { AutorizacionPrecio, ClienteVenta, DatosPromotor, DineroEntregado, ModoPrecio, PagoVenta, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
+  import type { AutorizacionPrecio, ClienteVenta, DatosPromotor, DineroEntregado, MetodoPago, ModoPrecio, PagoVenta, Pendiente, ProductoConRelaciones, UnidadProducto, VentaItem } from '../types/database.types';
 
   interface LineaCarrito {
     producto: ProductoConRelaciones;
@@ -606,6 +677,8 @@ import { alCambiarDatos } from '../lib/realtime';
   };
   /** El botón de instalación solo existe en el Local Vidrios */
   let instalacionDisponible = false;
+  /** Cobro rápido (Local Vidrios): sin paso de datos del cliente, tipos de cobro de un toque y último tipo recordado */
+  let cobroRapido = false;
   /** Datos del promotor que instala (cuando no hay un promotor del precio ya autorizado); viajan con la venta */
   let promotorInstalacion: DatosPromotor | null = null;
   let localActivoId = '';
@@ -972,7 +1045,10 @@ import { alCambiarDatos } from '../lib/realtime';
       dateStyle: 'medium',
       timeStyle: 'short',
     });
-    document.getElementById('ticket-cliente')!.textContent = `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}`;
+    // Venta sin datos del cliente (cobro rápido): no se muestra la línea ni se ofrece abrir un chat de WhatsApp
+    const sinCliente = esClienteSinDatos(venta);
+    document.getElementById('ticket-cliente')!.textContent = sinCliente ? '' : `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}`;
+    document.getElementById('pos-whatsapp')?.classList.toggle('hidden', sinCliente);
 
     document.getElementById('ticket-lineas')!.innerHTML = venta.items
       .map(
@@ -1091,8 +1167,68 @@ import { alCambiarDatos } from '../lib/realtime';
   contenedorPagos.addEventListener('easystem:pagos-cambiaron', pintarComprobante);
   pintarComprobante();
 
+  // --- Cobro rápido (Local Vidrios): los datos del cliente son opcionales y viven dentro del cobro ---------------------
+  const bloqueClienteOpcional = document.getElementById('pos-cli-opcional-bloque')!;
+  const contenedorClienteOpcional = document.getElementById('pos-cli-opcional')!;
+  const botonClienteOpcional = document.getElementById('pos-cli-toggle') as HTMLButtonElement;
+  const clienteSinEscribir = () => ![campoCedula, campoNombre, campoTelefono].some((c) => c.value.trim() !== '');
+  function mostrarClienteOpcional(abierto: boolean) {
+    contenedorClienteOpcional.classList.toggle('hidden', !abierto);
+    botonClienteOpcional.setAttribute('aria-expanded', String(abierto));
+    botonClienteOpcional.textContent = abierto ? '− Quitar los datos del cliente' : '+ Datos del cliente (opcional)';
+  }
+  /** Convierte el paso «Datos del cliente» en un bloque plegable dentro del cobro (solo en el Local Vidrios). */
+  function activarCobroRapido(ultimoMetodo: MetodoPago | null) {
+    if (cobroRapido) return;
+    cobroRapido = true;
+    const fieldset = dialogoConfirmar.querySelector<HTMLElement>('fieldset[data-paso="cliente"]');
+    if (fieldset) {
+      fieldset.removeAttribute('data-paso');
+      fieldset.classList.remove('hidden');
+      contenedorClienteOpcional.appendChild(fieldset);
+    }
+    bloqueClienteOpcional.classList.remove('hidden');
+    mostrarClienteOpcional(false);
+    formPagos.activarCobroRapido(ultimoMetodo);
+    // En el Local Vidrios también hay ventas en espera
+    document.getElementById('pos-espera-abrir')!.classList.remove('hidden');
+    document.getElementById('pos-confirmar-espera')!.classList.remove('hidden');
+  }
+  botonClienteOpcional.addEventListener('click', () => {
+    const abrir = contenedorClienteOpcional.classList.contains('hidden');
+    if (!abrir) {
+      // Quitar los datos: se vacían para que la venta salga sin cliente
+      for (const c of [campoCedula, campoNombre, campoTelefono]) c.value = '';
+      autollenado = null;
+      avisoCliente.classList.add('hidden');
+    }
+    mostrarClienteOpcional(abrir);
+    if (abrir) campoCedula.focus();
+  });
+
+  // Último tipo de cobro usado en cada local (se propone ya elegido en el siguiente cobro)
+  const claveUltimoMetodo = () => `easystem:ultimo-metodo:${localActivoId}`;
+  function leerUltimoMetodo(): MetodoPago | null {
+    try {
+      const guardado = localStorage.getItem(claveUltimoMetodo());
+      return METODOS_PAGO.some((m) => m.valor === guardado) ? (guardado as MetodoPago) : null;
+    } catch {
+      return null;
+    }
+  }
+  function recordarUltimoMetodo(pagos: PagoVenta[]) {
+    if (!cobroRapido || pagos.length !== 1) return;
+    try {
+      localStorage.setItem(claveUltimoMetodo(), pagos[0].metodo);
+    } catch {
+      /* sin almacenamiento: simplemente no se recuerda */
+    }
+    formPagos.activarCobroRapido(pagos[0].metodo);
+  }
+
   // Los datos del cliente solo viven mientras dura la venta (se borran al cobrar).
   function limpiarDatosCliente() {
+    if (cobroRapido) mostrarClienteOpcional(false);
     for (const c of [campoCedula, campoNombre, campoTelefono]) c.value = '';
     campoNac.value = 'V';
     autollenado = null;
@@ -1130,10 +1266,13 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   /** Devuelve los datos del cliente y los pagos ya validados, o muestra el primer error y devuelve null. */
-  function leerDatosCliente(): { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null } | null {
-    const cliente = validarCliente();
-    if (!cliente) {
-      irAlPaso('cliente'); // el error estaba en los datos del cliente: se vuelve a ese paso
+  function leerDatosCliente(): { cliente: ClienteVenta | null; pagos: PagoVenta[]; vuelto: DineroEntregado | null } | null {
+    // Cobro rápido: sin nada escrito la venta sale sin datos del cliente; si se escribió algo, se valida completo
+    const sinCliente = cobroRapido && clienteSinEscribir();
+    const cliente = sinCliente ? null : validarCliente();
+    if (!sinCliente && !cliente) {
+      if (cobroRapido) mostrarClienteOpcional(true);
+      else irAlPaso('cliente'); // el error estaba en los datos del cliente: se vuelve a ese paso
       validarCliente();
       return null;
     }
@@ -1155,8 +1294,10 @@ import { alCambiarDatos } from '../lib/realtime';
 
     errorConfirmar.classList.add('hidden');
     // Pasos: si falta escanear alguna unidad, primero eso; después los datos del cliente y, al final, el cobro
-    pasos = pendientesDeEscanear().length > 0 ? ['escaneo', 'cliente', 'pago'] : ['cliente', 'pago'];
+    const restantes: Paso[] = cobroRapido ? ['pago'] : ['cliente', 'pago'];
+    pasos = pendientesDeEscanear().length > 0 ? ['escaneo', ...restantes] : restantes;
     pasoActual = 0;
+    if (cobroRapido) mostrarClienteOpcional(!clienteSinEscribir()); // si ya había datos escritos, el bloque queda abierto
     pintarPasos();
     dialogoConfirmar.showModal();
     enfocarPaso();
@@ -1206,7 +1347,7 @@ import { alCambiarDatos } from '../lib/realtime';
     procesarVenta(datos);
   });
 
-  async function procesarVenta(datos: { cliente: ClienteVenta; pagos: PagoVenta[]; vuelto: DineroEntregado | null }) {
+  async function procesarVenta(datos: { cliente: ClienteVenta | null; pagos: PagoVenta[]; vuelto: DineroEntregado | null }) {
     if (carrito.length === 0) return;
     limpiarError();
     if (autorizacionVencida() || autorizacionesManualesVencidas() || autorizacionDanadosVencida()) return;
@@ -1246,6 +1387,7 @@ import { alCambiarDatos } from '../lib/realtime';
         tasa_cambio: tasa,
         vendedor_nombre: sesion?.nombre,
         referenciaPagoMovil: incluyePagoMovil(datos.pagos) ? campoReferencia.value : null,
+        esperaId: esperaActiva?.id ?? null,
         precioPromotor: autorizacionPrecio ? { promotor: promotorVenta?.datos ?? null, autorizacion: autorizacionPrecio } : null,
         promotorInstalacion: hayInstalacionDelPromotor(items) ? promotorInstalacion : null,
         autorizacionDanados: totalDanadosCarrito() >= UMBRAL_CLAVE_DANADOS && autorizacionDanados ? { token: autorizacionDanados.token, vence_en: autorizacionDanados.vence_en, autorizado_por: autorizacionDanados.autorizado_por } : null,
@@ -1253,7 +1395,10 @@ import { alCambiarDatos } from '../lib/realtime';
       mostrarTicket(venta);
       carrito = [];
       manualPorProducto.clear();
+      esperaActiva = null; // la venta en espera que se cobró ya quedó cerrada junto con la venta
+      pintarBannerEspera();
       limpiarDatosCliente();
+      recordarUltimoMetodo(datos.pagos);
       await cargarProductos();
     } catch (err) {
       if (err instanceof inventoryService.VentaIncompletaError) {
@@ -1301,7 +1446,15 @@ import { alCambiarDatos } from '../lib/realtime';
   let primeraCarga = true;
 
   async function cargarProductos() {
-    productos = await inventoryService.listarProductos();
+    const lista = await inventoryService.listarProductos();
+    await cargarEsperas();
+    // Lo que está reservado por ventas en espera (menos la que se está retomando) no se ofrece: así otro vendedor no vende esa pieza
+    productos = esperas.length
+      ? lista.map((p) => {
+          const reservado = reservadoDe(p.id);
+          return reservado > 0 ? { ...p, stock_actual: Math.max(0, p.stock_actual - reservado) } : p;
+        })
+      : lista;
     cargando.classList.add('hidden');
     if (primeraCarga) {
       primeraCarga = false;
@@ -2144,7 +2297,9 @@ import { alCambiarDatos } from '../lib/realtime';
   function pintarPasos() {
     const paso = pasos[pasoActual];
     for (const seccion of dialogoConfirmar.querySelectorAll<HTMLElement>('[data-paso]')) seccion.classList.toggle('hidden', seccion.dataset.paso !== paso);
-    document.getElementById('pos-confirmar-resumen')!.textContent = `Paso ${pasoActual + 1} de ${pasos.length} · ${TITULO_PASO[paso]}`;
+    // Con un solo paso (cobro rápido) no hace falta «Paso 1 de 1»
+    document.getElementById('pos-confirmar-resumen')!.textContent = pasos.length === 1 ? TITULO_PASO[paso] : `Paso ${pasoActual + 1} de ${pasos.length} · ${TITULO_PASO[paso]}`;
+    document.getElementById('pos-pasos')!.classList.toggle('hidden', pasos.length === 1);
     document.getElementById('pos-pasos')!.innerHTML = pasos
       .map((_, i) => `<li class="h-1.5 flex-1 rounded-full ${i <= pasoActual ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'}"></li>`)
       .join('');
@@ -2598,16 +2753,243 @@ import { alCambiarDatos } from '../lib/realtime';
     renderCarrito();
   });
 
+  // --- Ventas en espera (Local Vidrios) ------------------------------------------------------------------------------------
+  // El promotor apurado se lleva el vidrio y vuelve a pagar: el carrito queda guardado (y su mercancía reservada) y se retoma después.
+  let esperas: Pendiente[] = [];
+  /** La venta en espera que se está retomando en el carrito: al cobrar se cierra con la venta y no cuenta como reservada */
+  let esperaActiva: { id: string; nombre: string } | null = null;
+  const reservadoDe = (productoId: string): number =>
+    esperas.filter((e) => e.id !== esperaActiva?.id).reduce((suma, e) => suma + (e.items ?? []).filter((i) => i.producto_id === productoId).reduce((s, i) => s + i.cantidad, 0), 0);
+
+  const botonEsperaAbrir = document.getElementById('pos-espera-abrir') as HTMLButtonElement;
+  const dialogoEspera = document.getElementById('pos-espera') as HTMLDialogElement;
+  const formEspera = document.getElementById('pos-espera-form') as HTMLFormElement;
+  const campoEsperaNombre = document.getElementById('pos-espera-nombre') as HTMLInputElement;
+  const campoEsperaNota = document.getElementById('pos-espera-nota') as HTMLInputElement;
+  const errorEspera = document.getElementById('pos-espera-error') as HTMLParagraphElement;
+  const dialogoEsperaLista = document.getElementById('pos-espera-lista') as HTMLDialogElement;
+  const listaEspera = document.getElementById('pos-espera-items') as HTMLUListElement;
+  const errorEsperaLista = document.getElementById('pos-espera-lista-error') as HTMLParagraphElement;
+  const bannerEspera = document.getElementById('pos-espera-banner') as HTMLElement;
+
+  async function cargarEsperas() {
+    if (!cobroRapido) return;
+    try {
+      esperas = await inventoryService.listarEspera();
+    } catch {
+      /* sin conexión o sin permiso: se conserva la última lista */
+    }
+    document.getElementById('pos-espera-n')!.textContent = String(esperas.length);
+    if (dialogoEsperaLista.open) pintarListaEspera();
+  }
+
+  function pintarBannerEspera() {
+    bannerEspera.classList.toggle('hidden', !esperaActiva);
+    bannerEspera.classList.toggle('flex', !!esperaActiva);
+    if (esperaActiva) document.getElementById('pos-espera-banner-texto')!.textContent = `Retomaste la venta en espera${esperaActiva.nombre ? ` de ${esperaActiva.nombre}` : ''}: al cobrarla queda cerrada.`;
+  }
+
+  const haceCuanto = (iso: string): string => {
+    const min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60_000));
+    if (min < 1) return 'hace un momento';
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    return h < 24 ? `hace ${h} h` : `hace ${Math.round(h / 24)} d`;
+  };
+
+  function pintarListaEspera() {
+    document.getElementById('pos-espera-vacia')!.classList.toggle('hidden', esperas.length > 0);
+    listaEspera.innerHTML = esperas
+      .map((e) => {
+        const productosTexto = (e.items ?? []).map((i) => `${i.cantidad} × ${escaparHtml(i.nombre)}`).join(', ');
+        const activa = e.id === esperaActiva?.id;
+        return `<li class="space-y-2 px-5 py-3 text-sm">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="font-semibold">${e.promotor_nombre ? escaparHtml(e.promotor_nombre) : 'Sin nombre'}</p>
+              <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">${escaparHtml(haceCuanto(e.fecha))} · ${escaparHtml(e.creado_por_nombre)}</p>
+            </div>
+            <span class="shrink-0 font-semibold tabular-nums">${formatearMoneda(e.monto_usd)}</span>
+          </div>
+          <p class="text-xs text-slate-600 dark:text-slate-300">${productosTexto}</p>
+          <div class="flex gap-2">
+            ${
+              activa
+                ? '<span class="flex-1 rounded-lg bg-amber-50 px-3 py-2 text-center text-xs font-semibold text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">En el carrito ahora</span>'
+                : `<button type="button" data-retomar="${e.id}" class="bg-marca flex-1 rounded-lg px-3 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110">Retomar</button>`
+            }
+            <button type="button" data-liberar="${e.id}" class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">Liberar</button>
+          </div>
+        </li>`;
+      })
+      .join('');
+  }
+
+  function errorDeLista(mensaje: string) {
+    errorEsperaLista.textContent = mensaje;
+    errorEsperaLista.classList.toggle('hidden', !mensaje);
+  }
+
+  async function abrirListaEspera() {
+    errorDeLista('');
+    await cargarEsperas();
+    pintarListaEspera();
+    if (!dialogoEsperaLista.open) dialogoEsperaLista.showModal();
+  }
+
+  /** Pone en el carrito los productos de una venta en espera (con sus precios de catálogo de hoy) para cobrarla. */
+  async function retomarEspera(id: string): Promise<boolean> {
+    if (carrito.length > 0) {
+      errorDeLista('Termina o vacía la venta actual antes de retomar una en espera.');
+      mostrarError('Termina o vacía la venta actual antes de retomar una en espera.');
+      return false;
+    }
+    await cargarEsperas();
+    const espera = esperas.find((e) => e.id === id);
+    if (!espera) {
+      errorDeLista('Esa venta en espera ya no existe: se cobró o se liberó.');
+      mostrarError('Esa venta en espera ya no existe: se cobró o se liberó.');
+      return false;
+    }
+    esperaActiva = { id: espera.id, nombre: espera.promotor_nombre ?? '' };
+    await cargarProductos(); // ahora lo reservado por esta venta vuelve a estar disponible para su carrito
+    const avisos: string[] = [];
+    for (const item of espera.items ?? []) {
+      const producto = productos.find((p) => p.id === item.producto_id);
+      if (!producto) {
+        avisos.push(`«${item.nombre}» ya no existe en el catálogo.`);
+        continue;
+      }
+      const cantidad = Math.min(item.cantidad, producto.stock_actual);
+      if (cantidad < item.cantidad) avisos.push(`De «${item.nombre}» solo hay ${producto.stock_actual} (se dejó ${item.cantidad}).`);
+      if (cantidad > 0) carrito.push({ producto, cantidad, unidades: [] });
+    }
+    if (carrito.length === 0) {
+      esperaActiva = null;
+      await cargarProductos();
+    }
+    pintarBannerEspera();
+    renderCarrito();
+    renderResultados(buscador.value);
+    if (dialogoEsperaLista.open) dialogoEsperaLista.close();
+    if (avisos.length) mostrarError(avisos.join(' '));
+    return carrito.length > 0;
+  }
+
+  botonEsperaAbrir.addEventListener('click', () => void abrirListaEspera());
+  document.getElementById('pos-espera-lista-cerrar')!.addEventListener('click', () => dialogoEsperaLista.close());
+  dialogoEsperaLista.addEventListener('click', (e) => {
+    if (e.target === dialogoEsperaLista) dialogoEsperaLista.close();
+  });
+  listaEspera.addEventListener('click', async (e) => {
+    const objetivo = e.target as HTMLElement;
+    const retomar = objetivo.closest<HTMLButtonElement>('[data-retomar]')?.dataset.retomar;
+    const liberar = objetivo.closest<HTMLButtonElement>('[data-liberar]')?.dataset.liberar;
+    if (retomar) return void (await retomarEspera(retomar));
+    if (!liberar) return;
+    const espera = esperas.find((x) => x.id === liberar);
+    if (!window.confirm(`¿Liberar la venta en espera${espera?.promotor_nombre ? ` de ${espera.promotor_nombre}` : ''}? La mercancía vuelve a estar disponible para vender.`)) return;
+    try {
+      await inventoryService.liberarEspera(liberar);
+      if (esperaActiva?.id === liberar) {
+        carrito = [];
+        esperaActiva = null;
+        pintarBannerEspera();
+        renderCarrito();
+      }
+      errorDeLista('');
+      await cargarProductos();
+      pintarListaEspera();
+    } catch (err) {
+      errorDeLista(err instanceof Error ? err.message : 'No se pudo liberar la venta en espera.');
+    }
+  });
+
+  document.getElementById('pos-espera-banner-cancelar')!.addEventListener('click', async () => {
+    // Vaciar el carrito de la venta retomada: sigue en espera (reservada) y se puede retomar de nuevo
+    carrito = [];
+    manualPorProducto.clear();
+    esperaActiva = null;
+    pintarBannerEspera();
+    renderCarrito();
+    await cargarProductos();
+  });
+
+  // Desde el cobro: «Dejar en espera» guarda el carrito y lo vacía
+  document.getElementById('pos-confirmar-espera')!.addEventListener('click', () => {
+    if (carrito.length === 0) return;
+    dialogoConfirmar.close();
+    errorEspera.classList.add('hidden');
+    campoEsperaNombre.value = esperaActiva?.nombre ?? '';
+    campoEsperaNota.value = '';
+    dialogoEspera.showModal();
+    campoEsperaNombre.focus();
+  });
+  document.getElementById('pos-espera-cancelar')!.addEventListener('click', () => dialogoEspera.close());
+  dialogoEspera.addEventListener('click', (e) => {
+    if (e.target === dialogoEspera) dialogoEspera.close();
+  });
+  formEspera.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const boton = document.getElementById('pos-espera-guardar') as HTMLButtonElement;
+    boton.disabled = true;
+    boton.textContent = 'Guardando...';
+    errorEspera.classList.add('hidden');
+    try {
+      // Si se estaba retomando una venta en espera y se vuelve a dejar, la anterior se libera para no reservar dos veces lo mismo
+      if (esperaActiva) {
+        await inventoryService.liberarEspera(esperaActiva.id);
+        esperaActiva = null;
+        pintarBannerEspera();
+        await cargarEsperas();
+      }
+      await inventoryService.ponerEnEspera({
+        items: carrito.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad })),
+        promotor_nombre: campoEsperaNombre.value,
+        nota: campoEsperaNota.value,
+      });
+      dialogoEspera.close();
+      carrito = [];
+      manualPorProducto.clear();
+      limpiarDatosCliente();
+      renderCarrito();
+      await cargarProductos();
+      avisarEspera('Venta dejada en espera. Su mercancía quedó reservada.');
+    } catch (err) {
+      errorEspera.textContent = err instanceof Error ? err.message : 'No se pudo dejar la venta en espera.';
+      errorEspera.classList.remove('hidden');
+    } finally {
+      boton.disabled = false;
+      boton.textContent = 'Dejar en espera';
+    }
+  });
+
+  /** Aviso corto de éxito en el carrito (se quita solo). */
+  function avisarEspera(texto: string) {
+    const aviso = document.getElementById('pos-espera-aviso')!;
+    aviso.textContent = texto;
+    aviso.classList.remove('hidden');
+    window.setTimeout(() => aviso.classList.add('hidden'), 6000);
+  }
+
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
     puedeMarcarDanados = esGerencia(contexto?.sesion.rol);
     instalacionDisponible = contexto?.local?.tipo === 'vidrios';
     if (contexto?.local) {
       localActivoId = contexto.local.id;
-      cargarProductos();
+      if (contexto.local.tipo === 'vidrios') activarCobroRapido(leerUltimoMetodo());
+      // Desde Pendientes → «Cobrar ahora» se llega con ?espera=<id>: se retoma esa venta en cuanto carga el catálogo
+      void cargarProductos().then(() => {
+        const espera = new URLSearchParams(window.location.search).get('espera');
+        if (espera && cobroRapido) {
+          window.history.replaceState(null, '', window.location.pathname);
+          void retomarEspera(espera);
+        }
+      });
       enfocarCodigo();
       // Otro dispositivo vendió o ingresó mercancía: el stock se actualiza solo y el carrito se ajusta
-      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto'], refrescarEnVivo);
+      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto', 'pendientes'], refrescarEnVivo);
       return;
     }
     cargando.classList.add('hidden');

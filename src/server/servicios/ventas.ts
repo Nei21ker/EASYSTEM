@@ -15,6 +15,7 @@ import { marcas, registrarMovimientos, tramos, type EntradaMovimiento } from './
 import { sentenciasBorrarComisiones, sentenciasComisionPromotor } from './pendientes';
 import { descripcionInstalacionPromotor, instalacionDelPromotor, limpiarInstalacion } from '../../utils/instalacion';
 import { normalizarPromotor } from '../../utils/promotor';
+import { CLIENTE_SIN_DATOS, clienteVacio } from '../../utils/clienteSinDatos';
 import { redondeoValido } from '../../utils/pagos';
 import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
@@ -187,9 +188,14 @@ function descripcionPendiente(items: VentaItem[], comisionPrecio: number, instal
 export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<Venta> {
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
-  const cedula = normalizarCedula(datos.cliente_cedula ?? '');
-  const nombre = (datos.cliente_nombre ?? '').trim().replace(/\s+/g, ' ');
-  const telefono = datos.cliente_telefono?.trim() ?? '';
+  // Cobro rápido del Local Vidrios: sin ningún dato del cliente la venta se guarda como «sin datos» (en los demás locales siguen siendo obligatorios).
+  // Si se escribió algo, aunque sea una parte, se valida completo como siempre.
+  const pidioSinDatos = clienteVacio({ cedula: datos.cliente_cedula, nombre: datos.cliente_nombre, telefono: datos.cliente_telefono });
+  const sinDatos = pidioSinDatos && (await env.DB.prepare('SELECT tipo FROM locales WHERE id = ?').bind(datos.local_id).first<{ tipo: string }>())?.tipo === 'vidrios';
+  if (pidioSinDatos && !sinDatos) throw new ErrorApi(400, 'Faltan datos del cliente (cédula, nombre y teléfono).', 'datos_invalidos');
+  const cedula = sinDatos ? CLIENTE_SIN_DATOS.cedula : normalizarCedula(datos.cliente_cedula ?? '');
+  const nombre = sinDatos ? CLIENTE_SIN_DATOS.nombre : (datos.cliente_nombre ?? '').trim().replace(/\s+/g, ' ');
+  const telefono = sinDatos ? CLIENTE_SIN_DATOS.telefono : datos.cliente_telefono?.trim() ?? '';
   if (cedula.length < 5 || cedula.length > 20 || nombre.length < 3 || nombre.length > 120 || telefono.length < 7 || telefono.length > 25) {
     throw new ErrorApi(400, 'Faltan datos del cliente (cédula, nombre y teléfono).', 'datos_invalidos');
   }
@@ -202,6 +208,17 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
     throw new ErrorApi(400, 'El redondeo de un pago en bolívares no es válido: pasa del límite o no corresponde al tipo de cobro.', 'datos_invalidos');
   }
   const comprobante = await validarComprobantePagoMovil(env, datos);
+  // Cobro de una venta en espera: debe seguir abierta y ser de este local (se cierra en el mismo lote que la venta)
+  let esperaId: string | null = null;
+  if (datos.espera_id) {
+    const e = await env.DB
+      .prepare("SELECT id, estado, local_id FROM pendientes WHERE id = ? AND tipo = 'MERCANCIA' AND items IS NOT NULL")
+      .bind(datos.espera_id)
+      .first<{ id: string; estado: string; local_id: string }>();
+    if (!e || e.local_id !== datos.local_id) throw new ErrorApi(409, 'Esa venta en espera ya no existe.', 'espera_cerrada');
+    if (e.estado !== 'PENDIENTE') throw new ErrorApi(409, 'Esa venta en espera ya se cobró o se liberó.', 'espera_cerrada');
+    esperaId = e.id;
+  }
   const precios = await aplicarPrecioPromotor(env, sesion, datos);
   const itemsGuardados = limpiarDanados(sesion, await aplicarSeleccionManual(env, sesion, datos.local_id, precios.items.map(limpiarInstalacion)));
 
@@ -233,13 +250,17 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
         null, identidad?.nombre ?? precios.promotor?.promotor_nombre ?? null, identidad?.cedula ?? precios.promotor?.promotor_cedula ?? null, identidad?.telefono ?? precios.promotor?.promotor_telefono ?? null, identidad?.banco ?? precios.promotor?.promotor_banco ?? null, comisionTotal,
         precios.promotor?.autorizado_por ?? null, precios.promotor?.autorizado_nombre ?? null
       ),
-    // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda
-    db
-      .prepare(
-        `INSERT INTO clientes (cedula, nombre, apellido, telefono, updated_at) VALUES (?, ?, ?, ?, ?)
+    // El cliente queda recordado (o se actualizan sus datos) en el MISMO lote: si la venta falla, tampoco se guarda (una venta sin datos no recuerda a nadie)
+    ...(sinDatos
+      ? []
+      : [
+          db
+            .prepare(
+              `INSERT INTO clientes (cedula, nombre, apellido, telefono, updated_at) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (cedula) DO UPDATE SET nombre = excluded.nombre, apellido = excluded.apellido, telefono = excluded.telefono, updated_at = excluded.updated_at`
-      )
-      .bind(cedula, separado.nombre, separado.apellido, telefono, new Date().toISOString()),
+            )
+            .bind(cedula, separado.nombre, separado.apellido, telefono, new Date().toISOString()),
+        ]),
     // La comisión del promotor queda anotada en Pendientes (y el promotor en el directorio) en el MISMO lote que la venta
     ...(identidad && comisionTotal > 0
       ? sentenciasComisionPromotor(db, sesion, {
@@ -249,6 +270,20 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
           descripcion: descripcionPendiente(itemsGuardados, precios.comision, instalacionPromotor),
           promotor: identidad,
         })
+      : []),
+    // La venta en espera que se está cobrando queda cerrada junto con la venta (el stock ya salió con ella: no se mueve otra vez)
+    ...(esperaId
+      ? [
+          db
+            .prepare(
+              `UPDATE pendientes SET estado = 'PAGADO', cerrado_en = ?, cerrado_por_nombre = ?, venta_id = ?,
+                      venta_folio = (SELECT valor FROM contadores WHERE nombre = 'ventas'),
+                      nota_cierre = 'Cobrada en la venta #' || (SELECT valor FROM contadores WHERE nombre = 'ventas')
+                WHERE id = ? AND estado = 'PENDIENTE'`
+            )
+            .bind(new Date().toISOString(), sesion.nombre, id, esperaId),
+          ...sentenciasCambio(db, ['pendientes'], datos.local_id),
+        ]
       : []),
     ...sentenciasCambio(db, ['ventas'], datos.local_id),
   ]);

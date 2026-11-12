@@ -356,6 +356,8 @@ export interface NuevaVenta {
   /** Venta con precio de promotor: los datos (opcionales) de quien la trajo. La comisión la calcula el servidor. */
   promotor?: DatosPromotor | null;
   /** Autorización firmada de un supervisor para vender a un precio distinto al del catálogo (se pide con `autorizarPrecio`) */
+  /** Venta en espera que esta venta cobra: se cierra en el mismo lote, sin mover el stock otra vez (Local Vidrios) */
+  espera_id?: string | null;
   autorizacion_precio?: string | null;
 }
 
@@ -583,6 +585,15 @@ export interface NuevoIntercambio {
   entran: { producto_id: string; cantidad: number }[];
   /** null/ausente = los dos lados se mueven ahora; si no, ese lado queda anotado y se mueve al completarlo */
   lado_pendiente?: LadoPendienteIntercambio | null;
+}
+
+/** Venta en espera (Local Vidrios): el carrito que se deja guardado; sale como mercancía pendiente con sus productos */
+export interface NuevaEspera {
+  localId: string;
+  items: { producto_id: string; cantidad: number }[];
+  /** Nombre (libre) de quien vendrá a pagar; opcional */
+  promotor_nombre?: string | null;
+  nota?: string | null;
 }
 
 export interface NuevoPendienteMercancia {

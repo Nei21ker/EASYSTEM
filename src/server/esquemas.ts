@@ -86,6 +86,13 @@ export const esquemaPendienteMercancia = z.object({
   items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).max(50).optional(),
   monto_usd: z.number(),
 });
+/** Venta en espera (Local Vidrios): el carrito que se deja guardado mientras el promotor vuelve a pagar */
+export const esquemaEspera = z.object({
+  localId: z.string().min(1).max(100),
+  items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).min(1).max(50),
+  promotor_nombre: z.string().max(80).nullable().optional(),
+  nota: z.string().max(200).nullable().optional(),
+});
 /** Cambio de mercancía con otro local (Local Vidrios): lo que sale, lo que entra y, si hace falta, el lado que queda en espera */
 export const esquemaIntercambio = z.object({
   localId: z.string().min(1).max(100),
@@ -122,6 +129,8 @@ export const esquemaVenta = z.object({
   comprobante_path: z.string().max(300).nullable().optional(),
   referencia_pago_movil: z.string().regex(/^\d{4}$/, 'La referencia debe tener exactamente 4 dígitos.').nullable().optional(),
   promotor: esquemaPromotor.nullable().optional(),
+  /** Venta en espera que esta venta cobra (se cierra en el mismo lote, sin mover el stock otra vez) */
+  espera_id: z.string().max(100).nullable().optional(),
   autorizacion_precio: z.string().max(2000).nullable().optional(),
 });
 

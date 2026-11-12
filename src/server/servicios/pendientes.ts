@@ -8,7 +8,7 @@
 //   · ver: administrador, gerente y encargado (su local); el contador ve los de la nómina;
 //   · crear mercancía y cerrar mercancía: administrador, gerente y encargado de ese local;
 //   · pagar una comisión: administrador, gerente y contador (el pago de promotores es de nómina); anularla: administrador y gerente.
-import { condicionAlcance, esGerencia, localAccesible, type Sesion } from '../authz';
+import { condicionAlcance, esGerencia, localAccesible, type Alcance, type Sesion } from '../authz';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
@@ -39,7 +39,15 @@ export async function listarPendientes(
   sesion: Sesion,
   opciones: { estado?: EstadoPendiente; tipo?: TipoPendiente; promotorId?: string; localId?: string; limite?: number } = {}
 ): Promise<Pendiente[]> {
-  const alcance = await alcanceDePendientes(env, sesion, opciones.localId);
+  return consultarPendientes(env, await alcanceDePendientes(env, sesion, opciones.localId), opciones);
+}
+
+/** La consulta de pendientes con un alcance ya resuelto (la comparten Pendientes y las ventas en espera del POS). */
+export async function consultarPendientes(
+  env: Entorno,
+  alcance: Alcance,
+  opciones: { estado?: EstadoPendiente; tipo?: TipoPendiente; promotorId?: string; limite?: number; soloConProductos?: boolean } = {}
+): Promise<Pendiente[]> {
   const { sql, valores } = condicionAlcance(alcance, 'x.local_id');
   const condiciones = [sql];
   const params: unknown[] = [...valores];
@@ -55,6 +63,7 @@ export async function listarPendientes(
     condiciones.push('x.promotor_id = ?');
     params.push(opciones.promotorId);
   }
+  if (opciones.soloConProductos) condiciones.push('x.items IS NOT NULL');
   const filas = await env.DB
     .prepare(`SELECT ${SELECCION} ${DESDE} WHERE ${condiciones.join(' AND ')} ORDER BY x.fecha DESC, x.rowid DESC LIMIT ?`)
     .bind(...params, limiteSeguro(opciones.limite, 500, 3000))

@@ -89,6 +89,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, obtenerSesionActual } from '../../lib/auth';
+  import { textoCliente } from '../../utils/clienteSinDatos';
   import { tasaActual } from '../../stores/tasa';
   import { convertirABs, formatearBolivares, formatearMoneda } from '../../utils/format';
   import { FormularioPagos } from '../../utils/formularioPagos';
@@ -292,7 +293,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     formPagos.reiniciar();
     buscador.value = '';
     $<HTMLInputElement>('dv-motivo').value = '';
-    $('dv-subtitulo').textContent = `Venta #${String(v.folio).padStart(4, '0')} · ${v.cliente_nombre} · ${formatearMoneda(v.total)}`;
+    $('dv-subtitulo').textContent = `Venta #${String(v.folio).padStart(4, '0')} · ${textoCliente(v)} · ${formatearMoneda(v.total)}`;
     errorEl.classList.add('hidden');
     try {
       const [devoluciones, productos] = await Promise.all([inventoryService.listarDevoluciones({ ventaId: v.id }), inventoryService.listarProductos({ localId: v.local_id })]);

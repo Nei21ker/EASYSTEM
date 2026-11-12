@@ -104,6 +104,10 @@ function casos(): Caso[] {
     { archivo: 'pendientes/index.ts', metodo: 'POST', url: '/api/pendientes', cuerpo: { localId: accesorios, promotorId: 'no-existe', descripcion: 'Vidrios', monto_usd: 5 }, permitidos: GERENCIA },
     { archivo: 'pendientes/[id]/cerrar.ts', metodo: 'POST', url: '/api/pendientes/no-existe/cerrar', params: { id: 'no-existe' }, cuerpo: { accion: 'pagar' }, permitidos: PENDIENTES },
     { archivo: 'pendientes/[id]/promotor.ts', metodo: 'PUT', url: '/api/pendientes/no-existe/promotor', params: { id: 'no-existe' }, cuerpo: { promotorId: 'x' }, permitidos: PENDIENTES },
+    // Ventas en espera del POS (Local Vidrios): quien cobra (el técnico y el contador no)
+    { archivo: 'espera/index.ts', metodo: 'GET', url: '/api/espera', permitidos: CAJERO },
+    { archivo: 'espera/index.ts', metodo: 'POST', url: '/api/espera', cuerpo: { localId: accesorios, items: [{ producto_id: 'no-existe', cantidad: 1 }] }, permitidos: CAJERO },
+    { archivo: 'espera/[id]/liberar.ts', metodo: 'POST', url: '/api/espera/no-existe/liberar', params: { id: 'no-existe' }, permitidos: CAJERO },
     // Cambio de mercancía con otro local (Local Vidrios): gerencia; revertirlo, solo administrador y gerente
     { archivo: 'intercambios/index.ts', metodo: 'GET', url: '/api/intercambios', permitidos: GERENCIA },
     { archivo: 'intercambios/index.ts', metodo: 'POST', url: '/api/intercambios', cuerpo: { localId: accesorios, contraparte: 'Local Aliado', salen: [{ producto_id: 'no-existe', cantidad: 1 }], entran: [{ producto_id: 'no-existe', cantidad: 1 }] }, permitidos: GERENCIA },

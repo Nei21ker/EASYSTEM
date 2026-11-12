@@ -34,7 +34,20 @@ const CLASE_SELECT =
 const CLASE_MONTO =
   'w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 
+/** Etiquetas cortas de los botones de cobro rápido (un toque = ese tipo de cobro por el total). */
+export const ETIQUETA_COBRO_RAPIDO: Record<MetodoPago, string> = {
+  USD_EFECTIVO: 'Efectivo $',
+  BS_PAGO_MOVIL: 'Pago móvil',
+  BS_PUNTO_VENTA: 'Punto',
+  BS_EFECTIVO: 'Efectivo Bs',
+  BINANCE_USDT: 'Binance',
+};
+
 export class FormularioPagos {
+  /** Cobro rápido (Local Vidrios): botones de un toque con cada tipo de cobro, que ponen el total completo */
+  private rapido = false;
+  /** Tipo de cobro que se propone al armar un cobro nuevo (el último que se usó en ese local) */
+  private metodoInicial: MetodoPago | null = null;
   private filas: FilaPago[] = [{ metodo: '', monto: '' }];
   private total = 0;
   /** Total en bolívares cuando el carrito tiene precios FIJOS en Bs (null = el total en dólares × tasa) */
@@ -67,6 +80,13 @@ export class FormularioPagos {
     });
     raiz.addEventListener('click', (e) => {
       const objetivo = e.target as HTMLElement;
+      const rapido = objetivo.closest<HTMLElement>('[data-pago-rapido]');
+      if (rapido) {
+        // Un toque: una sola forma de pago con ese tipo de cobro por el total completo (para dividir el pago se usa «+ Agregar otra forma de pago»)
+        this.filas = [{ metodo: '', monto: '' }];
+        this.cambiarMetodo(0, rapido.dataset.pagoRapido ?? '');
+        return;
+      }
       if (objetivo.closest('[data-pago-agregar]')) {
         if (this.filas.length >= METODOS_PAGO.length) return;
         this.filas.push({ metodo: '', monto: '' });
@@ -93,6 +113,13 @@ export class FormularioPagos {
     return Number(el.closest<HTMLElement>('[data-fila]')!.dataset.fila);
   }
 
+  /** Activa los botones de cobro rápido. `metodoInicial`: el tipo de cobro que ya viene elegido al abrir el cobro (null = ninguno). */
+  activarCobroRapido(metodoInicial: MetodoPago | null = null) {
+    this.rapido = true;
+    this.metodoInicial = metodoInicial;
+    this.reiniciar();
+  }
+
   /** Los tipos de cobro elegidos ahora (sin repetir). La página escucha el evento `easystem:pagos-cambiaron` de su contenedor para reaccionar. */
   metodosElegidos(): MetodoPago[] {
     return this.filas.map((f) => f.metodo).filter((m): m is MetodoPago => m !== '');
@@ -110,6 +137,10 @@ export class FormularioPagos {
     this.filas = [{ metodo: '', monto: '' }];
     this.darVuelto = false;
     this.totalDeLasFilas = this.total;
+    // Cobro rápido: ya viene elegido el último tipo de cobro usado, con el total completo
+    if (this.rapido && this.metodoInicial && this.total > 0) {
+      this.filas[0] = { metodo: this.metodoInicial, monto: this.montoEnMoneda(this.total, this.metodoInicial) };
+    }
     this.pintar();
   }
 
@@ -170,7 +201,7 @@ export class FormularioPagos {
         return `
           <div data-fila="${i}" class="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
             <div class="flex items-center gap-2">
-              <select data-pago-metodo aria-label="Tipo de cobro" class="${CLASE_SELECT}">${opciones}</select>
+              <select data-pago-metodo aria-label="Tipo de cobro" class="${CLASE_SELECT}${this.rapido && this.filas.length === 1 ? ' hidden' : ''}">${opciones}</select>
               ${this.filas.length > 1 ? '<button type="button" data-pago-quitar aria-label="Quitar esta forma de pago" class="shrink-0 rounded p-1.5 text-slate-400 hover:text-red-600">✕</button>' : ''}
             </div>
             <div class="mt-2 flex items-center gap-2">
@@ -185,11 +216,25 @@ export class FormularioPagos {
       })
       .join('');
 
+    // Cobro rápido: con una sola forma de pago, los tipos de cobro van como botones grandes (un toque basta)
+    const botonesRapidos =
+      this.rapido && this.filas.length === 1
+        ? `<div class="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="Cobrar con">${METODOS_PAGO.map((m) => {
+            const activo = this.filas[0].metodo === m.valor;
+            return `<button type="button" data-pago-rapido="${m.valor}" aria-pressed="${activo}" class="rounded-lg border px-2 py-3 text-sm font-semibold leading-tight transition ${
+              activo
+                ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+                : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+            }">${ETIQUETA_COBRO_RAPIDO[m.valor as MetodoPago] ?? m.etiqueta}</button>`;
+          }).join('')}</div>`
+        : '';
+
     this.raiz.innerHTML = `
       <div class="flex items-center justify-between gap-3">
         <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Forma de pago *</p>
         <button type="button" data-pago-agregar class="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">+ Agregar otra forma de pago</button>
       </div>
+      ${botonesRapidos}
       <div class="mt-2 space-y-2">${filasHtml}</div>
       <div data-vuelto class="mt-2 rounded-lg border border-slate-200 p-2.5 dark:border-slate-700"></div>
       <p data-pagos-resumen class="mt-2 rounded-lg px-3 py-2 text-sm font-medium"></p>`;

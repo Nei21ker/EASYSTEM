@@ -83,10 +83,13 @@ export function svgTicket(venta: VentaParaTicket): string {
   const fecha = new Date(venta.fecha).toLocaleString('es-VE', { dateStyle: 'medium', timeStyle: 'short' });
   texto(fecha, W / 2, 24, { ancla: 'middle', color: '#475569' });
   y += 40;
-  const cliente = venta.cliente_cedula ? `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}` : `Cliente: ${venta.cliente_nombre}`;
-  for (const linea of partirEnLineas(cliente, 44, 3)) {
-    texto(linea, W / 2, 24, { ancla: 'middle' });
-    y += 32;
+  // Venta sin datos del cliente (cobro rápido de Vidrios): el ticket no lleva la línea del cliente
+  if (venta.cliente_cedula !== 'SIN-DATOS') {
+    const cliente = venta.cliente_cedula ? `Cliente: ${venta.cliente_nombre} · ${venta.cliente_cedula}` : `Cliente: ${venta.cliente_nombre}`;
+    for (const linea of partirEnLineas(cliente, 44, 3)) {
+      texto(linea, W / 2, 24, { ancla: 'middle' });
+      y += 32;
+    }
   }
   y += 6;
   separador();

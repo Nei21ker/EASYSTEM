@@ -17,6 +17,7 @@
 import { modoServidor } from './modo';
 import { esErrorDeRed } from '../utils/red';
 import { normalizarPromotor, type PromotorNormalizado } from '../utils/promotor';
+import { CLIENTE_SIN_DATOS, clienteVacio } from '../utils/clienteSinDatos';
 import { descripcionInstalacionPromotor, hayInstalacionDelPromotor, instalacionDelPromotor, limpiarInstalacion, totalDeItems } from '../utils/instalacion';
 import { ErrorDeApi } from './api';
 import { partirEnTandas } from '../utils/tandas';
@@ -51,6 +52,7 @@ import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
+import * as esperaDb from './db/espera';
 import * as inversionDb from './db/inversion';
 import * as intercambiosDb from './db/intercambios';
 import { claveProveedor, compararInversiones, limpiarNombreProveedor, mermaComoPerdida, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
@@ -1918,7 +1920,8 @@ export class VentaIncompletaError extends Error {
 }
 
 export interface DatosVenta {
-  cliente: ClienteVenta;
+  /** Datos del cliente. null = venta sin datos (cobro rápido): solo se acepta en el Local Vidrios; en los demás son obligatorios */
+  cliente: ClienteVenta | null;
   /**
    * Cómo pagó el cliente: uno o varios tipos de cobro (sin repetir). La suma de monto_usd debe ser el
    * total de la venta; en los cobros en Bs, monto_bs es lo que se recibió en bolívares.
@@ -1931,6 +1934,8 @@ export interface DatosVenta {
   vendedor_nombre?: string;
   /** Referencia del pago móvil (exactamente 4 dígitos): obligatoria si algún pago es BS_PAGO_MOVIL (ya no se pide captura) */
   referenciaPagoMovil?: string | null;
+  /** Venta en espera que esta venta cobra (Local Vidrios): se cierra junto con la venta, sin mover el stock otra vez */
+  esperaId?: string | null;
   /**
    * Precio de promotor: obligatorio si alguna línea se cobra más cara que el catálogo (`precio_lista` en el item). El promotor y la
    * autorización de un supervisor salen de `autorizarPrecioVenta`; el servidor la vuelve a comprobar y calcula la comisión.
@@ -2581,6 +2586,101 @@ export async function asignarPromotorAPendiente(id: string, promotorId: string):
   return pendienteConPromotor(db, x);
 }
 
+// ----------------------------------------------------------------------------
+// Venta en espera (Local Vidrios): el carrito se deja guardado como mercancía pendiente con sus productos y se retoma desde el POS
+// ----------------------------------------------------------------------------
+async function sesionDeVenta(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion) throw new Error('Tu sesión terminó. Vuelve a entrar.');
+  if (sesion.rol === 'tecnico' || sesion.rol === 'contador') throw new Error('Tu rol no tiene permiso para dejar ventas en espera.');
+  return sesion;
+}
+
+/** Las ventas en espera abiertas del local activo (con sus productos). Sin local concreto, ninguna. */
+export async function listarEspera(): Promise<Pendiente[]> {
+  await sesionDeVenta();
+  const { localId } = await alcanceActual();
+  if (!localId) return [];
+  if (modoServidor) return esperaDb.listarEspera(localId);
+  const db = leerDB();
+  return (db.pendientes ?? [])
+    .filter((x) => x.local_id === localId && x.tipo === 'MERCANCIA' && x.estado === 'PENDIENTE' && (x.items?.length ?? 0) > 0)
+    .map((x) => pendienteConPromotor(db, x))
+    .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+}
+
+/** Deja el carrito en espera: queda como mercancía pendiente (sin tocar el stock, pero reservándolo) en el Local Vidrios. */
+export async function ponerEnEspera(datos: { items: { producto_id: string; cantidad: number }[]; promotor_nombre?: string | null; nota?: string | null }): Promise<Pendiente> {
+  const sesion = await sesionDeVenta();
+  const localId = await exigirLocal('dejar una venta en espera');
+  const lista = normalizarItemsPendiente(datos.items);
+  if (lista.length === 0) throw new Error('El carrito está vacío: no hay nada que dejar en espera.');
+  const quien = (datos.promotor_nombre ?? '').trim().replace(/\s+/g, ' ');
+  if (quien.length > 80) throw new Error('El nombre del promotor es muy largo (máximo 80 caracteres).');
+  const nota = (datos.nota ?? '').trim().replace(/\s+/g, ' ');
+  if (nota.length > 200) throw new Error('La nota es muy larga (máximo 200 caracteres).');
+  if (modoServidor) return esperaDb.crearEspera({ localId, items: lista, promotor_nombre: quien || null, nota: nota || null });
+
+  const db = leerDB();
+  if ((await alcanceActual()).localId && (db.locales ?? localesPorDefecto()).find((l) => l.id === localId)?.tipo !== 'vidrios') {
+    throw new Error('Por ahora las ventas en espera solo se usan en el Local Vidrios.');
+  }
+  const reservado = new Map<string, number>();
+  for (const x of db.pendientes ?? []) {
+    if (x.local_id !== localId || x.tipo !== 'MERCANCIA' || x.estado !== 'PENDIENTE') continue;
+    for (const i of x.items ?? []) reservado.set(i.producto_id, (reservado.get(i.producto_id) ?? 0) + i.cantidad);
+  }
+  const items: PendienteItem[] = lista.map((l) => {
+    const prod = db.productos.find((p) => p.id === l.producto_id);
+    if (!prod) throw new Error('Uno de los productos del carrito ya no existe en el inventario.');
+    const hay = db.inventario.find((f) => f.local_id === localId && f.producto_id === prod.id)?.stock_actual ?? 0;
+    const libre = hay - (reservado.get(prod.id) ?? 0);
+    if (l.cantidad > libre) throw new Error(`De «${prod.nombre}» solo quedan ${Math.max(0, libre)} sin reservar en este local.`);
+    return { producto_id: prod.id, nombre: prod.nombre, codigo: prod.referencia ?? prod.codigo_barras, cantidad: l.cantidad, precio_unitario: Math.round(prod.precio_venta * 100) / 100 };
+  });
+  const nuevo: Pendiente = {
+    id: generarId(),
+    local_id: localId,
+    tipo: 'MERCANCIA',
+    promotor_id: null,
+    promotor_cedula: null,
+    promotor_nombre: quien || null,
+    promotor_telefono: null,
+    promotor_banco: null,
+    descripcion: descripcionDePendiente(items, nota ? `En espera: ${nota}` : 'En espera desde el POS').slice(0, 500),
+    monto_usd: Math.round(items.reduce((s, i) => s + i.cantidad * i.precio_unitario, 0) * 100) / 100,
+    estado: 'PENDIENTE',
+    venta_id: null,
+    venta_folio: null,
+    creado_por_nombre: sesion.nombre,
+    fecha: new Date().toISOString(),
+    cerrado_en: null,
+    cerrado_por_nombre: null,
+    nota_cierre: null,
+    items,
+  };
+  (db.pendientes ?? (db.pendientes = [])).unshift(nuevo);
+  guardarDB(db);
+  return nuevo;
+}
+
+/** Suelta una venta en espera (deja de reservar el stock). No mueve inventario. */
+export async function liberarEspera(id: string): Promise<void> {
+  const sesion = await sesionDeVenta();
+  const { localId } = await alcanceActual();
+  if (!localId) throw new Error('Elige un local en el selector del encabezado.');
+  if (modoServidor) {
+    await esperaDb.liberarEspera(id);
+    return;
+  }
+  const db = leerDB();
+  const x = (db.pendientes ?? []).find((y) => y.id === id && y.local_id === localId && y.tipo === 'MERCANCIA' && (y.items?.length ?? 0) > 0);
+  if (!x) throw new Error('La venta en espera no existe.');
+  if (x.estado !== 'PENDIENTE') throw new Error('Esa venta en espera ya se cerró.');
+  Object.assign(x, { estado: 'ANULADO', cerrado_en: new Date().toISOString(), cerrado_por_nombre: sesion.nombre, nota_cierre: 'Liberada desde el POS' });
+  guardarDB(db);
+}
+
 /** Demo: anota la comisión de una venta con precio de promotor y deja al promotor en el directorio (lo que hace el servidor en el lote de la venta). */
 function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormalizado, sesion: SesionUsuario | null): void {
   const ahora = new Date().toISOString();
@@ -2681,8 +2781,15 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
       promotorDeLaVenta = { ...promotorDeLaVenta, comision: Math.round(((promotorDeLaVenta.comision ?? 0) + instalacionPromotor) * 100) / 100 };
     }
     const { promotor: _anotado, ...baseSinPromotor } = base;
-    const venta: Venta = { ...baseSinPromotor, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
+    const { espera_id: esperaCobrada, ...baseSinEspera } = baseSinPromotor;
+    const venta: Venta = { ...baseSinEspera, ...promotorDeLaVenta, id: generarId(), folio: ventas.reduce((m, v) => Math.max(m, v.folio), 0) + 1 };
     ventas.unshift(venta);
+    // La venta en espera que se cobró queda cerrada con la venta (el stock ya salió con ella)
+    const espera = esperaCobrada ? (db.pendientes ?? []).find((x) => x.id === esperaCobrada && x.estado === 'PENDIENTE') : undefined;
+    if (espera) {
+      const sesionEspera = await obtenerSesionActual();
+      Object.assign(espera, { estado: 'PAGADO', cerrado_en: new Date().toISOString(), cerrado_por_nombre: sesionEspera?.nombre ?? null, venta_id: venta.id, venta_folio: venta.folio, nota_cierre: `Cobrada en la venta #${venta.folio}` });
+    }
     // La comisión del promotor queda anotada en Pendientes (y el promotor en el directorio), como hace el servidor en el lote de la venta
     if (promotorNormalizado && (venta.comision ?? 0) > 0) anotarComisionPromotorDemo(db, venta, promotorNormalizado, await obtenerSesionActual());
     guardarDB(db);
@@ -2751,12 +2858,18 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
   if (items.length === 0) throw new Error('El carrito está vacío.');
   const local_id = await exigirLocal('vender');
 
-  const cliente = {
-    cedula: datos.cliente.cedula.trim(),
-    nombre: datos.cliente.nombre.trim().replace(/\s+/g, ' '),
-    apellido: (datos.cliente.apellido ?? '').trim().replace(/\s+/g, ' '),
-    telefono: datos.cliente.telefono.trim(),
-  };
+  // Cobro rápido del Local Vidrios: sin datos del cliente la venta se guarda como «sin datos»
+  const contextoVenta = await obtenerContextoLocal();
+  const localEsVidrios = contextoVenta?.local?.tipo === 'vidrios';
+  const sinDatos = (!datos.cliente || clienteVacio(datos.cliente)) && localEsVidrios;
+  const cliente = sinDatos
+    ? { ...CLIENTE_SIN_DATOS }
+    : {
+        cedula: (datos.cliente?.cedula ?? '').trim(),
+        nombre: (datos.cliente?.nombre ?? '').trim().replace(/\s+/g, ' '),
+        apellido: (datos.cliente?.apellido ?? '').trim().replace(/\s+/g, ' '),
+        telefono: (datos.cliente?.telefono ?? '').trim(),
+      };
   if (!cliente.cedula || !cliente.nombre || !cliente.telefono) {
     throw new Error('Faltan datos del cliente (cédula, nombre y teléfono).');
   }
@@ -2815,6 +2928,13 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
       if (aut.vence_en < Date.now() + 15_000) throw new Error('La autorización de las piezas defectuosas venció. Vuelve a pedirla.');
       if (!modoServidor && (danadosDemo.get(aut.token)?.cantidad ?? 0) < danadosVenta) throw new Error('La autorización de las piezas defectuosas no es válida. Vuelve a pedirla.');
     }
+  }
+
+  // Cobro de una venta en espera: debe seguir abierta (se comprueba ANTES de mover el inventario para no descontar dos veces)
+  if (datos.esperaId) {
+    if (modoServidor && typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('Para cobrar una venta en espera necesitas conexión.');
+    const abiertas = await listarEspera();
+    if (!abiertas.some((e) => e.id === datos.esperaId)) throw new Error('Esa venta en espera ya se cobró o se liberó. Vuelve a armar el carrito.');
   }
 
   // Pago móvil = referencia de 4 dígitos, comprobada ANTES de tocar el inventario (ya no se pide captura)
@@ -2893,6 +3013,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     tasa_cambio: datos.tasa_cambio,
     comprobante_path: null,
     referencia_pago_movil: referenciaPagoMovil || null,
+    ...(datos.esperaId ? { espera_id: datos.esperaId } : {}),
     ...(conPrecioPromotor && datos.precioPromotor
       ? { promotor: datos.precioPromotor.promotor ?? null, autorizacion_precio: datos.precioPromotor.autorizacion.token }
       : {}),
