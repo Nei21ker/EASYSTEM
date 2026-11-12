@@ -10,7 +10,7 @@ import { modoServidor } from './modo';
 import { alCambiarDatos, iniciarTiempoReal } from './realtime';
 import { avisarSalida, iniciarLatidos, leerPresenciaLocal } from './presencia';
 import { calcularEstado, type EstadoPresencia, type ListaPresencia, type UsuarioPresencia } from '../utils/presencia';
-import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto } from './constantes-locales';
+import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, agregarLocalesFaltantes, localVigente, localesPorDefecto } from './constantes-locales';
 import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.types';
 
 /**
@@ -81,6 +81,7 @@ export interface SuscripcionLocal {
   id: string;
   nombre: string;
   tipo: TipoLocal;
+  sede?: string | null;
   subscription_status: EstadoSuscripcion;
   subscription_expires_at: string | null;
   /** true = sus empleados pueden operar ahora (ACTIVE y sin vencer) */
@@ -537,6 +538,17 @@ function leerJsonLS<T>(clave: string, porDefecto: T): T {
 
 type SuscripcionesLS = Record<string, { subscription_status: EstadoSuscripcion; subscription_expires_at: string | null }>;
 
+/** Locales del modo LocalStorage: los de fábrica más los que el administrador agregó (viven en la base demo de inventoryService). */
+export function localesDemo(): Local[] {
+  try {
+    const guardados = (JSON.parse(localStorage.getItem('easystem:db:v1') ?? 'null') as { locales?: Local[] } | null)?.locales;
+    if (Array.isArray(guardados)) return agregarLocalesFaltantes(guardados).locales;
+  } catch {
+    /* sin base demo todavía: los de fábrica */
+  }
+  return localesPorDefecto();
+}
+
 /** Suscripciones simuladas del modo LocalStorage (la lee inventoryService.listarLocales para mezclarlas con los locales). */
 export function leerSuscripcionesLocales(): SuscripcionesLS {
   return leerJsonLS<SuscripcionesLS>(LS_SUSCRIPCIONES, {});
@@ -574,7 +586,7 @@ export async function obtenerEstadoCuenta(): Promise<EstadoCuenta> {
   const usuario = leerUsuariosLocales().find((u) => u.id === sesion.id);
   if (!usuario) return { acceso: false, motivo: 'sin_perfil' };
 
-  const locales: Local[] = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+  const locales: Local[] = localesDemo().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
   const local = locales.find((l) => l.id === usuario.local_id) ?? null;
   const base = { local_nombre: local?.nombre ?? null, subscription_status: local?.subscription_status ?? null, subscription_expires_at: local?.subscription_expires_at ?? null };
 
@@ -696,13 +708,14 @@ export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
   if (modoServidor) {
     locales = await api.get<Local[]>('/api/locales');
   } else {
-    locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+    locales = localesDemo().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
   }
 
   return locales.map((l) => ({
     id: l.id,
     nombre: l.nombre,
     tipo: l.tipo,
+    sede: l.sede ?? null,
     subscription_status: l.subscription_status ?? 'ACTIVE',
     subscription_expires_at: l.subscription_expires_at ?? null,
     vigente: localVigente(l),
@@ -737,7 +750,7 @@ export async function listarUsuariosSistema(): Promise<UsuarioSistema[]> {
 
   if (modoServidor) return api.get<UsuarioSistema[]>('/api/suscripciones/usuarios');
 
-  const locales = localesPorDefecto().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
+  const locales = localesDemo().map((l) => ({ ...l, ...leerSuscripcionesLocales()[l.id] }));
   const cierres = leerJsonLS<Record<string, string>>(LS_CIERRES_FORZADOS, {});
   const sesionLS = leerJsonLS<{ id?: string; emitida_en?: string }>(LS_SESION, {});
   return leerUsuariosLocales().map((u) => {
@@ -767,7 +780,7 @@ export async function listarUsuariosActivos(): Promise<ListaPresencia> {
 
   const ahora = Date.now();
   const usuarios = leerUsuariosLocales();
-  const locales = localesPorDefecto();
+  const locales = localesDemo();
   const lista: UsuarioPresencia[] = [];
   for (const [id, p] of Object.entries(leerPresenciaLocal())) {
     const u = usuarios.find((x) => x.id === id);

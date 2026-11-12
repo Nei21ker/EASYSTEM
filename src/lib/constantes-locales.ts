@@ -21,10 +21,10 @@ export function localVigente(local: Pick<Local, 'activo' | 'subscription_status'
 export function localesPorDefecto(): Local[] {
   const creado = '2026-01-01T00:00:00.000Z';
   return [
-    { id: LOCAL_ACCESORIOS_ID, nombre: 'Local Accesorios', tipo: 'accesorios', activo: true, created_at: creado },
-    { id: LOCAL_VIDRIOS_ID, nombre: 'Local Vidrios', tipo: 'vidrios', activo: true, created_at: creado },
-    { id: LOCAL_SERVICIO_TECNICO_ID, nombre: 'Local Servicio Técnico', tipo: 'servicio_tecnico', activo: true, created_at: creado },
-    { id: LOCAL_CONTROLES_ID, nombre: 'Local de controles', tipo: 'controles', activo: true, created_at: creado },
+    { id: LOCAL_ACCESORIOS_ID, nombre: 'Local Accesorios', tipo: 'accesorios', sede: 'Cosmos', activo: true, created_at: creado },
+    { id: LOCAL_VIDRIOS_ID, nombre: 'Local Vidrios', tipo: 'vidrios', sede: 'Cosmos', activo: true, created_at: creado },
+    { id: LOCAL_SERVICIO_TECNICO_ID, nombre: 'Local Servicio Técnico', tipo: 'servicio_tecnico', sede: 'Cosmos', activo: true, created_at: creado },
+    { id: LOCAL_CONTROLES_ID, nombre: 'Local de controles', tipo: 'controles', sede: 'Cosmos', activo: true, created_at: creado },
   ];
 }
 

@@ -5,6 +5,7 @@ interface FilaLocal {
   id: string;
   nombre: string;
   tipo: Local['tipo'];
+  sede: string | null;
   direccion: string | null;
   telefono: string | null;
   activo: number;

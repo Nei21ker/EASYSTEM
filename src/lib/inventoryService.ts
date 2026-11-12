@@ -28,6 +28,7 @@ import * as ventasDb from './db/ventas';
 import * as tasasDb from './db/tasas';
 import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
+import { normalizarLocalNuevo, type DatosLocal } from '../utils/local';
 import * as ordenesDb from './db/ordenes';
 import * as nominaDb from './db/nomina';
 import * as unidadesDb from './db/unidades';
@@ -724,6 +725,27 @@ export async function listarLocales(): Promise<Local[]> {
   }
 }
 
+/** Agrega un local (solo administrador): otra sede o tienda con su propio inventario y su propia suscripción. */
+export async function crearLocal(datos: DatosLocal): Promise<Local> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || sesion.rol !== 'administrador') throw new Error('Solo el administrador puede agregar locales.');
+  if (modoServidor) {
+    const creado = await localesDb.crearLocal(datos);
+    contextoPromesa = null;
+    return creado;
+  }
+  const limpio = normalizarLocalNuevo(datos);
+  if (typeof limpio === 'string') throw new Error(limpio);
+  const db = leerDB();
+  const repetido = db.locales.find((l) => l.nombre.trim().toLowerCase() === limpio.nombre.toLowerCase());
+  if (repetido) throw new Error(`Ya existe un local llamado «${repetido.nombre}».`);
+  const local: Local = { id: generarId(), nombre: limpio.nombre, tipo: limpio.tipo, sede: limpio.sede, direccion: limpio.direccion, telefono: limpio.telefono, activo: true, created_at: new Date().toISOString() };
+  db.locales.push(local);
+  guardarDB(db);
+  contextoPromesa = null;
+  return local;
+}
+
 async function cargarContexto(): Promise<ContextoLocal | null> {
   const sesion = await obtenerSesionActual();
   if (!sesion) return null;
@@ -990,10 +1012,10 @@ function porProducto(unidades: { producto_id: string; codigo: string }[]): Map<s
 }
 
 /** Locales a los que se puede mandar mercancía (todos los vigentes; un encargado solo ve el suyo en el resto de la app). */
-export async function listarDestinosTraslado(): Promise<{ id: string; nombre: string; tipo: string }[]> {
+export async function listarDestinosTraslado(): Promise<{ id: string; nombre: string; tipo: string; sede: string | null }[]> {
   await sesionDeMercancia();
   if (!modoServidor) {
-    return (await listarLocales()).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo }));
+    return (await listarLocales()).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo, sede: l.sede ?? null }));
   }
   return trasladosDb.listarDestinos();
 }

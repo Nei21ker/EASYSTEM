@@ -376,7 +376,7 @@ describe('destinos posibles', () => {
   it('un encargado ve todos los locales vigentes como destino (aunque en el resto de la app solo vea el suyo); vendedor y contador no', async () => {
     const r = await listarDestinos(env, sEA);
     expect(r.map((l) => l.id).sort()).toEqual(expect.arrayContaining([accesorios, vidrios, servicio]));
-    expect(Object.keys(r[0]).sort()).toEqual(['id', 'nombre', 'tipo']);
+    expect(Object.keys(r[0]).sort()).toEqual(['id', 'nombre', 'sede', 'tipo']);
     await rechazo(listarDestinos(env, sV), 403);
     await rechazo(listarDestinos(env, sC), 403);
   });

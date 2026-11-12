@@ -89,6 +89,7 @@ export const locales = sqliteTable('locales', {
   id: text('id').primaryKey(),
   nombre: text('nombre').notNull().unique(),
   tipo: text('tipo', { enum: ['accesorios', 'vidrios', 'servicio_tecnico', 'controles'] }).notNull(),
+  sede: text('sede'),
   direccion: text('direccion'),
   telefono: text('telefono'),
   activo: integer('activo', { mode: 'boolean' }).notNull().default(true),

@@ -24,6 +24,8 @@ export interface Local {
   id: string;
   nombre: string;
   tipo: TipoLocal;
+  /** Centro comercial o zona donde está el local (p. ej. «Cosmos»); migración 0026 */
+  sede?: string | null;
   direccion?: string | null;
   telefono?: string | null;
   activo: boolean;

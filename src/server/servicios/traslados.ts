@@ -132,9 +132,9 @@ async function leerTraslados(env: Entorno, condicion: string, valores: unknown[]
 }
 
 /** Locales a los que se puede mandar mercancía: todos los que tienen la suscripción vigente (un encargado solo ve el suyo en el resto de la app). */
-export async function listarDestinos(env: Entorno, sesion: Sesion): Promise<{ id: string; nombre: string; tipo: string }[]> {
+export async function listarDestinos(env: Entorno, sesion: Sesion): Promise<{ id: string; nombre: string; tipo: string; sede: string | null }[]> {
   await exigirGerencia(env, sesion);
-  return (await cargarLocales(env)).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo }));
+  return (await cargarLocales(env)).filter(localVigente).map((l) => ({ id: l.id, nombre: l.nombre, tipo: l.tipo, sede: l.sede ?? null }));
 }
 
 /** Los traslados donde el local del usuario es origen o destino (administrador y gerente: todos), del más reciente al más antiguo. */

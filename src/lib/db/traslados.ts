@@ -6,6 +6,7 @@ export interface DestinoTraslado {
   id: string;
   nombre: string;
   tipo: string;
+  sede: string | null;
 }
 
 export const listarDestinos = () => api.get<DestinoTraslado[]>('/api/traslados/destinos');
