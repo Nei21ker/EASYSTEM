@@ -509,12 +509,26 @@ export interface Pendiente {
   cerrado_en: string | null;
   cerrado_por_nombre: string | null;
   nota_cierre: string | null;
+  /** Productos del inventario que se llevó el promotor (solo mercancía): en espera, no tocan el stock hasta que se marca pagada */
+  items?: PendienteItem[] | null;
+}
+
+/** Un producto del inventario dentro de una mercancía pendiente (copia de su nombre y precio de catálogo al anotarla) */
+export interface PendienteItem {
+  producto_id: string;
+  nombre: string;
+  codigo: string | null;
+  cantidad: number;
+  precio_unitario: number;
 }
 
 export interface NuevoPendienteMercancia {
   localId: string;
   promotorId: string;
+  /** Texto libre (otras cosas que no están en el inventario). Puede ir vacío si se eligieron productos */
   descripcion: string;
+  /** Productos del inventario que se llevó (cantidad entera ≥ 1) */
+  items?: { producto_id: string; cantidad: number }[];
   monto_usd: number;
 }
 

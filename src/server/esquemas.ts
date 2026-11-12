@@ -82,7 +82,8 @@ export const esquemaNuevoPromotor = z.object({
 export const esquemaPendienteMercancia = z.object({
   localId: z.string(),
   promotorId: z.string().min(1).max(100),
-  descripcion: z.string().min(1).max(500),
+  descripcion: z.string().max(500),
+  items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).max(50).optional(),
   monto_usd: z.number(),
 });
 export const esquemaCerrarPendiente = z.object({

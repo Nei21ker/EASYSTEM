@@ -209,6 +209,7 @@ export const pendientes = sqliteTable('pendientes', {
   cerrado_en: text('cerrado_en'),
   cerrado_por_nombre: text('cerrado_por_nombre'),
   nota_cierre: text('nota_cierre'),
+  items: text('items'),
 });
 
 // Módulo de Inversión (migración 0021): proveedores y lo que se invierte en mercancía nueva (anotado a mano)

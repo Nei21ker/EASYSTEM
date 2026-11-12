@@ -57,7 +57,9 @@ const campo =
     $('cp-aviso').textContent = pagar
       ? comision
         ? 'Confirma cuando ya le hayas pagado esta comisión. No se puede deshacer.'
-        : 'Confirma cuando el promotor ya haya pagado esta mercancía. No se puede deshacer.'
+        : (pendiente.items?.length ?? 0) > 0
+          ? 'Confirma cuando el promotor ya haya pagado esta mercancía. Al confirmar se descuenta del inventario de este local (si no alcanza el stock, no se marca). No se puede deshacer.'
+          : 'Confirma cuando el promotor ya haya pagado esta mercancía. No se puede deshacer.'
       : 'Anúlalo solo si se creó por error. No se puede deshacer.';
     confirmar.textContent = pagar ? 'Sí, ya se pagó' : 'Sí, anular';
     ($('cp-nota') as HTMLInputElement).value = '';

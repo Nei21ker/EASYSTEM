@@ -52,7 +52,8 @@ import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import * as inversionDb from './db/inversion';
 import { claveProveedor, compararInversiones, limpiarNombreProveedor, mermaComoPerdida, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
-import type { DatosInversion, DatosProveedor, Inversion, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
+import type { DatosInversion, DatosProveedor, Inversion, PendienteItem, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
+import { descripcionDePendiente, normalizarItemsPendiente } from '../utils/pendienteItems';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO, redondeoValido } from '../utils/pagos';
 import type { FilaImportacion } from './importador';
@@ -2215,16 +2216,28 @@ export async function listarPendientes(opciones: { estado?: EstadoPendiente; tip
 }
 
 /** Anota la mercancía que un promotor se llevó y que vendrá a pagar (en el local activo). Administrador, gerente y encargado. */
-export async function crearPendienteMercancia(datos: { promotorId: string; descripcion: string; monto_usd: number; localId?: string }): Promise<Pendiente> {
+export async function crearPendienteMercancia(datos: { promotorId: string; descripcion: string; monto_usd: number; localId?: string; items?: { producto_id: string; cantidad: number }[] }): Promise<Pendiente> {
   const sesion = await obtenerSesionActual();
   if (!sesion || !esGerencia(sesion.rol)) throw new Error('Solo el administrador, el gerente o el encargado anotan pendientes.');
   const localId = datos.localId ?? (await exigirLocal('anotar un pendiente'));
   if (!puedeEnLocal(sesion, localId)) throw new Error('No tienes acceso a ese local.');
-  const descripcion = datos.descripcion.trim().replace(/\s+/g, ' ');
-  if (descripcion.length < 3 || descripcion.length > 500) throw new Error('Describe qué mercancía se llevó (de 3 a 500 caracteres).');
+  const lista = normalizarItemsPendiente(datos.items);
   if (!Number.isFinite(datos.monto_usd) || datos.monto_usd <= 0 || datos.monto_usd > 1_000_000) throw new Error('El monto que debe pagar debe ser mayor a 0.');
-  if (modoServidor) return promotoresDb.crearPendienteMercancia({ localId, promotorId: datos.promotorId, descripcion, monto_usd: datos.monto_usd });
+  if (modoServidor) {
+    const texto = datos.descripcion.trim().replace(/\s+/g, ' ');
+    if (lista.length === 0 && (texto.length < 3 || texto.length > 500)) throw new Error('Elige qué productos se llevó o descríbelo (de 3 a 500 caracteres).');
+    return promotoresDb.crearPendienteMercancia({ localId, promotorId: datos.promotorId, descripcion: texto, items: lista, monto_usd: datos.monto_usd });
+  }
   const db = leerDB();
+  // Productos del inventario: quedan en espera con su nombre y precio de hoy (el stock no se toca hasta cobrar)
+  const items: PendienteItem[] = lista.map((l) => {
+    const prod = db.productos.find((p) => p.id === l.producto_id);
+    if (!prod) throw new Error('Uno de los productos elegidos ya no existe en el inventario.');
+    return { producto_id: prod.id, nombre: prod.nombre, codigo: prod.referencia ?? prod.codigo_barras, cantidad: l.cantidad, precio_unitario: Math.round(prod.precio_venta * 100) / 100 };
+  });
+  const descripcion = descripcionDePendiente(items, datos.descripcion);
+  if (descripcion.length < 3) throw new Error('Elige qué productos se llevó o descríbelo (mínimo 3 caracteres).');
+  if (descripcion.length > 500) throw new Error('Es demasiado texto para una sola nota (máximo 500 caracteres): divide la mercancía en dos pendientes.');
   const promotor = (db.promotores ?? []).find((p) => p.id === datos.promotorId);
   if (!promotor) throw new Error('Elige un promotor de la lista, o agrégalo primero.');
   const nuevo: Pendiente = {
@@ -2246,6 +2259,7 @@ export async function crearPendienteMercancia(datos: { promotorId: string; descr
     cerrado_en: null,
     cerrado_por_nombre: null,
     nota_cierre: null,
+    items: items.length > 0 ? items : null,
   };
   (db.pendientes ?? (db.pendientes = [])).unshift(nuevo);
   guardarDB(db);
@@ -2266,9 +2280,32 @@ export async function cerrarPendiente(id: string, accion: 'pagar' | 'anular', no
     throw new Error(x.tipo === 'COMISION' ? 'Las comisiones las paga el gerente, el administrador o el contador desde Nómina; anularlas, solo el gerente o el administrador.' : 'No puedes cambiar este pendiente.');
   }
   if (x.estado !== 'PENDIENTE') throw new Error(`Este pendiente ya está ${x.estado === 'PAGADO' ? 'pagado' : 'anulado'}.`);
-  Object.assign(x, { estado: accion === 'pagar' ? 'PAGADO' : 'ANULADO', cerrado_en: new Date().toISOString(), cerrado_por_nombre: sesion.nombre, nota_cierre: texto || null });
-  guardarDB(db);
-  return pendienteConPromotor(db, x);
+  // Cobrar mercancía con productos del inventario: recién ahora sale del stock del local (si no alcanza, no se cobra y sigue en espera)
+  if (accion === 'pagar' && x.tipo === 'MERCANCIA' && (x.items?.length ?? 0) > 0) {
+    for (const i of x.items!) {
+      const prod = db.productos.find((p) => p.id === i.producto_id);
+      if (!prod) throw new Error(`«${i.nombre}» ya no existe en el inventario: no se puede descontar. Anula este pendiente y anota uno nuevo.`);
+      const hay = db.inventario.find((f) => f.local_id === x.local_id && f.producto_id === i.producto_id)?.stock_actual ?? 0;
+      if (hay < i.cantidad) {
+        throw new Error(`No alcanza el stock para marcarla cobrada: de «${i.nombre}» el promotor se llevó ${i.cantidad} y en este local hay ${hay}. Ingresa la mercancía o corrige el stock y vuelve a intentarlo.`);
+      }
+    }
+    for (const i of x.items!) {
+      await registrarMovimiento({
+        producto_id: i.producto_id,
+        tipo: 'SALIDA',
+        cantidad: i.cantidad,
+        local_id: x.local_id,
+        motivo: `Mercancía de promotor cobrada${x.promotor_nombre ? ` (${x.promotor_nombre})` : ''}`,
+      });
+    }
+  }
+  // registrarMovimiento guarda la base: se vuelve a leer para no pisar sus cambios con la copia anterior
+  const db2 = leerDB();
+  const y = (db2.pendientes ?? []).find((z) => z.id === id)!;
+  Object.assign(y, { estado: accion === 'pagar' ? 'PAGADO' : 'ANULADO', cerrado_en: new Date().toISOString(), cerrado_por_nombre: sesion.nombre, nota_cierre: texto || null });
+  guardarDB(db2);
+  return pendienteConPromotor(db2, y);
 }
 
 /** Ata a un promotor registrado un pendiente abierto que se creó sin sus datos. */

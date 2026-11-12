@@ -58,7 +58,7 @@ describe('demo: mercancía pendiente', () => {
   it('queda anotada con los datos del promotor y se marca pagada una sola vez', async () => {
     const s = await encargado();
     const p = await s.crearPromotor(promotor);
-    await expect(s.crearPendienteMercancia({ promotorId: p.id, descripcion: 'x', monto_usd: 10 })).rejects.toThrow(/Describe qué mercancía/);
+    await expect(s.crearPendienteMercancia({ promotorId: p.id, descripcion: 'x', monto_usd: 10 })).rejects.toThrow(/Elige qué productos/);
     await expect(s.crearPendienteMercancia({ promotorId: p.id, descripcion: '10 vidrios', monto_usd: 0 })).rejects.toThrow(/mayor a 0/);
     const m = await s.crearPendienteMercancia({ promotorId: p.id, descripcion: '10 vidrios blindados', monto_usd: 35 });
     expect(m).toMatchObject({ tipo: 'MERCANCIA', estado: 'PENDIENTE', promotor_banco: 'Banesco', local_id: LOCAL_VIDRIOS_ID });
@@ -69,6 +69,33 @@ describe('demo: mercancía pendiente', () => {
     const pagado = await s.cerrarPendiente(m.id, 'pagar', 'transferencia 0123');
     expect(pagado.estado).toBe('PAGADO');
     await expect(s.cerrarPendiente(m.id, 'pagar')).rejects.toThrow(/ya está pagado/);
+  });
+});
+
+describe('demo: mercancía pendiente con productos del inventario (en espera)', () => {
+  it('no toca el stock al anotarla; al cobrarla lo descuenta; sin stock no se cobra', async () => {
+    const s = await encargado();
+    const pr = await s.crearPromotor(promotor);
+    const prod = await s.crearProducto(vidrio);
+    await s.registrarMovimiento({ producto_id: prod.id, tipo: 'ENTRADA', cantidad: 5, motivo: 'Compra' });
+    const stock = async () => (await s.listarProductos({ catalogoCompleto: true })).find((x) => x.id === prod.id)!.stock_actual;
+
+    await expect(s.crearPendienteMercancia({ promotorId: pr.id, descripcion: '', items: [{ producto_id: prod.id, cantidad: 0 }], monto_usd: 10 })).rejects.toThrow(/entero mayor a 0/);
+    await expect(s.crearPendienteMercancia({ promotorId: pr.id, descripcion: '', items: [{ producto_id: 'no-existe', cantidad: 1 }], monto_usd: 10 })).rejects.toThrow(/ya no existe/);
+
+    const m = await s.crearPendienteMercancia({ promotorId: pr.id, descripcion: 'y algo más', items: [{ producto_id: prod.id, cantidad: 3 }, { producto_id: prod.id, cantidad: 3 }], monto_usd: 30 });
+    expect(m.items).toEqual([{ producto_id: prod.id, nombre: prod.nombre, codigo: expect.any(String), cantidad: 6, precio_unitario: 5 }]);
+    expect(m.descripcion).toBe(`6 × ${prod.nombre} · y algo más`);
+    expect(await stock()).toBe(5);
+
+    // 6 > 5: no alcanza, sigue en espera y no se movió nada
+    await expect(s.cerrarPendiente(m.id, 'pagar')).rejects.toThrow(/No alcanza el stock/);
+    expect(await stock()).toBe(5);
+    expect((await s.listarPendientes({ estado: 'PENDIENTE' })).map((x) => x.id)).toContain(m.id);
+
+    await s.registrarMovimiento({ producto_id: prod.id, tipo: 'ENTRADA', cantidad: 1, motivo: 'Compra' });
+    expect((await s.cerrarPendiente(m.id, 'pagar')).estado).toBe('PAGADO');
+    expect(await stock()).toBe(0);
   });
 });
 

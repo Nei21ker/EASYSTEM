@@ -1,6 +1,6 @@
 ---
 // Ventana para anotar la mercancía que un promotor se llevó y vendrá a pagar: promotor (del directorio, o se agrega ahí mismo),
-// qué se llevó y cuánto debe. Se abre con `easystem:abrir-mercancia-pendiente`; al guardar avisa con `easystem:pendiente-cambiado`.
+// qué se llevó (productos del inventario que quedan EN ESPERA —no tocan el stock hasta cobrar— y/o texto libre) y cuánto debe. Se abre con `easystem:abrir-mercancia-pendiente`; al guardar avisa con `easystem:pendiente-cambiado`.
 const campo =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
@@ -15,7 +15,7 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
       <div>
         <h2 id="nm-titulo" class="text-base font-semibold">Mercancía que se llevó un promotor</h2>
-        <p class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Queda anotada como pendiente hasta que el promotor la pague.</p>
+        <p class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Queda anotada como pendiente hasta que el promotor la pague. Los productos del inventario siguen en el stock «en espera» y se descuentan al marcarla como pagada.</p>
       </div>
       <div>
         <div class="flex items-end justify-between gap-2">
@@ -26,8 +26,13 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
         <p id="nm-promotor-banco" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div>
-        <label for="nm-descripcion" class={etiqueta}>Qué se llevó *</label>
-        <textarea id="nm-descripcion" rows="3" maxlength="500" placeholder="Ej: 10 vidrios blindados Samsung A15 y 5 hidrogeles" class={`mt-1 ${campo}`}></textarea>
+        <label for="nm-buscar" class={etiqueta}>Qué se llevó *</label>
+        <input id="nm-buscar" type="text" autocomplete="off" placeholder="Busca un producto del inventario (nombre o código)…" class={`mt-1 ${campo}`} />
+        <ul id="nm-resultados" class="mt-1 hidden max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white text-sm dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900"></ul>
+        <ul id="nm-items" class="mt-2 space-y-2"></ul>
+        <p id="nm-items-vacio" class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400">Elige uno o varios productos, o descríbelo abajo con tus palabras.</p>
+        <label for="nm-descripcion" class="mt-3 block text-[11px] font-medium text-slate-500 dark:text-slate-400">Otros detalles (opcional si elegiste productos)</label>
+        <textarea id="nm-descripcion" rows="2" maxlength="500" placeholder="Ej: 5 hidrogeles de otra marca" class={`mt-0.5 ${campo}`}></textarea>
       </div>
       <div>
         <p class={etiqueta}>Lo que debe pagar *</p>
@@ -58,7 +63,9 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
   import { tasaActual } from '../../stores/tasa';
   import { convertirABs, formatearBolivares } from '../../utils/format';
   import { leerPrecioEscrito, textoPrecioCampo } from '../../utils/precioBs';
-  import type { Promotor } from '../../types/database.types';
+  import { montoSugeridoDePendiente, MAX_CANTIDAD_ITEM_PENDIENTE, MAX_ITEMS_PENDIENTE } from '../../utils/pendienteItems';
+  import { normalizarNombre as normalizarBusqueda } from '../../utils/altaRapida';
+  import type { Producto, Promotor } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('nm-dialogo');
@@ -66,6 +73,103 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
   const error = $('nm-error');
   const guardar = $<HTMLButtonElement>('nm-guardar');
   let promotores: Promotor[] = [];
+
+  // ---- Productos del inventario (en espera) ----
+  type Linea = { producto: Producto; cantidad: number };
+  let catalogo: Producto[] = [];
+  let lineas: Linea[] = [];
+  let montoEditadoAMano = false;
+  const buscar = $<HTMLInputElement>('nm-buscar');
+  const resultados = $('nm-resultados');
+  const listaItems = $('nm-items');
+
+  const dolares = (n: number) => `$${n.toFixed(2).replace('.', ',')}`;
+  function pintarItems() {
+    $('nm-items-vacio').classList.toggle('hidden', lineas.length > 0);
+    listaItems.innerHTML = lineas
+      .map(
+        (l, i) => `<li class="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-700 dark:bg-slate-800/60" data-i="${i}">
+          <div class="min-w-0 flex-1">
+            <p class="break-words text-sm font-medium text-slate-800 dark:text-slate-100">${escaparHtml(l.producto.nombre)}</p>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400">${dolares(l.producto.precio_venta)} c/u · en el local hay ${l.producto.stock_actual}</p>
+          </div>
+          <input data-cant type="text" inputmode="numeric" value="${l.cantidad}" aria-label="Cantidad" class="w-14 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <button data-quitar type="button" aria-label="Quitar" class="rounded-md px-2 py-1 text-lg leading-none text-slate-400 hover:text-red-600">×</button>
+        </li>`
+      )
+      .join('');
+  }
+  /** Con productos elegidos, «lo que debe pagar» se propone con sus precios de catálogo (hasta que se escriba a mano). */
+  function sugerirMonto() {
+    if (montoEditadoAMano || lineas.length === 0) return;
+    const usd = montoSugeridoDePendiente(lineas.map((l) => ({ cantidad: l.cantidad, precio_unitario: l.producto.precio_venta })));
+    campoUsd.value = usd > 0 ? textoPrecioCampo(usd) : '';
+    campoUsd.dispatchEvent(new Event('input'));
+  }
+  function agregarProducto(id: string) {
+    const prod = catalogo.find((p) => p.id === id);
+    if (!prod) return;
+    const ya = lineas.find((l) => l.producto.id === id);
+    if (ya) ya.cantidad = Math.min(MAX_CANTIDAD_ITEM_PENDIENTE, ya.cantidad + 1);
+    else if (lineas.length >= MAX_ITEMS_PENDIENTE) {
+      mostrarError(`Máximo ${MAX_ITEMS_PENDIENTE} productos distintos por pendiente.`);
+      return;
+    } else lineas.push({ producto: prod, cantidad: 1 });
+    buscar.value = '';
+    resultados.classList.add('hidden');
+    pintarItems();
+    sugerirMonto();
+  }
+  function pintarResultados() {
+    const q = normalizarBusqueda(buscar.value);
+    if (!q) {
+      resultados.classList.add('hidden');
+      return;
+    }
+    const coinciden = catalogo
+      .filter((p) => normalizarBusqueda(`${p.nombre} ${p.referencia ?? ''} ${p.codigo_barras} ${p.categoria}`).includes(q))
+      .slice(0, 25);
+    resultados.innerHTML = coinciden.length
+      ? coinciden
+          .map(
+            (p) => `<li><button type="button" data-id="${p.id}" class="block w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
+              <span class="block break-words">${escaparHtml(p.nombre)}</span>
+              <span class="block text-[11px] text-slate-500 dark:text-slate-400">${dolares(p.precio_venta)} · stock ${p.stock_actual}</span>
+            </button></li>`
+          )
+          .join('')
+      : `<li class="px-3 py-2 text-xs text-slate-500">No hay productos que coincidan. Puedes describirlo abajo.</li>`;
+    resultados.classList.remove('hidden');
+  }
+  function mostrarError(texto: string) {
+    error.textContent = texto;
+    error.classList.remove('hidden');
+  }
+  let temporizadorBusqueda: number | undefined;
+  buscar.addEventListener('input', () => {
+    window.clearTimeout(temporizadorBusqueda);
+    temporizadorBusqueda = window.setTimeout(pintarResultados, 120);
+  });
+  resultados.addEventListener('click', (e) => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
+    if (b) agregarProducto(b.dataset.id!);
+  });
+  listaItems.addEventListener('click', (e) => {
+    const q = (e.target as HTMLElement).closest('[data-quitar]');
+    const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-i]');
+    if (!q || !li) return;
+    lineas.splice(Number(li.dataset.i), 1);
+    pintarItems();
+    sugerirMonto();
+  });
+  listaItems.addEventListener('input', (e) => {
+    const inp = e.target as HTMLInputElement;
+    const li = inp.closest<HTMLElement>('li[data-i]');
+    if (!li || !inp.matches('[data-cant]')) return;
+    const n = Math.floor(Number(inp.value.replace(/\D/g, '')));
+    lineas[Number(li.dataset.i)].cantidad = Number.isFinite(n) && n > 0 ? Math.min(n, MAX_CANTIDAD_ITEM_PENDIENTE) : 0;
+    sugerirMonto();
+  });
 
   function pintarPromotores(elegir?: string) {
     selectPromotor.innerHTML =
@@ -92,12 +196,14 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     campoBs.placeholder = tasa ? '0,00' : 'Sin tasa';
     ayudaMonto.textContent = tasa ? `Escribe en uno y el otro se calcula (${formatearBolivares(tasa)} por $1).` : 'Falta registrar la tasa del día para poder escribirlo en bolívares.';
   }
-  campoUsd.addEventListener('input', () => {
+  campoUsd.addEventListener('input', (ev) => {
+    if (ev.isTrusted) montoEditadoAMano = true;
     const tasa = tasaActual.get();
     const usd = leerPrecioEscrito(campoUsd.value, 'USD');
     if (tasa) campoBs.value = usd !== null && usd > 0 ? textoPrecioCampo(convertirABs(usd, tasa)) : '';
   });
-  campoBs.addEventListener('input', () => {
+  campoBs.addEventListener('input', (ev) => {
+    if (ev.isTrusted) montoEditadoAMano = true;
     const tasa = tasaActual.get();
     const bs = leerPrecioEscrito(campoBs.value, 'BS');
     if (tasa) campoUsd.value = bs !== null && bs > 0 ? textoPrecioCampo(Math.round((bs / tasa) * 100) / 100) : '';
@@ -108,7 +214,14 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     ($('nm-descripcion') as HTMLTextAreaElement).value = '';
     campoUsd.value = '';
     campoBs.value = '';
+    lineas = [];
+    montoEditadoAMano = false;
+    buscar.value = '';
+    resultados.classList.add('hidden');
+    pintarItems();
     prepararMontos();
+    // El catálogo del local activo: de ahí se eligen los productos que quedan en espera
+    inventoryService.listarProductos().then((p) => { catalogo = p; }).catch(() => { catalogo = []; });
     guardar.disabled = false;
     try {
       await cargarPromotores();
@@ -143,8 +256,10 @@ const etiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
     guardar.disabled = true;
     try {
       if (!selectPromotor.value) throw new Error('Elige un promotor de la lista, o agrégalo primero.');
+      if (lineas.some((l) => l.cantidad < 1)) throw new Error('Pon una cantidad de 1 o más en cada producto (o quítalo).');
       await inventoryService.crearPendienteMercancia({
         promotorId: selectPromotor.value,
+        items: lineas.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad })),
         descripcion: ($('nm-descripcion') as HTMLTextAreaElement).value,
         monto_usd: leerPrecioEscrito(campoUsd.value, 'USD') ?? 0,
       });
