@@ -34,6 +34,7 @@
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { estadoStock, htmlPrecioDual } from '../../utils/format';
+  import { tienePrecioEnBs } from '../../utils/precioBs';
   import { tasaActual } from '../../stores/tasa';
   import { htmlMiniatura } from '../../utils/imagenes';
   import { codigoVisible } from '../../utils/codigos';
@@ -80,7 +81,7 @@
           <p class="truncate font-mono text-xs text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}</p>
         </div>
         <div class="shrink-0 text-right">
-          <div class="text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get())}</div>
+          <div class="text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get(), '', tienePrecioEnBs(p) ? p.precio_bs! : null, tienePrecioEnBs(p) ? 'Fijo ' : '')}</div>
           <span class="mt-0.5 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${estilosBadge[estado]}">${texto}</span>
         </div>
       </li>`;
