@@ -1198,7 +1198,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         existente.cantidad += cantidad;
         if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
       } else {
-        lote.push(lineaNueva(productoId, cantidad));
+        const linea = lineaNueva(productoId, cantidad);
+        // Un producto por cantidad recién creado trae UNA etiqueta de pila por defecto (se puede poner 0 en la línea)
+        if (esPorCantidad(producto(productoId))) linea.copias = 1;
+        lote.push(linea);
       }
       agregados++;
     }
