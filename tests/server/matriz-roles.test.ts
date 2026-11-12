@@ -56,6 +56,7 @@ function casos(): Caso[] {
     // Catálogo y locales
     { archivo: 'locales/index.ts', metodo: 'GET', url: '/api/locales', permitidos: TODOS },
     { archivo: 'locales/index.ts', metodo: 'POST', url: '/api/locales', cuerpo: { nombre: 'Barquicenter Accesorios', tipo: 'accesorios', sede: 'Barquicenter' }, permitidos: ['administrador'] },
+    { archivo: 'locales/[localId]/index.ts', metodo: 'PATCH', url: `/api/locales/${accesorios}`, params: { localId: accesorios }, cuerpo: { nombre: 'Local Accesorios', tipo: 'accesorios', sede: 'Cosmos' }, permitidos: ['administrador'] },
     { archivo: 'locales/[localId]/inventario/alta.ts', metodo: 'POST', url: `/api/locales/${accesorios}/inventario/alta`, params: { localId: accesorios }, cuerpo: { productoIds: [p] }, permitidos: GERENCIA },
     { archivo: 'locales/[localId]/inventario/minimos.ts', metodo: 'POST', url: `/api/locales/${accesorios}/inventario/minimos`, params: { localId: accesorios }, cuerpo: { filas: [{ producto_id: p, stock_minimo: 2 }] }, permitidos: GERENCIA },
     { archivo: 'modelos/index.ts', metodo: 'GET', url: '/api/modelos', permitidos: NEGOCIO },

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
-import { crearLocal } from '../../src/server/servicios/locales';
+import { actualizarLocal, crearLocal } from '../../src/server/servicios/locales';
 import { registrarMovimientos } from '../../src/server/servicios/movimientos';
 import { despacharTraslado, listarDestinos, recibirTraslado } from '../../src/server/servicios/traslados';
 import { listarLocalesVisibles } from '../../src/server/servicios/catalogo';
@@ -57,6 +57,28 @@ describe('crearLocal', () => {
   it('la sede es opcional', async () => {
     const l = await crearLocal(env, admin, { nombre: 'Local sin sede', tipo: 'controles' });
     expect(l.sede).toBeNull();
+  });
+});
+
+describe('actualizarLocal', () => {
+  it('el administrador cambia nombre, tipo, sede, dirección y teléfono; los demás datos del local no se tocan', async () => {
+    const l = await crearLocal(env, admin, { nombre: 'Local 2 accesorios', tipo: 'accesorios', sede: 'Barquicenter' });
+    const e = await actualizarLocal(env, admin, l.id, { nombre: '  Local 2   Accesorios Barquicenter ', tipo: 'vidrios', sede: 'Barquicenter', direccion: 'Nivel 1', telefono: '0251-1234567' });
+    expect(e).toMatchObject({ id: l.id, nombre: 'Local 2 Accesorios Barquicenter', tipo: 'vidrios', sede: 'Barquicenter', direccion: 'Nivel 1', telefono: '0251-1234567', activo: true, subscription_status: 'ACTIVE' });
+    const v = await listarLocalesVisibles(env, gerente);
+    expect(v.find((x) => x.id === l.id)?.nombre).toBe('Local 2 Accesorios Barquicenter');
+  });
+
+  it('se puede dejar el mismo nombre al editar otros datos, y limpiar la sede', async () => {
+    const e = await actualizarLocal(env, admin, accesorios, { nombre: 'Local Accesorios', tipo: 'accesorios', sede: '' });
+    expect(e).toMatchObject({ nombre: 'Local Accesorios', sede: null });
+  });
+
+  it('rechaza nombre repetido de otro local, datos inválidos, local inexistente y a quien no es administrador', async () => {
+    await rechazo(actualizarLocal(env, admin, accesorios, { nombre: 'local VIDRIOS', tipo: 'accesorios' }), 409, 'local_repetido');
+    await rechazo(actualizarLocal(env, admin, accesorios, { nombre: 'ab', tipo: 'accesorios' }), 400);
+    await rechazo(actualizarLocal(env, admin, 'no-existe', { nombre: 'Local nuevo', tipo: 'accesorios' }), 404);
+    await rechazo(actualizarLocal(env, gerente, accesorios, { nombre: 'Otro nombre', tipo: 'accesorios' }), 403);
   });
 });
 

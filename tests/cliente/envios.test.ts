@@ -103,6 +103,21 @@ describe('demo: agregar un local', () => {
     await expect(s.crearLocal({ nombre: 'x', tipo: 'accesorios' })).rejects.toThrow(/entre 3 y 60/);
   });
 
+  it('editar un local cambia su nombre, tipo, sede y contacto en todas las listas; no deja repetir nombres', async () => {
+    const { auth, s } = await cargarComoAdmin();
+    const l = await s.crearLocal({ nombre: 'Local 2 accesorios', tipo: 'accesorios', sede: 'Barquicenter' });
+    const e = await s.actualizarLocal(l.id, { nombre: 'Local 2 Accesorios Barquicenter', tipo: 'accesorios', sede: 'Barquicenter', direccion: 'Nivel 2', telefono: '0251-555' });
+    expect(e).toMatchObject({ id: l.id, nombre: 'Local 2 Accesorios Barquicenter', direccion: 'Nivel 2', telefono: '0251-555' });
+    expect((await s.listarLocales()).find((x) => x.id === l.id)?.nombre).toBe('Local 2 Accesorios Barquicenter');
+    expect((await auth.listarSuscripciones()).find((x) => x.id === l.id)?.nombre).toBe('Local 2 Accesorios Barquicenter');
+    // también un local de fábrica (aún no guardado en la base demo)
+    const f = await s.actualizarLocal('00000000-0000-4000-8000-000000000002', { nombre: 'Local Vidrios Cosmos', tipo: 'vidrios', sede: 'Cosmos' });
+    expect(f.nombre).toBe('Local Vidrios Cosmos');
+    expect((await s.listarLocales()).filter((x) => x.nombre === 'Local Vidrios Cosmos')).toHaveLength(1);
+    await expect(s.actualizarLocal(l.id, { nombre: 'local vidrios cosmos', tipo: 'accesorios' })).rejects.toThrow(/Ya existe/);
+    await expect(s.actualizarLocal('no-existe', { nombre: 'Local nuevo', tipo: 'accesorios' })).rejects.toThrow(/no existe/);
+  });
+
   it('un encargado no puede agregar locales', async () => {
     vi.resetModules();
     vi.stubEnv('PUBLIC_USAR_API', 'false');
@@ -110,5 +125,6 @@ describe('demo: agregar un local', () => {
     await auth.iniciarSesion('encargado@edwardaccesorios.com', 'encargado123');
     const s = await import('../../src/lib/inventoryService');
     await expect(s.crearLocal({ nombre: 'Barquicenter Vidrios', tipo: 'vidrios' })).rejects.toThrow(/Solo el administrador/);
+    await expect(s.actualizarLocal('00000000-0000-4000-8000-000000000002', { nombre: 'Otro nombre', tipo: 'vidrios' })).rejects.toThrow(/Solo el administrador/);
   });
 });

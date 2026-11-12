@@ -82,6 +82,8 @@ export interface SuscripcionLocal {
   nombre: string;
   tipo: TipoLocal;
   sede?: string | null;
+  direccion?: string | null;
+  telefono?: string | null;
   subscription_status: EstadoSuscripcion;
   subscription_expires_at: string | null;
   /** true = sus empleados pueden operar ahora (ACTIVE y sin vencer) */
@@ -716,6 +718,8 @@ export async function listarSuscripciones(): Promise<SuscripcionLocal[]> {
     nombre: l.nombre,
     tipo: l.tipo,
     sede: l.sede ?? null,
+    direccion: l.direccion ?? null,
+    telefono: l.telefono ?? null,
     subscription_status: l.subscription_status ?? 'ACTIVE',
     subscription_expires_at: l.subscription_expires_at ?? null,
     vigente: localVigente(l),

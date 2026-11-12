@@ -726,6 +726,31 @@ export async function listarLocales(): Promise<Local[]> {
   }
 }
 
+/** Edita nombre, tipo, sede, dirección y teléfono de un local (solo administrador). */
+export async function actualizarLocal(id: string, datos: DatosLocal): Promise<Local> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || sesion.rol !== 'administrador') throw new Error('Solo el administrador puede editar locales.');
+  if (modoServidor) {
+    const editado = await localesDb.actualizarLocal(id, datos);
+    contextoPromesa = null;
+    return editado;
+  }
+  const limpio = normalizarLocalNuevo(datos);
+  if (typeof limpio === 'string') throw new Error(limpio);
+  const db = leerDB();
+  // Los locales de fábrica pueden no estar guardados todavía en la base demo
+  const completos = agregarLocalesFaltantes(db.locales).locales;
+  const local = completos.find((l) => l.id === id);
+  if (!local) throw new Error('Ese local no existe.');
+  const repetido = completos.find((l) => l.id !== id && l.nombre.trim().toLowerCase() === limpio.nombre.toLowerCase());
+  if (repetido) throw new Error(`Ya existe un local llamado «${repetido.nombre}».`);
+  Object.assign(local, { nombre: limpio.nombre, tipo: limpio.tipo, sede: limpio.sede, direccion: limpio.direccion, telefono: limpio.telefono });
+  db.locales = completos;
+  guardarDB(db);
+  contextoPromesa = null;
+  return local;
+}
+
 /** Agrega un local (solo administrador): otra sede o tienda con su propio inventario y su propia suscripción. */
 export async function crearLocal(datos: DatosLocal): Promise<Local> {
   const sesion = await obtenerSesionActual();

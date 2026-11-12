@@ -19,7 +19,8 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
       <button id="su-nuevo-local" type="button" class="rounded-lg border border-brand-600 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-400 dark:text-brand-300 dark:hover:bg-slate-800">+ Agregar local</button>
     </div>
     <form id="su-form-local" class="hidden space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <p class="text-xs text-slate-500 dark:text-slate-400">Un local nuevo nace vacío (el catálogo es compartido) y con la suscripción activa. Después se le crean sus usuarios y se le manda mercancía desde Mercancía → Descargo.</p>
+      <p id="su-local-titulo" class="text-sm font-semibold text-slate-900 dark:text-white hidden"></p>
+      <p id="su-local-ayuda" class="text-xs text-slate-500 dark:text-slate-400">Un local nuevo nace vacío (el catálogo es compartido) y con la suscripción activa. Después se le crean sus usuarios y se le manda mercancía desde Mercancía → Descargo.</p>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div>
           <label for="su-local-nombre" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Nombre *</label>
@@ -34,7 +35,16 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
           <input id="su-local-sede" type="text" list="su-sedes" maxlength="40" placeholder="Ej: Barquicenter" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           <datalist id="su-sedes"></datalist>
         </div>
+        <div>
+          <label for="su-local-direccion" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Dirección</label>
+          <input id="su-local-direccion" type="text" maxlength="120" placeholder="Ej: Nivel 1, local 25" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
+        <div>
+          <label for="su-local-telefono" class="block text-xs font-medium text-slate-600 dark:text-slate-400">Teléfono</label>
+          <input id="su-local-telefono" type="tel" maxlength="30" placeholder="Ej: 0251-1234567" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </div>
       </div>
+      <p id="su-local-aviso-tipo" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">Cambiar el tipo cambia los módulos que ven los usuarios de este local (por ejemplo, Pendientes y Cambio son de vidrios, y Servicio técnico es del local de servicio técnico). El inventario, las ventas y el historial no se tocan.</p>
       <div class="flex gap-3">
         <button id="su-local-cancelar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
         <button id="su-local-guardar" type="submit" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Crear local</button>
@@ -161,6 +171,7 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
               </div>
               <span class="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${clase}">${efectivo}</span>
             </div>
+            <button type="button" data-editar class="${boton} w-full border border-brand-600 text-brand-700 hover:bg-brand-50 dark:border-brand-400 dark:text-brand-300 dark:hover:bg-slate-800">Editar datos del local</button>
 
             <div class="flex flex-wrap gap-2">
               <button type="button" data-accion="ACTIVE" class="${boton} bg-emerald-600 text-white hover:bg-emerald-700" ${l.subscription_status === 'ACTIVE' ? 'disabled' : ''}>Activar</button>
@@ -191,6 +202,7 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
       for (const boton of tarjeta.querySelectorAll<HTMLButtonElement>('[data-accion]')) {
         boton.addEventListener('click', () => accionLocal(local, boton.dataset.accion!, tarjeta));
       }
+      tarjeta.querySelector<HTMLButtonElement>('[data-editar]')!.addEventListener('click', () => abrirEdicion(local.id));
     }
   }
 
@@ -289,24 +301,82 @@ import DashboardLayout from '../../layouts/DashboardLayout.astro';
   const campoTipo = document.getElementById('su-local-tipo') as HTMLSelectElement;
   const campoSede = document.getElementById('su-local-sede') as HTMLInputElement;
   campoTipo.innerHTML = TIPOS_LOCAL.map((t) => `<option value="${t.valor}">${t.etiqueta}</option>`).join('');
-  document.getElementById('su-nuevo-local')!.addEventListener('click', () => {
+  const campoDireccion = document.getElementById('su-local-direccion') as HTMLInputElement;
+  const campoTelefono = document.getElementById('su-local-telefono') as HTMLInputElement;
+  const avisoTipo = document.getElementById('su-local-aviso-tipo') as HTMLParagraphElement;
+  const tituloForm = document.getElementById('su-local-titulo') as HTMLParagraphElement;
+  const ayudaForm = document.getElementById('su-local-ayuda') as HTMLParagraphElement;
+  const botonGuardarLocal = document.getElementById('su-local-guardar') as HTMLButtonElement;
+  /** Id del local que se está editando; null = se está creando uno nuevo */
+  let editandoId: string | null = null;
+  let tipoOriginal: TipoLocal | null = null;
+
+  function llenarSedes() {
     (document.getElementById('su-sedes') as HTMLDataListElement).innerHTML = [...new Set(locales.map((l) => l.sede).filter(Boolean) as string[])].map((s) => `<option value="${escaparHtml(s)}"></option>`).join('');
-    formLocal.classList.toggle('hidden');
+  }
+  function prepararFormulario(modoEdicion: boolean) {
+    tituloForm.classList.toggle('hidden', !modoEdicion);
+    ayudaForm.classList.toggle('hidden', modoEdicion);
+    avisoTipo.classList.add('hidden');
+    botonGuardarLocal.textContent = modoEdicion ? 'Guardar cambios' : 'Crear local';
+  }
+  function abrirEdicion(id: string) {
+    const l = locales.find((x) => x.id === id);
+    if (!l) return;
+    editandoId = id;
+    tipoOriginal = l.tipo;
+    llenarSedes();
+    campoNombre.value = l.nombre;
+    campoTipo.value = l.tipo;
+    campoSede.value = l.sede ?? '';
+    campoDireccion.value = l.direccion ?? '';
+    campoTelefono.value = l.telefono ?? '';
+    tituloForm.textContent = `Editando «${l.nombre}»`;
+    prepararFormulario(true);
+    formLocal.classList.remove('hidden');
+    formLocal.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    campoNombre.focus();
+  }
+  campoTipo.addEventListener('change', () => avisoTipo.classList.toggle('hidden', editandoId === null || campoTipo.value === tipoOriginal));
+  document.getElementById('su-nuevo-local')!.addEventListener('click', () => {
+    const estabaEditando = editandoId !== null;
+    editandoId = null;
+    tipoOriginal = null;
+    llenarSedes();
+    if (estabaEditando) formLocal.reset();
+    prepararFormulario(false);
+    if (estabaEditando) formLocal.classList.remove('hidden');
+    else formLocal.classList.toggle('hidden');
     if (!formLocal.classList.contains('hidden')) campoNombre.focus();
   });
-  document.getElementById('su-local-cancelar')!.addEventListener('click', () => formLocal.classList.add('hidden'));
+  document.getElementById('su-local-cancelar')!.addEventListener('click', () => {
+    formLocal.classList.add('hidden');
+    formLocal.reset();
+    editandoId = null;
+    tipoOriginal = null;
+  });
   formLocal.addEventListener('submit', async (e) => {
     e.preventDefault();
     const guardar = document.getElementById('su-local-guardar') as HTMLButtonElement;
     guardar.disabled = true;
     try {
-      const creado = await inventoryService.crearLocal({ nombre: campoNombre.value, tipo: campoTipo.value as TipoLocal, sede: campoSede.value });
-      formLocal.reset();
-      formLocal.classList.add('hidden');
-      avisar(exito, `Local «${creado.nombre}» creado. Ahora crea sus usuarios en Usuarios y mándale mercancía desde Mercancía → Descargo.`);
+      const datos = { nombre: campoNombre.value, tipo: campoTipo.value as TipoLocal, sede: campoSede.value, direccion: campoDireccion.value, telefono: campoTelefono.value };
+      if (editandoId) {
+        const editado = await inventoryService.actualizarLocal(editandoId, datos);
+        editandoId = null;
+        tipoOriginal = null;
+        formLocal.reset();
+        formLocal.classList.add('hidden');
+        avisar(exito, `Local «${editado.nombre}» actualizado. El cambio se ve en todos los dispositivos.`);
+      } else {
+        const creado = await inventoryService.crearLocal(datos);
+        formLocal.reset();
+        formLocal.classList.add('hidden');
+        avisar(exito, `Local «${creado.nombre}» creado. Ahora crea sus usuarios en Usuarios y mándale mercancía desde Mercancía → Descargo.`);
+      }
       await cargar();
     } catch (err) {
-      avisar(error, err instanceof Error ? err.message : 'No se pudo crear el local.');
+      avisar(error, err instanceof Error ? err.message : editandoId ? 'No se pudo guardar el local.' : 'No se pudo crear el local.');
     } finally {
       guardar.disabled = false;
     }
