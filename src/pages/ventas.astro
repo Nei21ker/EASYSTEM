@@ -317,34 +317,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div data-paso="pago" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
           <div id="pos-formulario-pagos"></div>
 
-          <!-- Captura del pago móvil: obligatoria si algún cobro es "Bs pago móvil" (se muestra solo entonces) -->
+          <!-- Referencia del pago móvil: obligatoria si algún cobro es "Bs pago móvil" (se muestra solo entonces) -->
           <div id="pos-comprobante" class="hidden space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-            <p class="text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Comprobante del pago móvil *</p>
-            <p class="text-xs text-amber-800 dark:text-amber-300">Elige cómo respaldar el pago. Sin esto no se puede procesar la venta.</p>
-            <div class="grid grid-cols-2 gap-1 rounded-lg bg-amber-100 p-1 dark:bg-amber-500/15" role="group" aria-label="Cómo respaldar el pago móvil">
-              <button id="pos-comprobante-modo-foto" type="button" data-modo-comprobante="foto" aria-pressed="true" class="rounded-md px-3 py-2 text-sm font-semibold text-amber-900 aria-pressed:bg-white aria-pressed:shadow-sm dark:text-amber-200 dark:aria-pressed:bg-slate-800">Foto del pago</button>
-              <button id="pos-comprobante-modo-ref" type="button" data-modo-comprobante="referencia" aria-pressed="false" class="rounded-md px-3 py-2 text-sm font-semibold text-amber-900 aria-pressed:bg-white aria-pressed:shadow-sm dark:text-amber-200 dark:aria-pressed:bg-slate-800">Referencia</button>
-            </div>
-            <div id="pos-comprobante-panel-ref" class="hidden space-y-1.5">
-              <label for="pos-comprobante-ref" class="block text-xs text-amber-800 dark:text-amber-300">Escribe los <strong>4 últimos dígitos</strong> de la referencia del pago móvil</label>
-              <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-            </div>
-            <div id="pos-comprobante-panel-foto" class="space-y-2">
-            <p class="text-xs text-amber-800 dark:text-amber-300">Toma una foto o elige la captura del pago que te muestra el cliente.</p>
-            <div class="flex flex-wrap gap-2">
-              <button id="pos-comprobante-foto" type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Tomar foto</button>
-              <button id="pos-comprobante-galeria" type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Elegir de la galería</button>
-            </div>
-            <input id="pos-comprobante-input-foto" type="file" accept="image/*" capture="environment" class="hidden" tabindex="-1" />
-            <input id="pos-comprobante-input-galeria" type="file" accept="image/*" class="hidden" tabindex="-1" />
-            <div id="pos-comprobante-vista" class="hidden items-center gap-3">
-              <img id="pos-comprobante-img" alt="Captura del comprobante del pago móvil" class="h-20 w-20 rounded-lg border border-slate-200 object-cover dark:border-slate-700" />
-              <div class="text-xs">
-                <p class="font-semibold text-emerald-700 dark:text-emerald-400">✓ Captura adjunta</p>
-                <button id="pos-comprobante-quitar" type="button" class="mt-1 font-medium text-red-600 hover:underline dark:text-red-400">Quitar</button>
-              </div>
-            </div>
-            </div>
+            <label for="pos-comprobante-ref" class="block text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Referencia del pago móvil *</label>
+            <p class="text-xs text-amber-800 dark:text-amber-300">Escribe los <strong>4 últimos dígitos</strong> de la referencia. Sin esto no se puede procesar la venta.</p>
+            <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <p id="pos-comprobante-error" role="alert" class="hidden text-xs text-red-700 dark:text-red-400"></p>
           </div>
         </div>
@@ -485,7 +462,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <p id="pos-promotor-registrado" role="status" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
           <p class="oculto-con-teclado text-[11px] text-slate-500 dark:text-slate-400">Con la cédula queda registrado en Pendientes y Nómina para pagarle su comisión; la próxima vez sus datos se completan solos.</p>
         </fieldset>
-        <div class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+        <div id="pos-precio-clave-bloque" class="space-y-2 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <p id="pos-precio-clave-titulo" class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
           <input id="pos-precio-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
@@ -556,7 +533,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { tienePrecioEnBs } from '../utils/precioBs';
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
-  import { htmlMiniatura, reducirImagen } from '../utils/imagenes';
+  import { htmlMiniatura } from '../utils/imagenes';
   import { codigoVisible, esCodigoUnidad, normalizarCodigoUnidad, normalizarReferencia, prefijoDelCodigo } from '../utils/codigos';
   import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
   import { MOTIVOS_MERMA, type MotivoMerma } from '../types/database.types';
@@ -1093,80 +1070,24 @@ import { alCambiarDatos } from '../lib/realtime';
   const formPagos = new FormularioPagos(contenedorPagos);
   let totalAConfirmar = 0;
 
-  // --- Captura del comprobante del pago móvil -------------------------------------------------------------
+  // --- Referencia del pago móvil (4 dígitos; ya no se pide foto) ---------------------------------------
   const bloqueComprobante = document.getElementById('pos-comprobante')!;
-  const vistaComprobante = document.getElementById('pos-comprobante-vista')!;
-  const imgComprobante = document.getElementById('pos-comprobante-img') as HTMLImageElement;
   const errorComprobante = document.getElementById('pos-comprobante-error')!;
-  const inputFotoComprobante = document.getElementById('pos-comprobante-input-foto') as HTMLInputElement;
-  const inputGaleriaComprobante = document.getElementById('pos-comprobante-input-galeria') as HTMLInputElement;
-  const panelFotoComprobante = document.getElementById('pos-comprobante-panel-foto')!;
-  const panelRefComprobante = document.getElementById('pos-comprobante-panel-ref')!;
   const campoReferencia = document.getElementById('pos-comprobante-ref') as HTMLInputElement;
-  let comprobante: Blob | null = null;
-  let comprobanteUrl: string | null = null;
-  /** Cómo se respalda el pago móvil: con la captura o con la referencia (4 dígitos); solo se usa lo del modo elegido */
-  let modoComprobante: 'foto' | 'referencia' = 'foto';
 
   function pintarComprobante() {
-    const pedido = formPagos.metodosElegidos().includes('BS_PAGO_MOVIL');
-    bloqueComprobante.classList.toggle('hidden', !pedido);
-    panelFotoComprobante.classList.toggle('hidden', modoComprobante !== 'foto');
-    panelRefComprobante.classList.toggle('hidden', modoComprobante !== 'referencia');
-    for (const b of bloqueComprobante.querySelectorAll<HTMLButtonElement>('[data-modo-comprobante]')) b.setAttribute('aria-pressed', String(b.dataset.modoComprobante === modoComprobante));
-    vistaComprobante.classList.toggle('hidden', !comprobante);
-    vistaComprobante.classList.toggle('flex', !!comprobante);
-    if (comprobante && comprobanteUrl) imgComprobante.src = comprobanteUrl;
+    bloqueComprobante.classList.toggle('hidden', !formPagos.metodosElegidos().includes('BS_PAGO_MOVIL'));
   }
   function soltarComprobante() {
-    if (comprobanteUrl) URL.revokeObjectURL(comprobanteUrl);
-    comprobante = null;
-    comprobanteUrl = null;
-    imgComprobante.removeAttribute('src');
     campoReferencia.value = '';
-    modoComprobante = 'foto';
     errorComprobante.classList.add('hidden');
     pintarComprobante();
-  }
-  for (const b of bloqueComprobante.querySelectorAll<HTMLButtonElement>('[data-modo-comprobante]')) {
-    b.addEventListener('click', () => {
-      modoComprobante = b.dataset.modoComprobante === 'referencia' ? 'referencia' : 'foto';
-      errorComprobante.classList.add('hidden');
-      pintarComprobante();
-      if (modoComprobante === 'referencia') campoReferencia.focus();
-    });
   }
   campoReferencia.addEventListener('input', () => {
     campoReferencia.value = campoReferencia.value.replace(/\D/g, '').slice(0, 4); // solo dígitos, máximo 4
     errorComprobante.classList.add('hidden');
     errorConfirmar.classList.add('hidden');
   });
-  async function elegirComprobante(input: HTMLInputElement) {
-    const archivo = input.files?.[0];
-    input.value = '';
-    if (!archivo) return;
-    errorComprobante.classList.add('hidden');
-    try {
-      const imagen = await reducirImagen(archivo, { ladoMaximo: 1280 }); // con letra legible
-      if (comprobanteUrl) URL.revokeObjectURL(comprobanteUrl);
-      comprobante = imagen;
-      comprobanteUrl = URL.createObjectURL(imagen);
-      errorConfirmar.classList.add('hidden');
-      pintarComprobante();
-    } catch (err) {
-      errorComprobante.textContent = err instanceof Error ? err.message : 'No se pudo leer la imagen.';
-      errorComprobante.classList.remove('hidden');
-    }
-  }
-  // Botones normales que llaman a input.click() (un <label> sobre un input oculto falla en varios teléfonos); el campo se vacía ANTES de abrir
-  for (const [boton, input] of [['pos-comprobante-foto', inputFotoComprobante], ['pos-comprobante-galeria', inputGaleriaComprobante]] as const) {
-    document.getElementById(boton)!.addEventListener('click', () => {
-      input.value = '';
-      input.click();
-    });
-    input.addEventListener('change', () => void elegirComprobante(input));
-  }
-  document.getElementById('pos-comprobante-quitar')!.addEventListener('click', soltarComprobante);
   contenedorPagos.addEventListener('easystem:pagos-cambiaron', pintarComprobante);
   pintarComprobante();
 
@@ -1274,16 +1195,12 @@ import { alCambiarDatos } from '../lib/realtime';
     }
     const datos = leerDatosCliente();
     if (!datos) return;
-    // Pago móvil: sin la captura del comprobante no se procesa (el diálogo sigue abierto para adjuntarla)
-    if (incluyePagoMovil(datos.pagos)) {
-      const faltaReferencia = modoComprobante === 'referencia' && !/^\d{4}$/.test(campoReferencia.value);
-      const faltaFoto = modoComprobante === 'foto' && !comprobante;
-      if (faltaReferencia || faltaFoto) {
-        errorComprobante.textContent = faltaReferencia ? 'Escribe los 4 dígitos de la referencia del pago móvil (solo números).' : 'Adjunta la captura del comprobante del pago móvil o elige "Referencia" y escribe sus 4 dígitos.';
-        errorComprobante.classList.remove('hidden');
-        bloqueComprobante.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        return fallar(faltaReferencia ? 'Falta la referencia del pago móvil (4 dígitos).' : 'Falta el comprobante del pago móvil: toma una foto, elige la captura o escribe la referencia.', faltaReferencia ? campoReferencia : document.getElementById('pos-comprobante-foto'));
-      }
+    // Pago móvil: sin los 4 dígitos de la referencia no se procesa (el diálogo sigue abierto para escribirlos)
+    if (incluyePagoMovil(datos.pagos) && !/^\d{4}$/.test(campoReferencia.value)) {
+      errorComprobante.textContent = 'Escribe los 4 dígitos de la referencia del pago móvil (solo números).';
+      errorComprobante.classList.remove('hidden');
+      bloqueComprobante.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return fallar('Falta la referencia del pago móvil (4 dígitos).', campoReferencia);
     }
     dialogoConfirmar.close();
     procesarVenta(datos);
@@ -1328,8 +1245,7 @@ import { alCambiarDatos } from '../lib/realtime';
         ...datos,
         tasa_cambio: tasa,
         vendedor_nombre: sesion?.nombre,
-        comprobante: incluyePagoMovil(datos.pagos) && modoComprobante === 'foto' ? comprobante : null,
-        referenciaPagoMovil: incluyePagoMovil(datos.pagos) && modoComprobante === 'referencia' ? campoReferencia.value : null,
+        referenciaPagoMovil: incluyePagoMovil(datos.pagos) ? campoReferencia.value : null,
         precioPromotor: autorizacionPrecio ? { promotor: promotorVenta?.datos ?? null, autorizacion: autorizacionPrecio } : null,
         promotorInstalacion: hayInstalacionDelPromotor(items) ? promotorInstalacion : null,
         autorizacionDanados: totalDanadosCarrito() >= UMBRAL_CLAVE_DANADOS && autorizacionDanados ? { token: autorizacionDanados.token, vence_en: autorizacionDanados.vence_en, autorizado_por: autorizacionDanados.autorizado_por } : null,
@@ -1677,6 +1593,8 @@ import { alCambiarDatos } from '../lib/realtime';
     document.getElementById('pos-precio-comision')!.textContent = partes.length > 0 ? partes.join(' ') : 'Escribe un precio distinto al del catálogo en alguno de los productos.';
     // El promotor solo existe en el precio de promotor (el precio del local no lleva promotor ni comisión)
     document.getElementById('pos-promotor-bloque')!.classList.toggle('hidden', modoPrecio === 'local');
+    // El precio de promotor (siempre más caro que el catálogo) no pide contraseña; el precio del local, sí
+    document.getElementById('pos-precio-clave-bloque')!.classList.toggle('hidden', modoPrecio === 'promotor');
     document.getElementById('pos-precio-clave-titulo')!.textContent =
       descuento > 0 ? 'Contraseña de un gerente o administrador' : 'Contraseña de un encargado, gerente o administrador';
   }
@@ -1740,7 +1658,7 @@ import { alCambiarDatos } from '../lib/realtime';
     document.getElementById('pos-precio-descripcion')!.textContent =
       modo === 'local'
         ? 'Escribe el precio al que la tienda vende. Más caro o con descuento, sin promotor ni comisión.'
-        : 'Escribe el precio al que paga el cliente. La diferencia sobre el catálogo es la comisión del promotor.';
+        : 'Escribe el precio al que paga el cliente. La diferencia sobre el catálogo es la comisión del promotor. No pide contraseña.';
     // Los precios y el promotor ya autorizados solo se muestran si se vuelve a abrir el MISMO modo
     const mismoModo = !autorizacionPrecio || autorizacionPrecio.modo === modo;
     listaPrecio.innerHTML = carrito
@@ -1854,14 +1772,15 @@ import { alCambiarDatos } from '../lib/realtime';
     // El promotor solo existe en el precio de promotor (con un precio mayor); el precio del local no lleva promotor
     const promotor: { datos: DatosPromotor } | { error: string } = modoPrecio === 'promotor' && hayAumento ? leerPromotor() : { datos: { cedula: null, nombre: '', apellido: '', telefono: '' } };
     if ('error' in promotor) return errorDePrecio(promotor.error);
-    if (!campoClaveSupervisor.value) return errorDePrecio(hayDescuento ? 'Escribe la contraseña de un gerente o administrador.' : 'Escribe la contraseña de un encargado, gerente o administrador.');
+    // Solo el precio del local pide contraseña (el de promotor, siempre más caro que el catálogo, no)
+    if (modoPrecio === 'local' && !campoClaveSupervisor.value) return errorDePrecio(hayDescuento ? 'Escribe la contraseña de un gerente o administrador.' : 'Escribe la contraseña de un encargado, gerente o administrador.');
 
     errorPrecio.classList.add('hidden');
     botonAutorizar.disabled = true;
     botonAutorizar.textContent = 'Verificando...';
     try {
       const aut = await inventoryService.autorizarPrecioVenta({
-        clave: campoClaveSupervisor.value,
+        clave: modoPrecio === 'local' ? campoClaveSupervisor.value : undefined,
         promotor: promotor.datos,
         modo: modoPrecio,
         lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),

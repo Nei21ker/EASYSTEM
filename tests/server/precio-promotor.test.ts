@@ -405,3 +405,46 @@ describe('precio del local (modo "local"): la tienda cambia el precio, sin promo
     expect(await listarVentas(env, sA, {})).toHaveLength(0);
   });
 });
+
+describe('precio de promotor SIN contraseña (precios mayores al catálogo)', () => {
+  const sinClave = (extra: Record<string, unknown> = {}) => ({ local_id: accesorios, promotor: PROMOTOR, lineas: [{ producto_id: PRODUCTO, precio: 15 }], ...extra });
+
+  it('quien vende lo anota solo, sin contraseña ni correo: sale una autorización a su nombre', async () => {
+    const r = await autorizarPrecio(env, sV, sinClave());
+    expect(r).toMatchObject({ modo: 'promotor', autorizado_por: '', promotor: 'Pedro Promotor' });
+    expect(r.token).toMatch(/\./);
+  });
+
+  it('la venta se guarda con la comisión, el promotor y SIN supervisor; la comisión queda en Pendientes', async () => {
+    const { token } = await autorizarPrecio(env, sV, sinClave());
+    const v = await guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: token }));
+    expect(v).toMatchObject({ comision: 3, promotor_nombre: 'Pedro Promotor', promotor_cedula: 'V-11111111', precio_autorizado_por: null, precio_autorizado_nombre: null });
+    expect(v.items[0]).toMatchObject({ precio_unitario: 15, precio_lista: 12 });
+    const pendiente = await env.DB.prepare("SELECT tipo, monto_usd FROM pendientes WHERE venta_id = ?").bind(v.id).first<{ tipo: string; monto_usd: number }>();
+    expect(pendiente).toMatchObject({ tipo: 'COMISION', monto_usd: 3 });
+  });
+
+  it('también sin datos del promotor: la comisión se anota igual', async () => {
+    const { token } = await autorizarPrecio(env, sV, sinClave({ promotor: null }));
+    const v = await guardarVenta(env, sV, venta({ promotor: null, autorizacion_precio: token }));
+    expect(v.comision).toBe(3);
+    expect(v.promotor_nombre).toBeNull();
+  });
+
+  it('un descuento o el precio del local SIGUEN pidiendo contraseña: sin ella, 403', async () => {
+    await rechazo(autorizarPrecio(env, sV, sinClave({ lineas: [{ producto_id: PRODUCTO, precio: 9 }], promotor: null })), 403, /gerente o un administrador/i);
+    await rechazo(autorizarPrecio(env, sV, sinClave({ modo: 'local', promotor: null })), 403, /encargado, gerente o administrador/i);
+    await rechazo(autorizarPrecio(env, sV, sinClave({ lineas: [{ producto_id: PRODUCTO, precio: 15 }, { producto_id: 'p-otro', precio: 8 }] })), 403, /gerente o un administrador/i);
+  });
+
+  it('una autorización sin contraseña no sirve para otro vendedor, otro precio ni un descuento forjado', async () => {
+    const { token } = await autorizarPrecio(env, sV, sinClave());
+    await rechazo(guardarVenta(env, sV2, venta({ promotor: PROMOTOR, autorizacion_precio: token })), 400, /autoriz/i);
+    await rechazo(guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: token, total: 20, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 20, monto_bs: null }], items: [{ producto_id: PRODUCTO, nombre: 'x', codigo_barras: 'y', cantidad: 1, precio_unitario: 20 }] })), 400, /autoriz/i);
+    // Un token "sin contraseña" firmado para un precio MENOR (descuento) nunca vale
+    const { firmarAutorizacion } = await import('../../src/server/servicios/autorizaciones');
+    const forjado = await firmarAutorizacion(env, { v: 1, u: sV.userId, a: sV.userId, an: 'Vera', s: 1, l: accesorios, p: promotorValido(PROMOTOR).clave, pn: 'Pedro Promotor', ln: [[PRODUCTO, 9]], exp: Date.now() + 60_000 });
+    await rechazo(guardarVenta(env, sV, venta({ promotor: PROMOTOR, autorizacion_precio: forjado, total: 9, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 9, monto_bs: null }], items: [{ producto_id: PRODUCTO, nombre: 'x', codigo_barras: 'y', cantidad: 1, precio_unitario: 9 }] })), 400, /contraseña/i);
+    expect(await listarVentas(env, sA, {})).toHaveLength(0);
+  });
+});

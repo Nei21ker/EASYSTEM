@@ -68,25 +68,17 @@ function fechaValida(fecha: string, mensaje: string): string {
 
 // --- Ventas ---------------------------------------------------------------------------------------------------
 /**
- * Un cobro por pago móvil exige un respaldo: la captura del comprobante O la referencia del pago (4 dígitos), o ambas. La captura debe
- * estar ya subida al almacenamiento privado, ser de ESTE local y no estar usada por otra venta (una misma captura no respalda dos
- * ventas). Devuelve lo que se guarda (todo null si no hay pago móvil: en ese caso cualquier captura o referencia enviada se ignora).
+ * Pago móvil: la venta lleva SIEMPRE la referencia (exactamente 4 dígitos); ya no se pide ni se guarda la captura del comprobante
+ * (las ventas viejas conservan la suya). Devuelve lo que se guarda (todo null si no hay pago móvil: en ese caso cualquier referencia
+ * o captura enviada se ignora).
  */
-async function validarComprobantePagoMovil(env: Entorno, datos: NuevaVenta): Promise<{ ruta: string | null; referencia: string | null }> {
+async function validarComprobantePagoMovil(_env: Entorno, datos: NuevaVenta): Promise<{ ruta: string | null; referencia: string | null }> {
   const conPagoMovil = datos.metodo_pago === 'BS_PAGO_MOVIL' || (datos.pagos ?? []).some((p) => p.metodo === 'BS_PAGO_MOVIL');
   if (!conPagoMovil) return { ruta: null, referencia: null };
-  const ruta = (datos.comprobante_path ?? '').trim();
   const referencia = (datos.referencia_pago_movil ?? '').trim();
-  if (referencia && !/^\d{4}$/.test(referencia)) throw new ErrorApi(400, 'La referencia del pago móvil debe tener exactamente 4 dígitos.', 'referencia_invalida');
-  if (!ruta && !referencia) {
-    throw new ErrorApi(400, 'Adjunta la captura del comprobante del pago móvil o escribe su referencia (4 dígitos) para registrar la venta.', 'comprobante_requerido');
-  }
-  if (!ruta) return { ruta: null, referencia };
-  if (!esRutaPagoMovilDeLocal(ruta, datos.local_id)) throw new ErrorApi(400, 'La captura del pago móvil no es válida para este local.', 'comprobante_invalido');
-  if (!(await env.FOTOS_PRIVADAS.head(ruta))) throw new ErrorApi(400, 'La captura del pago móvil no se subió. Vuelve a adjuntarla.', 'comprobante_invalido');
-  const usada = await env.DB.prepare('SELECT 1 AS ok FROM ventas WHERE comprobante_path = ?').bind(ruta).first();
-  if (usada) throw new ErrorApi(409, 'Esa captura ya respalda otra venta. Adjunta la del pago de esta venta.', 'comprobante_en_uso');
-  return { ruta, referencia: referencia || null };
+  if (!referencia) throw new ErrorApi(400, 'Escribe la referencia del pago móvil (4 dígitos) para registrar la venta.', 'comprobante_requerido');
+  if (!/^\d{4}$/.test(referencia)) throw new ErrorApi(400, 'La referencia del pago móvil debe tener exactamente 4 dígitos.', 'referencia_invalida');
+  return { ruta: null, referencia };
 }
 
 interface PrecioPromotorDeVenta {

@@ -128,7 +128,8 @@ export const esquemaVenta = z.object({
 /** Pedido de autorización de precio: un supervisor teclea su correo y contraseña en el equipo de quien vende */
 export const esquemaAutorizarPrecio = z.object({
   email: z.string().min(3).max(200).optional(),
-  clave: z.string().min(1).max(200),
+  /** Obligatoria salvo en el precio de promotor con precios mayores al catálogo (ahí no se pide contraseña) */
+  clave: z.string().max(200).optional(),
   local_id: z.string(),
   promotor: esquemaPromotor.nullable().optional(),
   /** "promotor" (por defecto, clientes anteriores) o "local": la tienda cambia el precio, sin promotor ni comisión */

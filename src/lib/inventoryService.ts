@@ -1929,9 +1929,7 @@ export interface DatosVenta {
   /** Bs por $ del día; se guarda en la venta */
   tasa_cambio: number;
   vendedor_nombre?: string;
-  /** Captura (ya reducida) del comprobante del pago móvil: obligatoria si algún pago es BS_PAGO_MOVIL */
-  comprobante?: Blob | null;
-  /** Referencia del pago móvil (4 dígitos): respalda la venta en lugar de la captura, o además de ella */
+  /** Referencia del pago móvil (exactamente 4 dígitos): obligatoria si algún pago es BS_PAGO_MOVIL (ya no se pide captura) */
   referenciaPagoMovil?: string | null;
   /**
    * Precio de promotor: obligatorio si alguna línea se cobra más cara que el catálogo (`precio_lista` en el item). El promotor y la
@@ -1958,14 +1956,14 @@ export const comisionDePromotor = (items: VentaItem[]): number =>
   Math.round(items.reduce((s, i) => s + (i.precio_lista !== undefined && i.precio_unitario > i.precio_lista ? i.cantidad * (i.precio_unitario - i.precio_lista) : 0), 0) * 100) / 100;
 
 // Modo demo: las autorizaciones viven en memoria (no hay servidor que las firme); se pierden al recargar la página
-const autorizacionesDemo = new Map<string, { modo: ModoPrecio; promotor_clave: string; supervisor_id: string; supervisor_nombre: string; vence_en: number; lineas: Map<string, number> }>();
+const autorizacionesDemo = new Map<string, { modo: ModoPrecio; promotor_clave: string; supervisor_id: string | null; supervisor_nombre: string | null; vence_en: number; lineas: Map<string, number> }>();
 const VIDA_AUTORIZACION_DEMO_MS = 20 * 60_000;
 
 /**
  * Un encargado (de este local), gerente o administrador autoriza vender a precios mayores al del catálogo tecleando SU correo y
  * contraseña. `lineas` = los productos con su nuevo precio. Devuelve la autorización que se manda con la venta (dura 20 minutos).
  */
-export async function autorizarPrecioVenta(pedido: { email?: string; clave: string; promotor?: DatosPromotor | null; modo?: ModoPrecio; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
+export async function autorizarPrecioVenta(pedido: { email?: string; clave?: string; promotor?: DatosPromotor | null; modo?: ModoPrecio; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarPrecio({ ...pedido, local_id });
 
@@ -1981,7 +1979,9 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave: stri
   }
   // Un precio menor al del catálogo (descuento) solo lo autoriza un gerente o un administrador
   const hayDescuento = pedido.lineas.some((l) => l.precio < (db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0) - 0.005);
-  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id, hayDescuento);
+  // Precio de promotor con precios MAYORES: sin contraseña (quien vende lo anota solo). Un descuento o el precio del local sí la piden.
+  const sinClave = modo === 'promotor' && !hayDescuento && !(pedido.clave ?? '');
+  const supervisor = sinClave ? { id: null, nombre: null } : verificarSupervisorDemo(pedido.email, pedido.clave ?? '', local_id, hayDescuento);
   if (!supervisor) {
     throw new Error(hayDescuento ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.' : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
   }
@@ -1995,7 +1995,7 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave: stri
     vence_en,
     lineas: new Map(pedido.lineas.map((l) => [l.producto_id, l.precio])),
   });
-  return { token, modo, vence_en, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
+  return { token, modo, vence_en, autorizado_por: supervisor.nombre ?? '', promotor: promotor.nombre ?? '' };
 }
 
 // Modo demo: autorizaciones de selección manual de código, en memoria
@@ -2817,22 +2817,10 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     }
   }
 
-  // Pago móvil = captura del comprobante ANTES de tocar el inventario: si no se puede subir, la venta no empieza
+  // Pago móvil = referencia de 4 dígitos, comprobada ANTES de tocar el inventario (ya no se pide captura)
   const conPagoMovil = incluyePagoMovil(datos.pagos);
   const referenciaPagoMovil = conPagoMovil ? (datos.referenciaPagoMovil ?? '').trim() : '';
-  if (referenciaPagoMovil && !/^\d{4}$/.test(referenciaPagoMovil)) throw new Error('La referencia del pago móvil debe tener exactamente 4 dígitos.');
-  if (conPagoMovil && !datos.comprobante && !referenciaPagoMovil) throw new Error('Adjunta la captura del comprobante del pago móvil o escribe su referencia (4 dígitos) antes de procesar la venta.');
-  let comprobante_path: string | null = null;
-  if (conPagoMovil && datos.comprobante) {
-    try {
-      comprobante_path = modoServidor ? await ventasDb.subirComprobantePagoMovil(local_id, datos.comprobante) : await blobADataUrl(datos.comprobante);
-    } catch (err) {
-      throw new Error(`No se pudo guardar la captura del pago móvil: ${err instanceof Error ? err.message : 'inténtalo de nuevo'}. Revisa la conexión y vuelve a intentarlo.`);
-    }
-  }
-  const soltarCaptura = () => {
-    if (modoServidor && comprobante_path) ventasDb.eliminarComprobantePagoMovil(comprobante_path).catch(() => {});
-  };
+  if (conPagoMovil && !/^\d{4}$/.test(referenciaPagoMovil)) throw new Error('Escribe la referencia del pago móvil: son exactamente 4 dígitos.');
 
   const registradas: VentaItem[] = [];
   let fallo: unknown = null;
@@ -2879,7 +2867,6 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     }
   }
   if (registradas.length === 0) {
-    soltarCaptura(); // nada salió del inventario: la captura subida no respalda ninguna venta
     throw fallo; // se puede reintentar tal cual
   }
 
@@ -2904,7 +2891,7 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
     items: registradas,
     vendedor_nombre: datos.vendedor_nombre ?? null,
     tasa_cambio: datos.tasa_cambio,
-    comprobante_path,
+    comprobante_path: null,
     referencia_pago_movil: referenciaPagoMovil || null,
     ...(conPrecioPromotor && datos.precioPromotor
       ? { promotor: datos.precioPromotor.promotor ?? null, autorizacion_precio: datos.precioPromotor.autorizacion.token }

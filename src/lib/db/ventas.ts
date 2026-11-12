@@ -9,7 +9,7 @@ export async function insertarVenta(venta: NuevaVenta): Promise<Venta> {
 /** Pide la autorización de un supervisor (correo + contraseña) para vender a un precio mayor al del catálogo (precio de promotor). */
 export async function autorizarPrecio(pedido: {
   email?: string;
-  clave: string;
+  clave?: string;
   local_id: string;
   promotor?: DatosPromotor | null;
   modo?: ModoPrecio;
@@ -26,17 +26,6 @@ export async function autorizarCodigoManual(pedido: { email?: string; clave: str
 /** Pide la clave de un gerente o administrador para botar 3 o más piezas defectuosas en una venta (productos por cantidad). */
 export async function autorizarDanados(pedido: { email?: string; clave: string; local_id: string; cantidad: number }): Promise<AutorizacionCodigo> {
   return api.post<AutorizacionCodigo>('/api/ventas/autorizar-danados', pedido);
-}
-
-/** Sube la captura del pago móvil al almacenamiento privado ("comprobantes-pago-movil/<local>/<hora>-<n>.jpg"). Devuelve la ruta. */
-export async function subirComprobantePagoMovil(localId: string, imagen: Blob): Promise<string> {
-  const ruta = `comprobantes-pago-movil/${localId}/${Date.now()}-${Math.floor(Math.random() * 1_000_000)}.jpg`;
-  return api.subir(`/api/archivos/privado/${ruta}`, imagen, 'image/jpeg');
-}
-
-/** Borra una captura que no llegó a usarse (best-effort: si la venta falló). El servidor no deja borrar la de una venta registrada. */
-export async function eliminarComprobantePagoMovil(ruta: string): Promise<void> {
-  await api.delete(`/api/archivos/privado/${ruta}`);
 }
 
 /** Ventas recientes (más nuevas primero), opcionalmente dentro de un rango de fechas. El vendedor solo recibe las suyas. */

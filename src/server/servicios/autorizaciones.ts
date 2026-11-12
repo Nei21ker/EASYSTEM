@@ -38,6 +38,8 @@ export interface CargaAutorizacion {
   ln: [string, number][];
   /** Modo: "local" = la tienda cambia el precio (sin promotor ni comisión); ausente o "promotor" = precio de promotor */
   m?: ModoPrecio;
+  /** 1 = precio de promotor anotado por quien vende, SIN contraseña de supervisor (solo precios MAYORES al del catálogo); `a`/`an` son quien vende */
+  s?: 1;
   /** Vence (ms desde 1970) */
   exp: number;
 }
@@ -334,7 +336,8 @@ export async function verificarCodigoManual(
 export interface PedidoAutorizacion {
   /** Opcional: con solo la contraseña se identifica al supervisor entre quienes pueden autorizar en el local */
   email?: string;
-  clave: string;
+  /** Contraseña del supervisor. NO hace falta en el precio de promotor con precios mayores al catálogo (quien vende lo anota solo) */
+  clave?: string;
   local_id: string;
   promotor?: DatosPromotor | null;
   /** Por defecto "promotor". Con "local" no hay promotor ni comisión (cualquier dato de promotor enviado se ignora) */
@@ -368,7 +371,13 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
   // Un precio MENOR al del catálogo (descuento) solo lo autoriza un gerente o un administrador; uno mayor, también el encargado del local
   const hayDescuento = pedido.lineas.some((l) => l.precio < (lista.get(l.producto_id)?.precio_venta ?? 0) - TOLERANCIA);
 
-  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id, hayDescuento);
+  // Precio de promotor con precios MAYORES: no pide contraseña (muchas veces el promotor está apurado). Un descuento o el precio del local sí.
+  // Si un cliente anterior sí manda una contraseña, se verifica como siempre y queda registrado quién autorizó.
+  const sinClave = modo === 'promotor' && !hayDescuento && !(pedido.clave ?? '');
+  if (!sinClave && !(pedido.clave ?? '')) {
+    throw new ErrorApi(403, hayDescuento ? 'Un precio menor al del catálogo necesita la contraseña de un gerente o un administrador.' : 'El precio del local necesita la contraseña de un encargado, gerente o administrador.', 'sin_permiso');
+  }
+  const supervisor = sinClave ? { id: sesion.userId, nombre: sesion.nombre } : await identificarSupervisor(env, sesion, pedido.email, pedido.clave ?? '', pedido.local_id, hayDescuento);
 
   const vence = Date.now() + VIDA_AUTORIZACION_MS;
   const token = await firmarAutorizacion(env, {
@@ -376,6 +385,7 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     u: sesion.userId,
     a: supervisor.id,
     an: supervisor.nombre,
+    ...(sinClave ? { s: 1 as const } : {}),
     l: pedido.local_id,
     p: promotor.clave,
     pn: promotor.nombre ?? '',
@@ -383,7 +393,7 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     ...(modo === 'local' ? { m: 'local' as const } : {}),
     exp: vence,
   });
-  return { token, modo, vence_en: vence, autorizado_por: supervisor.nombre, promotor: promotor.nombre ?? '' };
+  return { token, modo, vence_en: vence, autorizado_por: sinClave ? '' : supervisor.nombre, promotor: promotor.nombre ?? '' };
 }
 
 // --- Usar la autorización al registrar la venta --------------------------------------------------------------
@@ -397,8 +407,9 @@ export interface PrecioPromotorVerificado {
   /** Nombre y apellido por separado (para el directorio de promotores) */
   promotor_nombre_propio: string;
   promotor_apellido: string;
-  autorizado_por: string;
-  autorizado_nombre: string;
+  /** Supervisor que autorizó; null si el precio de promotor lo anotó quien vende sin contraseña */
+  autorizado_por: string | null;
+  autorizado_nombre: string | null;
 }
 
 const sinAutorizacion = (detalle = 'Pide la autorización de un encargado, gerente o administrador.') =>
@@ -425,6 +436,8 @@ export async function verificarPrecioPromotor(
   }
   const c = r.carga;
   const modo: ModoPrecio = c.m === 'local' ? 'local' : 'promotor';
+  // Sin contraseña solo vale el precio de promotor con precios MAYORES (un descuento o el precio del local siempre la piden)
+  if (c.s && (modo !== 'promotor' || hayDescuento)) throw sinAutorizacion('Un descuento o el precio del local necesita la contraseña de un gerente o un administrador.');
   // En modo local no hay promotor: lo que haya enviado el cliente se ignora (la autorización se firmó sin promotor)
   const promotor = promotorValido(modo === 'local' ? null : datos.promotor);
   if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== promotor.clave) {
@@ -437,6 +450,6 @@ export async function verificarPrecioPromotor(
       throw sinAutorizacion('El precio cobrado no coincide con el autorizado. Vuelve a pedirla.');
     }
   }
-  if (!(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
-  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, promotor_banco: promotor.banco, promotor_nombre_propio: promotor.nombrePropio, promotor_apellido: promotor.apellido, autorizado_por: c.a, autorizado_nombre: c.an };
+  if (!c.s && !(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
+  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, promotor_banco: promotor.banco, promotor_nombre_propio: promotor.nombrePropio, promotor_apellido: promotor.apellido, autorizado_por: c.s ? null : c.a, autorizado_nombre: c.s ? null : c.an };
 }

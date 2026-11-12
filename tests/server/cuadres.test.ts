@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
-import { subirArchivoPrivado } from '../../src/server/servicios/archivos';
 import { calcularEsperadoCuadre, guardarCuadre, listarCuadresDelDia, obtenerCuadre, reabrirCuadre } from '../../src/server/servicios/cuadres';
 import { guardarDevolucion, guardarVenta } from '../../src/server/servicios/ventas';
 import type { NuevaVenta } from '../../src/types/database.types';
@@ -49,17 +48,9 @@ const venta = (localId: string, fecha: string, extra: Partial<NuevaVenta>): Nuev
 });
 
 /** Ventas del día en Accesorios: $12 en efectivo $, Bs 365 por pago móvil ($10) y una mixta con vuelto. */
-let capturas = 0;
-/** Un cobro por pago móvil exige la captura del comprobante: se sube una al almacenamiento privado antes de vender. */
-async function capturaPagoMovil(): Promise<string> {
-  const ruta = `comprobantes-pago-movil/${accesorios}/1730000000000-${++capturas}.jpg`;
-  await subirArchivoPrivado(env, sV, ruta, new Uint8Array(8).fill(3).buffer, 'image/jpeg');
-  return ruta;
-}
-
 async function venderEnAccesorios() {
   await guardarVenta(env, sV, venta(accesorios, MEDIODIA, {}));
-  await guardarVenta(env, sV, venta(accesorios, MEDIODIA, { comprobante_path: await capturaPagoMovil(), metodo_pago: 'BS_PAGO_MOVIL', pagos: [{ metodo: 'BS_PAGO_MOVIL', monto_usd: 10, monto_bs: 365 }], total: 10, total_bs: 365 }));
+  await guardarVenta(env, sV, venta(accesorios, MEDIODIA, { referencia_pago_movil: '4821', metodo_pago: 'BS_PAGO_MOVIL', pagos: [{ metodo: 'BS_PAGO_MOVIL', monto_usd: 10, monto_bs: 365 }], total: 10, total_bs: 365 }));
   await guardarVenta(env, sV, venta(accesorios, MEDIODIA, {
     metodo_pago: 'MIXTO', total: 20, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 25, monto_bs: null }], vuelto: { metodo: 'USD_EFECTIVO', monto_usd: 5, monto_bs: null },
   }));
