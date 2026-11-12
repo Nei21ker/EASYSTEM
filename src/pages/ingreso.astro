@@ -199,8 +199,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   <!-- Etiquetas listas para la impresora del celular (WePrint): UN archivo con todas (tira o PDF) o imágenes sueltas -->
   <dialog id="ig-galeria" class="m-auto w-[min(94vw,36rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
-    <div class="flex max-h-[90vh] flex-col">
-      <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <div class="flex max-h-[calc(100dvh-1.5rem)] flex-col">
+      <div class="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
         <h2 id="ig-galeria-titulo" class="text-base font-semibold">Imprimir etiquetas</h2>
         <p id="ig-galeria-cuenta" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
@@ -249,7 +249,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div id="ig-galeria-imagenes" class="grid grid-cols-2 gap-2"></div>
         <p id="ig-galeria-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
       </div>
-      <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:justify-end">
+      <div class="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 px-5 py-3 dark:border-slate-800 sm:flex-row sm:justify-end sm:py-4">
         <button id="ig-galeria-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar</button>
         <button id="ig-galeria-descargar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar</button>
         <button id="ig-galeria-listo" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Ya las imprimí</button>
