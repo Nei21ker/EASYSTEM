@@ -10,6 +10,14 @@ describe('tipos de movimiento de inventario', () => {
     expect(etiquetaTipoMovimiento('BAJA')).toBe('Baja');
   });
 
+  it('un traslado cuyo motivo es de un cambio de mercancía se muestra como «Cambio entregado / recibido»', () => {
+    expect(etiquetaTipoMovimiento('TRASLADO_SALIDA', 'Cambio #0001 con Local Centro')).toBe('Cambio entregado');
+    expect(etiquetaTipoMovimiento('TRASLADO_ENTRADA', 'Cambio #0001 con Local Centro')).toBe('Cambio recibido');
+    expect(etiquetaTipoMovimiento('TRASLADO_ENTRADA', 'Reversión del cambio #0001 con Local Centro')).toBe('Cambio recibido');
+    expect(etiquetaTipoMovimiento('TRASLADO_SALIDA', 'Traslado #0003 → Local Vidrios')).toBe('Traslado enviado');
+    expect(etiquetaTipoMovimiento('TRASLADO_SALIDA')).toBe('Traslado enviado');
+  });
+
   it('suman al stock la entrada y el traslado recibido; restan la salida, el traslado enviado y la baja', () => {
     expect(signoMovimiento('ENTRADA')).toBe('+');
     expect(signoMovimiento('TRASLADO_ENTRADA')).toBe('+');

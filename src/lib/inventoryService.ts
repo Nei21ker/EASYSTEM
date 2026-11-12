@@ -51,8 +51,10 @@ import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usd
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
 import * as inversionDb from './db/inversion';
+import * as intercambiosDb from './db/intercambios';
 import { claveProveedor, compararInversiones, limpiarNombreProveedor, mermaComoPerdida, tasaParaFecha, validarDatosInversion } from '../utils/inversion';
-import type { DatosInversion, DatosProveedor, Inversion, PendienteItem, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
+import type { DatosInversion, DatosProveedor, EstadoIntercambio, Intercambio, IntercambioItem, Inversion, NuevoIntercambio, PendienteItem, Proveedor, ProveedorResumen, TipoInversion } from '../types/database.types';
+import { ladosMovidos, normalizarContraparte, normalizarLineasIntercambio, valorDeItems, type LineaIntercambio } from '../utils/intercambio';
 import { descripcionDePendiente, normalizarItemsPendiente } from '../utils/pendienteItems';
 import { blobADataUrl, crearMiniatura } from '../utils/imagenes';
 import { esMetodoBolivares, incluyePagoMovil, METODOS_PAGO, METODOS_REEMBOLSO, METODOS_VUELTO, redondeoValido } from '../utils/pagos';
@@ -160,6 +162,9 @@ interface LocalDB {
   /** Directorio de promotores y pendientes con ellos (mercancía que se llevaron y comisiones por pagar) */
   promotores?: Promotor[];
   pendientes?: Pendiente[];
+  /** Cambios de mercancía con otro local (Local Vidrios) y su contador de folios */
+  intercambios?: Intercambio[];
+  intercambioFolio?: number;
   /** Módulo de Inversión: compras y pérdidas anotadas a mano, y la lista de proveedores */
   inversiones?: Inversion[];
   proveedores?: Proveedor[];
@@ -2101,6 +2106,171 @@ export async function listarMermas(opciones: { desde?: Date; hasta?: Date; limit
     .filter((m) => (alcance.todos || m.local_id === alcance.localId) && (!opciones.desde || t(m) >= opciones.desde.getTime()) && (!opciones.hasta || t(m) <= opciones.hasta.getTime()))
     .sort((a, b) => t(b) - t(a))
     .slice(0, limite);
+}
+
+// --- Cambio de mercancía con otro local (Local Vidrios) ----------------------------------------------------------------
+// Se entrega mercancía a cambio de otra. Mismas reglas que el servidor (servicios/intercambios.ts): los dos lados se mueven juntos o uno queda
+// «en espera»; los movimientos se guardan como TRASLADO_SALIDA / TRASLADO_ENTRADA (no cuentan como venta ni compra). En la demo viven en `db.intercambios`.
+async function sesionDeIntercambios(): Promise<SesionUsuario> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Solo el administrador, el gerente o el encargado hacen cambios de mercancía.');
+  return sesion;
+}
+
+const folioDeIntercambio = (folio: number) => `#${String(folio).padStart(4, '0')}`;
+
+/**
+ * Demo: mueve UN lado del cambio en la base ya leída (si algo falla lanza y, como no se guarda, no queda nada a medias).
+ * ENTREGA = sale del stock (piezas VENDIDA); RECEPCION = entra (piezas nuevas o las mismas devueltas en una reversión).
+ * Devuelve, por producto, las piezas que se movieron.
+ */
+function moverLadoIntercambioDemo(db: LocalDB, items: IntercambioItem[], sentido: 'ENTREGA' | 'RECEPCION', localId: string, motivo: string): string[][] {
+  const resultado: string[][] = [];
+  for (const i of items) {
+    const producto = db.productos.find((p) => p.id === i.producto_id);
+    if (!producto) throw new Error(`«${i.nombre}» ya no existe en el inventario.`);
+    let fila = db.inventario.find((f) => f.local_id === localId && f.producto_id === i.producto_id);
+    const disponible = fila?.stock_actual ?? 0;
+    if (sentido === 'ENTREGA' && disponible < i.cantidad) {
+      throw new Error(`Stock insuficiente para "${producto.nombre}" en este local: disponible ${disponible}, solicitado ${i.cantidad}.`);
+    }
+    if (!fila) {
+      fila = { local_id: localId, producto_id: i.producto_id, stock_actual: 0, stock_minimo: 0 };
+      db.inventario.push(fila);
+    }
+    if (esPorCantidad(producto) && i.unidades?.length) throw new Error(`"${producto.nombre}" se controla por cantidad: no lleva código por pieza.`);
+    const codigos = esPorCantidad(producto)
+      ? []
+      : moverUnidadesLocal(db, { producto_id: i.producto_id, local_id: localId, tipo: sentido === 'ENTREGA' ? 'SALIDA' : 'ENTRADA', cantidad: i.cantidad }, i.unidades ?? []);
+    const delta = sentido === 'RECEPCION' ? i.cantidad : -i.cantidad;
+    fila.stock_actual += delta;
+    producto.stock_actual += delta;
+    db.movimientos.unshift({
+      id: generarId(),
+      producto_id: i.producto_id,
+      tipo: sentido === 'RECEPCION' ? 'TRASLADO_ENTRADA' : 'TRASLADO_SALIDA',
+      cantidad: i.cantidad,
+      motivo,
+      fecha: new Date().toISOString(),
+      local_id: localId,
+      unidad_codigos: codigos,
+    });
+    resultado.push(codigos);
+  }
+  return resultado;
+}
+
+const conPiezasDemo = (items: IntercambioItem[], codigos: string[][]): IntercambioItem[] => items.map((i, n) => ({ ...i, unidades: codigos[n]?.length ? codigos[n] : null }));
+
+export async function listarIntercambios(opciones: { desde?: string; hasta?: string; estado?: EstadoIntercambio } = {}): Promise<Intercambio[]> {
+  await sesionDeIntercambios();
+  const alcance = await alcanceActual();
+  if (modoServidor) return intercambiosDb.listarIntercambios({ ...opciones, localId: alcance.localId });
+  return (leerDB().intercambios ?? [])
+    .filter((c) => {
+      const dia = fechaLocalISO(new Date(c.fecha));
+      return (alcance.todos || c.local_id === alcance.localId) && (!opciones.desde || dia >= opciones.desde) && (!opciones.hasta || dia <= opciones.hasta) && (!opciones.estado || c.estado === opciones.estado);
+    })
+    .sort((a, b) => b.folio - a.folio);
+}
+
+/** Anota un cambio con otro local (administrador, gerente y encargado). Solo en el Local Vidrios. */
+export async function crearIntercambio(datos: Omit<NuevoIntercambio, 'localId'> & { localId?: string }): Promise<Intercambio> {
+  const sesion = await sesionDeIntercambios();
+  const localId = datos.localId ?? (await exigirLocal('hacer un cambio de mercancía'));
+  if (!puedeEnLocal(sesion, localId)) throw new Error('No tienes acceso a ese local.');
+  if (modoServidor) return intercambiosDb.crearIntercambio({ ...datos, localId });
+
+  const db = leerDB();
+  if ((db.locales ?? []).find((l) => l.id === localId)?.tipo !== 'vidrios') throw new Error('Por ahora los cambios de mercancía solo se hacen en el Local Vidrios.');
+  const contraparte = normalizarContraparte(datos.contraparte);
+  if (!contraparte) throw new Error('Escribe con quién se hace el cambio (de 2 a 80 caracteres).');
+  const nota = (datos.nota ?? '').trim();
+  if (nota.length > 300) throw new Error('La nota admite hasta 300 caracteres.');
+  const pendiente = datos.lado_pendiente ?? null;
+  const lineasSalen = normalizarLineasIntercambio(datos.salen as LineaIntercambio[], 'entregas');
+  const lineasEntran = normalizarLineasIntercambio(datos.entran as LineaIntercambio[], 'recibes');
+  if (lineasSalen.length === 0 || lineasEntran.length === 0) throw new Error('Agrega al menos un producto en cada lado: lo que entregas y lo que recibes.');
+  if (lineasEntran.some((l) => l.unidades?.length)) throw new Error('Lo que se recibe nace con códigos nuevos: no se indican piezas.');
+
+  const armar = (lineas: LineaIntercambio[]): IntercambioItem[] =>
+    lineas.map((l) => {
+      const p = db.productos.find((x) => x.id === l.producto_id);
+      if (!p) throw new Error('Uno de los productos elegidos ya no existe en el inventario.');
+      return { producto_id: p.id, nombre: p.nombre, codigo: p.referencia ?? p.codigo_barras, cantidad: l.cantidad, precio_unitario: Math.round(p.precio_venta * 100) / 100, unidades: l.unidades?.length ? l.unidades : null };
+    });
+  let salen = armar(lineasSalen);
+  let entran = armar(lineasEntran);
+
+  const folio = (db.intercambioFolio ?? 0) + 1;
+  const motivo = `Cambio ${folioDeIntercambio(folio)} con ${contraparte}`;
+  if (pendiente !== 'SALEN') salen = conPiezasDemo(salen, moverLadoIntercambioDemo(db, salen, 'ENTREGA', localId, motivo));
+  if (pendiente !== 'ENTRAN') entran = conPiezasDemo(entran, moverLadoIntercambioDemo(db, entran, 'RECEPCION', localId, motivo));
+  const ahora = new Date().toISOString();
+  const nuevo: Intercambio = {
+    id: generarId(),
+    folio,
+    local_id: localId,
+    contraparte,
+    nota: nota || null,
+    estado: pendiente ? 'EN_ESPERA' : 'COMPLETADO',
+    lado_pendiente: pendiente,
+    salen,
+    entran,
+    valor_sale_usd: valorDeItems(salen),
+    valor_entra_usd: valorDeItems(entran),
+    creado_por_nombre: sesion.nombre,
+    fecha: ahora,
+    completado_en: pendiente ? null : ahora,
+    completado_por_nombre: pendiente ? null : sesion.nombre,
+    anulado_en: null,
+    anulado_por_nombre: null,
+    nota_cierre: null,
+  };
+  db.intercambioFolio = folio;
+  (db.intercambios ?? (db.intercambios = [])).unshift(nuevo);
+  guardarDB(db);
+  return nuevo;
+}
+
+/** Mueve el lado que quedó en espera (lo que entregamos o lo que recibimos). */
+export async function completarIntercambio(id: string): Promise<Intercambio> {
+  const sesion = await sesionDeIntercambios();
+  if (modoServidor) return intercambiosDb.completarIntercambio(id);
+  const db = leerDB();
+  const c = (db.intercambios ?? []).find((x) => x.id === id && puedeEnLocal(sesion, x.local_id));
+  if (!c) throw new Error('Ese cambio no existe.');
+  if (c.estado !== 'EN_ESPERA' || !c.lado_pendiente) throw new Error(`El cambio ${folioDeIntercambio(c.folio)} no está en espera.`);
+  const motivo = `Cambio ${folioDeIntercambio(c.folio)} con ${c.contraparte}`;
+  if (c.lado_pendiente === 'ENTRAN') c.entran = conPiezasDemo(c.entran, moverLadoIntercambioDemo(db, c.entran, 'RECEPCION', c.local_id, motivo));
+  else c.salen = conPiezasDemo(c.salen, moverLadoIntercambioDemo(db, c.salen, 'ENTREGA', c.local_id, motivo));
+  Object.assign(c, { estado: 'COMPLETADO', lado_pendiente: null, completado_en: new Date().toISOString(), completado_por_nombre: sesion.nombre });
+  guardarDB(db);
+  return c;
+}
+
+/** Revierte lo que ya se movió y deja el cambio ANULADO (administrador y gerente). */
+export async function anularIntercambio(id: string, nota?: string | null): Promise<Intercambio> {
+  const sesion = await sesionDeIntercambios();
+  if (!esGlobal(sesion.rol)) throw new Error('Solo el administrador o el gerente pueden revertir un cambio de mercancía.');
+  const texto = (nota ?? '').trim().replace(/\s+/g, ' ');
+  if (texto.length > 300) throw new Error('La nota admite hasta 300 caracteres.');
+  if (modoServidor) return intercambiosDb.anularIntercambio(id, texto || null);
+  const db = leerDB();
+  const c = (db.intercambios ?? []).find((x) => x.id === id);
+  if (!c) throw new Error('Ese cambio no existe.');
+  if (c.estado === 'ANULADO') throw new Error(`El cambio ${folioDeIntercambio(c.folio)} ya está anulado.`);
+  const movidos = ladosMovidos(c.estado, c.lado_pendiente);
+  const motivo = `Reversión del cambio ${folioDeIntercambio(c.folio)} con ${c.contraparte}`;
+  try {
+    if (movidos.salen) moverLadoIntercambioDemo(db, c.salen, 'RECEPCION', c.local_id, motivo);
+    if (movidos.entran) moverLadoIntercambioDemo(db, c.entran, 'ENTREGA', c.local_id, motivo);
+  } catch {
+    throw new Error('No se puede revertir: parte de lo que se recibió ya no está en el local (se vendió o se movió) o falta stock. Anótalo con una nota en vez de revertirlo.');
+  }
+  Object.assign(c, { estado: 'ANULADO', anulado_en: new Date().toISOString(), anulado_por_nombre: sesion.nombre, nota_cierre: texto || null });
+  guardarDB(db);
+  return c;
 }
 
 // --- Promotores y pendientes (Local Vidrios, nómina) --------------------------------------------------------------

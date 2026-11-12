@@ -26,10 +26,22 @@ export interface DatosMerma {
   autorizadoNombre?: string | null;
 }
 
+/**
+ * CAMBIO_SALIDA / CAMBIO_ENTRADA: lo que se entrega y lo que se recibe en un cambio de mercancía con otro local. Se comportan como una
+ * SALIDA / ENTRADA (piezas y stock) pero se guardan como TRASLADO_SALIDA / TRASLADO_ENTRADA: no cuentan como venta ni compra en los reportes.
+ */
+export type TipoMovimientoEntrada = TipoMovimientoManual | 'BAJA' | 'CAMBIO_SALIDA' | 'CAMBIO_ENTRADA';
+const esEntradaStock = (t: TipoMovimientoEntrada) => t === 'ENTRADA' || t === 'CAMBIO_ENTRADA';
+const esSalidaStock = (t: TipoMovimientoEntrada) => t === 'SALIDA' || t === 'CAMBIO_SALIDA';
+const tipoGuardado = (t: TipoMovimientoEntrada): TipoMovimiento => (t === 'CAMBIO_ENTRADA' ? 'TRASLADO_ENTRADA' : t === 'CAMBIO_SALIDA' ? 'TRASLADO_SALIDA' : t);
+
+/** Sentencias que se agregan al MISMO lote atómico, armadas con el resultado de los movimientos (p. ej. el registro del cambio de mercancía). */
+export type SentenciasExtra = (resultados: ResultadoMovimiento[]) => D1PreparedStatement[];
+
 export interface EntradaMovimiento {
   productoId: string;
   /** BAJA solo para productos por cantidad (con su `merma`) */
-  tipo: TipoMovimientoManual | 'BAJA';
+  tipo: TipoMovimientoEntrada;
   /** Obligatoria en una BAJA */
   merma?: DatosMerma;
   cantidad: number;
@@ -87,7 +99,7 @@ function validarEntradas(entradas: EntradaMovimiento[]): void {
 }
 
 async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[]): Promise<void> {
-  if (entradas.some((e) => e.tipo === 'ENTRADA') && !esGerencia(sesion.rol)) {
+  if (entradas.some((e) => esEntradaStock(e.tipo) || e.tipo === 'CAMBIO_SALIDA') && !esGerencia(sesion.rol)) {
     throw new ErrorApi(403, 'Tu rol no puede registrar entradas de inventario.', 'sin_permiso');
   }
   if (entradas.some((e) => e.tipo === 'BAJA') && !esGerencia(sesion.rol)) {
@@ -99,7 +111,7 @@ async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMo
 }
 
 /** Registra uno o varios movimientos en UN lote atómico (todo o nada). Devuelve, por movimiento, TODAS sus unidades. */
-export async function registrarMovimientos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[]): Promise<ResultadoMovimiento[]> {
+export async function registrarMovimientos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[], extra?: SentenciasExtra): Promise<ResultadoMovimiento[]> {
   validarEntradas(entradas);
   await validarPermisos(env, sesion, entradas);
 
@@ -107,7 +119,7 @@ export async function registrarMovimientos(env: Entorno, sesion: Sesion, entrada
   const reintentable = entradas.every((e) => !(e.unidadCodigos?.length));
   for (let intento = 1; ; intento++) {
     try {
-      return await aplicar(env, sesion, entradas);
+      return await aplicar(env, sesion, entradas, extra);
     } catch (err) {
       if (reintentable && intento < 4 && err instanceof ErrorApi && err.codigo === 'unidad_no_disponible') continue;
       throw err;
@@ -119,7 +131,7 @@ export async function registrarMovimiento(env: Entorno, sesion: Sesion, entrada:
   return (await registrarMovimientos(env, sesion, [entrada]))[0];
 }
 
-async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[]): Promise<ResultadoMovimiento[]> {
+async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[], extra?: SentenciasExtra): Promise<ResultadoMovimiento[]> {
   const db = env.DB;
 
   // 1. Productos (existencia y nombre para los mensajes)
@@ -170,8 +182,8 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     for (const f of filas.results) unidades.set(f.codigo, f);
   }
   const colas = new Map<string, string[]>();
-  for (const localId of new Set(entradas.filter((e) => e.tipo === 'SALIDA').map((e) => e.localId))) {
-    const productos = [...new Set(entradas.filter((e) => e.tipo === 'SALIDA' && e.localId === localId && !porCantidad.has(e.productoId)).map((e) => e.productoId))];
+  for (const localId of new Set(entradas.filter((e) => esSalidaStock(e.tipo)).map((e) => e.localId))) {
+    const productos = [...new Set(entradas.filter((e) => esSalidaStock(e.tipo) && e.localId === localId && !porCantidad.has(e.productoId)).map((e) => e.productoId))];
     for (const tramo of tramos(productos)) {
       const filas = await db
         .prepare(`SELECT codigo, estado, producto_id, local_id FROM unidades_producto WHERE local_id = ? AND estado = 'DISPONIBLE' AND producto_id IN (${marcas(tramo.length)}) ORDER BY created_at, rowid`)
@@ -188,7 +200,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
   // 4. Códigos nuevos: cada prefijo (INF, TEC…) lleva su propia cuenta; se reserva un rango por prefijo (cada petición recibe uno propio)
   const nuevasPorPrefijo = new Map<string, number>();
   for (const e of entradas) {
-    if (e.tipo !== 'ENTRADA' || porCantidad.has(e.productoId)) continue;
+    if (!esEntradaStock(e.tipo) || porCantidad.has(e.productoId)) continue;
     const nuevas = e.cantidad - (e.unidadCodigos?.length ?? 0);
     if (nuevas > 0) nuevasPorPrefijo.set(prefijos.get(e.productoId)!, (nuevasPorPrefijo.get(prefijos.get(e.productoId)!) ?? 0) + nuevas);
   }
@@ -218,9 +230,9 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     if (porCantidad.has(e.productoId)) {
       // Sin unidades: el stock es solo un número por local
       const disponible = stock.get(k) ?? 0;
-      if (e.tipo !== 'ENTRADA' && disponible < e.cantidad) throw stockInsuficiente(nombre, disponible, e.cantidad);
-      stock.set(k, e.tipo === 'ENTRADA' ? disponible + e.cantidad : disponible - e.cantidad);
-    } else if (e.tipo === 'ENTRADA') {
+      if (!esEntradaStock(e.tipo) && disponible < e.cantidad) throw stockInsuficiente(nombre, disponible, e.cantidad);
+      stock.set(k, esEntradaStock(e.tipo) ? disponible + e.cantidad : disponible - e.cantidad);
+    } else if (esEntradaStock(e.tipo)) {
       for (const codigo of indicadasMov) {
         const u = unidades.get(codigo);
         if (!u || u.estado !== 'VENDIDA' || u.producto_id !== e.productoId) throw new ErrorApi(400, MSG_NO_VENDIDA, 'unidad_no_vendida');
@@ -243,7 +255,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
         );
       }
       stock.set(k, (stock.get(k) ?? 0) + e.cantidad);
-    } else if (e.tipo === 'SALIDA') {
+    } else if (esSalidaStock(e.tipo)) {
       const disponible = stock.get(k) ?? 0;
       if (disponible < e.cantidad) throw stockInsuficiente(nombre, disponible, e.cantidad);
       for (const codigo of indicadasMov) {
@@ -275,7 +287,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     const movimiento: MovimientoInventario = {
       id: nuevoId(),
       producto_id: e.productoId,
-      tipo: e.tipo,
+      tipo: tipoGuardado(e.tipo),
       cantidad: e.cantidad,
       fecha: ahora,
       motivo: e.motivo ?? null,
@@ -308,6 +320,7 @@ async function aplicar(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento
     sentencias.push(...sentenciasCambio(db, tablasCambio, localId));
   }
   sentencias.push(...sentenciasCambio(db, ['productos'], null));
+  if (extra) sentencias.push(...extra(resultados));
 
   try {
     await db.batch(sentencias);

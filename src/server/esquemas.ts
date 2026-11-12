@@ -86,6 +86,15 @@ export const esquemaPendienteMercancia = z.object({
   items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).max(50).optional(),
   monto_usd: z.number(),
 });
+/** Cambio de mercancía con otro local (Local Vidrios): lo que sale, lo que entra y, si hace falta, el lado que queda en espera */
+export const esquemaIntercambio = z.object({
+  localId: z.string().min(1).max(100),
+  contraparte: z.string().min(1).max(80),
+  nota: z.string().max(300).nullable().optional(),
+  salen: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int(), unidades: z.array(z.string().max(30)).max(500).optional() })).max(25),
+  entran: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).max(25),
+  lado_pendiente: z.enum(['SALEN', 'ENTRAN']).nullable().optional(),
+});
 export const esquemaCerrarPendiente = z.object({
   /** "pagar" = el promotor pagó la mercancía / se le pagó la comisión; "anular" = se creó por error */
   accion: z.enum(['pagar', 'anular']),

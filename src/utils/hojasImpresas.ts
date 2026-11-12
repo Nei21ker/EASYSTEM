@@ -1,6 +1,6 @@
 // Hojas para imprimir en papel (o guardar como PDF): hoja de despacho de un traslado y, más adelante, el inventario físico.
 // Mismo método que el cuadre de caja y las etiquetas: un contenedor temporal en la página que es lo único visible al imprimir.
-import type { Traslado, TrasladoUnidad } from '../types/database.types';
+import type { Intercambio, IntercambioItem, Traslado, TrasladoUnidad } from '../types/database.types';
 
 const ID_IMPRESION = 'hoja-impresion';
 const ID_ESTILO = 'hoja-impresion-estilo';
@@ -100,6 +100,46 @@ export function htmlHojaDespacho(t: Traslado, opciones: { impresoPor?: string; a
   <div class="hi-firma">Entrega (nombre y firma)</div>
   <div class="hi-firma">Transporta (nombre y firma)</div>
   <div class="hi-firma">Recibe (nombre y firma)</div>
+</div>
+<p class="hi-pie">Impreso el ${escapar(fechaHora(opciones.ahora ?? new Date()))}${opciones.impresoPor ? ` por ${escapar(opciones.impresoPor)}` : ''}.</p>`;
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Comprobante de un cambio de mercancía con otro local: lo que se entrega, lo que se recibe y las firmas de las dos partes.
+// ---------------------------------------------------------------------------------------------------------------------
+export function htmlHojaCambio(c: Intercambio, opciones: { impresoPor?: string; ahora?: Date; localNombre?: string } = {}): string {
+  const sello = c.estado === 'COMPLETADO' ? 'COMPLETADO' : c.estado === 'EN_ESPERA' ? 'EN ESPERA' : 'ANULADO';
+  const dolares = (n: number) => `$${n.toFixed(2).replace('.', ',')}`;
+  const tabla = (titulo: string, items: IntercambioItem[], valor: number, nota?: string) => `
+<h2>${escapar(titulo)}</h2>${nota ? `<p>${escapar(nota)}</p>` : ''}
+<table>
+  <thead><tr><th>Producto</th><th class="hi-der">Cantidad</th><th class="hi-der">Precio</th><th class="hi-der">Valor</th></tr></thead>
+  <tbody>${items
+    .map((i) => `<tr><td>${escapar(i.nombre)}${i.unidades?.length ? `<br><span class="hi-cod">${escapar(i.unidades.join(', '))}</span>` : ''}</td><td class="hi-der">${i.cantidad}</td><td class="hi-der">${dolares(i.precio_unitario)}</td><td class="hi-der">${dolares(i.cantidad * i.precio_unitario)}</td></tr>`)
+    .join('')}</tbody>
+</table>
+<p><strong>Total:</strong> ${dolares(valor)}</p>`;
+  const meta: [string, string][] = [
+    ['Con', c.contraparte],
+    ...(opciones.localNombre ? ([['Local', opciones.localNombre]] as [string, string][]) : []),
+    ['Registrado', `${fechaHora(c.fecha)} por ${c.creado_por_nombre}`],
+    ...(c.completado_en && c.completado_por_nombre ? ([['Completado', `${fechaHora(c.completado_en)} por ${c.completado_por_nombre}`]] as [string, string][]) : []),
+    ...(c.estado === 'EN_ESPERA' ? ([['Pendiente', c.lado_pendiente === 'ENTRAN' ? 'Falta recibir lo que nos traen' : 'Falta entregar lo nuestro']] as [string, string][]) : []),
+    ...(c.nota ? ([['Nota', c.nota]] as [string, string][]) : []),
+  ];
+  const diferencia = Math.round((c.valor_entra_usd - c.valor_sale_usd) * 100) / 100;
+  return `
+<div class="hi-cab">
+  <div><h1>Edward Accesorios</h1><div>Comprobante de cambio de mercancía ${folioTexto(c.folio)}</div></div>
+  <div class="hi-sello">${sello}</div>
+</div>
+<table class="hi-meta"><tbody>${meta.map(([k, v]) => `<tr><td><strong>${escapar(k)}:</strong></td><td>${escapar(v)}</td></tr>`).join('')}</tbody></table>
+${tabla('Entregamos', c.salen, c.valor_sale_usd, c.estado === 'EN_ESPERA' && c.lado_pendiente === 'SALEN' ? 'Todavía no se ha entregado.' : undefined)}
+${tabla('Recibimos', c.entran, c.valor_entra_usd, c.estado === 'EN_ESPERA' && c.lado_pendiente === 'ENTRAN' ? 'Todavía no se ha recibido.' : undefined)}
+<p><strong>Diferencia (a precio de catálogo):</strong> ${diferencia === 0 ? 'sin diferencia' : `${diferencia > 0 ? 'recibimos' : 'entregamos'} ${dolares(Math.abs(diferencia))} más`}</p>
+<div class="hi-firmas">
+  <div class="hi-firma">Edward Accesorios (nombre y firma)</div>
+  <div class="hi-firma">${escapar(c.contraparte)} (nombre y firma)</div>
 </div>
 <p class="hi-pie">Impreso el ${escapar(fechaHora(opciones.ahora ?? new Date()))}${opciones.impresoPor ? ` por ${escapar(opciones.impresoPor)}` : ''}.</p>`;
 }

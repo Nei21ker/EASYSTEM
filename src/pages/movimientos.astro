@@ -103,7 +103,7 @@ import { alCambiarDatos } from '../lib/realtime';
             <td data-primero class="px-5 py-3 font-medium text-slate-900 dark:text-white">${escaparHtml(mov.producto?.nombre ?? 'Producto eliminado')}</td>
             <td data-label="Tipo" class="px-5 py-3">
               <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${claseTipoMovimiento(mov.tipo)}">
-                ${etiquetaTipoMovimiento(mov.tipo)}
+                ${etiquetaTipoMovimiento(mov.tipo, mov.motivo)}
               </span>
             </td>
             <td data-label="Cantidad" class="px-5 py-3">${signoMovimiento(mov.tipo)}${mov.cantidad}</td>

@@ -102,6 +102,11 @@ function casos(): Caso[] {
     { archivo: 'pendientes/index.ts', metodo: 'POST', url: '/api/pendientes', cuerpo: { localId: accesorios, promotorId: 'no-existe', descripcion: 'Vidrios', monto_usd: 5 }, permitidos: GERENCIA },
     { archivo: 'pendientes/[id]/cerrar.ts', metodo: 'POST', url: '/api/pendientes/no-existe/cerrar', params: { id: 'no-existe' }, cuerpo: { accion: 'pagar' }, permitidos: PENDIENTES },
     { archivo: 'pendientes/[id]/promotor.ts', metodo: 'PUT', url: '/api/pendientes/no-existe/promotor', params: { id: 'no-existe' }, cuerpo: { promotorId: 'x' }, permitidos: PENDIENTES },
+    // Cambio de mercancía con otro local (Local Vidrios): gerencia; revertirlo, solo administrador y gerente
+    { archivo: 'intercambios/index.ts', metodo: 'GET', url: '/api/intercambios', permitidos: GERENCIA },
+    { archivo: 'intercambios/index.ts', metodo: 'POST', url: '/api/intercambios', cuerpo: { localId: accesorios, contraparte: 'Local Aliado', salen: [{ producto_id: 'no-existe', cantidad: 1 }], entran: [{ producto_id: 'no-existe', cantidad: 1 }] }, permitidos: GERENCIA },
+    { archivo: 'intercambios/[id]/completar.ts', metodo: 'POST', url: '/api/intercambios/no-existe/completar', params: { id: 'no-existe' }, permitidos: GERENCIA },
+    { archivo: 'intercambios/[id]/anular.ts', metodo: 'POST', url: '/api/intercambios/no-existe/anular', params: { id: 'no-existe' }, cuerpo: {}, permitidos: GLOBAL },
     // Inversión (compras y pérdidas anotadas a mano) y proveedores: solo administrador y gerente
     { archivo: 'inversiones/index.ts', metodo: 'GET', url: '/api/inversiones', permitidos: GLOBAL },
     { archivo: 'inversiones/index.ts', metodo: 'POST', url: '/api/inversiones', cuerpo: { localId: accesorios, tipo: 'COMPRA', fecha: dia, descripcion: 'Vidrios nuevos', proveedor: 'Matriz', monto_usd: 20 }, permitidos: GLOBAL },

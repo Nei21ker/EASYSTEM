@@ -212,6 +212,29 @@ export const pendientes = sqliteTable('pendientes', {
   items: text('items'),
 });
 
+// Cambio de mercancía con otro local (migración 0025)
+export const intercambios = sqliteTable('intercambios', {
+  id: text('id').primaryKey(),
+  folio: integer('folio').notNull().unique(),
+  local_id: text('local_id').notNull(),
+  contraparte: text('contraparte').notNull(),
+  nota: text('nota'),
+  estado: text('estado', { enum: ['COMPLETADO', 'EN_ESPERA', 'ANULADO'] }).notNull(),
+  lado_pendiente: text('lado_pendiente', { enum: ['SALEN', 'ENTRAN'] }),
+  salen: text('salen').notNull(),
+  entran: text('entran').notNull(),
+  valor_sale_usd: real('valor_sale_usd').notNull().default(0),
+  valor_entra_usd: real('valor_entra_usd').notNull().default(0),
+  creado_por: text('creado_por'),
+  creado_por_nombre: text('creado_por_nombre').notNull(),
+  fecha: marca('fecha'),
+  completado_en: text('completado_en'),
+  completado_por_nombre: text('completado_por_nombre'),
+  anulado_en: text('anulado_en'),
+  anulado_por_nombre: text('anulado_por_nombre'),
+  nota_cierre: text('nota_cierre'),
+});
+
 // Módulo de Inversión (migración 0021): proveedores y lo que se invierte en mercancía nueva (anotado a mano)
 export const proveedores = sqliteTable('proveedores', {
   id: text('id').primaryKey(),

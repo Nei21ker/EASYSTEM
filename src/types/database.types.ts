@@ -522,6 +522,55 @@ export interface PendienteItem {
   precio_unitario: number;
 }
 
+// --- Cambio de mercancía con otro local (Local Vidrios; migración 0025) ---
+export type EstadoIntercambio = 'COMPLETADO' | 'EN_ESPERA' | 'ANULADO';
+/** Qué lado todavía no se mueve en un cambio en espera: SALEN = aún no entregamos lo nuestro · ENTRAN = aún no recibimos lo suyo */
+export type LadoPendienteIntercambio = 'SALEN' | 'ENTRAN';
+
+/** Un producto de un lado del cambio, con su nombre y precio de catálogo del día y, si lleva código por pieza, las piezas que se movieron */
+export interface IntercambioItem {
+  producto_id: string;
+  nombre: string;
+  codigo: string | null;
+  cantidad: number;
+  precio_unitario: number;
+  unidades?: string[] | null;
+}
+
+export interface Intercambio {
+  id: string;
+  folio: number;
+  local_id: string;
+  contraparte: string;
+  nota: string | null;
+  estado: EstadoIntercambio;
+  lado_pendiente: LadoPendienteIntercambio | null;
+  salen: IntercambioItem[];
+  entran: IntercambioItem[];
+  valor_sale_usd: number;
+  valor_entra_usd: number;
+  creado_por_nombre: string;
+  fecha: string;
+  completado_en: string | null;
+  completado_por_nombre: string | null;
+  anulado_en: string | null;
+  anulado_por_nombre: string | null;
+  nota_cierre: string | null;
+}
+
+export interface NuevoIntercambio {
+  localId: string;
+  /** Con quién se cambia (local o persona) */
+  contraparte: string;
+  nota?: string | null;
+  /** Lo que entregamos; `unidades` = piezas escaneadas (el resto sale por orden de llegada) */
+  salen: { producto_id: string; cantidad: number; unidades?: string[] }[];
+  /** Lo que recibimos */
+  entran: { producto_id: string; cantidad: number }[];
+  /** null/ausente = los dos lados se mueven ahora; si no, ese lado queda anotado y se mueve al completarlo */
+  lado_pendiente?: LadoPendienteIntercambio | null;
+}
+
 export interface NuevoPendienteMercancia {
   localId: string;
   promotorId: string;

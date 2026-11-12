@@ -14,7 +14,7 @@ export interface VersionCambio {
 // Tablas globales (local_id vacío): el catálogo y la tasa
 const TABLAS_CATALOGO = ['productos', 'modelos_telefono', 'compatibilidades', 'tasas_cambio'];
 // Tablas por local
-const TABLAS_LOCAL = ['inventario_local', 'movimientos_inventario', 'unidades_producto', 'ventas', 'devoluciones', 'ordenes_servicio', 'traslados', 'mermas'];
+const TABLAS_LOCAL = ['inventario_local', 'movimientos_inventario', 'unidades_producto', 'ventas', 'devoluciones', 'ordenes_servicio', 'traslados', 'mermas', 'intercambios'];
 const TABLAS_CUADRE = ['cuadres_caja'];
 // Pendientes con promotores: por local (los ve el negocio y también la nómina, que paga las comisiones) y el directorio, global
 const TABLA_PENDIENTES = 'pendientes';

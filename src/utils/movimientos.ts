@@ -19,7 +19,17 @@ const CLASES: Record<TipoMovimiento, string> = {
   BAJA: 'bg-amber-100 text-amber-800 dark:bg-amber-500/10 dark:text-amber-400',
 };
 
-export const etiquetaTipoMovimiento = (tipo: TipoMovimiento): string => ETIQUETAS[tipo] ?? String(tipo);
+/** Los movimientos de un cambio de mercancía con otro local se guardan como traslados; su motivo («Cambio #0001 con …») los distingue. */
+export const esMovimientoDeCambio = (motivo: string | null | undefined): boolean => /^(Cambio #|Reversión del cambio #)/.test(motivo ?? '');
+
+/** La etiqueta del tipo; con el motivo, un traslado de un cambio de mercancía se llama «Cambio entregado / recibido». */
+export const etiquetaTipoMovimiento = (tipo: TipoMovimiento, motivo?: string | null): string => {
+  if (esMovimientoDeCambio(motivo)) {
+    if (tipo === 'TRASLADO_SALIDA') return 'Cambio entregado';
+    if (tipo === 'TRASLADO_ENTRADA') return 'Cambio recibido';
+  }
+  return ETIQUETAS[tipo] ?? String(tipo);
+};
 
 export const claseTipoMovimiento = (tipo: TipoMovimiento): string => CLASES[tipo] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-500/10 dark:text-slate-300';
 

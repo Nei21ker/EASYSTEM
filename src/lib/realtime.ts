@@ -36,6 +36,7 @@ export const TABLAS_TIEMPO_REAL = [
   'cuadres_caja',
   'traslados',
   'mermas',
+  'intercambios',
   'pendientes',
   'promotores',
   'inversiones',

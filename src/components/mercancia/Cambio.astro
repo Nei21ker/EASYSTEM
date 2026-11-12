@@ -1,0 +1,634 @@
+---
+// Pestaña "Cambio" de Mercancía (solo Local Vidrios): a veces otro local llega y da 5 vidrios de un modelo a cambio de otros 5 de otro modelo.
+// Se eligen los productos que SALEN del inventario, se anotan los que ENTRAN y al confirmar se mueven los dos lados juntos (no es venta ni compra).
+// Uno de los dos lados puede quedar «en espera» (se entrega hoy y lo otro llega después, o al revés). Incluye aviso cuando lo que entra vale mucho
+// menos, resumen del mes por local y comprobante imprimible.
+const claseCampo =
+  'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 sm:py-2 sm:text-sm placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900';
+const lados = [
+  { k: 's', titulo: 'Lo que entregamos', ayuda: 'Productos del inventario que salen. Escribe el nombre o escanea la etiqueta de una pieza.', placeholder: 'Busca el producto que sale (nombre, código o pieza)…' },
+  { k: 'e', titulo: 'Lo que recibimos', ayuda: 'Productos que nos dan a cambio. Si el modelo todavía no existe, créalo aquí mismo.', placeholder: 'Busca el producto que entra (nombre o código)…' },
+];
+---
+
+<div id="cm-raiz" class="space-y-4">
+  <p id="cm-aviso-local" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
+  <p id="cm-aviso" role="status" class="hidden rounded-lg px-3 py-2 text-sm"></p>
+  <div id="cm-acciones-exito" class="hidden flex-wrap gap-2">
+    <button id="cm-etiquetas" type="button" class="hidden rounded-lg border border-emerald-300 px-4 py-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-slate-800"></button>
+    <button id="cm-imprimir-ultimo" type="button" class="rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">Imprimir comprobante</button>
+  </div>
+
+  <div id="cm-contenido" class="space-y-4">
+    <section class={`${claseTarjeta} space-y-4`}>
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Nuevo cambio</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Cambio de mercancía con otro local. No cuenta como venta ni como compra: solo mueve el inventario.</p>
+      </div>
+      <div>
+        <label for="cm-contraparte" class={claseEtiqueta}>¿Con quién se hace el cambio? *</label>
+        <input id="cm-contraparte" type="text" list="cm-contrapartes" maxlength="80" autocomplete="off" placeholder="Nombre del local o de la persona" class={`${claseCampo} mt-1`} />
+        <datalist id="cm-contrapartes"></datalist>
+      </div>
+
+      {
+        lados.map((l) => (
+          <div class="space-y-2">
+            <div class="flex items-end justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold text-slate-900 dark:text-white">{l.titulo}</p>
+                <p class="oculto-con-teclado text-xs text-slate-500 dark:text-slate-400">{l.ayuda}</p>
+              </div>
+              {l.k === 'e' && (
+                <button id="cm-nuevo-producto" type="button" class="shrink-0 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">
+                  + Nuevo producto
+                </button>
+              )}
+            </div>
+            <div class="flex gap-2">
+              <input id={`cm-${l.k}-buscar`} type="text" autocomplete="off" placeholder={l.placeholder} class={claseCampo} />
+              {l.k === 's' && (
+                <button type="button" data-abrir-escaner aria-label="Escanear con la cámara" class="shrink-0 rounded-lg border border-slate-200 px-3 text-lg hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
+                  📷
+                </button>
+              )}
+            </div>
+            <ul id={`cm-${l.k}-resultados`} class="hidden max-h-52 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 bg-white text-sm dark:divide-slate-800 dark:border-slate-700 dark:bg-slate-900" />
+            <p id={`cm-${l.k}-error`} role="alert" class="hidden text-xs text-red-600 dark:text-red-400" />
+            <ul id={`cm-${l.k}-items`} class="space-y-2" />
+            <p id={`cm-${l.k}-vacio`} class="rounded-lg border border-dashed border-slate-300 px-3 py-3 text-center text-xs text-slate-500 dark:border-slate-700 dark:text-slate-400">Todavía no hay productos.</p>
+          </div>
+        ))
+      }
+
+      <div id="cm-valores" class="rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60"></div>
+      <div id="cm-advertencia" role="alert" class="hidden rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200"></div>
+
+      <div>
+        <label for="cm-estado" class={claseEtiqueta}>¿Cómo se hace?</label>
+        <select id="cm-estado" class={`${claseCampo} mt-1`}>
+          <option value="">Se entrega y se recibe ahora</option>
+          <option value="ENTRAN">Entregué lo nuestro, falta lo que nos traen (en espera)</option>
+          <option value="SALEN">Ya recibí lo suyo, falta entregar lo nuestro (en espera)</option>
+        </select>
+        <p id="cm-estado-ayuda" class="oculto-con-teclado mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <div>
+        <label for="cm-nota" class={claseEtiqueta}>Nota (opcional)</label>
+        <textarea id="cm-nota" rows="2" maxlength="300" placeholder="Ej: los de Infinix son de otro precio; quedamos en compensar la próxima vez" class={`${claseCampo} mt-1`}></textarea>
+      </div>
+      <p id="cm-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+      <div class="flex gap-3">
+        <button id="cm-limpiar" type="button" class="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">Limpiar</button>
+        <button id="cm-registrar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:opacity-60">Registrar cambio</button>
+      </div>
+    </section>
+
+    <section id="cm-espera-seccion" class={`hidden ${claseTarjeta} space-y-3`}>
+      <div>
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Cambios en espera</h2>
+        <p class="text-xs text-slate-500 dark:text-slate-400">Falta mover uno de los dos lados. Cuando llegue, pulsa «Completar».</p>
+      </div>
+      <ul id="cm-espera" class="space-y-3"></ul>
+    </section>
+
+    <section class={`${claseTarjeta} space-y-4`}>
+      <div class="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Resumen del mes</h2>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Cuánto se ha cambiado y con quién, a precio de catálogo de cada día.</p>
+        </div>
+        <div>
+          <label for="cm-mes" class={claseEtiqueta}>Mes</label>
+          <input id="cm-mes" type="month" class={`${claseCampo} mt-1`} />
+        </div>
+      </div>
+      <div id="cm-resumen"></div>
+    </section>
+
+    <section class={`${claseTarjeta} space-y-3`}>
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Cambios del mes</h2>
+      <p id="cm-historial-vacio" class="hidden rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">No hay cambios en este mes.</p>
+      <ul id="cm-historial" class="space-y-3"></ul>
+    </section>
+  </div>
+</div>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { esGerencia, esGlobal } from '../../lib/auth';
+  import { alCambiarDatos } from '../../lib/realtime';
+  import { esCodigoUnidad, normalizarCodigoUnidad } from '../../utils/codigos';
+  import { escaparHtml } from '../../utils/productosUI';
+  import { normalizarNombre } from '../../utils/altaRapida';
+  import { fechaLocalISO, formatearFecha } from '../../utils/format';
+  import { htmlHojaCambio, imprimirHoja } from '../../utils/hojasImpresas';
+  import { esPorCantidad } from '../../utils/controlPorCantidad';
+  import { advertenciaDeValor, claveContraparte, limitesDelMes, MAX_CANTIDAD_ITEM_INTERCAMBIO, MAX_ITEMS_INTERCAMBIO, resumirCambios, textoDeItems, totalPiezas, valorDeItems } from '../../utils/intercambio';
+  import { tasaActual } from '../../stores/tasa';
+  import { convertirABs, formatearBolivares } from '../../utils/format';
+  import type { Intercambio, LadoPendienteIntercambio, Producto } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const TONOS: Record<string, string[]> = {
+    ok: ['bg-emerald-50', 'text-emerald-800', 'dark:bg-emerald-500/10', 'dark:text-emerald-300'],
+    error: ['bg-red-50', 'text-red-800', 'dark:bg-red-500/10', 'dark:text-red-300'],
+    aviso: ['bg-amber-50', 'text-amber-800', 'dark:bg-amber-500/10', 'dark:text-amber-300'],
+  };
+  const dolares = (n: number) => `$${n.toFixed(2).replace('.', ',')}`;
+  const mensaje = (err: unknown) => (err instanceof Error ? err.message : String(err));
+  const panelVisible = () => !$('mc-panel-cambio')?.classList.contains('hidden');
+
+  type Lado = 's' | 'e';
+  interface Linea {
+    producto: Producto;
+    cantidad: number;
+    /** Piezas escaneadas (solo lo que entregamos y solo productos con código por pieza) */
+    unidades: string[];
+  }
+  const lineas: Record<Lado, Linea[]> = { s: [], e: [] };
+  let catalogo: Producto[] = [];
+  let localId: string | null = null;
+  let localNombre = '';
+  let global = false;
+  let miNombre = '';
+  let iniciado = false;
+  let ocupado = false;
+  let advertenciaVista = false;
+  let delMes: Intercambio[] = [];
+  let enEspera: Intercambio[] = [];
+  let ultimo: Intercambio | null = null;
+
+  function avisar(texto: string, tono: 'ok' | 'error' | 'aviso') {
+    const el = $('cm-aviso');
+    el.classList.remove('hidden', ...Object.values(TONOS).flat());
+    el.classList.add(...TONOS[tono]);
+    el.textContent = texto;
+    if (tono !== 'ok') $('cm-acciones-exito').classList.add('hidden');
+  }
+  const limpiarAviso = () => {
+    $('cm-aviso').classList.add('hidden');
+    $('cm-acciones-exito').classList.add('hidden');
+  };
+  function errorLado(k: Lado, texto: string) {
+    const el = $(`cm-${k}-error`);
+    el.textContent = texto;
+    el.classList.toggle('hidden', !texto);
+  }
+
+  // --- Lista de productos de cada lado --------------------------------------------------------------------------------
+  const stockDe = (p: Producto) => p.stock_actual;
+  function pintarLado(k: Lado) {
+    $(`cm-${k}-vacio`).classList.toggle('hidden', lineas[k].length > 0);
+    $(`cm-${k}-items`).innerHTML = lineas[k]
+      .map((l, i) => {
+        const falta = k === 's' && l.cantidad > stockDe(l.producto);
+        const pista =
+          k === 's'
+            ? `<span class="${falta ? 'font-semibold text-red-600 dark:text-red-400' : ''}">en el local hay ${stockDe(l.producto)}</span>${esPorCantidad(l.producto) ? ' · por cantidad' : ''}`
+            : esPorCantidad(l.producto)
+              ? 'por cantidad: sin etiqueta por pieza'
+              : 'las piezas nuevas salen sin etiqueta impresa';
+        return `<li data-i="${i}" class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2 dark:border-slate-700 dark:bg-slate-800/60">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="break-words text-sm font-medium text-slate-800 dark:text-slate-100">${escaparHtml(l.producto.nombre)}</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">${dolares(l.producto.precio_venta)} c/u · ${pista}</p>
+              ${l.unidades.length ? `<p class="mt-0.5 break-all font-mono text-[11px] text-emerald-700 dark:text-emerald-400">Piezas escaneadas: ${escaparHtml(l.unidades.join(', '))}</p>` : ''}
+            </div>
+            <input data-cant type="text" inputmode="numeric" value="${l.cantidad}" aria-label="Cantidad" class="w-14 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <button data-quitar type="button" aria-label="Quitar" class="rounded-md px-2 py-1 text-lg leading-none text-slate-400 hover:text-red-600">×</button>
+          </div>
+        </li>`;
+      })
+      .join('');
+    pintarValores();
+  }
+
+  function pintarValores() {
+    const items = (k: Lado) => lineas[k].map((l) => ({ cantidad: l.cantidad, precio_unitario: l.producto.precio_venta }));
+    const sale = valorDeItems(items('s'));
+    const entra = valorDeItems(items('e'));
+    const tasa = tasaActual.get();
+    const bs = (n: number) => (tasa ? ` <span class="text-xs text-slate-500 dark:text-slate-400">(${formatearBolivares(convertirABs(n, tasa))})</span>` : '');
+    $('cm-valores').innerHTML = `<div class="grid grid-cols-2 gap-3">
+      <div><p class="text-[11px] text-slate-500 dark:text-slate-400">Entregamos · ${lineas.s.reduce((s, l) => s + l.cantidad, 0)} pzs</p><p class="font-semibold tabular-nums">${dolares(sale)}${bs(sale)}</p></div>
+      <div><p class="text-[11px] text-slate-500 dark:text-slate-400">Recibimos · ${lineas.e.reduce((s, l) => s + l.cantidad, 0)} pzs</p><p class="font-semibold tabular-nums">${dolares(entra)}${bs(entra)}</p></div>
+    </div>`;
+    const adv = lineas.s.length && lineas.e.length ? advertenciaDeValor(sale, entra) : null;
+    const caja = $('cm-advertencia');
+    caja.classList.toggle('hidden', !adv);
+    if (adv) {
+      caja.innerHTML = `<strong>Ojo:</strong> lo que entra vale ${dolares(adv.falta_usd)} menos que lo que sale (llega al ${Math.round(adv.proporcion * 100)} %). Revisa los modelos y las cantidades, o explica el motivo en la nota.`;
+    } else {
+      advertenciaVista = false;
+    }
+    $('cm-registrar').textContent = adv && advertenciaVista ? 'Confirmar de todos modos' : 'Registrar cambio';
+  }
+
+  function agregarLinea(k: Lado, producto: Producto, pieza?: string) {
+    const existente = lineas[k].find((l) => l.producto.id === producto.id);
+    if (existente) {
+      if (pieza) {
+        existente.unidades.push(pieza);
+        existente.cantidad = Math.max(existente.cantidad, existente.unidades.length);
+      } else existente.cantidad = Math.min(MAX_CANTIDAD_ITEM_INTERCAMBIO, existente.cantidad + 1);
+    } else if (lineas[k].length >= MAX_ITEMS_INTERCAMBIO) {
+      errorLado(k, `Máximo ${MAX_ITEMS_INTERCAMBIO} productos distintos por lado.`);
+      return;
+    } else lineas[k].push({ producto, cantidad: 1, unidades: pieza ? [pieza] : [] });
+    errorLado(k, '');
+    advertenciaVista = false;
+    $(`cm-${k}-buscar`).setAttribute('value', '');
+    ($(`cm-${k}-buscar`) as HTMLInputElement).value = '';
+    $(`cm-${k}-resultados`).classList.add('hidden');
+    pintarLado(k);
+  }
+
+  // --- Búsqueda --------------------------------------------------------------------------------------------------------
+  const candidatos = (k: Lado) => (k === 's' ? catalogo.filter((p) => stockDe(p) > 0) : catalogo);
+  function pintarResultados(k: Lado) {
+    const q = normalizarNombre(($(`cm-${k}-buscar`) as HTMLInputElement).value);
+    const caja = $(`cm-${k}-resultados`);
+    if (!q) {
+      caja.classList.add('hidden');
+      return;
+    }
+    const coinciden = candidatos(k)
+      .filter((p) => normalizarNombre(`${p.nombre} ${p.referencia ?? ''} ${p.codigo_barras} ${p.categoria}`).includes(q))
+      .slice(0, 25);
+    caja.innerHTML = coinciden.length
+      ? coinciden
+          .map(
+            (p) => `<li><button type="button" data-id="${p.id}" class="block w-full px-3 py-2 text-left hover:bg-slate-50 dark:hover:bg-slate-800">
+              <span class="block break-words">${escaparHtml(p.nombre)}</span>
+              <span class="block text-[11px] text-slate-500 dark:text-slate-400">${dolares(p.precio_venta)} · stock ${stockDe(p)}</span>
+            </button></li>`
+          )
+          .join('')
+      : `<li class="px-3 py-2 text-xs text-slate-500">${k === 's' ? 'No hay productos con stock que coincidan.' : 'No hay productos que coincidan: créalo con «+ Nuevo producto».'}</li>`;
+    caja.classList.remove('hidden');
+  }
+
+  /** Enter en el buscador de lo que sale: la etiqueta de una pieza, o el código/referencia exacta de un producto. */
+  async function agregarPorCodigo(k: Lado, texto: string) {
+    const crudo = texto.trim();
+    if (!crudo) return;
+    const codigo = normalizarCodigoUnidad(crudo) ?? crudo;
+    if (k === 's' && esCodigoUnidad(codigo)) {
+      if (lineas.s.some((l) => l.unidades.includes(codigo))) return errorLado('s', `La pieza ${codigo} ya está en la lista.`);
+      try {
+        const u = await inventoryService.obtenerUnidadPorCodigo(codigo);
+        if (!u) return errorLado('s', `No encontré la pieza ${codigo} en este local.`);
+        if (u.local_id !== localId) return errorLado('s', `La pieza ${codigo} es de otro local.`);
+        if (u.estado !== 'DISPONIBLE') return errorLado('s', `La pieza ${codigo} no está disponible (${u.estado === 'VENDIDA' ? 'ya se vendió' : u.estado === 'EN_TRANSITO' ? 'va en un traslado' : 'está dada de baja'}).`);
+        const prod = catalogo.find((p) => p.id === u.producto_id);
+        if (!prod) return errorLado('s', 'Esa pieza es de un producto que no está en el catálogo.');
+        return agregarLinea('s', prod, codigo);
+      } catch (err) {
+        return errorLado('s', `No se pudo consultar la pieza: ${mensaje(err)}`);
+      }
+    }
+    const q = normalizarNombre(crudo);
+    const exacto = candidatos(k).find((p) => p.codigo_barras === crudo || normalizarNombre(p.referencia ?? '') === q);
+    if (exacto) return agregarLinea(k, exacto);
+    // Con un solo resultado en la lista, Enter lo elige
+    const botones = $(`cm-${k}-resultados`).querySelectorAll<HTMLElement>('[data-id]');
+    if (botones.length === 1) {
+      const p = catalogo.find((x) => x.id === botones[0].dataset.id);
+      if (p) agregarLinea(k, p);
+    }
+  }
+
+  for (const k of ['s', 'e'] as const) {
+    let t: number | undefined;
+    const buscar = $<HTMLInputElement>(`cm-${k}-buscar`);
+    buscar.addEventListener('input', () => {
+      window.clearTimeout(t);
+      t = window.setTimeout(() => pintarResultados(k), 120);
+    });
+    buscar.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      void agregarPorCodigo(k, buscar.value);
+    });
+    $(`cm-${k}-resultados`).addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-id]');
+      const p = b ? catalogo.find((x) => x.id === b.dataset.id) : null;
+      if (p) agregarLinea(k, p);
+    });
+    const lista = $(`cm-${k}-items`);
+    lista.addEventListener('click', (e) => {
+      const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-i]');
+      if (!li || !(e.target as HTMLElement).closest('[data-quitar]')) return;
+      lineas[k].splice(Number(li.dataset.i), 1);
+      advertenciaVista = false;
+      pintarLado(k);
+    });
+    lista.addEventListener('input', (e) => {
+      const inp = e.target as HTMLInputElement;
+      const li = inp.closest<HTMLElement>('li[data-i]');
+      if (!li || !inp.matches('[data-cant]')) return;
+      const l = lineas[k][Number(li.dataset.i)];
+      const n = Math.floor(Number(inp.value.replace(/\D/g, '')));
+      l.cantidad = Number.isFinite(n) && n > 0 ? Math.min(n, MAX_CANTIDAD_ITEM_INTERCAMBIO) : 0;
+      if (l.unidades.length > l.cantidad) l.unidades = l.unidades.slice(0, l.cantidad);
+      advertenciaVista = false;
+      pintarValores();
+    });
+  }
+
+  // La cámara escanea hacia lo que sale (solo con esta pestaña a la vista)
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    if (!panelVisible()) return;
+    void agregarPorCodigo('s', e.detail.codigo);
+  }) as EventListener);
+
+  // Un producto nuevo creado desde aquí entra directo a la lista de lo que recibimos
+  $('cm-nuevo-producto').addEventListener('click', () => window.dispatchEvent(new CustomEvent('easystem:abrir-producto', { detail: { sinStock: true } })));
+  window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean }>) => {
+    if (!iniciado) return;
+    catalogo = await inventoryService.listarProductos({ catalogoCompleto: true });
+    if (!panelVisible() || !e.detail.nuevo) return;
+    const p = catalogo.find((x) => x.id === e.detail.productoId);
+    if (p) agregarLinea('e', p);
+  }) as unknown as EventListener);
+
+  // --- Estado ------------------------------------------------------------------------------------------------------------
+  function ayudaEstado() {
+    const v = ($('cm-estado') as HTMLSelectElement).value;
+    $('cm-estado-ayuda').textContent =
+      v === 'ENTRAN'
+        ? 'Lo que entregamos sale del inventario ahora. Lo que nos traen queda anotado y entra al stock cuando pulses «Completar».'
+        : v === 'SALEN'
+          ? 'Lo que recibimos entra al inventario ahora. Lo nuestro queda anotado y sale del stock cuando pulses «Completar».'
+          : 'Los dos lados se mueven en este momento.';
+  }
+  $('cm-estado').addEventListener('change', ayudaEstado);
+
+  function limpiarFormulario() {
+    lineas.s = [];
+    lineas.e = [];
+    advertenciaVista = false;
+    ($('cm-contraparte') as HTMLInputElement).value = '';
+    ($('cm-nota') as HTMLTextAreaElement).value = '';
+    ($('cm-estado') as HTMLSelectElement).value = '';
+    $('cm-error').classList.add('hidden');
+    pintarLado('s');
+    pintarLado('e');
+    ayudaEstado();
+  }
+  $('cm-limpiar').addEventListener('click', () => {
+    limpiarFormulario();
+    limpiarAviso();
+  });
+
+  // --- Registrar ------------------------------------------------------------------------------------------------------
+  function mostrarExito(c: Intercambio, texto: string) {
+    ultimo = c;
+    avisar(texto, 'ok');
+    $('cm-acciones-exito').classList.remove('hidden');
+    $('cm-acciones-exito').classList.add('flex');
+    // Las piezas que entraron nacen sin etiqueta impresa: se ofrece imprimirlas desde Ingreso
+    const nuevas = c.entran.filter((i) => i.unidades?.length && c.estado === 'COMPLETADO');
+    const boton = $('cm-etiquetas');
+    const total = nuevas.reduce((s, i) => s + (i.unidades?.length ?? 0), 0);
+    boton.classList.toggle('hidden', total === 0);
+    boton.textContent = `Imprimir etiquetas de lo recibido (${total})`;
+    boton.dataset.items = JSON.stringify(nuevas.map((i) => ({ productoId: i.producto_id, cantidad: i.unidades!.length })));
+    $('cm-aviso').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function registrar() {
+    if (ocupado || !localId) return;
+    const error = $('cm-error');
+    error.classList.add('hidden');
+    limpiarAviso();
+    const contraparte = ($('cm-contraparte') as HTMLInputElement).value;
+    try {
+      if (!contraparte.trim()) throw new Error('Escribe con quién se hace el cambio.');
+      if (lineas.s.length === 0 || lineas.e.length === 0) throw new Error('Agrega al menos un producto en cada lado: lo que entregamos y lo que recibimos.');
+      if ([...lineas.s, ...lineas.e].some((l) => l.cantidad < 1)) throw new Error('Pon una cantidad de 1 o más en cada producto (o quítalo).');
+      const sale = valorDeItems(lineas.s.map((l) => ({ cantidad: l.cantidad, precio_unitario: l.producto.precio_venta })));
+      const entra = valorDeItems(lineas.e.map((l) => ({ cantidad: l.cantidad, precio_unitario: l.producto.precio_venta })));
+      // Lo que entra vale mucho menos: la primera vez solo se avisa; al confirmar de nuevo se registra
+      if (advertenciaDeValor(sale, entra) && !advertenciaVista) {
+        advertenciaVista = true;
+        pintarValores();
+        $('cm-advertencia').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    } catch (err) {
+      error.textContent = mensaje(err);
+      error.classList.remove('hidden');
+      return;
+    }
+    const lado = (($('cm-estado') as HTMLSelectElement).value || null) as LadoPendienteIntercambio | null;
+    ocupado = true;
+    ($('cm-registrar') as HTMLButtonElement).disabled = true;
+    try {
+      const c = await inventoryService.crearIntercambio({
+        localId,
+        contraparte,
+        nota: ($('cm-nota') as HTMLTextAreaElement).value,
+        lado_pendiente: lado,
+        salen: lineas.s.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad, unidades: l.unidades.length ? l.unidades : undefined })),
+        entran: lineas.e.map((l) => ({ producto_id: l.producto.id, cantidad: l.cantidad })),
+      });
+      const folio = `#${String(c.folio).padStart(4, '0')}`;
+      limpiarFormulario();
+      mostrarExito(
+        c,
+        c.estado === 'EN_ESPERA'
+          ? `Cambio ${folio} con ${c.contraparte} anotado en espera: ${lado === 'ENTRAN' ? 'ya salió lo nuestro; falta recibir lo que nos traen.' : 'ya entró lo suyo; falta entregar lo nuestro.'}`
+          : `Cambio ${folio} con ${c.contraparte} registrado: salieron ${totalPiezas(c.salen)} y entraron ${totalPiezas(c.entran)} piezas.`
+      );
+      await Promise.all([recargarProductos(), recargarListas()]);
+    } catch (err) {
+      error.textContent = mensaje(err);
+      error.classList.remove('hidden');
+    } finally {
+      ocupado = false;
+      ($('cm-registrar') as HTMLButtonElement).disabled = false;
+      pintarValores();
+    }
+  }
+  $('cm-registrar').addEventListener('click', () => void registrar());
+
+  $('cm-etiquetas').addEventListener('click', () => {
+    const items = JSON.parse($('cm-etiquetas').dataset.items ?? '[]') as { productoId: string; cantidad: number }[];
+    if (items.length) window.dispatchEvent(new CustomEvent('easystem:cambio-etiquetas', { detail: { items } }));
+  });
+  const imprimirCambio = (c: Intercambio) => void imprimirHoja(htmlHojaCambio(c, { impresoPor: miNombre, localNombre }));
+  $('cm-imprimir-ultimo').addEventListener('click', () => ultimo && imprimirCambio(ultimo));
+
+  // --- Listas: en espera, resumen y historial del mes ------------------------------------------------------------------
+  const ESTADO_CLASES: Record<string, string> = {
+    COMPLETADO: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300',
+    EN_ESPERA: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300',
+    ANULADO: 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300',
+  };
+  const ESTADO_TEXTO: Record<string, string> = { COMPLETADO: 'Completado', EN_ESPERA: 'En espera', ANULADO: 'Anulado' };
+  const folioDe = (c: Intercambio) => `#${String(c.folio).padStart(4, '0')}`;
+  const botonBase = 'rounded-lg border px-3 py-1.5 text-xs font-semibold';
+  const botonNeutro = `${botonBase} border-slate-300 text-slate-700 hover:bg-slate-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800`;
+  const botonPrincipal = `${botonBase} border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700`;
+  const botonPeligro = `${botonBase} border-red-300 text-red-700 hover:bg-red-50 dark:border-red-500/50 dark:text-red-300 dark:hover:bg-slate-800`;
+
+  function htmlCambio(c: Intercambio, conAcciones: boolean): string {
+    const diferencia = Math.round((c.valor_entra_usd - c.valor_sale_usd) * 100) / 100;
+    const espera = c.estado === 'EN_ESPERA';
+    return `<li data-id="${c.id}" class="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+      <div class="flex flex-wrap items-center gap-2">
+        <strong class="text-sm">${folioDe(c)}</strong>
+        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${ESTADO_CLASES[c.estado]}">${ESTADO_TEXTO[c.estado]}</span>
+        <span class="text-xs text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(c.fecha))}</span>
+        <span class="ml-auto text-sm font-medium">${escaparHtml(c.contraparte)}</span>
+      </div>
+      <p class="mt-2 text-sm"><span class="font-medium text-red-700 dark:text-red-400">Entregamos${espera && c.lado_pendiente === 'SALEN' ? ' (falta)' : ''}:</span> ${escaparHtml(textoDeItems(c.salen))} <span class="text-slate-500">· ${dolares(c.valor_sale_usd)}</span></p>
+      <p class="mt-1 text-sm"><span class="font-medium text-emerald-700 dark:text-emerald-400">Recibimos${espera && c.lado_pendiente === 'ENTRAN' ? ' (falta)' : ''}:</span> ${escaparHtml(textoDeItems(c.entran))} <span class="text-slate-500">· ${dolares(c.valor_entra_usd)}</span></p>
+      ${diferencia !== 0 && c.estado !== 'ANULADO' ? `<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">${diferencia > 0 ? 'Recibimos' : 'Entregamos'} ${dolares(Math.abs(diferencia))} más a precio de catálogo.</p>` : ''}
+      ${c.nota ? `<p class="mt-1 text-xs text-slate-600 dark:text-slate-300">Nota: ${escaparHtml(c.nota)}</p>` : ''}
+      ${c.estado === 'ANULADO' ? `<p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Revertido el ${escaparHtml(formatearFecha(c.anulado_en ?? c.fecha))}${c.anulado_por_nombre ? ` por ${escaparHtml(c.anulado_por_nombre)}` : ''}${c.nota_cierre ? ` · ${escaparHtml(c.nota_cierre)}` : ''}</p>` : ''}
+      <p class="mt-1 text-[11px] text-slate-400">Registró ${escaparHtml(c.creado_por_nombre)}</p>
+      ${conAcciones ? `<div class="mt-2 flex flex-wrap gap-2">
+        ${espera ? `<button type="button" data-completar="${c.id}" class="${botonPrincipal}">Completar</button>` : ''}
+        <button type="button" data-imprimir="${c.id}" class="${botonNeutro}">Comprobante</button>
+        ${c.estado !== 'ANULADO' && global ? `<button type="button" data-anular="${c.id}" class="${botonPeligro}">${espera ? 'Cancelar' : 'Revertir'}</button>` : ''}
+      </div>` : ''}
+    </li>`;
+  }
+
+  function pintarResumen() {
+    const r = resumirCambios(delMes);
+    if (r.cambios === 0) {
+      $('cm-resumen').innerHTML = '<p class="rounded-lg border border-dashed border-slate-300 px-3 py-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">No hubo cambios en este mes.</p>';
+      return;
+    }
+    const neto = (n: number) => (n === 0 ? 'parejo' : `${n > 0 ? '+' : '−'}${dolares(Math.abs(n))}`);
+    const claseNeto = (n: number) => (n < 0 ? 'text-red-600 dark:text-red-400' : n > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500');
+    $('cm-resumen').innerHTML = `
+      <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div class="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60"><p class="text-[11px] text-slate-500 dark:text-slate-400">Cambios</p><p class="text-lg font-semibold">${r.cambios}${r.en_espera ? ` <span class="text-xs font-normal text-amber-700 dark:text-amber-400">(${r.en_espera} en espera)</span>` : ''}</p></div>
+        <div class="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60"><p class="text-[11px] text-slate-500 dark:text-slate-400">Entregamos</p><p class="text-lg font-semibold tabular-nums">${r.piezas_salen} pzs</p><p class="text-xs text-slate-500 tabular-nums">${dolares(r.valor_sale_usd)}</p></div>
+        <div class="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60"><p class="text-[11px] text-slate-500 dark:text-slate-400">Recibimos</p><p class="text-lg font-semibold tabular-nums">${r.piezas_entran} pzs</p><p class="text-xs text-slate-500 tabular-nums">${dolares(r.valor_entra_usd)}</p></div>
+        <div class="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800/60"><p class="text-[11px] text-slate-500 dark:text-slate-400">Diferencia</p><p class="text-lg font-semibold tabular-nums ${claseNeto(r.neto_usd)}">${neto(r.neto_usd)}</p><p class="text-xs text-slate-500">a precio de catálogo</p></div>
+      </div>
+      <div class="mt-3 overflow-x-auto">
+        <table class="w-full min-w-[26rem] text-left text-sm">
+          <thead class="text-[11px] uppercase text-slate-500 dark:text-slate-400"><tr><th class="py-1.5 pr-2">Con quién</th><th class="py-1.5 pr-2 text-right">Cambios</th><th class="py-1.5 pr-2 text-right">Entregamos</th><th class="py-1.5 pr-2 text-right">Recibimos</th><th class="py-1.5 text-right">Diferencia</th></tr></thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">${r.porContraparte
+            .map(
+              (g) => `<tr><td class="py-1.5 pr-2 font-medium">${escaparHtml(g.nombre)}</td><td class="py-1.5 pr-2 text-right tabular-nums">${g.cambios}</td><td class="py-1.5 pr-2 text-right tabular-nums">${g.piezas_salen} pzs<br><span class="text-xs text-slate-500">${dolares(g.valor_sale_usd)}</span></td><td class="py-1.5 pr-2 text-right tabular-nums">${g.piezas_entran} pzs<br><span class="text-xs text-slate-500">${dolares(g.valor_entra_usd)}</span></td><td class="py-1.5 text-right font-semibold tabular-nums ${claseNeto(g.neto_usd)}">${neto(g.neto_usd)}</td></tr>`
+            )
+            .join('')}</tbody>
+        </table>
+      </div>`;
+  }
+
+  function pintarListas() {
+    $('cm-espera-seccion').classList.toggle('hidden', enEspera.length === 0);
+    $('cm-espera').innerHTML = enEspera.map((c) => htmlCambio(c, true)).join('');
+    $('cm-historial-vacio').classList.toggle('hidden', delMes.length > 0);
+    $('cm-historial').innerHTML = delMes.map((c) => htmlCambio(c, true)).join('');
+    pintarResumen();
+    // Los nombres usados antes se ofrecen al escribir «con quién»
+    const nombres = new Map<string, string>();
+    for (const c of [...enEspera, ...delMes]) nombres.set(claveContraparte(c.contraparte), c.contraparte);
+    $('cm-contrapartes').innerHTML = [...nombres.values()].map((n) => `<option value="${escaparHtml(n)}"></option>`).join('');
+  }
+
+  async function recargarListas() {
+    const mes = ($('cm-mes') as HTMLInputElement).value || fechaLocalISO().slice(0, 7);
+    const { desde, hasta } = limitesDelMes(`${mes}-01`);
+    [delMes, enEspera] = await Promise.all([inventoryService.listarIntercambios({ desde, hasta }), inventoryService.listarIntercambios({ estado: 'EN_ESPERA' })]);
+    pintarListas();
+  }
+  async function recargarProductos() {
+    catalogo = await inventoryService.listarProductos({ catalogoCompleto: true });
+    for (const k of ['s', 'e'] as const) for (const l of lineas[k]) l.producto = catalogo.find((p) => p.id === l.producto.id) ?? l.producto;
+    pintarValores();
+  }
+  $('cm-mes').addEventListener('change', () => void recargarListas().catch((err) => avisar(mensaje(err), 'error')));
+
+  async function accionLista(e: Event) {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-completar],[data-anular],[data-imprimir]');
+    if (!b) return;
+    const todos = [...enEspera, ...delMes];
+    const id = b.dataset.completar ?? b.dataset.anular ?? b.dataset.imprimir!;
+    const c = todos.find((x) => x.id === id);
+    if (!c || ocupado) return;
+    if (b.dataset.imprimir) return imprimirCambio(c);
+    ocupado = true;
+    try {
+      if (b.dataset.completar) {
+        const lado = c.lado_pendiente === 'ENTRAN' ? 'recibir lo que nos traen' : 'entregar lo nuestro';
+        if (!confirm(`¿Completar el cambio ${folioDe(c)} con ${c.contraparte}?\n\nAl confirmar se mueve el inventario: ${lado}.`)) return;
+        const listo = await inventoryService.completarIntercambio(c.id);
+        mostrarExito(listo, `Cambio ${folioDe(listo)} completado.`);
+      } else {
+        const espera = c.estado === 'EN_ESPERA';
+        const motivo = prompt(`${espera ? 'Cancelar' : 'Revertir'} el cambio ${folioDe(c)} con ${c.contraparte}: lo que se movió vuelve a como estaba.\n\nMotivo (opcional):`);
+        if (motivo === null) return;
+        await inventoryService.anularIntercambio(c.id, motivo);
+        avisar(`Cambio ${folioDe(c)} ${espera ? 'cancelado' : 'revertido'}: el inventario volvió a como estaba.`, 'ok');
+      }
+      await Promise.all([recargarProductos(), recargarListas()]);
+    } catch (err) {
+      avisar(mensaje(err), 'error');
+    } finally {
+      ocupado = false;
+    }
+  }
+  $('cm-espera').addEventListener('click', (e) => void accionLista(e));
+  $('cm-historial').addEventListener('click', (e) => void accionLista(e));
+
+  // --- Inicio -----------------------------------------------------------------------------------------------------------
+  /** El botón de la pestaña solo aparece en el Local Vidrios (o, para administrador y gerente, en la vista de todos los locales). */
+  async function mostrarPestanaSiCorresponde() {
+    const contexto = await inventoryService.obtenerContextoLocal();
+    const permitido = !!contexto && esGerencia(contexto.sesion.rol) && (contexto.alcance === 'todos' || contexto.local?.tipo === 'vidrios');
+    $('mc-tab-cambio')?.classList.toggle('hidden', !permitido);
+    return contexto;
+  }
+
+  async function iniciar() {
+    if (iniciado) return;
+    iniciado = true;
+    const contexto = await mostrarPestanaSiCorresponde();
+    if (!contexto || !esGerencia(contexto.sesion.rol)) return;
+    global = esGlobal(contexto.sesion.rol);
+    miNombre = contexto.sesion.nombre;
+    localId = contexto.local?.id ?? null;
+    localNombre = contexto.local?.nombre ?? '';
+    if (contexto.local?.tipo !== 'vidrios') {
+      const aviso = $('cm-aviso-local');
+      aviso.textContent = contexto.alcance === 'todos' ? 'Elige el Local Vidrios en el selector del encabezado para hacer un cambio de mercancía.' : 'Por ahora los cambios de mercancía solo se hacen en el Local Vidrios.';
+      aviso.classList.remove('hidden');
+      $('cm-contenido').classList.add('hidden');
+      return;
+    }
+    ($('cm-mes') as HTMLInputElement).value = fechaLocalISO().slice(0, 7);
+    ayudaEstado();
+    pintarLado('s');
+    pintarLado('e');
+    try {
+      await Promise.all([recargarProductos(), recargarListas()]);
+    } catch (err) {
+      avisar(`No se pudieron cargar los datos: ${mensaje(err)}`, 'error');
+    }
+    tasaActual.listen(() => pintarValores());
+    alCambiarDatos(['intercambios', 'inventario_local', 'productos'], () => {
+      void recargarProductos().catch(() => {});
+      void recargarListas().catch(() => {});
+    });
+  }
+
+  window.addEventListener('easystem:mercancia-pestana', ((e: CustomEvent<{ pestana: string }>) => {
+    if (e.detail.pestana === 'cambio') void iniciar();
+  }) as EventListener);
+  void mostrarPestanaSiCorresponde().catch(() => {});
+  if (panelVisible()) void iniciar();
+</script>
