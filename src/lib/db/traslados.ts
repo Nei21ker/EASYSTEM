@@ -13,11 +13,11 @@ export const listarDestinos = () => api.get<DestinoTraslado[]>('/api/traslados/d
 
 export const listarTraslados = (estado?: EstadoTraslado) => api.get<Traslado[]>('/api/traslados', { estado });
 
-export const despacharTraslado = (datos: { origenLocalId: string; destinoLocalId: string; codigos: string[]; notas?: string }) =>
+export const despacharTraslado = (datos: { origenLocalId: string; destinoLocalId: string; codigos: string[]; cantidades?: { producto_id: string; cantidad: number }[]; notas?: string }) =>
   api.post<Traslado>('/api/traslados', datos);
 
-export const recibirTraslado = (id: string, codigos: string[]) =>
-  api.post<Traslado>(`/api/traslados/${encodeURIComponent(id)}/recibir`, { codigos });
+export const recibirTraslado = (id: string, codigos: string[], cantidades: { producto_id: string; cantidad: number }[] = []) =>
+  api.post<Traslado>(`/api/traslados/${encodeURIComponent(id)}/recibir`, { codigos, cantidades });
 
 export const cerrarTraslado = (id: string) => api.post<Traslado>(`/api/traslados/${encodeURIComponent(id)}/cerrar`, {});
 

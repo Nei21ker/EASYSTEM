@@ -163,6 +163,16 @@ export interface UnidadProducto {
 
 export type EstadoTraslado = 'EN_TRANSITO' | 'RECIBIDO' | 'ANULADO';
 
+/** Línea de un traslado de un producto que se controla por cantidad (sin código por pieza): cuántas se mandaron, recibieron y devolvieron. */
+export interface TrasladoCantidad {
+  producto_id: string;
+  producto_nombre: string;
+  cantidad: number;
+  recibida: number;
+  /** Las que no llegaron y volvieron al local de origen al cerrar el traslado */
+  devuelta: number;
+}
+
 export interface TrasladoUnidad {
   codigo: string;
   producto_id: string;
@@ -192,6 +202,8 @@ export interface Traslado {
   cerrado_en: string | null;
   notas: string | null;
   unidades: TrasladoUnidad[];
+  /** Productos por cantidad (migración 0027); ausente en datos anteriores */
+  cantidades?: TrasladoCantidad[];
 }
 
 /** Producto "enriquecido" con sus modelos compatibles, tal como lo consume el Dashboard */

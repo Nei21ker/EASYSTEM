@@ -323,6 +323,19 @@ export const traslados = sqliteTable('traslados', {
   notas: text('notas'),
 });
 
+export const traslado_cantidades = sqliteTable(
+  'traslado_cantidades',
+  {
+    traslado_id: text('traslado_id').notNull(),
+    producto_id: text('producto_id').notNull(),
+    producto_nombre: text('producto_nombre').notNull(),
+    cantidad: integer('cantidad').notNull(),
+    recibida: integer('recibida').notNull().default(0),
+    devuelta: integer('devuelta').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.traslado_id, t.producto_id] })]
+);
+
 export const traslado_unidades = sqliteTable(
   'traslado_unidades',
   {

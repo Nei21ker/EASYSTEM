@@ -74,6 +74,8 @@ export function htmlHojaDespacho(t: Traslado, opciones: { impresoPor?: string; a
     ...(t.notas ? ([['Nota', t.notas]] as [string, string][]) : []),
   ];
   const resumen = resumenPorProducto(t.unidades);
+  const cantidades = t.cantidades ?? [];
+  const totalCantidad = cantidades.reduce((s, c) => s + c.cantidad, 0);
   const casilla = (u: TrasladoUnidad) => (u.recibida_en ? '☑ Recibida' : u.devuelta_en ? 'Volvió al origen' : '☐');
   const detalle = [...t.unidades].sort((a, b) => a.producto_nombre.localeCompare(b.producto_nombre, 'es') || a.codigo.localeCompare(b.codigo));
 
@@ -83,19 +85,34 @@ export function htmlHojaDespacho(t: Traslado, opciones: { impresoPor?: string; a
   <div class="hi-sello">${sello}</div>
 </div>
 <table class="hi-meta"><tbody>${meta.map(([k, v]) => `<tr><td><strong>${escapar(k)}:</strong></td><td>${escapar(v)}</td></tr>`).join('')}</tbody></table>
-<h2>Resumen</h2>
+${
+    t.unidades.length > 0
+      ? `<h2>Resumen</h2>
 <table>
   <thead><tr><th>Producto</th><th class="hi-der">Cantidad</th></tr></thead>
   <tbody>${resumen.map((r) => `<tr><td>${escapar(r.nombre)}</td><td class="hi-der">${r.cantidad}</td></tr>`).join('')}</tbody>
 </table>
-<p><strong>Total de piezas:</strong> ${t.unidades.length}</p>
+<p><strong>${cantidades.length > 0 ? 'Total de piezas con etiqueta' : 'Total de piezas'}:</strong> ${t.unidades.length}</p>
 <h2>Detalle por pieza (marca cada una al recibirla)</h2>
 <table>
   <thead><tr><th class="hi-centro">N.º</th><th>Producto</th><th>Código de la pieza</th><th class="hi-centro">Llegó</th></tr></thead>
   <tbody>${detalle
     .map((u, i) => `<tr><td class="hi-centro">${i + 1}</td><td>${escapar(u.producto_nombre)}</td><td class="hi-cod">${escapar(u.codigo)}</td><td class="hi-centro">${casilla(u)}</td></tr>`)
     .join('')}</tbody>
+</table>`
+      : ''
+  }${
+    cantidades.length > 0
+      ? `<h2>Productos por cantidad (cuenta y anota cuántas llegaron)</h2>
+<table>
+  <thead><tr><th>Producto</th><th class="hi-der">Enviadas</th><th class="hi-der">Llegaron</th></tr></thead>
+  <tbody>${cantidades
+    .map((c) => `<tr><td>${escapar(c.producto_nombre)}</td><td class="hi-der">${c.cantidad}</td><td class="hi-der">${c.recibida > 0 || c.devuelta > 0 ? `${c.recibida}${c.devuelta ? ` (volvieron ${c.devuelta})` : ''}` : '______'}</td></tr>`)
+    .join('')}</tbody>
 </table>
+<p><strong>Total de piezas por cantidad:</strong> ${totalCantidad}</p>`
+      : ''
+  }
 <div class="hi-firmas">
   <div class="hi-firma">Entrega (nombre y firma)</div>
   <div class="hi-firma">Transporta (nombre y firma)</div>

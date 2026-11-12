@@ -16,9 +16,11 @@ import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { ahoraISO, nuevoId, sentenciaContador } from '../util';
 import { marcas, tramos } from './movimientos';
-import { MOTIVOS_BAJA, type EstadoTraslado, type MotivoBaja, type Traslado, type TrasladoUnidad } from '../../types/database.types';
+import { MOTIVOS_BAJA, type EstadoTraslado, type MotivoBaja, type Traslado, type TrasladoCantidad, type TrasladoUnidad } from '../../types/database.types';
 
 const MAX_UNIDADES = 500;
+const MAX_LINEAS_CANTIDAD = 50;
+const MAX_CANTIDAD_LINEA = 5000;
 const MAX_NOTA = 300;
 const MSG_NO_DISPONIBLE =
   'Alguna de las piezas ya no está disponible en este local (se vendió, ya va en un traslado, está dada de baja o es de otro local).';
@@ -35,6 +37,33 @@ function validarCodigos(codigos: string[]): void {
   if (codigos.length === 0) throw new ErrorApi(400, 'Escanea al menos una pieza.', 'datos_invalidos');
   if (codigos.length > MAX_UNIDADES) throw new ErrorApi(400, `Son demasiadas piezas para una sola operación (máximo ${MAX_UNIDADES}).`, 'lote_grande');
   if (new Set(codigos).size !== codigos.length) throw new ErrorApi(400, 'Hay piezas repetidas en la lista.', 'datos_invalidos');
+}
+
+export interface LineaCantidad {
+  producto_id: string;
+  cantidad: number;
+}
+
+/** Líneas «producto + cuántas» de un traslado de productos por cantidad: enteros de 1 a 5000, sin productos repetidos. */
+function validarCantidades(lineas: LineaCantidad[]): void {
+  if (lineas.length > MAX_LINEAS_CANTIDAD) throw new ErrorApi(400, `Son demasiados productos por cantidad para un solo traslado (máximo ${MAX_LINEAS_CANTIDAD}).`, 'lote_grande');
+  if (new Set(lineas.map((l) => l.producto_id)).size !== lineas.length) throw new ErrorApi(400, 'Hay productos repetidos en la lista por cantidad.', 'datos_invalidos');
+  for (const l of lineas) {
+    if (!Number.isInteger(l.cantidad) || l.cantidad < 1 || l.cantidad > MAX_CANTIDAD_LINEA) {
+      throw new ErrorApi(400, `La cantidad de cada producto debe ser un entero de 1 a ${MAX_CANTIDAD_LINEA}.`, 'datos_invalidos');
+    }
+  }
+}
+
+/** Cuántas unidades (con código) y cuántas piezas (por cantidad) de un traslado siguen sin recibir ni devolver. */
+function pendientesCantidad(c: TrasladoCantidad): number {
+  return c.cantidad - c.recibida - c.devuelta;
+}
+
+function sentenciaMovimientoCantidad(db: D1Database, ahora: string, tipo: string, productoId: string, localId: string, motivo: string, cantidad: number): D1PreparedStatement {
+  return db
+    .prepare('INSERT INTO movimientos_inventario (id, producto_id, tipo, cantidad, fecha, motivo, local_id, unidad_codigos) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)')
+    .bind(nuevoId(), productoId, tipo, cantidad, ahora, motivo, localId);
 }
 
 function limpiarNota(nota: string | undefined | null): string | null {
@@ -102,7 +131,7 @@ const folioTexto = (folio: number) => `#${String(folio).padStart(4, '0')}`;
 const SQL_FOLIO = "'Traslado #' || printf('%04d', (SELECT valor FROM contadores WHERE nombre = 'traslados'))";
 
 // --- Lectura ----------------------------------------------------------------------------------------------------------
-interface FilaTraslado extends Omit<Traslado, 'unidades'> {
+interface FilaTraslado extends Omit<Traslado, 'unidades' | 'cantidades'> {
   origen_nombre: string | null;
   destino_nombre: string | null;
 }
@@ -128,7 +157,15 @@ async function leerTraslados(env: Entorno, condicion: string, valores: unknown[]
       .all<TrasladoUnidad & { traslado_id: string }>();
     for (const { traslado_id, ...resto } of u.results) (unidades.get(traslado_id) ?? unidades.set(traslado_id, []).get(traslado_id)!).push(resto);
   }
-  return filas.results.map((f) => ({ ...f, unidades: unidades.get(f.id) ?? [] }));
+  const cantidades = new Map<string, TrasladoCantidad[]>();
+  for (const tramo of tramos(filas.results.map((f) => f.id))) {
+    const c = await env.DB
+      .prepare(`SELECT traslado_id, producto_id, producto_nombre, cantidad, recibida, devuelta FROM traslado_cantidades WHERE traslado_id IN (${marcas(tramo.length)}) ORDER BY rowid`)
+      .bind(...tramo)
+      .all<TrasladoCantidad & { traslado_id: string }>();
+    for (const { traslado_id, ...resto } of c.results) (cantidades.get(traslado_id) ?? cantidades.set(traslado_id, []).get(traslado_id)!).push(resto);
+  }
+  return filas.results.map((f) => ({ ...f, unidades: unidades.get(f.id) ?? [], cantidades: cantidades.get(f.id) ?? [] }));
 }
 
 /** Locales a los que se puede mandar mercancía: todos los que tienen la suscripción vigente (un encargado solo ve el suyo en el resto de la app). */
@@ -165,13 +202,17 @@ export interface DatosDespacho {
   origenLocalId: string;
   destinoLocalId: string;
   codigos: string[];
+  /** Productos por cantidad (sin código por pieza): producto + cuántas */
+  cantidades?: LineaCantidad[];
   notas?: string;
 }
 
 /** El local de origen despacha: las piezas quedan EN_TRANSITO y su stock sale del origen. */
 export async function despacharTraslado(env: Entorno, sesion: Sesion, datos: DatosDespacho): Promise<Traslado> {
   await exigirGerencia(env, sesion);
-  validarCodigos(datos.codigos);
+  const cantidades = datos.cantidades ?? [];
+  if (datos.codigos.length > 0 || cantidades.length === 0) validarCodigos(datos.codigos);
+  validarCantidades(cantidades);
   const notas = limpiarNota(datos.notas);
   if (datos.origenLocalId === datos.destinoLocalId) throw new ErrorApi(400, 'El local de destino debe ser distinto al de origen.', 'datos_invalidos');
   if (!(await localAccesible(env, sesion, datos.origenLocalId))) throw sinPermiso('Solo puedes despachar mercancía desde tu propio local.');
@@ -182,6 +223,21 @@ export async function despacharTraslado(env: Entorno, sesion: Sesion, datos: Dat
   for (const codigo of datos.codigos) {
     const u = unidades.get(codigo);
     if (!u || u.estado !== 'DISPONIBLE' || u.local_id !== datos.origenLocalId) throw new ErrorApi(409, MSG_NO_DISPONIBLE, 'unidad_no_disponible');
+  }
+  // Productos por cantidad: deben existir, controlarse por cantidad y alcanzar en el local de origen (con un mensaje claro por producto)
+  const productosCantidad = new Map<string, { nombre: string; stock: number }>();
+  for (const l of cantidades) {
+    const p = await env.DB
+      .prepare(
+        `SELECT p.nombre, p.control_por_cantidad AS porCantidad, COALESCE((SELECT stock_actual FROM inventario_local WHERE local_id = ? AND producto_id = p.id), 0) AS stock
+         FROM productos p WHERE p.id = ?`
+      )
+      .bind(datos.origenLocalId, l.producto_id)
+      .first<{ nombre: string; porCantidad: number; stock: number }>();
+    if (!p) throw new ErrorApi(404, 'Uno de los productos por cantidad ya no existe.', 'no_existe');
+    if (p.porCantidad !== 1) throw new ErrorApi(400, `«${p.nombre}» se controla con etiqueta por pieza: escanea sus piezas en vez de pasar la cantidad.`, 'no_es_por_cantidad');
+    if (p.stock < l.cantidad) throw new ErrorApi(409, `No alcanza el stock de «${p.nombre}» en este local (hay ${p.stock}, pides ${l.cantidad}).`, 'stock_insuficiente');
+    productosCantidad.set(l.producto_id, { nombre: p.nombre, stock: p.stock });
   }
 
   const id = nuevoId();
@@ -211,6 +267,18 @@ export async function despacharTraslado(env: Entorno, sesion: Sesion, datos: Dat
         .bind(nuevoId(), g.producto_id, g.codigos.length, ahora, destino.nombre, g.local_id, JSON.stringify(g.codigos))
     );
   }
+  for (const l of cantidades) {
+    const p = productosCantidad.get(l.producto_id)!;
+    sentencias.push(
+      env.DB.prepare('INSERT INTO traslado_cantidades (traslado_id, producto_id, producto_nombre, cantidad) VALUES (?, ?, ?, ?)').bind(id, l.producto_id, p.nombre, l.cantidad),
+      env.DB
+        .prepare(
+          `INSERT INTO movimientos_inventario (id, producto_id, tipo, cantidad, fecha, motivo, local_id, unidad_codigos)
+           VALUES (?, ?, 'TRASLADO_SALIDA', ?, ?, ${SQL_FOLIO} || ' → ' || ?, ?, NULL)`
+        )
+        .bind(nuevoId(), l.producto_id, l.cantidad, ahora, destino.nombre, datos.origenLocalId)
+    );
+  }
   // Sin filtro por estado a propósito: si otra operación ya se llevó la pieza, el trigger aborta TODO el lote
   for (const codigo of datos.codigos) sentencias.push(env.DB.prepare("UPDATE unidades_producto SET estado = 'EN_TRANSITO' WHERE codigo = ?").bind(codigo));
   sentencias.push(
@@ -224,9 +292,10 @@ export async function despacharTraslado(env: Entorno, sesion: Sesion, datos: Dat
 
 // --- Recibir ----------------------------------------------------------------------------------------------------------
 /** El local de destino recibe (todas o parte de) las piezas escaneadas: pasan a DISPONIBLES en el destino. */
-export async function recibirTraslado(env: Entorno, sesion: Sesion, trasladoId: string, codigos: string[]): Promise<Traslado> {
+export async function recibirTraslado(env: Entorno, sesion: Sesion, trasladoId: string, codigos: string[], cantidades: LineaCantidad[] = []): Promise<Traslado> {
   await exigirGerencia(env, sesion);
-  validarCodigos(codigos);
+  if (codigos.length > 0 || cantidades.length === 0) validarCodigos(codigos);
+  validarCantidades(cantidades);
   const t = await cargarTraslado(env, trasladoId);
   if (!(await localAccesible(env, sesion, t.destino_local_id))) throw sinPermiso('Solo el local de destino puede recibir este traslado.');
   if (t.estado !== 'EN_TRANSITO') throw new ErrorApi(409, `El traslado ${folioTexto(t.folio)} ya está cerrado.`, 'traslado_cerrado');
@@ -239,9 +308,27 @@ export async function recibirTraslado(env: Entorno, sesion: Sesion, trasladoId: 
     if (u.devuelta_en) throw new ErrorApi(409, `La pieza ${codigo} ya se devolvió al origen.`, 'traslado_cerrado');
   }
 
+  const lineasTraslado = new Map((t.cantidades ?? []).map((c) => [c.producto_id, c]));
+  for (const l of cantidades) {
+    const c = lineasTraslado.get(l.producto_id);
+    if (!c) throw new ErrorApi(400, 'Uno de los productos no es de este traslado.', 'datos_invalidos');
+    if (l.cantidad > pendientesCantidad(c)) {
+      throw new ErrorApi(409, `De «${c.producto_nombre}» solo quedan ${pendientesCantidad(c)} por recibir (marcaste ${l.cantidad}).`, 'ya_recibida');
+    }
+  }
+
   const ahora = ahoraISO();
-  const faltan = t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en).length - codigos.length;
+  const recibidasCantidad = cantidades.reduce((s, l) => s + l.cantidad, 0);
+  const faltan =
+    t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en).length - codigos.length +
+    (t.cantidades ?? []).reduce((s, c) => s + pendientesCantidad(c), 0) - recibidasCantidad;
   const sentencias: D1PreparedStatement[] = [];
+  for (const l of cantidades) {
+    sentencias.push(
+      env.DB.prepare('UPDATE traslado_cantidades SET recibida = recibida + ? WHERE traslado_id = ? AND producto_id = ?').bind(l.cantidad, t.id, l.producto_id),
+      sentenciaMovimientoCantidad(env.DB, ahora, 'TRASLADO_ENTRADA', l.producto_id, t.destino_local_id, `Traslado ${folioTexto(t.folio)} desde ${t.origen_nombre ?? 'otro local'}`, l.cantidad)
+    );
+  }
   for (const codigo of codigos) {
     sentencias.push(
       env.DB.prepare("UPDATE unidades_producto SET estado = 'DISPONIBLE', local_id = ? WHERE codigo = ?").bind(t.destino_local_id, codigo),
@@ -279,9 +366,17 @@ export async function cerrarTraslado(env: Entorno, sesion: Sesion, trasladoId: s
   if (t.estado !== 'EN_TRANSITO') throw new ErrorApi(409, `El traslado ${folioTexto(t.folio)} ya está cerrado.`, 'traslado_cerrado');
 
   const pendientes = t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en);
-  const recibidas = t.unidades.filter((u) => u.recibida_en).length;
+  const recibidas = t.unidades.filter((u) => u.recibida_en).length + (t.cantidades ?? []).reduce((s, c) => s + c.recibida, 0);
   const ahora = ahoraISO();
   const sentencias: D1PreparedStatement[] = [];
+  for (const c of t.cantidades ?? []) {
+    const falta = pendientesCantidad(c);
+    if (falta <= 0) continue;
+    sentencias.push(
+      env.DB.prepare('UPDATE traslado_cantidades SET devuelta = devuelta + ? WHERE traslado_id = ? AND producto_id = ?').bind(falta, t.id, c.producto_id),
+      sentenciaMovimientoCantidad(env.DB, ahora, 'TRASLADO_ENTRADA', c.producto_id, t.origen_local_id, `Traslado ${folioTexto(t.folio)}: no llegó, se devolvió al origen`, falta)
+    );
+  }
   for (const u of pendientes) {
     sentencias.push(
       env.DB.prepare("UPDATE unidades_producto SET estado = 'DISPONIBLE' WHERE codigo = ?").bind(u.codigo),

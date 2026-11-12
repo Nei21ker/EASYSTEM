@@ -246,9 +246,10 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
     const hay = await env.DB
       .prepare(
         `SELECT (SELECT COALESCE(SUM(stock_actual), 0) FROM inventario_local WHERE producto_id = ?) AS stock,
-                (SELECT count(*) FROM unidades_producto WHERE producto_id = ? AND estado IN ('DISPONIBLE', 'EN_TRANSITO')) AS piezas`
+                (SELECT count(*) FROM unidades_producto WHERE producto_id = ? AND estado IN ('DISPONIBLE', 'EN_TRANSITO')) +
+                (SELECT COALESCE(SUM(cantidad - recibida - devuelta), 0) FROM traslado_cantidades WHERE producto_id = ?) AS piezas`
       )
-      .bind(id, id)
+      .bind(id, id, id)
       .first<{ stock: number; piezas: number }>();
     if (hay && (hay.stock > 0 || hay.piezas > 0)) {
       throw new ErrorApi(409, 'Para cambiar entre "por cantidad" y "con etiqueta por pieza" el producto debe tener el stock en 0 en todos los locales (y nada en tránsito). Retíralo con una baja o crea otro producto.', 'control_con_stock');

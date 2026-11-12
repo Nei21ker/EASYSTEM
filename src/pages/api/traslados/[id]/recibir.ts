@@ -6,6 +6,9 @@ export const prerender = false;
 
 /** El local de destino recibe las piezas escaneadas (todas o parte): pasan a DISPONIBLES en su stock. */
 export const POST = conSesion(async ({ env, sesion, request, params }) => {
-  const { codigos } = await leerJson(request, z.object({ codigos: z.array(z.string()).max(500) }));
-  return recibirTraslado(env, sesion, decodeURIComponent(params.id as string), codigos);
+  const { codigos, cantidades } = await leerJson(
+    request,
+    z.object({ codigos: z.array(z.string()).max(500), cantidades: z.array(z.object({ producto_id: z.string(), cantidad: z.number() })).max(50).optional() })
+  );
+  return recibirTraslado(env, sesion, decodeURIComponent(params.id as string), codigos, cantidades ?? []);
 });

@@ -104,6 +104,19 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
         Todavía no hay piezas. Escanea la etiqueta de cada pieza que sale de este local.
       </p>
       <ul id="ds-lista" class="mt-3 divide-y divide-slate-100 dark:divide-slate-800"></ul>
+      <div id="ds-cant-bloque" class="mt-5 space-y-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+        <div>
+          <h3 class="text-sm font-semibold text-slate-900 dark:text-white">Productos por cantidad</h3>
+          <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Los que no llevan etiqueta por pieza (vidrios sencillos): elige el producto y cuántos salen, o escanea la etiqueta de la pila.</p>
+        </div>
+        <div class="flex gap-2">
+          <select id="ds-cant-producto" class={`${claseCampo} min-w-0 flex-1`}></select>
+          <input id="ds-cant-n" type="text" inputmode="numeric" value="1" aria-label="Cuántas" class={`${claseCampo} w-16 text-center`} />
+          <button id="ds-cant-agregar" type="button" class="shrink-0 rounded-lg border border-brand-600 px-3 text-sm font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-400 dark:text-brand-300 dark:hover:bg-slate-800">Agregar</button>
+        </div>
+        <p id="ds-cant-sin" class="hidden text-xs text-slate-500 dark:text-slate-400">Este local no tiene productos por cantidad con stock.</p>
+        <ul id="ds-cant-lista" class="divide-y divide-slate-100 dark:divide-slate-800"></ul>
+      </div>
     </section>
 
     <!-- Datos de la operación -->
@@ -220,6 +233,10 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
         <p id="ds-recibir-aviso" role="status" class="mt-2 hidden rounded-lg px-3 py-2 text-xs"></p>
       </div>
       <div class="overflow-y-auto px-5 py-3 text-sm">
+        <div id="ds-recibir-cant-bloque" class="mb-3 hidden">
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Productos por cantidad: anota cuántas llegaron de cada uno</p>
+          <ul id="ds-recibir-cant" class="divide-y divide-slate-100 dark:divide-slate-800"></ul>
+        </div>
         <ul id="ds-recibir-lista" class="divide-y divide-slate-100 dark:divide-slate-800"></ul>
       </div>
       <div class="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
@@ -244,7 +261,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   import { htmlHojaDespacho, imprimirHoja } from '../../utils/hojasImpresas';
   import { esPorCantidad } from '../../utils/controlPorCantidad';
   import { DIAS_TRANSITO_ATRASADO, diasDesde, resumirEnvios } from '../../utils/envios';
-  import { MOTIVOS_BAJA, MOTIVOS_MERMA, type Local, type Merma, type MotivoBaja, type MotivoMerma, type Traslado, type UnidadProducto } from '../../types/database.types';
+  import { MOTIVOS_BAJA, MOTIVOS_MERMA, type Local, type Merma, type MotivoBaja, type MotivoMerma, type Producto, type Traslado, type UnidadProducto } from '../../types/database.types';
 
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -261,6 +278,18 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     producto_id: string;
     nombre: string;
   }
+
+  /** Una línea del traslado de un producto por cantidad (sin código por pieza) */
+  interface LineaCant {
+    producto_id: string;
+    nombre: string;
+    cantidad: number;
+  }
+  let lineasCant: LineaCant[] = [];
+  /** Productos por cantidad del local de origen (con su stock en ese local) */
+  let productosCant: Producto[] = [];
+  /** Lo que se marcó como llegado en la recepción, por producto por cantidad */
+  let recibidasCant = new Map<string, number>();
 
   let modo: 'traslado' | 'baja' | 'cantidad' = 'traslado';
   /** Local de las bajas por cantidad (el del encargado; administrador y gerente lo eligen) */
@@ -312,6 +341,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     $('ds-bloque-traslado').classList.toggle('hidden', !traslado);
     $('ds-bloque-baja').classList.toggle('hidden', modo !== 'baja');
     $('ds-grid').classList.toggle('hidden', modo === 'cantidad');
+    $('ds-cant-bloque').classList.toggle('hidden', !traslado);
     $('ds-cantidad').classList.toggle('hidden', modo !== 'cantidad');
     if (modo === 'cantidad') void cargarCantidad();
     refrescarBotones();
@@ -319,15 +349,17 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
   function refrescarBotones() {
     const hay = piezas.length > 0 && !!origenId && !ocupado;
-    ($('ds-despachar') as HTMLButtonElement).disabled = !hay || !($('ds-destino') as HTMLSelectElement).value;
+    const total = piezas.length + lineasCant.reduce((s, l) => s + l.cantidad, 0);
+    const hayTraslado = total > 0 && !!origenId && !ocupado;
+    ($('ds-despachar') as HTMLButtonElement).disabled = !hayTraslado || !($('ds-destino') as HTMLSelectElement).value;
     ($('ds-baja') as HTMLButtonElement).disabled = !hay;
-    $('ds-despachar').textContent = piezas.length ? `Despachar ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'}` : 'Despachar';
+    $('ds-despachar').textContent = total ? `Despachar ${total} ${total === 1 ? 'pieza' : 'piezas'}` : 'Despachar';
     $('ds-baja').textContent = piezas.length ? `Dar de baja ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'}` : 'Dar de baja';
-    ($('ds-vaciar') as HTMLButtonElement).disabled = piezas.length === 0;
+    ($('ds-vaciar') as HTMLButtonElement).disabled = piezas.length === 0 && lineasCant.length === 0;
   }
 
   function pintarPiezas() {
-    $('ds-vacio').classList.toggle('hidden', piezas.length > 0);
+    $('ds-vacio').classList.toggle('hidden', piezas.length > 0 || lineasCant.length > 0);
     $('ds-lista').innerHTML = piezas
       .map(
         (p) => `
@@ -357,7 +389,18 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
       return;
     }
     if (!esCodigoUnidad(codigo)) {
-      avisar(`El código ${codigo} no es el de una pieza. Escanea la etiqueta pegada en la pieza (el código único de cada unidad).`, 'error');
+      // La etiqueta de la pila de un producto por cantidad (su código de barras o su referencia)
+      const q = codigo.toUpperCase();
+      const deCantidad = productosCant.find((p) => p.codigo_barras === codigo || (p.referencia ?? '').toUpperCase() === q);
+      if (deCantidad) {
+        if (modo !== 'traslado') {
+          avisar(`«${deCantidad.nombre}» se controla por cantidad (no tiene etiqueta por pieza): para botar piezas usa «Bajas por cantidad».`, 'aviso');
+          return;
+        }
+        agregarLineaCant(deCantidad, 1);
+        return;
+      }
+      avisar(`El código ${codigo} no es el de una pieza ni el de un producto por cantidad de este local. Escanea la etiqueta pegada en la pieza (el código único de cada unidad).`, 'error');
       return;
     }
     if (piezas.some((p) => p.codigo === codigo)) {
@@ -390,12 +433,68 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
   function cambiarOrigen(id: string | null) {
     origenId = id;
-    const hayLista = piezas.length > 0;
+    const hayLista = piezas.length > 0 || lineasCant.length > 0;
     piezas = [];
+    lineasCant = [];
     pintarPiezas();
+    pintarCantidades();
+    void cargarProductosCant();
     $('ds-origen-texto').textContent = id ? `Sale de: ${nombresLocal.get(id) ?? 'este local'}` : '';
     if (hayLista) avisar('Cambiaste el local de origen: la lista de piezas se vació.', 'aviso');
     void llenarDestinos();
+  }
+
+  // --- Productos por cantidad en el traslado -----------------------------------------------------------------------------
+  const stockEnOrigen = (id: string) => productosCant.find((p) => p.id === id)?.stock_actual ?? 0;
+
+  function pintarCantidades() {
+    $('ds-cant-lista').innerHTML = lineasCant
+      .map((l, i) => {
+        const falta = l.cantidad > stockEnOrigen(l.producto_id);
+        return `<li data-i="${i}" class="flex items-center gap-2 py-2">
+          <div class="min-w-0 flex-1">
+            <p class="break-words text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(l.nombre)}</p>
+            <p class="text-xs ${falta ? 'font-semibold text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}">en el local hay ${stockEnOrigen(l.producto_id)}</p>
+          </div>
+          <input data-cant type="text" inputmode="numeric" value="${l.cantidad}" aria-label="Cantidad" class="w-16 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <button type="button" data-quitar-cant aria-label="Quitar" class="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-slate-800">✕</button>
+        </li>`;
+      })
+      .join('');
+    $('ds-vacio').classList.toggle('hidden', piezas.length > 0 || lineasCant.length > 0);
+    refrescarBotones();
+  }
+
+  async function cargarProductosCant() {
+    if (!origenId) return;
+    const select = $<HTMLSelectElement>('ds-cant-producto');
+    const anterior = select.value;
+    try {
+      productosCant = (await inventoryService.listarProductos({ localId: origenId })).filter((p) => esPorCantidad(p));
+    } catch {
+      productosCant = [];
+    }
+    const conStock = productosCant.filter((p) => p.stock_actual > 0).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    select.innerHTML = conStock.map((p) => `<option value="${escaparHtml(p.id)}">${escaparHtml(p.nombre)} — ${p.stock_actual} en stock</option>`).join('');
+    if (anterior && conStock.some((p) => p.id === anterior)) select.value = anterior;
+    $('ds-cant-sin').classList.toggle('hidden', conStock.length > 0);
+    select.classList.toggle('hidden', conStock.length === 0);
+    $('ds-cant-agregar').classList.toggle('hidden', conStock.length === 0);
+    $('ds-cant-n').classList.toggle('hidden', conStock.length === 0);
+    pintarCantidades();
+  }
+
+  function agregarLineaCant(p: Producto, n: number) {
+    const existente = lineasCant.find((l) => l.producto_id === p.id);
+    const nueva = (existente?.cantidad ?? 0) + n;
+    if (p.stock_actual < nueva) {
+      avisar(`No alcanza el stock de «${p.nombre}» en este local (hay ${p.stock_actual}).`, 'error');
+      return;
+    }
+    if (existente) existente.cantidad = nueva;
+    else lineasCant.push({ producto_id: p.id, nombre: p.nombre, cantidad: n });
+    limpiarAviso();
+    pintarCantidades();
   }
 
   async function llenarDestinos() {
@@ -424,20 +523,28 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   // --- Despachar y dar de baja ----------------------------------------------------------------------------------------
   async function despachar() {
     const destinoId = $<HTMLSelectElement>('ds-destino').value;
-    if (!origenId || !destinoId || piezas.length === 0 || ocupado) return;
+    if (!origenId || !destinoId || (piezas.length === 0 && lineasCant.length === 0) || ocupado) return;
     const destino = nombresLocal.get(destinoId) ?? 'el otro local';
-    if (!confirm(`¿Despachar ${piezas.length} ${piezas.length === 1 ? 'pieza' : 'piezas'} a ${destino}?\n\nQuedarán en tránsito (fuera del stock de este local) hasta que ${destino} las reciba.`)) return;
+    const total = piezas.length + lineasCant.reduce((s, l) => s + l.cantidad, 0);
+    if (!confirm(`¿Despachar ${total} ${total === 1 ? 'pieza' : 'piezas'} a ${destino}?\n\nQuedarán en tránsito (fuera del stock de este local) hasta que ${destino} las reciba.`)) return;
     ocupado = true;
     refrescarBotones();
     try {
-      const t = await inventoryService.despacharTraslado({ origenLocalId: origenId, destinoLocalId: destinoId, codigos: piezas.map((p) => p.codigo), notas: $<HTMLTextAreaElement>('ds-notas').value });
-      avisar(`Traslado #${String(t.folio).padStart(4, '0')} despachado: ${t.unidades.length} ${t.unidades.length === 1 ? 'pieza' : 'piezas'} en camino a ${destino}. Pídeles que las escaneen al recibirlas.`, 'ok');
+      const t = await inventoryService.despacharTraslado({
+        origenLocalId: origenId,
+        destinoLocalId: destinoId,
+        codigos: piezas.map((p) => p.codigo),
+        cantidades: lineasCant.map((l) => ({ producto_id: l.producto_id, cantidad: l.cantidad })),
+        notas: $<HTMLTextAreaElement>('ds-notas').value,
+      });
+      avisar(`Traslado #${String(t.folio).padStart(4, '0')} despachado: ${total} ${total === 1 ? 'pieza' : 'piezas'} en camino a ${destino}. Pídeles que las escaneen (y cuenten los productos por cantidad) al recibirlas.`, 'ok');
       ultimoDespacho = t;
       $('ds-imprimir-ultimo').classList.remove('hidden');
       piezas = [];
+      lineasCant = [];
       $<HTMLTextAreaElement>('ds-notas').value = '';
       pintarPiezas();
-      await cargarTraslados();
+      await Promise.all([cargarTraslados(), cargarProductosCant()]);
     } catch (err) {
       avisar(mensaje(err), 'error');
     } finally {
@@ -473,6 +580,17 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   const puedeRecibir = (t: Traslado) => esGlobalUsuario || t.destino_local_id === miLocalId;
   const puedeCerrar = (t: Traslado) => esGlobalUsuario || t.origen_local_id === miLocalId || t.destino_local_id === miLocalId;
   const pendientesDe = (t: Traslado) => t.unidades.filter((u) => !u.recibida_en && !u.devuelta_en);
+  const pendientesCantDe = (t: Traslado) => (t.cantidades ?? []).filter((c) => c.cantidad - c.recibida - c.devuelta > 0);
+  /** Piezas con código y por cantidad juntas: cuántas se mandaron, ya llegaron, volvieron y siguen sin recibir */
+  function totalesDe(t: Traslado) {
+    const cant = t.cantidades ?? [];
+    return {
+      total: t.unidades.length + cant.reduce((s, c) => s + c.cantidad, 0),
+      recibidas: t.unidades.filter((u) => u.recibida_en).length + cant.reduce((s, c) => s + c.recibida, 0),
+      devueltas: t.unidades.filter((u) => u.devuelta_en).length + cant.reduce((s, c) => s + c.devuelta, 0),
+      pendientes: pendientesDe(t).length + cant.reduce((s, c) => s + Math.max(0, c.cantidad - c.recibida - c.devuelta), 0),
+    };
+  }
 
   function pintarTraslados() {
     const lista = traslados.filter((t) => (filtro === 'transito' ? t.estado === 'EN_TRANSITO' : t.estado !== 'EN_TRANSITO'));
@@ -481,9 +599,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     estado.textContent = filtro === 'transito' ? 'No hay traslados en tránsito.' : 'Todavía no hay traslados cerrados.';
     $('ds-traslados').innerHTML = lista
       .map((t) => {
-        const recibidas = t.unidades.filter((u) => u.recibida_en).length;
-        const devueltas = t.unidades.filter((u) => u.devuelta_en).length;
-        const pendientes = pendientesDe(t).length;
+        const { total, recibidas, devueltas, pendientes } = totalesDe(t);
         const direccion = t.estado !== 'EN_TRANSITO' ? '' : t.destino_local_id === miLocalId ? 'Por recibir' : t.origen_local_id === miLocalId ? 'En camino' : '';
         const insignia =
           t.estado === 'EN_TRANSITO'
@@ -496,8 +612,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
         const atrasado = t.estado === 'EN_TRANSITO' && pendientes > 0 && dias >= DIAS_TRANSITO_ATRASADO;
         const resumen =
           t.estado === 'EN_TRANSITO'
-            ? `Recibidas ${recibidas} de ${t.unidades.length}${pendientes ? ` · faltan ${pendientes}` : ''}`
-            : `Recibidas ${recibidas} de ${t.unidades.length}${devueltas ? ` · ${devueltas} ${devueltas === 1 ? 'volvió' : 'volvieron'} al origen` : ''}`;
+            ? `Recibidas ${recibidas} de ${total}${pendientes ? ` · faltan ${pendientes}` : ''}`
+            : `Recibidas ${recibidas} de ${total}${devueltas ? ` · ${devueltas} ${devueltas === 1 ? 'volvió' : 'volvieron'} al origen` : ''}`;
         const botonImprimir = `<button type="button" data-imprimir="${escaparHtml(t.id)}" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Imprimir hoja</button>`;
         const acciones =
           botonImprimir +
@@ -505,7 +621,13 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
             ? `${puedeRecibir(t) && pendientes ? `<button type="button" data-recibir="${escaparHtml(t.id)}" class="bg-marca rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm hover:brightness-110">Recibir piezas</button>` : ''}
                ${puedeCerrar(t) ? `<button type="button" data-cerrar="${escaparHtml(t.id)}" class="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar traslado</button>` : ''}`
             : '');
-        const piezasHtml = t.unidades
+        const cantidadesHtml = (t.cantidades ?? [])
+          .map(
+            (c) =>
+              `<li class="flex items-center justify-between gap-3 py-1.5 text-xs"><span class="min-w-0 truncate">${c.cantidad} × ${escaparHtml(c.producto_nombre)} <span class="text-slate-500">(por cantidad)</span></span><span class="shrink-0 ${c.recibida >= c.cantidad ? 'text-emerald-600' : 'text-sky-600'}">${c.recibida} recibidas${c.devuelta ? ` · ${c.devuelta} volvieron` : ''}</span></li>`
+          )
+          .join('');
+        const piezasHtml = cantidadesHtml + t.unidades
           .map((u) => {
             const marca = u.recibida_en ? '<span class="text-emerald-600">✓ recibida</span>' : u.devuelta_en ? '<span class="text-slate-500">volvió al origen</span>' : '<span class="text-sky-600">en camino</span>';
             return `<li class="flex items-center justify-between gap-3 py-1.5 text-xs"><span class="min-w-0 truncate">${escaparHtml(u.producto_nombre)} <span class="font-mono text-slate-500">${escaparHtml(u.codigo)}</span></span>${marca}</li>`;
@@ -584,7 +706,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   async function cerrar(id: string) {
     const t = traslados.find((x) => x.id === id);
     if (!t || ocupado) return;
-    const pendientes = pendientesDe(t).length;
+    const pendientes = totalesDe(t).pendientes;
     const texto = pendientes
       ? `¿Cerrar el traslado ${folioTexto(t.folio)}?\n\n${pendientes} ${pendientes === 1 ? 'pieza no llegó y volverá' : 'piezas no llegaron y volverán'} al stock de ${t.origen_nombre ?? 'el local de origen'}.`
       : `¿Cerrar el traslado ${folioTexto(t.folio)}?`;
@@ -593,7 +715,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     try {
       await inventoryService.cerrarTraslado(id);
       avisar(`Traslado ${folioTexto(t.folio)} cerrado.${pendientes ? ` ${pendientes === 1 ? 'La pieza que no llegó volvió' : `Las ${pendientes} piezas que no llegaron volvieron`} a ${t.origen_nombre ?? 'el origen'}.` : ''}`, 'ok');
-      await cargarTraslados();
+      await Promise.all([cargarTraslados(), cargarProductosCant()]);
     } catch (err) {
       avisar(mensaje(err), 'error');
     } finally {
@@ -605,6 +727,18 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   function pintarRecepcion() {
     if (!recibiendo) return;
     const pendientes = pendientesDe(recibiendo);
+    const lineas = pendientesCantDe(recibiendo);
+    $('ds-recibir-cant-bloque').classList.toggle('hidden', lineas.length === 0);
+    $('ds-recibir-cant').innerHTML = lineas
+      .map((c) => {
+        const quedan = c.cantidad - c.recibida - c.devuelta;
+        return `<li data-prod="${escaparHtml(c.producto_id)}" class="flex items-center gap-2 py-2">
+          <div class="min-w-0 flex-1"><p class="break-words text-sm font-medium">${escaparHtml(c.producto_nombre)}</p><p class="text-xs text-slate-500 dark:text-slate-400">faltan por recibir ${quedan} de ${c.cantidad}</p></div>
+          <input data-rec-cant type="text" inputmode="numeric" value="${recibidasCant.get(c.producto_id) ?? 0}" aria-label="Cuántas llegaron" class="w-16 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-center text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+        </li>`;
+      })
+      .join('');
+    const totalCant = [...recibidasCant.values()].reduce((s, n) => s + n, 0);
     $('ds-recibir-lista').innerHTML = pendientes
       .map((u) => {
         const ok = marcadas.has(u.codigo);
@@ -614,8 +748,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
         </li>`;
       })
       .join('');
-    $('ds-recibir-cuenta').textContent = `Marcadas ${marcadas.size} de ${pendientes.length}`;
-    ($('ds-recibir-confirmar') as HTMLButtonElement).disabled = marcadas.size === 0 || ocupado;
+    $('ds-recibir-cuenta').textContent = `Marcadas ${marcadas.size} de ${pendientes.length}${lineas.length ? ` · por cantidad: ${totalCant} de ${lineas.reduce((s, c) => s + c.cantidad - c.recibida - c.devuelta, 0)}` : ''}`;
+    ($('ds-recibir-confirmar') as HTMLButtonElement).disabled = (marcadas.size === 0 && totalCant === 0) || ocupado;
   }
 
   function abrirRecepcion(id: string) {
@@ -623,8 +757,9 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     if (!t) return;
     recibiendo = t;
     marcadas = new Set();
+    recibidasCant = new Map();
     $('ds-recibir-titulo').textContent = `Recibir traslado ${folioTexto(t.folio)}`;
-    $('ds-recibir-sub').textContent = `${t.origen_nombre ?? 'Origen'} → ${t.destino_nombre ?? 'Destino'}. Escanea cada pieza que llegó; lo que no escanees queda pendiente.`;
+    $('ds-recibir-sub').textContent = `${t.origen_nombre ?? 'Origen'} → ${t.destino_nombre ?? 'Destino'}. Escanea cada pieza que llegó${pendientesCantDe(t).length ? ' y anota cuántas llegaron de cada producto por cantidad' : ''}; lo que no marques queda pendiente.`;
     $('ds-recibir-aviso').classList.add('hidden');
     $<HTMLInputElement>('ds-recibir-codigo').value = '';
     pintarRecepcion();
@@ -646,23 +781,25 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   }
 
   async function confirmarRecepcion() {
-    if (!recibiendo || marcadas.size === 0 || ocupado) return;
+    const cantidades = [...recibidasCant.entries()].filter(([, n]) => n > 0).map(([producto_id, cantidad]) => ({ producto_id, cantidad }));
+    if (!recibiendo || (marcadas.size === 0 && cantidades.length === 0) || ocupado) return;
     const t = recibiendo;
     ocupado = true;
     pintarRecepcion();
     try {
-      const antes = pendientesDe(t).length;
-      const r = await inventoryService.recibirTraslado(t.id, [...marcadas]);
+      const antes = totalesDe(t).pendientes;
+      const llegaron = marcadas.size + cantidades.reduce((s, c) => s + c.cantidad, 0);
+      const r = await inventoryService.recibirTraslado(t.id, [...marcadas], cantidades);
       $<HTMLDialogElement>('ds-recibir').close();
-      const faltan = pendientesDe(r).length;
+      const faltan = totalesDe(r).pendientes;
       avisar(
         faltan === 0
-          ? `Traslado ${folioTexto(t.folio)} recibido completo: ${marcadas.size} de ${antes} piezas ya están disponibles en tu local.`
-          : `Recibiste ${marcadas.size} de ${antes} piezas del traslado ${folioTexto(t.folio)}. Faltan ${faltan}: escanéalas cuando lleguen o cierra el traslado para devolverlas al origen.`,
+          ? `Traslado ${folioTexto(t.folio)} recibido completo: ${llegaron} de ${antes} piezas ya están disponibles en tu local.`
+          : `Recibiste ${llegaron} de ${antes} piezas del traslado ${folioTexto(t.folio)}. Faltan ${faltan}: márcalas cuando lleguen o cierra el traslado para devolverlas al origen.`,
         faltan === 0 ? 'ok' : 'aviso'
       );
       recibiendo = null;
-      await cargarTraslados();
+      await Promise.all([cargarTraslados(), cargarProductosCant()]);
     } catch (err) {
       pintarAviso($('ds-recibir-aviso'), mensaje(err), 'error');
     } finally {
@@ -838,10 +975,11 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     pintarPiezas();
     pintarTab('ds-filtro-transito', true);
     pintarTab('ds-filtro-cerrados', false);
-    await Promise.all([llenarDestinos(), cargarTraslados(), cargarBajas()]);
+    await Promise.all([llenarDestinos(), cargarTraslados(), cargarBajas(), cargarProductosCant()]);
 
     alCambiarDatos(['traslados', 'unidades_producto', 'mermas', 'inventario_local'], () => {
       void cargarTraslados();
+      void cargarProductosCant();
       void cargarBajas();
       if (modo === 'cantidad') void cargarCantidad();
     });
@@ -889,8 +1027,46 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   });
   $('ds-vaciar').addEventListener('click', () => {
     piezas = [];
+    lineasCant = [];
     limpiarAviso();
     pintarPiezas();
+    pintarCantidades();
+  });
+  $('ds-cant-agregar').addEventListener('click', () => {
+    const p = productosCant.find((x) => x.id === $<HTMLSelectElement>('ds-cant-producto').value);
+    const n = Math.floor(Number($<HTMLInputElement>('ds-cant-n').value.replace(/\D/g, '')));
+    if (!p) return;
+    if (!Number.isFinite(n) || n < 1) return avisar('Pon cuántas piezas salen (1 o más).', 'error');
+    agregarLineaCant(p, n);
+    $<HTMLInputElement>('ds-cant-n').value = '1';
+  });
+  $('ds-cant-lista').addEventListener('click', (e) => {
+    const li = (e.target as HTMLElement).closest<HTMLElement>('li[data-i]');
+    if (!li || !(e.target as HTMLElement).closest('[data-quitar-cant]')) return;
+    lineasCant.splice(Number(li.dataset.i), 1);
+    pintarCantidades();
+  });
+  $('ds-cant-lista').addEventListener('input', (e) => {
+    const inp = e.target as HTMLInputElement;
+    const li = inp.closest<HTMLElement>('li[data-i]');
+    if (!li || !inp.matches('[data-cant]')) return;
+    const l = lineasCant[Number(li.dataset.i)];
+    const n = Math.floor(Number(inp.value.replace(/\D/g, '')));
+    l.cantidad = Number.isFinite(n) && n > 0 ? Math.min(n, 5000) : 0;
+    refrescarBotones();
+  });
+  $('ds-recibir-cant').addEventListener('input', (e) => {
+    const inp = e.target as HTMLInputElement;
+    const li = inp.closest<HTMLElement>('li[data-prod]');
+    if (!li || !inp.matches('[data-rec-cant]') || !recibiendo) return;
+    const c = pendientesCantDe(recibiendo).find((x) => x.producto_id === li.dataset.prod);
+    if (!c) return;
+    const n = Math.floor(Number(inp.value.replace(/\D/g, '')));
+    recibidasCant.set(c.producto_id, Number.isFinite(n) && n > 0 ? Math.min(n, c.cantidad - c.recibida - c.devuelta) : 0);
+    // Sin repintar la lista: se está escribiendo en el campo; solo se actualiza el conteo y el botón
+    const totalCant = [...recibidasCant.values()].reduce((s, x) => s + x, 0);
+    ($('ds-recibir-confirmar') as HTMLButtonElement).disabled = (marcadas.size === 0 && totalCant === 0) || ocupado;
+    $('ds-recibir-cuenta').textContent = `Marcadas ${marcadas.size} de ${pendientesDe(recibiendo).length} · por cantidad: ${totalCant} de ${pendientesCantDe(recibiendo).reduce((s, x) => s + x.cantidad - x.recibida - x.devuelta, 0)}`;
   });
   $('ds-destino').addEventListener('change', refrescarBotones);
   $('ds-imprimir-ultimo').addEventListener('click', () => {
@@ -923,6 +1099,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   $('ds-recibir-todas').addEventListener('click', () => {
     if (!recibiendo) return;
     marcadas = new Set(pendientesDe(recibiendo).map((u) => u.codigo));
+    recibidasCant = new Map(pendientesCantDe(recibiendo).map((c) => [c.producto_id, c.cantidad - c.recibida - c.devuelta]));
     pintarRecepcion();
   });
   $('ds-recibir-cerrar').addEventListener('click', () => $<HTMLDialogElement>('ds-recibir').close());

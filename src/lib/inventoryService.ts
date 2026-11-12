@@ -113,6 +113,7 @@ import type {
   TipoMovimiento,
   TipoMovimientoManual,
   Traslado,
+  TrasladoCantidad,
   EstadoTraslado,
   MotivoBaja,
   UnidadProducto,
@@ -983,6 +984,15 @@ function validarCodigosOperacion(codigos: string[]): void {
   if (new Set(codigos).size !== codigos.length) throw new Error('Hay piezas repetidas en la lista.');
 }
 
+/** Líneas «producto + cuántas» de un traslado de productos por cantidad (mismas reglas que el servidor). */
+function validarCantidadesTraslado(lineas: { producto_id: string; cantidad: number }[]): void {
+  if (lineas.length > 50) throw new Error('Son demasiados productos por cantidad para un solo traslado (máximo 50).');
+  if (new Set(lineas.map((l) => l.producto_id)).size !== lineas.length) throw new Error('Hay productos repetidos en la lista por cantidad.');
+  for (const l of lineas) {
+    if (!Number.isInteger(l.cantidad) || l.cantidad < 1 || l.cantidad > 5000) throw new Error('La cantidad de cada producto debe ser un entero de 1 a 5000.');
+  }
+}
+
 async function sesionDeMercancia(): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
   if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no puede mover mercancía entre locales ni dar de baja piezas.');
@@ -1032,11 +1042,13 @@ export async function listarTraslados(estado?: EstadoTraslado): Promise<Traslado
 }
 
 /** El local de origen despacha: las piezas quedan EN_TRANSITO y su stock sale del origen. Necesita conexión (no se encola). */
-export async function despacharTraslado(datos: { origenLocalId: string; destinoLocalId: string; codigos: string[]; notas?: string }): Promise<Traslado> {
+export async function despacharTraslado(datos: { origenLocalId: string; destinoLocalId: string; codigos: string[]; cantidades?: { producto_id: string; cantidad: number }[]; notas?: string }): Promise<Traslado> {
   const sesion = await sesionDeMercancia();
   if (modoServidor) return trasladosDb.despacharTraslado(datos);
 
-  validarCodigosOperacion(datos.codigos);
+  const cantidades = datos.cantidades ?? [];
+  if (datos.codigos.length > 0 || cantidades.length === 0) validarCodigosOperacion(datos.codigos);
+  validarCantidadesTraslado(cantidades);
   const notas = (datos.notas ?? '').trim();
   if (notas.length > 300) throw new Error('La nota admite hasta 300 caracteres.');
   if (datos.origenLocalId === datos.destinoLocalId) throw new Error('El local de destino debe ser distinto al de origen.');
@@ -1051,12 +1063,22 @@ export async function despacharTraslado(datos: { origenLocalId: string; destinoL
     throw new Error('Alguna de las piezas ya no está disponible en este local (se vendió, ya va en un traslado, está dada de baja o es de otro local).');
   }
   const piezas = unidades as UnidadProducto[];
+  const lineas: TrasladoCantidad[] = [];
+  for (const l of cantidades) {
+    const p = db.productos.find((x) => x.id === l.producto_id);
+    if (!p) throw new Error('Uno de los productos por cantidad ya no existe.');
+    if (!esPorCantidad(p)) throw new Error(`«${p.nombre}» se controla con etiqueta por pieza: escanea sus piezas en vez de pasar la cantidad.`);
+    const hay = db.inventario.find((i) => i.local_id === datos.origenLocalId && i.producto_id === p.id)?.stock_actual ?? 0;
+    if (hay < l.cantidad) throw new Error(`No alcanza el stock de «${p.nombre}» en este local (hay ${hay}, pides ${l.cantidad}).`);
+    lineas.push({ producto_id: p.id, producto_nombre: p.nombre, cantidad: l.cantidad, recibida: 0, devuelta: 0 });
+  }
   const traslados = db.traslados ?? (db.traslados = []);
   const folio = traslados.reduce((m, t) => Math.max(m, t.folio), 0) + 1;
   const nombres = new Map(db.productos.map((p) => [p.id, p.nombre]));
   for (const [productoId, codigos] of porProducto(piezas)) {
     movimientoDemo(db, 'TRASLADO_SALIDA', productoId, datos.origenLocalId, codigos, `Traslado ${folioTraslado(folio)} → ${destino.nombre}`);
   }
+  for (const l of lineas) moverCantidadDemo(db, 'TRASLADO_SALIDA', l.producto_id, datos.origenLocalId, l.cantidad, `Traslado ${folioTraslado(folio)} → ${destino.nombre}`);
   for (const u of piezas) u.estado = 'EN_TRANSITO';
   const traslado: Traslado = {
     id: generarId(),
@@ -1073,6 +1095,7 @@ export async function despacharTraslado(datos: { origenLocalId: string; destinoL
     cerrado_en: null,
     notas: notas || null,
     unidades: piezas.map((u) => ({ codigo: u.codigo, producto_id: u.producto_id, producto_nombre: nombres.get(u.producto_id) ?? 'Producto', recibida_en: null, devuelta_en: null })),
+    cantidades: lineas,
   };
   traslados.unshift(traslado);
   guardarDB(db);
@@ -1080,11 +1103,12 @@ export async function despacharTraslado(datos: { origenLocalId: string; destinoL
 }
 
 /** El local de destino recibe (todas o parte de) las piezas escaneadas: pasan a DISPONIBLES en el destino con el mismo código. */
-export async function recibirTraslado(trasladoId: string, codigos: string[]): Promise<Traslado> {
+export async function recibirTraslado(trasladoId: string, codigos: string[], cantidades: { producto_id: string; cantidad: number }[] = []): Promise<Traslado> {
   const sesion = await sesionDeMercancia();
-  if (modoServidor) return trasladosDb.recibirTraslado(trasladoId, codigos);
+  if (modoServidor) return trasladosDb.recibirTraslado(trasladoId, codigos, cantidades);
 
-  validarCodigosOperacion(codigos);
+  if (codigos.length > 0 || cantidades.length === 0) validarCodigosOperacion(codigos);
+  validarCantidadesTraslado(cantidades);
   const db = leerDB();
   const t = (db.traslados ?? []).find((x) => x.id === trasladoId);
   if (!t) throw new Error('Ese traslado no existe.');
@@ -1096,7 +1120,18 @@ export async function recibirTraslado(trasladoId: string, codigos: string[]): Pr
     if (u.recibida_en) throw new Error(`La pieza ${codigo} ya se recibió.`);
     if (u.devuelta_en) throw new Error(`La pieza ${codigo} ya se devolvió al origen.`);
   }
+  for (const l of cantidades) {
+    const c = (t.cantidades ?? []).find((x) => x.producto_id === l.producto_id);
+    if (!c) throw new Error('Uno de los productos no es de este traslado.');
+    const quedan = c.cantidad - c.recibida - c.devuelta;
+    if (l.cantidad > quedan) throw new Error(`De «${c.producto_nombre}» solo quedan ${quedan} por recibir (marcaste ${l.cantidad}).`);
+  }
   const ahora = new Date().toISOString();
+  for (const l of cantidades) {
+    const c = (t.cantidades ?? []).find((x) => x.producto_id === l.producto_id)!;
+    c.recibida += l.cantidad;
+    moverCantidadDemo(db, 'TRASLADO_ENTRADA', l.producto_id, t.destino_local_id, l.cantidad, `Traslado ${folioTraslado(t.folio)} desde ${t.origen_nombre ?? 'otro local'}`);
+  }
   const recibidas = t.unidades.filter((u) => codigos.includes(u.codigo));
   for (const [productoId, lista] of porProducto(recibidas)) {
     movimientoDemo(db, 'TRASLADO_ENTRADA', productoId, t.destino_local_id, lista, `Traslado ${folioTraslado(t.folio)} desde ${t.origen_nombre ?? 'otro local'}`);
@@ -1111,7 +1146,7 @@ export async function recibirTraslado(trasladoId: string, codigos: string[]): Pr
   }
   t.recibido_en = ahora;
   t.recibido_por = sesion.nombre;
-  if (t.unidades.every((u) => u.recibida_en || u.devuelta_en)) {
+  if (t.unidades.every((u) => u.recibida_en || u.devuelta_en) && (t.cantidades ?? []).every((c) => c.recibida + c.devuelta >= c.cantidad)) {
     t.estado = 'RECIBIDO';
     t.cerrado_en = ahora;
   }
@@ -1134,12 +1169,18 @@ export async function cerrarTraslado(trasladoId: string): Promise<Traslado> {
   for (const [productoId, lista] of porProducto(pendientes)) {
     movimientoDemo(db, 'TRASLADO_ENTRADA', productoId, t.origen_local_id, lista, `Traslado ${folioTraslado(t.folio)}: no llegó, se devolvió al origen`);
   }
+  for (const c of t.cantidades ?? []) {
+    const falta = c.cantidad - c.recibida - c.devuelta;
+    if (falta <= 0) continue;
+    c.devuelta += falta;
+    moverCantidadDemo(db, 'TRASLADO_ENTRADA', c.producto_id, t.origen_local_id, falta, `Traslado ${folioTraslado(t.folio)}: no llegó, se devolvió al origen`);
+  }
   for (const u of pendientes) {
     u.devuelta_en = ahora;
     const pieza = (db.unidades ?? []).find((x) => x.codigo === u.codigo);
     if (pieza) pieza.estado = 'DISPONIBLE';
   }
-  t.estado = t.unidades.some((u) => u.recibida_en) ? 'RECIBIDO' : 'ANULADO';
+  t.estado = t.unidades.some((u) => u.recibida_en) || (t.cantidades ?? []).some((c) => c.recibida > 0) ? 'RECIBIDO' : 'ANULADO';
   t.cerrado_en = ahora;
   guardarDB(db);
   return t;

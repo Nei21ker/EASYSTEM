@@ -8,6 +8,7 @@ const esquemaDespacho = z.object({
   origenLocalId: z.string(),
   destinoLocalId: z.string(),
   codigos: z.array(z.string()).max(500),
+  cantidades: z.array(z.object({ producto_id: z.string(), cantidad: z.number() })).max(50).optional(),
   notas: z.string().max(300).optional(),
 });
 

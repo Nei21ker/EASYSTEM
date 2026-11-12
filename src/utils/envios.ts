@@ -65,6 +65,15 @@ export function resumirEnvios(traslados: Traslado[], precios: ReadonlyMap<string
       if (u.recibida_en) ruta.recibidas += 1;
       else ruta.en_camino += 1;
     }
+    // Productos por cantidad: cuentan lo despachado menos lo que volvió al origen
+    for (const c of t.cantidades ?? []) {
+      const enviadas = c.cantidad - c.devuelta;
+      if (enviadas <= 0) continue;
+      ruta.piezas += enviadas;
+      ruta.valor_usd += enviadas * (precios.get(c.producto_id) ?? 0);
+      ruta.recibidas += c.recibida;
+      ruta.en_camino += Math.max(0, c.cantidad - c.recibida - c.devuelta);
+    }
   }
   const lista = [...rutas.values()].map((r) => ({ ...r, valor_usd: redondear(r.valor_usd) })).sort((a, b) => b.valor_usd - a.valor_usd || a.destino.localeCompare(b.destino));
   return {
