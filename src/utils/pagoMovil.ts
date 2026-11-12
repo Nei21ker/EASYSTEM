@@ -34,15 +34,15 @@ export function textoUsdYBs(usd: number, tasa: number | null | undefined): strin
 
 /**
  * Dos cifras en mitades iguales con una barra vertical en medio (dólares a la izquierda, bolívares a la derecha). Con `rotulos` cada cifra
- * lleva debajo «dólares» / «bolívares» (y los Bs salen sin el «Bs.»); sin ellos se dejan los textos tal cual. Sin bolívares solo sale la mitad
+ * lleva debajo «dólares» / «bolívares» (los Bs conservan su «Bs.»; los dólares llevan coma decimal); sin ellos se dejan los textos tal cual. Sin bolívares solo sale la mitad
  * de dólares.
  */
 export function htmlDosMitades(usd: string, bs: string | null, tamano = 'text-2xl', rotulos = true): string {
   const numero = `block whitespace-nowrap font-bold tabular-nums ${tamano}`;
+  usd = usd.replace(/[.,]/g, (c) => (c === '.' ? ',' : '.')); // «$2.78» → «$2,78»: coma decimal igual que los bolívares
   const rotulo = 'block text-xs font-normal text-slate-500 dark:text-slate-400';
   if (bs === null) return `<span class="block"><span class="${numero}">${usd}</span>${rotulos ? `<span class="${rotulo}">dólares</span>` : ''}</span>`;
-  const bsNumero = rotulos ? bs.replace(/^Bs\.\s*/, '') : bs;
-  return `<span class="grid grid-cols-2"><span class="min-w-0 pr-3"><span class="${numero}">${usd}</span>${rotulos ? `<span class="${rotulo}">dólares</span>` : ''}</span><span class="min-w-0 border-l border-slate-300 pl-3 dark:border-slate-600"><span class="${numero}">${bsNumero}</span>${rotulos ? `<span class="${rotulo}">bolívares</span>` : ''}</span></span>`;
+  return `<span class="grid grid-cols-2"><span class="min-w-0 pr-3"><span class="${numero}">${usd}</span>${rotulos ? `<span class="${rotulo}">dólares</span>` : ''}</span><span class="min-w-0 border-l border-slate-300 pl-3 dark:border-slate-600"><span class="${numero}">${bs}</span>${rotulos ? `<span class="${rotulo}">bolívares</span>` : ''}</span></span>`;
 }
 
 /** El monto de una comisión o pendiente en dos mitades: dólares y, al cambio de hoy, bolívares. */

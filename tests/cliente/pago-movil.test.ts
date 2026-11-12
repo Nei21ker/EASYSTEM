@@ -48,11 +48,12 @@ describe('pagoMovil', () => {
     const html = htmlMontoDividido(3.78, 900);
     expect(html).toContain('grid-cols-2');
     expect(html).toContain('border-l');
-    expect(html).toContain('3.402,00');
+    expect(html).toContain('Bs. 3.402,00');
+    expect(html).toContain('$3,78'); // dólares con coma decimal, y el «Bs.» se ve
     expect(html).not.toContain('·');
     const sinTasa = htmlMontoDividido(3.78, null);
     expect(sinTasa).not.toContain('border-l');
-    expect(sinTasa).toContain('$3.78');
+    expect(sinTasa).toContain('$3,78');
   });
 
   it('un nombre con comillas no rompe el atributo del botón', () => {
