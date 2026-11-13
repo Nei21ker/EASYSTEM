@@ -115,6 +115,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
       </div>
       <p class="-mt-2 text-xs text-slate-400">Stock mínimo 0 = el producto no genera alertas de reabastecimiento.</p>
+      <p id="fp-cantidad-ayuda" class="-mt-2 hidden text-xs text-slate-500 dark:text-slate-400">
+        Cantidad de este local: se corrige aquí sin dejar registro mientras el producto no tenga foto y precio. Con foto y precio, el stock solo cambia con movimientos.
+      </p>
       <p id="fp-local-nota" class="-mt-1 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
 
       <div id="fp-grupo-compat">
@@ -147,6 +150,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
   import { errorPrecioPorCantidad, esPorCantidad } from '../../utils/controlPorCantidad';
+  import { productoEnCarga, TIPO_LOCAL_CARGA } from '../../utils/cargaInicial';
   import { errorPrecioBs, leerPrecioEscrito, textoPrecioCampo, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
   import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
@@ -175,6 +179,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let productos: ProductoConRelaciones[] = [];
   let modelos: ModeloTelefono[] = [];
   let editando: ProductoConRelaciones | null = null;
+  // Carga inicial del Local Servicio Técnico: local donde se corrige la cantidad en silencio (null = no aplica)
+  let localCantidadCarga: string | null = null;
   /** Se abrió desde el ingreso de mercancía: no se pide el stock inicial */
   let sinStockInicial = false;
   let pedirCantidad = false;
@@ -336,7 +342,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     seleccion.clear();
     buscarModelo.value = '';
-    $('fp-grupo-stock').classList.toggle('hidden', editando !== null || (sinStockInicial && !pedirCantidad));
+    // Servicio Técnico + producto sin foto o sin precio: «Editar» permite corregir la cantidad del local sin dejar movimientos
+    localCantidadCarga = editando && contexto?.local?.tipo === TIPO_LOCAL_CARGA && productoEnCarga(editando) ? contexto.local.id : null;
+    $('fp-grupo-stock').classList.toggle('hidden', (editando !== null && !localCantidadCarga) || (editando === null && sinStockInicial && !pedirCantidad));
+    $('fp-cantidad-ayuda').classList.toggle('hidden', !localCantidadCarga);
+    if (editando) $('fp-stock-etiqueta').textContent = localCantidadCarga ? 'Cantidad en este local' : 'Stock inicial';
     // «Compatible con» NUNCA se muestra al EDITAR (en ningún local; las compatibilidades que ya tiene se conservan tal cual) y al crear solo en
     // accesorios o en la vista «Todos» (en controles, vidrios y servicio técnico no se pide)
     $('fp-grupo-compat').classList.toggle('hidden', editando !== null || (!!contexto?.local && contexto.local.tipo !== 'accesorios'));
@@ -355,6 +365,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.precioVenta.value = textoPrecioCampo((moneda === 'BS' ? editando.precio_bs : editando.precio_venta) ?? 0);
       campos.precioCompra.value = textoPrecioCampo(editando.precio_compra);
       campos.minimo.value = String(editando.stock_minimo);
+      campos.stock.value = String(editando.stock_actual);
       campos.porCantidad.checked = esPorCantidad(editando);
       // Cambiar cómo se cuenta el producto solo lo hacen administrador y gerente, y solo con el stock en 0
       const sinPermiso = !veCosto;
@@ -469,6 +480,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     let idCreado: string | null = null;
     try {
       if (editando) {
+        // Primero la cantidad: si en este mismo guardado se pone el precio y la foto, el producto deja de estar «en carga»
+        if (localCantidadCarga && stock !== editando.stock_actual) await inventoryService.establecerCantidadEnCarga(editando.id, localCantidadCarga, stock);
         await inventoryService.actualizarProducto(editando.id, {
           nombre,
           categoria,

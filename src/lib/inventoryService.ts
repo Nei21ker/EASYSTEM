@@ -49,6 +49,7 @@ import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
+import { errorCantidadCarga, productoEnCarga, TIPO_LOCAL_CARGA } from '../utils/cargaInicial';
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
@@ -1515,6 +1516,53 @@ export async function cambiarPreciosLote(ids: string[], moneda: MonedaPrecio, pr
   for (const p of elegidos) Object.assign(p, nuevo);
   guardarDB(db);
   return { actualizados: elegidos.length, precio_venta: nuevo.precio_venta };
+}
+
+/**
+ * Carga inicial del Local Servicio Técnico: fija cuántas unidades hay de un producto mientras NO tenga foto o NO tenga precio, SIN dejar
+ * movimientos (todavía se está cargando el inventario: no debe verse en Movimientos, Reportes ni Inversión). Administrador, gerente y
+ * encargado de ese local. Con foto y precio ya es un producto activo y su cantidad solo cambia con movimientos. Mismas reglas en modo
+ * servidor y en modo demo.
+ */
+export async function establecerCantidadEnCarga(productoId: string, localId: string, cantidad: number): Promise<{ cantidad: number }> {
+  if (modoServidor) return productosDb.establecerCantidadEnCarga(productoId, localId, cantidad);
+
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no tiene permiso para hacer esto.');
+  const mensaje = errorCantidadCarga(cantidad);
+  if (mensaje) throw new Error(mensaje);
+  if (!(esGlobal(sesion.rol) || sesion.local_id === localId)) throw new Error('No tienes acceso a ese local.');
+  const db = leerDB();
+  const local = (db.locales ?? []).find((l) => l.id === localId);
+  if (!local) throw new Error('Local no encontrado.');
+  if (local.tipo !== TIPO_LOCAL_CARGA) throw new Error('La cantidad se corrige a mano solo en el Local Servicio Técnico mientras se carga su inventario.');
+  const producto = db.productos.find((p) => p.id === productoId);
+  if (!producto) throw new Error('Producto no encontrado.');
+  if (!productoEnCarga(producto)) throw new Error(`«${producto.nombre}» ya tiene foto y precio: su cantidad solo cambia con movimientos (Mercancía → Ingreso o Descargo).`);
+
+  let fila = db.inventario.find((i) => i.local_id === localId && i.producto_id === productoId);
+  if (!fila) {
+    fila = { local_id: localId, producto_id: productoId, stock_actual: 0, stock_minimo: 0 };
+    db.inventario.push(fila);
+  }
+  if (esPorCantidad(producto)) {
+    fila.stock_actual = cantidad;
+  } else {
+    const unidades = db.unidades ?? (db.unidades = []);
+    const disponibles = unidades.filter((u) => u.producto_id === productoId && u.local_id === localId && u.estado === 'DISPONIBLE');
+    if (cantidad > disponibles.length) {
+      for (let i = disponibles.length; i < cantidad; i++) unidades.push(nuevaUnidadLocal(db, productoId, localId));
+    } else if (cantidad < disponibles.length) {
+      // Primero las piezas sin etiqueta impresa y, entre iguales, las más recientes
+      const orden = disponibles.map((u, i) => ({ u, i })).sort((a, b) => Number(a.u.impresa_en != null) - Number(b.u.impresa_en != null) || b.i - a.i);
+      const quitar = new Set(orden.slice(0, disponibles.length - cantidad).map((x) => x.u.codigo));
+      db.unidades = unidades.filter((u) => !quitar.has(u.codigo));
+    }
+    fila.stock_actual = cantidad;
+  }
+  producto.stock_actual = db.inventario.filter((i) => i.producto_id === productoId).reduce((s, i) => s + i.stock_actual, 0);
+  guardarDB(db);
+  return { cantidad: fila.stock_actual };
 }
 
 /** Como guardarDB, pero avisa si no cabe (las fotos en base64 pueden llenar el cupo del navegador). */

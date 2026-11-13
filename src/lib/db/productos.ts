@@ -53,6 +53,11 @@ export async function cambiarPreciosLote(ids: string[], moneda: 'USD' | 'BS', pr
   return api.post<{ actualizados: number; precio_venta: number }>('/api/productos/precios-lote', { ids, moneda, precio });
 }
 
+/** Carga inicial del Local Servicio Técnico: fija la cantidad de un producto sin foto o sin precio, sin dejar movimientos. */
+export async function establecerCantidadEnCarga(productoId: string, localId: string, cantidad: number): Promise<{ cantidad: number }> {
+  return api.post<{ cantidad: number }>(`/api/productos/${encodeURIComponent(productoId)}/cantidad`, { localId, cantidad });
+}
+
 /** Sube la foto (R2) y devuelve su URL; el servidor la sirve sin sesión para poder mostrarla en cualquier pantalla. */
 export async function subirImagenProducto(productoId: string, imagen: Blob): Promise<string> {
   return api.subir(`/api/archivos/producto/${encodeURIComponent(productoId)}`, imagen, imagen.type || 'image/jpeg');

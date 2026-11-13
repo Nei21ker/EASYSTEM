@@ -13,9 +13,11 @@ import { listarConInventario, listarStockBajo as repoStockBajo, obtenerPorCodigo
 import { cargarLocales } from '../repos/locales';
 import { ahoraISO, nuevoId, redondear2 } from '../util';
 import { normalizarNombre } from '../../utils/altaRapida';
-import { construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
+import { construirCodigoUnidad, construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
+import { errorCantidadCarga, productoEnCarga, TIPO_LOCAL_CARGA } from '../../utils/cargaInicial';
 import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
+import { marcas, tramos } from './movimientos';
 import { tasaVigente } from './tasas';
 import type { Local, ModeloTelefono, Producto, ProductoStockBajo } from '../../types/database.types';
 
@@ -639,6 +641,88 @@ export async function fijarMinimosLote(
     throw err;
   }
   await avisarCambio(env.DB, ['inventario_local'], localId);
+}
+
+// --- Carga inicial del Local Servicio Técnico: cantidad corregida a mano, SIN movimientos ------------------------------------
+/**
+ * Fija cuántas unidades hay de un producto en el Local Servicio Técnico mientras el producto está «en carga» (sin foto o sin precio):
+ * no deja movimientos ni historial (todavía se está cargando el inventario; no debe verse en Movimientos, Reportes ni Inversión).
+ * Administrador, gerente y encargado (de ese local). Con foto Y precio el producto ya está activo: 409 `producto_activo` y el stock
+ * solo cambia por movimientos (Ingreso, Descargo, ventas). Los productos con código por pieza crean o borran piezas DISPONIBLES
+ * (las nuevas quedan «sin etiqueta impresa»; al bajar se quitan primero las que no tienen etiqueta y luego las más recientes);
+ * los productos por cantidad solo cambian el número. Todo en UN lote atómico; el stock del local se recalcula de las piezas.
+ */
+export async function establecerCantidadEnCarga(env: Entorno, sesion: Sesion, productoId: string, localId: string, cantidad: number): Promise<{ cantidad: number }> {
+  exigirGerencia(sesion);
+  const mensaje = errorCantidadCarga(cantidad);
+  if (mensaje) throw new ErrorApi(400, mensaje, 'datos_invalidos');
+  if (!(await localAccesible(env, sesion, localId))) throw sinPermiso('No tienes acceso a ese local.');
+  const local = await env.DB.prepare('SELECT tipo FROM locales WHERE id = ?').bind(localId).first<{ tipo: string }>();
+  if (!local) throw new ErrorApi(404, 'Local no encontrado.', 'no_existe');
+  if (local.tipo !== TIPO_LOCAL_CARGA) {
+    throw new ErrorApi(400, 'La cantidad se corrige a mano solo en el Local Servicio Técnico mientras se carga su inventario.', 'solo_servicio_tecnico');
+  }
+  const producto = await env.DB
+    .prepare('SELECT id, nombre, imagen_url, precio_venta, prefijo_codigo, control_por_cantidad FROM productos WHERE id = ?')
+    .bind(productoId)
+    .first<{ id: string; nombre: string; imagen_url: string | null; precio_venta: number; prefijo_codigo: string; control_por_cantidad: number }>();
+  if (!producto) throw new ErrorApi(404, 'Producto no encontrado.', 'no_existe');
+  if (!productoEnCarga(producto)) {
+    throw new ErrorApi(409, `«${producto.nombre}» ya tiene foto y precio: su cantidad solo cambia con movimientos (Mercancía → Ingreso o Descargo).`, 'producto_activo');
+  }
+
+  const sentencias: D1PreparedStatement[] = [
+    env.DB.prepare('INSERT INTO inventario_local (local_id, producto_id, stock_actual, stock_minimo) VALUES (?, ?, 0, 0) ON CONFLICT (local_id, producto_id) DO NOTHING').bind(localId, productoId),
+  ];
+  if (producto.control_por_cantidad === 1) {
+    sentencias.push(env.DB.prepare('UPDATE inventario_local SET stock_actual = ? WHERE local_id = ? AND producto_id = ?').bind(cantidad, localId, productoId));
+  } else {
+    const disponibles = await env.DB
+      .prepare("SELECT codigo, impresa_en FROM unidades_producto WHERE producto_id = ? AND local_id = ? AND estado = 'DISPONIBLE' ORDER BY created_at, rowid")
+      .bind(productoId, localId)
+      .all<{ codigo: string; impresa_en: string | null }>();
+    const hay = disponibles.results;
+    if (cantidad > hay.length) {
+      const nuevas = cantidad - hay.length;
+      const fila = await env.DB
+        .prepare('INSERT INTO contadores (nombre, valor) VALUES (?, ?) ON CONFLICT (nombre) DO UPDATE SET valor = valor + excluded.valor RETURNING valor')
+        .bind(`unidad:${producto.prefijo_codigo}`, nuevas)
+        .first<{ valor: number }>();
+      if (fila!.valor > 999_999) {
+        throw new ErrorApi(409, `Se agotaron los códigos del prefijo ${producto.prefijo_codigo} (999999). Cambia el prefijo del producto para seguir.`, 'prefijo_agotado');
+      }
+      const primero = fila!.valor - nuevas + 1;
+      const ahora = ahoraISO();
+      for (let i = 0; i < nuevas; i++) {
+        sentencias.push(
+          env.DB
+            .prepare("INSERT INTO unidades_producto (id, producto_id, local_id, codigo, estado, created_at) VALUES (?, ?, ?, ?, 'DISPONIBLE', ?)")
+            .bind(nuevoId(), productoId, localId, construirCodigoUnidad(producto.prefijo_codigo, primero + i), ahora)
+        );
+      }
+    } else if (cantidad < hay.length) {
+      // Se quitan primero las piezas sin etiqueta impresa y, entre iguales, las más recientes
+      const orden = hay.map((u, i) => ({ ...u, i })).sort((a, b) => Number(a.impresa_en !== null) - Number(b.impresa_en !== null) || b.i - a.i);
+      const quitar = orden.slice(0, hay.length - cantidad).map((u) => u.codigo);
+      for (const tramo of tramos(quitar)) {
+        sentencias.push(env.DB.prepare(`DELETE FROM unidades_producto WHERE estado = 'DISPONIBLE' AND codigo IN (${marcas(tramo.length)})`).bind(...tramo));
+      }
+    }
+    // El stock del local sale de las piezas que quedan, así nunca se desajusta
+    sentencias.push(
+      env.DB
+        .prepare("UPDATE inventario_local SET stock_actual = (SELECT count(*) FROM unidades_producto WHERE producto_id = ? AND local_id = ? AND estado = 'DISPONIBLE') WHERE local_id = ? AND producto_id = ?")
+        .bind(productoId, localId, localId, productoId)
+    );
+  }
+  sentencias.push(
+    env.DB.prepare('UPDATE productos SET stock_actual = (SELECT COALESCE(SUM(stock_actual), 0) FROM inventario_local WHERE producto_id = ?) WHERE id = ?').bind(productoId, productoId),
+    ...sentenciasCambio(env.DB, ['inventario_local', 'unidades_producto'], localId),
+    ...sentenciasCambio(env.DB, ['productos'], null)
+  );
+  await env.DB.batch(sentencias);
+  const resultado = await env.DB.prepare('SELECT stock_actual FROM inventario_local WHERE local_id = ? AND producto_id = ?').bind(localId, productoId).first<{ stock_actual: number }>();
+  return { cantidad: resultado?.stock_actual ?? cantidad };
 }
 
 // --- Modelos de teléfono ------------------------------------------------------------------------------------------------

@@ -19,7 +19,8 @@
     "check:server": "tsc -p tsconfig.server.json",
     "check:all": "astro check && npm run check:server",
     "crear-admin": "node scripts/crear-admin.mjs",
-    "cargar-controles": "node scripts/cargar-controles.mjs"
+    "cargar-controles": "node scripts/cargar-controles.mjs",
+    "cargar-servicio-tecnico": "node scripts/cargar-servicio-tecnico.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^14.3.4",

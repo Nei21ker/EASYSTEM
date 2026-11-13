@@ -32,3 +32,5 @@ backups/
 .dev.vars
 datos-controles/
 worker-configuration.d.ts
+
+datos-servicio-tecnico/
