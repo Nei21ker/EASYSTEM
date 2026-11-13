@@ -91,9 +91,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
         <div>
-          <div class="flex items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
             <label for="fp-precio-venta" id="fp-precio-etiqueta" class={claseEtiqueta}>Precio venta ($) *</label>
-            <div role="group" aria-label="Moneda del precio de venta" class="inline-flex overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
+            <div role="group" aria-label="Moneda del precio de venta" class="inline-flex shrink-0 overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
               <button type="button" id="fp-moneda-usd" aria-pressed="true" class="px-2.5 py-1">$</button>
               <button type="button" id="fp-moneda-bs" aria-pressed="false" class="border-l border-slate-200 px-2.5 py-1 dark:border-slate-700">Bs</button>
             </div>
