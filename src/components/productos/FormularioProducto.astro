@@ -337,8 +337,9 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     seleccion.clear();
     buscarModelo.value = '';
     $('fp-grupo-stock').classList.toggle('hidden', editando !== null || (sinStockInicial && !pedirCantidad));
-    // «Compatible con» no se pide al crear un producto en los locales de controles, vidrios y servicio técnico (solo accesorios, o la vista «Todos»)
-    $('fp-grupo-compat').classList.toggle('hidden', editando === null && !!contexto?.local && contexto.local.tipo !== 'accesorios');
+    // «Compatible con» NUNCA se muestra al EDITAR (en ningún local; las compatibilidades que ya tiene se conservan tal cual) y al crear solo en
+    // accesorios o en la vista «Todos» (en controles, vidrios y servicio técnico no se pide)
+    $('fp-grupo-compat').classList.toggle('hidden', editando !== null || (!!contexto?.local && contexto.local.tipo !== 'accesorios'));
     $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
 
     if (editando) {
