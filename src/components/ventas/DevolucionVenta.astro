@@ -88,6 +88,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
+  import { tienePrecioDeVenta } from '../../utils/cargaInicial';
   import { esGerencia, obtenerSesionActual } from '../../lib/auth';
   import { textoCliente } from '../../utils/clienteSinDatos';
   import { tasaActual } from '../../stores/tasa';
@@ -169,7 +170,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     }
     const coincidencias = catalogo
       .filter((p) => {
-        if (p.stock_actual <= 0 || reemplazos.has(p.id)) return false;
+        if (p.stock_actual <= 0 || !tienePrecioDeVenta(p) || reemplazos.has(p.id)) return false;
         const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria} ${p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(' ')}`);
         return q.split(/\s+/).every((t) => texto.includes(t));
       })

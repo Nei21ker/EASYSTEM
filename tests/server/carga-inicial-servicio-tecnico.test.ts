@@ -6,6 +6,7 @@ import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { actualizarProducto, crearProducto, establecerCantidadEnCarga } from '../../src/server/servicios/catalogo';
 import { registrarMovimiento } from '../../src/server/servicios/movimientos';
+import { guardarVenta } from '../../src/server/servicios/ventas';
 
 const env = crearEntornoDePrueba();
 const { servicio, accesorios } = IDS_LOCALES;
@@ -141,5 +142,36 @@ describe('establecerCantidadEnCarga', () => {
     const antes = await n("SELECT COALESCE(SUM(version), 0) AS n FROM cambios WHERE tabla IN ('inventario_local', 'productos')");
     await establecerCantidadEnCarga(env, admin, p.id, servicio, 2);
     expect(await n("SELECT COALESCE(SUM(version), 0) AS n FROM cambios WHERE tabla IN ('inventario_local', 'productos')")).toBeGreaterThan(antes);
+  });
+});
+
+describe('nada se vende sin precio', () => {
+  const venta = (productoId: string, nombre: string, precio: number) => ({
+    fecha: new Date().toISOString(),
+    local_id: servicio,
+    cliente_cedula: 'V-12345678',
+    cliente_nombre: 'Ana Prueba',
+    cliente_telefono: '0414-1234567',
+    metodo_pago: 'USD_EFECTIVO' as const,
+    pagos: [{ metodo: 'USD_EFECTIVO' as const, monto_usd: precio, monto_bs: null }],
+    vuelto: null,
+    total: precio,
+    tasa_cambio: 36.5,
+    total_bs: null,
+    items: [{ producto_id: productoId, nombre, codigo_barras: '2000000000015', cantidad: 1, precio_unitario: precio }],
+  });
+
+  it('el servidor rechaza una venta con un producto de precio 0 (aunque la línea traiga otro precio) y no guarda nada', async () => {
+    const p = await enCarga('Taco sin precio');
+    await rechazo(guardarVenta(env, encargado, venta(p.id, p.nombre, 0)), 400, 'sin_precio');
+    await rechazo(guardarVenta(env, encargado, venta(p.id, p.nombre, 5)), 400, 'sin_precio');
+    expect(await n('SELECT count(*) AS n FROM ventas')).toBe(0);
+  });
+
+  it('con precio sí se vende', async () => {
+    const p = await enCarga('Taco con precio');
+    await actualizarProducto(env, admin, p.id, { precio_venta: 5 });
+    const v = await guardarVenta(env, encargado, venta(p.id, p.nombre, 5));
+    expect(v.total).toBe(5);
   });
 });

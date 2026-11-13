@@ -608,6 +608,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import type { VentaRegistrada } from '../lib/inventoryService';
   import { esGerencia, obtenerSesionActual } from '../lib/auth';
   import { etiquetaMetodoPago, incluyePagoMovil, METODOS_PAGO, pagosDeVenta } from '../utils/pagos';
+  import { mensajeSinPrecio, tienePrecioDeVenta } from '../utils/cargaInicial';
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
@@ -774,9 +775,11 @@ import { alCambiarDatos } from '../lib/realtime';
 
   function filtrarProductos(texto: string): ProductoConRelaciones[] {
     const q = texto.trim().toLowerCase();
+    // Un producto sin precio (todavía en carga) no se ofrece: no se puede vender
+    const vendibles = productos.filter(tienePrecioDeVenta);
     const coincidencias = !q
-      ? productos
-      : productos.filter(
+      ? vendibles
+      : vendibles.filter(
           (p) =>
             p.nombre.toLowerCase().includes(q) ||
             p.codigo_barras.toLowerCase().includes(q) ||
@@ -944,6 +947,10 @@ import { alCambiarDatos } from '../lib/realtime';
     limpiarError();
     const producto = productos.find((p) => p.id === productoId);
     if (!producto) return;
+    if (!tienePrecioDeVenta(producto)) {
+      mostrarError(mensajeSinPrecio([producto.nombre]));
+      return;
+    }
 
     const linea = carrito.find((l) => l.producto.id === productoId);
     const cantidadActual = linea ? ocupadas(linea) : 0;
@@ -964,6 +971,10 @@ import { alCambiarDatos } from '../lib/realtime';
   /** Agrega al carrito ESA unidad (la del código escaneado o elegido en la lista). Devuelve false si no se pudo. */
   function agregarUnidad(producto: ProductoConRelaciones, codigo: string): boolean {
     limpiarError();
+    if (!tienePrecioDeVenta(producto)) {
+      mostrarError(mensajeSinPrecio([producto.nombre]));
+      return false;
+    }
     if (carrito.some((l) => l.unidades.includes(codigo))) {
       mostrarError(`La unidad ${codigo} ya está en el carrito.`);
       return false;
@@ -2215,6 +2226,12 @@ import { alCambiarDatos } from '../lib/realtime';
     }
     if (carrito.some((l) => l.unidades.includes(codigo))) {
       alertarUnidad({ titulo: 'Esa pieza ya está en el carrito', detalle: `La pieza ${codigo} ya la agregaste a esta venta.` });
+      return false;
+    }
+    if (!tienePrecioDeVenta(producto)) {
+      const aviso = mensajeSinPrecio([producto.nombre]);
+      mostrarError(aviso);
+      alertarUnidad({ titulo: 'Producto sin precio', detalle: aviso });
       return false;
     }
     return agregarUnidad(producto, codigo);

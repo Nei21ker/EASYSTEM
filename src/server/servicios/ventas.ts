@@ -4,6 +4,7 @@
 //   · registrar una devolución: administrador, gerente y encargado del local de la venta; nadie edita ni borra.
 // El folio sale de la tabla `contadores` DENTRO del mismo lote que inserta la fila (no se repite ni con ventas simultáneas).
 import { alcanceDe, condicionAlcance, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
+import { mensajeSinPrecio } from '../../utils/cargaInicial';
 import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
@@ -104,6 +105,10 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
       .all<{ id: string; precio_venta: number }>();
     for (const f of filas.results) precios.set(f.id, f.precio_venta);
   }
+
+  // Nada se vende sin precio: un producto con precio de catálogo 0 todavía se está cargando
+  const sinPrecio = [...new Set(datos.items.filter((i) => (precios.get(i.producto_id) ?? 1) <= 0).map((i) => i.nombre))];
+  if (sinPrecio.length > 0) throw new ErrorApi(400, mensajeSinPrecio(sinPrecio), 'sin_precio');
 
   const desviadas: [string, number][] = [];
   let hayDescuento = false;

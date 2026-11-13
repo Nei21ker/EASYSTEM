@@ -49,7 +49,7 @@ import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
-import { errorCantidadCarga, productoEnCarga, TIPO_LOCAL_CARGA } from '../utils/cargaInicial';
+import { errorCantidadCarga, mensajeSinPrecio, productoEnCarga, TIPO_LOCAL_CARGA } from '../utils/cargaInicial';
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
 import * as promotoresDb from './db/promotores';
@@ -2939,6 +2939,9 @@ function ajustarPagos(
  */
 export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Promise<VentaRegistrada> {
   if (items.length === 0) throw new Error('El carrito está vacío.');
+  // Nada se vende sin precio (el precio de catálogo es `precio_lista` si hay precio de promotor/local, si no el de la línea)
+  const sinPrecio = [...new Set(items.filter((i) => (i.precio_lista ?? i.precio_unitario) <= 0).map((i) => i.nombre))];
+  if (sinPrecio.length > 0) throw new Error(mensajeSinPrecio(sinPrecio));
   const local_id = await exigirLocal('vender');
 
   // Cobro rápido del Local Vidrios: sin datos del cliente la venta se guarda como «sin datos»
@@ -3464,6 +3467,8 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
   if (datos.nuevos.some((n) => !Number.isInteger(n.cantidad) || n.cantidad <= 0 || !(n.precio_unitario >= 0))) {
     throw new Error('Revisa los productos de reemplazo: cantidad entera mayor a 0.');
   }
+  const reemplazoSinPrecio = [...new Set(datos.nuevos.filter((n) => !(n.precio_unitario > 0)).map((n) => n.nombre))];
+  if (reemplazoSinPrecio.length > 0) throw new Error(mensajeSinPrecio(reemplazoSinPrecio));
 
   // 2) Dinero: la diferencia decide si el cliente paga o se le reembolsa
   const centavos = (n: number) => Math.round(n * 100) / 100;

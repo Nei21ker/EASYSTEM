@@ -19,3 +19,16 @@ export function errorCantidadCarga(cantidad: unknown): string | null {
   if (cantidad > MAX_CANTIDAD_CARGA) return `La cantidad no puede pasar de ${MAX_CANTIDAD_CARGA}.`;
   return null;
 }
+
+// --- Nada se vende sin precio --------------------------------------------------------------------------------------------------
+// Un producto con precio de venta 0 (recién cargado, a la espera de que alguien le ponga el precio) NO se ofrece en el POS ni en los
+// cambios de mercancía, y el servidor rechaza cualquier venta que lo incluya (400 `sin_precio`).
+
+/** ¿Tiene precio de venta (mayor a 0)? Sin él no se puede vender. */
+export const tienePrecioDeVenta = (p: { precio_venta?: number | null }): boolean => (p.precio_venta ?? 0) > 0;
+
+/** Mensaje para uno o varios productos sin precio. */
+export function mensajeSinPrecio(nombres: string[]): string {
+  if (nombres.length === 1) return `«${nombres[0]}» todavía no tiene precio, así que no se puede vender. Ponle el precio en Productos → Editar.`;
+  return `Estos productos todavía no tienen precio, así que no se pueden vender: ${nombres.map((n) => `«${n}»`).join(', ')}. Ponles el precio en Productos → Editar.`;
+}

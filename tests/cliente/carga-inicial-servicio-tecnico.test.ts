@@ -2,7 +2,7 @@
 // foto y precio). Mismas reglas que el servidor (tests/server/carga-inicial-servicio-tecnico.test.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID } from '../../src/lib/constantes-locales';
-import { errorCantidadCarga, MAX_CANTIDAD_CARGA, productoEnCarga } from '../../src/utils/cargaInicial';
+import { errorCantidadCarga, MAX_CANTIDAD_CARGA, mensajeSinPrecio, productoEnCarga, tienePrecioDeVenta } from '../../src/utils/cargaInicial';
 
 function almacenSimulado() {
   const datos = new Map<string, string>();
@@ -96,5 +96,32 @@ describe('demo: establecerCantidadEnCarga', () => {
   it('el vendedor no puede', async () => {
     const s = await cargarComo('vendedor@edwardaccesorios.com', 'vendedor123');
     await expect(s.establecerCantidadEnCarga('cualquiera', LOCAL_SERVICIO_TECNICO_ID, 1)).rejects.toThrow(/permiso/);
+  });
+});
+
+describe('nada se vende sin precio', () => {
+  it('reglas puras: precio 0 o ausente no es vendible', () => {
+    expect(tienePrecioDeVenta({ precio_venta: 0 })).toBe(false);
+    expect(tienePrecioDeVenta({ precio_venta: null })).toBe(false);
+    expect(tienePrecioDeVenta({})).toBe(false);
+    expect(tienePrecioDeVenta({ precio_venta: 0.5 })).toBe(true);
+    expect(mensajeSinPrecio(['A'])).toMatch(/«A» todavía no tiene precio/);
+    expect(mensajeSinPrecio(['A', 'B'])).toMatch(/Estos productos.*«A», «B»/);
+  });
+
+  it('demo: registrarVenta rechaza una línea de precio 0 antes de tocar el inventario', async () => {
+    const s = await admin();
+    const p = await s.crearProducto(producto);
+    await s.establecerCantidadEnCarga(p.id, LOCAL_SERVICIO_TECNICO_ID, 2);
+    const movimientosAntes = (await s.listarMovimientos()).length;
+    await expect(
+      s.registrarVenta([{ producto_id: p.id, nombre: p.nombre, codigo_barras: p.codigo_barras, cantidad: 1, precio_unitario: 0 }], {
+        cliente: { cedula: 'V-12345678', nombre: 'Ana', apellido: 'Pérez', telefono: '04141234567' },
+        pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 1, monto_bs: null }],
+        tasa_cambio: 40,
+      })
+    ).rejects.toThrow(/todavía no tiene precio/);
+    expect((await s.listarMovimientos()).length).toBe(movimientosAntes);
+    expect((await s.listarProductos()).find((x) => x.id === p.id)!.stock_actual).toBe(2);
   });
 });
