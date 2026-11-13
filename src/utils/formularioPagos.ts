@@ -33,6 +33,9 @@ const CLASE_SELECT =
   'min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 const CLASE_MONTO =
   'w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-10 pr-3 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:opacity-50 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+/** El monto de un solo pago (modo botones): grande y alineado a la derecha, como el de una calculadora */
+const CLASE_MONTO_UNICO =
+  'w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-3 text-right text-lg font-semibold tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
 
 /** Etiquetas cortas de los botones de cobro rápido (un toque = ese tipo de cobro por el total). */
 export const ETIQUETA_COBRO_RAPIDO: Record<MetodoPago, string> = {
@@ -43,8 +46,17 @@ export const ETIQUETA_COBRO_RAPIDO: Record<MetodoPago, string> = {
   BINANCE_USDT: 'Binance',
 };
 
+/**
+ * Qué se muestra cuando lo recibido supera el total:
+ *  · ninguno   → nada (pago exacto o todavía falta);
+ *  · redondeo  → el cliente redondeó en bolívares (≤ REDONDEO_MAXIMO_USD): la venta se registra igual, sin vuelto;
+ *  · elegible  → se podría tomar como redondeo, pero se eligió dar vuelto;
+ *  · obligado  → no se puede tomar como redondeo (p. ej. efectivo en dólares): hay que dar vuelto.
+ */
+type ModoVuelto = 'ninguno' | 'redondeo' | 'elegible' | 'obligado';
+
 export class FormularioPagos {
-  /** Cobro rápido (Local Vidrios): botones de un toque con cada tipo de cobro, que ponen el total completo */
+  /** Modo botones: los tipos de cobro van como botones (un toque elige el tipo, con el total completo) y el pago único no lleva lista desplegable */
   private rapido = false;
   /** Tipo de cobro que se propone al armar un cobro nuevo (el último que se usó en ese local) */
   private metodoInicial: MetodoPago | null = null;
@@ -53,19 +65,18 @@ export class FormularioPagos {
   /** Total en bolívares cuando el carrito tiene precios FIJOS en Bs (null = el total en dólares × tasa) */
   private totalBs: number | null = null;
   private totalDeLasFilas = -1; // total con el que se armaron las filas (si cambia, se reinician)
-  private darVuelto = false;
+  /** Lo que eligió quien cobra cuando lo recibido supera el total: true = dar vuelto, false = tomarlo como redondeo, null = lo que corresponda */
+  private vueltoElegido: boolean | null = null;
   private metodoVuelto: MetodoPago = 'USD_EFECTIVO';
+  private modoMostrado: ModoVuelto | '' = '';
+  /** Elemento de la página que se muestra pegado a los tipos de cobro (p. ej. la referencia del pago móvil) */
+  private extra: HTMLElement | null = null;
 
   constructor(private raiz: HTMLElement) {
     raiz.addEventListener('change', (e) => {
       const el = e.target as HTMLElement;
       const select = el.closest<HTMLSelectElement>('[data-pago-metodo]');
       if (select) return this.cambiarMetodo(this.indiceDe(select), select.value);
-      const vueltoSi = el.closest<HTMLSelectElement>('[data-vuelto-si]');
-      if (vueltoSi) {
-        this.darVuelto = vueltoSi.value === 'si';
-        return this.pintarVuelto();
-      }
       const vueltoMetodo = el.closest<HTMLSelectElement>('[data-vuelto-metodo]');
       if (vueltoMetodo) {
         this.metodoVuelto = vueltoMetodo.value as MetodoPago;
@@ -82,9 +93,17 @@ export class FormularioPagos {
       const objetivo = e.target as HTMLElement;
       const rapido = objetivo.closest<HTMLElement>('[data-pago-rapido]');
       if (rapido) {
-        // Un toque: una sola forma de pago con ese tipo de cobro por el total completo (para dividir el pago se usa «+ Agregar otra forma de pago»)
+        // Un toque: una sola forma de pago con ese tipo de cobro por el total completo (para dividir el pago se usa «Dividir pago»)
         this.filas = [{ metodo: '', monto: '' }];
+        this.vueltoElegido = null;
         this.cambiarMetodo(0, rapido.dataset.pagoRapido ?? '');
+        raiz.dispatchEvent(new CustomEvent('easystem:metodo-elegido', { bubbles: true, detail: { metodo: rapido.dataset.pagoRapido ?? '' } }));
+        return;
+      }
+      const vuelto = objetivo.closest<HTMLElement>('[data-vuelto-dar]');
+      if (vuelto) {
+        this.vueltoElegido = vuelto.dataset.vueltoDar === 'si';
+        this.actualizar();
         return;
       }
       if (objetivo.closest('[data-pago-agregar]')) {
@@ -113,11 +132,20 @@ export class FormularioPagos {
     return Number(el.closest<HTMLElement>('[data-fila]')!.dataset.fila);
   }
 
-  /** Activa los botones de cobro rápido. `metodoInicial`: el tipo de cobro que ya viene elegido al abrir el cobro (null = ninguno). */
+  /**
+   * Activa el modo botones. `metodoInicial`: el tipo de cobro que ya viene elegido al abrir el cobro (null = ninguno).
+   * Nombre histórico: nació en el cobro rápido del Local Vidrios y ahora lo usa todo el POS.
+   */
   activarCobroRapido(metodoInicial: MetodoPago | null = null) {
     this.rapido = true;
     this.metodoInicial = metodoInicial;
     this.reiniciar();
+  }
+
+  /** Pega un elemento de la página (p. ej. la referencia del pago móvil) justo debajo de los tipos de cobro; sobrevive a cada repintado. */
+  fijarExtraBajoMetodos(elemento: HTMLElement) {
+    this.extra = elemento;
+    this.pintar();
   }
 
   /** Los tipos de cobro elegidos ahora (sin repetir). La página escucha el evento `easystem:pagos-cambiaron` de su contenedor para reaccionar. */
@@ -135,9 +163,9 @@ export class FormularioPagos {
 
   reiniciar() {
     this.filas = [{ metodo: '', monto: '' }];
-    this.darVuelto = false;
+    this.vueltoElegido = null;
     this.totalDeLasFilas = this.total;
-    // Cobro rápido: ya viene elegido el último tipo de cobro usado, con el total completo
+    // Modo botones: ya viene elegido el último tipo de cobro usado, con el total completo
     if (this.rapido && this.metodoInicial && this.total > 0) {
       this.filas[0] = { metodo: this.metodoInicial, monto: this.montoEnMoneda(this.total, this.metodoInicial) };
     }
@@ -191,17 +219,37 @@ export class FormularioPagos {
 
   // --- pintado ----------------------------------------------------------------------------------
   private pintar() {
+    // El elemento pegado a los tipos de cobro se desprende antes de repintar para que el repintado no lo destruya (conserva lo escrito)
+    this.extra?.remove();
+    const unico = this.filas.length === 1;
+    const botones = this.rapido && unico;
+
     const filasHtml = this.filas
       .map((f, i) => {
+        const prefijo = f.metodo && esMetodoBolivares(f.metodo) ? 'Bs.' : '$';
+        // Un solo pago en modo botones: solo el monto (el tipo ya está elegido arriba) y únicamente cuando ya se eligió el tipo
+        if (botones) {
+          if (!f.metodo) return '';
+          return `
+          <div data-fila="${i}" class="mt-3">
+            <div class="flex items-center justify-between gap-3">
+              <label class="text-sm text-slate-600 dark:text-slate-300">Cliente paga</label>
+              <div class="relative w-44">
+                <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">${prefijo}</span>
+                <input data-pago-monto type="text" inputmode="decimal" autocomplete="off" aria-label="Monto con este tipo de cobro" placeholder="0,00" value="${escaparHtml(f.monto)}" class="${CLASE_MONTO_UNICO}" />
+              </div>
+            </div>
+            <p data-pago-equiv class="mt-1 min-h-4 text-right text-[11px] tabular-nums text-slate-500 dark:text-slate-400"></p>
+          </div>`;
+        }
         const usados = new Set(this.filas.filter((_, k) => k !== i).map((x) => x.metodo).filter(Boolean));
         const opciones =
           '<option value="">Tipo de cobro...</option>' +
           METODOS_PAGO.map((m) => `<option value="${m.valor}" ${f.metodo === m.valor ? 'selected' : ''} ${usados.has(m.valor) ? 'disabled' : ''}>${m.etiqueta}</option>`).join('');
-        const prefijo = f.metodo && esMetodoBolivares(f.metodo) ? 'Bs.' : '$';
         return `
           <div data-fila="${i}" class="rounded-lg border border-slate-200 p-2.5 dark:border-slate-700">
             <div class="flex items-center gap-2">
-              <select data-pago-metodo aria-label="Tipo de cobro" class="${CLASE_SELECT}${this.rapido && this.filas.length === 1 ? ' hidden' : ''}">${opciones}</select>
+              <select data-pago-metodo aria-label="Tipo de cobro" class="${CLASE_SELECT}">${opciones}</select>
               ${this.filas.length > 1 ? '<button type="button" data-pago-quitar aria-label="Quitar esta forma de pago" class="shrink-0 rounded p-1.5 text-slate-400 hover:text-red-600">✕</button>' : ''}
             </div>
             <div class="mt-2 flex items-center gap-2">
@@ -209,111 +257,114 @@ export class FormularioPagos {
                 <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400">${prefijo}</span>
                 <input data-pago-monto type="text" inputmode="decimal" autocomplete="off" aria-label="Monto con este tipo de cobro" placeholder="0,00" value="${escaparHtml(f.monto)}" ${f.metodo ? '' : 'disabled'} class="${CLASE_MONTO}" />
               </div>
-              <button type="button" data-pago-completar ${f.metodo ? '' : 'disabled'} title="Poner lo que falta por pagar" class="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-40 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">Completar</button>
+              ${unico ? '' : `<button type="button" data-pago-completar ${f.metodo ? '' : 'disabled'} title="Poner lo que falta por pagar" class="shrink-0 rounded-lg border border-slate-200 px-2.5 py-2.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-40 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">Completar</button>`}
             </div>
             <p data-pago-equiv class="mt-1 min-h-4 text-[11px] tabular-nums text-slate-500 dark:text-slate-400"></p>
           </div>`;
       })
       .join('');
 
-    // Cobro rápido: con una sola forma de pago, los tipos de cobro van como botones grandes (un toque basta)
-    const botonesRapidos =
-      this.rapido && this.filas.length === 1
-        ? `<div class="mt-2 grid grid-cols-3 gap-2" role="group" aria-label="Cobrar con">${METODOS_PAGO.map((m) => {
-            const activo = this.filas[0].metodo === m.valor;
-            return `<button type="button" data-pago-rapido="${m.valor}" aria-pressed="${activo}" class="rounded-lg border px-2 py-3 text-sm font-semibold leading-tight transition ${
-              activo
-                ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
-                : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-            }">${ETIQUETA_COBRO_RAPIDO[m.valor as MetodoPago] ?? m.etiqueta}</button>`;
-          }).join('')}</div>`
-        : '';
+    // Modo botones: una cuadrícula uniforme de 3 × 2 (los 5 tipos de cobro y «Dividir pago»); un toque basta
+    const claseChip = 'flex h-11 items-center justify-center rounded-lg border px-1.5 text-center text-[13px] font-semibold leading-tight transition';
+    const botonesHtml = botones
+      ? `<div class="grid grid-cols-3 gap-2" role="group" aria-label="Cobrar con">${METODOS_PAGO.map((m) => {
+          const activo = this.filas[0].metodo === m.valor;
+          return `<button type="button" data-pago-rapido="${m.valor}" aria-pressed="${activo}" class="${claseChip} ${
+            activo
+              ? 'border-brand-600 bg-brand-600 text-white shadow-sm'
+              : 'border-slate-200 bg-white text-slate-700 hover:border-brand-400 hover:bg-brand-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+          }">${ETIQUETA_COBRO_RAPIDO[m.valor as MetodoPago] ?? m.etiqueta}</button>`;
+        }).join('')}<button type="button" data-pago-agregar class="${claseChip} border-dashed border-slate-300 bg-transparent text-slate-500 hover:border-brand-400 hover:text-brand-700 dark:border-slate-600 dark:text-slate-400 dark:hover:text-brand-300">Dividir pago</button></div>`
+      : '';
 
     this.raiz.innerHTML = `
       <div class="flex items-center justify-between gap-3">
-        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Forma de pago *</p>
-        <button type="button" data-pago-agregar class="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">+ Agregar otra forma de pago</button>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Forma de pago</p>
+        ${botones ? '' : '<button type="button" data-pago-agregar class="text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">+ Agregar otra forma de pago</button>'}
       </div>
-      ${botonesRapidos}
-      <div class="mt-2 space-y-2">${filasHtml}</div>
-      <div data-vuelto class="mt-2 rounded-lg border border-slate-200 p-2.5 dark:border-slate-700"></div>
-      <p data-pagos-resumen class="mt-2 rounded-lg px-3 py-2 text-sm font-medium"></p>`;
-    this.pintarVuelto();
+      ${botonesHtml ? `<div class="mt-2">${botonesHtml}</div>` : ''}
+      <div data-slot-metodo></div>
+      <div class="${botones ? '' : 'mt-2 space-y-2'}">${filasHtml}</div>
+      <div data-vuelto class="mt-3 hidden"></div>`;
+    if (this.extra) this.raiz.querySelector('[data-slot-metodo]')!.appendChild(this.extra);
+    this.modoMostrado = '';
+    this.actualizar();
     this.raiz.dispatchEvent(new CustomEvent('easystem:pagos-cambiaron', { bubbles: true }));
   }
 
-  /** Bloque "¿Se debe dar vuelto?" (se repinta solo, sin tocar las filas de pago). */
-  private pintarVuelto() {
-    const caja = this.raiz.querySelector<HTMLElement>('[data-vuelto]')!;
-    const opcionesVuelto = METODOS_VUELTO.map(
-      (m) => `<option value="${m}" ${m === this.metodoVuelto ? 'selected' : ''}>${etiquetaMetodoPago(m)}</option>`
-    ).join('');
-    caja.innerHTML = `
-      <div class="flex flex-wrap items-center gap-2">
-        <label class="text-xs font-medium text-slate-600 dark:text-slate-400">¿Se debe dar vuelto?</label>
-        <select data-vuelto-si aria-label="¿Se debe dar vuelto?" class="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">
-          <option value="no" ${this.darVuelto ? '' : 'selected'}>No</option>
-          <option value="si" ${this.darVuelto ? 'selected' : ''}>Sí</option>
-        </select>
-      </div>
-      ${
-        this.darVuelto
-          ? `<div class="mt-2 flex flex-wrap items-center gap-2">
-               <label class="text-xs font-medium text-slate-600 dark:text-slate-400">Dar el vuelto en</label>
-               <select data-vuelto-metodo aria-label="Tipo de cobro del vuelto" class="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white">${opcionesVuelto}</select>
-             </div>
-             <p data-vuelto-monto class="mt-2 text-sm font-semibold text-slate-800 dark:text-slate-100"></p>`
-          : '<p class="mt-1 text-[11px] text-slate-400">Si el cliente paga con más, elige "Sí" para registrar cuánto vuelto se le entrega.</p>'
-      }`;
-    this.actualizar();
+  /** Qué pasa con lo recibido de más (ver `ModoVuelto`) según los pagos ya leídos. */
+  private modoPara(pagos: PagoVenta[], exceso: number): ModoVuelto {
+    if (exceso <= 0.01) return 'ninguno';
+    const tasa = tasaActual.get();
+    const absorbible = !!tasa && absorberExcesoEnBs(pagos, exceso, tasa) !== null;
+    if (!absorbible) return 'obligado';
+    return this.vueltoElegido === true ? 'elegible' : 'redondeo';
   }
 
-  /** Actualiza equivalencias, monto del vuelto y semáforo sin volver a pintar los campos (no se pierde el foco al escribir). */
+  /** Bloque del vuelto o del redondeo (se repinta solo cuando cambia el modo, sin tocar las filas de pago). */
+  private pintarVuelto(modo: ModoVuelto) {
+    const caja = this.raiz.querySelector<HTMLElement>('[data-vuelto]')!;
+    caja.classList.toggle('hidden', modo === 'ninguno');
+    if (modo === 'ninguno') {
+      caja.innerHTML = '';
+      return;
+    }
+    const enlace = 'text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300';
+    if (modo === 'redondeo') {
+      caja.innerHTML = `
+        <div class="rounded-lg bg-slate-100 px-3 py-2.5 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+          <p data-redondeo-texto></p>
+          <button type="button" data-vuelto-dar="si" class="${enlace} mt-1">Dar vuelto en su lugar</button>
+        </div>`;
+      return;
+    }
+    const opcionesVuelto = METODOS_VUELTO.map((m) => `<option value="${m}" ${m === this.metodoVuelto ? 'selected' : ''}>${etiquetaMetodoPago(m)}</option>`).join('');
+    caja.innerHTML = `
+      <div class="rounded-lg bg-slate-100 px-3 py-2.5 dark:bg-slate-800">
+        <p data-vuelto-monto class="text-sm font-semibold text-slate-800 dark:text-slate-100"></p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <label class="text-xs font-medium text-slate-600 dark:text-slate-400">Dar el vuelto en</label>
+          <select data-vuelto-metodo aria-label="Tipo de cobro del vuelto" class="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white">${opcionesVuelto}</select>
+        </div>
+        ${modo === 'elegible' ? `<button type="button" data-vuelto-dar="no" class="${enlace} mt-2">Es redondeo, sin vuelto</button>` : ''}
+      </div>`;
+  }
+
+  /** Actualiza equivalencias y el bloque del vuelto sin volver a pintar los campos (no se pierde el foco al escribir). */
   private actualizar() {
     const tasa = tasaActual.get();
+    const unicoExacto = this.filas.length === 1 && Math.abs(this.asignadoExcepto(null) - this.total) <= 0.01;
     this.raiz.querySelectorAll<HTMLElement>('[data-fila]').forEach((el) => {
       const f = this.filas[Number(el.dataset.fila)];
       const usd = this.usdDeFila(f);
       const eq = el.querySelector<HTMLElement>('[data-pago-equiv]')!;
-      if (!f.metodo || usd === null) eq.textContent = '';
+      // Un solo pago por el total exacto ya se ve arriba en el total: sin equivalencia repetida
+      if (!f.metodo || usd === null || (this.rapido && unicoExacto)) eq.textContent = '';
       else if (esMetodoBolivares(f.metodo)) eq.textContent = `≈ ${formatearMoneda(usd)}`;
       else eq.textContent = tasa ? `≈ ${formatearBolivares(convertirABs(usd, tasa))}` : '';
     });
 
-    const resumen = this.raiz.querySelector<HTMLElement>('[data-pagos-resumen]');
-    if (!resumen) return;
-    const dif = redondear(this.asignadoExcepto(null) - this.total); // + = recibido de más, − = falta
-    const base = 'mt-2 rounded-lg px-3 py-2 text-sm font-medium ';
-    const verde = base + 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400';
-    const ambar = base + 'bg-amber-50 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300';
-    const rojo = base + 'bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400';
+    const pagos = this.pagosLeidos();
+    const exceso = pagos ? redondear(pagos.reduce((s, p) => s + p.monto_usd, 0) - this.total) : 0;
+    const modo: ModoVuelto = pagos ? this.modoPara(pagos, exceso) : 'ninguno';
+    if (modo !== this.modoMostrado) {
+      this.modoMostrado = modo;
+      this.pintarVuelto(modo);
+    }
+    if (!pagos || modo === 'ninguno') return;
 
+    const textoRedondeo = this.raiz.querySelector<HTMLElement>('[data-redondeo-texto]');
+    if (textoRedondeo) {
+      // El cliente redondeó en bolívares: la venta sigue y queda anotado lo que pagó y lo que debía
+      const p = tasa ? absorberExcesoEnBs(pagos, exceso, tasa)?.find((x) => bsDeMas(x) > 0) : undefined;
+      textoRedondeo.textContent = p
+        ? `Redondeo: pagó ${formatearBolivares(p.monto_bs!)} y debía ${formatearBolivares(p.monto_bs_debido!)} (${formatearBolivares(bsDeMas(p))} de más). La venta se registra igual.`
+        : '';
+    }
     const vueltoEl = this.raiz.querySelector<HTMLElement>('[data-vuelto-monto]');
     if (vueltoEl) {
-      const v = dif > 0.01 ? this.armarVuelto(dif) : null;
-      vueltoEl.textContent = !v
-        ? 'Aún no hay vuelto: lo recibido no supera el total.'
-        : `Vuelto a entregar: ${v.monto_bs != null ? `${formatearBolivares(v.monto_bs)} (≈ ${formatearMoneda(v.monto_usd)})` : formatearMoneda(v.monto_usd)}`;
-    }
-
-    if (Math.abs(dif) <= 0.01) {
-      resumen.className = verde;
-      resumen.textContent = `✓ Pagos completos: ${formatearMoneda(this.total)}`;
-    } else if (dif < 0) {
-      // Mientras falta por pagar no se muestra aviso (estorbaba en el celular); si se intenta cobrar así, `leer()` explica qué falta
-      resumen.className = 'hidden';
-      resumen.textContent = '';
-    } else if (this.darVuelto) {
-      resumen.className = verde;
-      resumen.textContent = `✓ Recibido ${formatearMoneda(this.total + dif)} · Total ${formatearMoneda(this.total)} · Vuelto ${formatearMoneda(dif)}`;
-    } else if (this.redondeoAbsorbido(dif)) {
-      // El cliente redondeó en bolívares: la venta sigue y queda anotado lo que pagó y lo que debía
-      const p = this.redondeoAbsorbido(dif)!.find((x) => bsDeMas(x) > 0)!;
-      resumen.className = ambar;
-      resumen.textContent = `Pagó ${formatearBolivares(p.monto_bs!)} y debía ${formatearBolivares(p.monto_bs_debido!)}: ${formatearBolivares(bsDeMas(p))} de más (≈ ${formatearMoneda(dif)}). La venta se registra igual y queda anotado en el historial.`;
-    } else {
-      resumen.className = rojo;
-      resumen.textContent = `Los pagos se pasan por ${formatearMoneda(dif)}. Corrige los montos o marca "Sí" en ¿Se debe dar vuelto?`;
+      const v = this.armarVuelto(exceso);
+      vueltoEl.textContent = !v ? 'Vuelto a entregar: falta la tasa del día.' : `Vuelto a entregar: ${v.monto_bs != null ? `${formatearBolivares(v.monto_bs)} (≈ ${formatearMoneda(v.monto_usd)})` : formatearMoneda(v.monto_usd)}`;
     }
   }
 
@@ -335,15 +386,6 @@ export class FormularioPagos {
     return pagos;
   }
 
-  /** Si lo recibido de más se puede registrar como redondeo en bolívares (sin dar vuelto), los pagos ya ajustados; si no, null. */
-  private redondeoAbsorbido(dif: number): PagoVenta[] | null {
-    const tasa = tasaActual.get();
-    const pagos = this.pagosLeidos();
-    if (!pagos || !tasa || dif <= 0.01 || this.darVuelto) return null;
-    const exceso = redondear(pagos.reduce((suma, p) => suma + p.monto_usd, 0) - this.total);
-    return absorberExcesoEnBs(pagos, exceso, tasa);
-  }
-
   private armarVuelto(excesoUsd: number): DineroEntregado | null {
     const tasa = tasaActual.get();
     const usd = redondear(excesoUsd);
@@ -362,7 +404,10 @@ export class FormularioPagos {
     const pagos: PagoVenta[] = [];
     for (let i = 0; i < this.filas.length; i++) {
       const f = this.filas[i];
-      if (!f.metodo) return error('Selecciona el tipo de cobro de cada forma de pago.', campoDe(i, '[data-pago-metodo]'));
+      if (!f.metodo) {
+        const mensaje = this.rapido && this.filas.length === 1 ? 'Elige cómo paga el cliente.' : 'Selecciona el tipo de cobro de cada forma de pago.';
+        return error(mensaje, campoDe(i, '[data-pago-metodo]') ?? this.raiz.querySelector<HTMLElement>('[data-pago-rapido]'));
+      }
       const valor = parsearMonto(f.monto);
       if (valor === null) return error('Escribe el monto de cada forma de pago (mayor a 0).', campoDe(i, '[data-pago-monto]'));
       if (esMetodoBolivares(f.metodo)) {
@@ -380,11 +425,10 @@ export class FormularioPagos {
 
     let vuelto: DineroEntregado | null = null;
     if (dif > 0.01) {
-      if (!this.darVuelto) {
+      if (this.modoPara(pagos, dif) === 'redondeo') {
         // Pagó de más en bolívares (redondeo): se acepta y se anota lo que pagó y lo que debía
         const absorbidos = tasa ? absorberExcesoEnBs(pagos, dif, tasa) : null;
         if (absorbidos) return { ok: true, pagos: absorbidos, vuelto: null };
-        return error(`Los pagos se pasan por ${formatearMoneda(dif)}. Corrige los montos o marca "Sí" en ¿Se debe dar vuelto?`, ultimo);
       }
       vuelto = this.armarVuelto(dif);
       if (!vuelto) return error('Falta la tasa del dólar del día para calcular el vuelto en bolívares.', null);

@@ -255,36 +255,26 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   >
     <form id="pos-confirmar-form" class="flex max-h-[92dvh] flex-col" novalidate>
       <div class="space-y-4 overflow-y-auto px-5 pb-4 pt-5">
-        <div class="flex items-start gap-3">
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" aria-hidden="true">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
-              <circle cx="12" cy="12" r="9" /><path d="M12 8v4m0 4h.01" stroke-linecap="round" />
-            </svg>
-          </span>
-          <div class="min-w-0">
-            <h2 id="pos-confirmar-titulo" class="text-base font-semibold">Procesar venta</h2>
-            <p id="pos-confirmar-resumen" class="mt-0.5 text-sm text-slate-500 dark:text-slate-400"></p>
-          </div>
-        </div>
+        <h2 class="flex items-baseline gap-1.5 text-base font-semibold">
+          <span id="pos-confirmar-titulo">Cobro</span>
+          <span id="pos-confirmar-resumen" class="text-sm font-normal text-slate-500 dark:text-slate-400"></span>
+        </h2>
         <ol id="pos-pasos" class="flex gap-1.5" aria-label="Pasos de la venta"></ol>
 
         <div>
-          <ul id="pos-confirmar-lineas" class="hidden group-data-[teclado=true]:hidden max-h-56 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
-          <div class="mt-3 flex items-center justify-between text-base font-semibold">
-            <span>Total a cobrar</span>
-            <button id="pos-confirmar-total-btn" type="button" title="Modificar el precio" aria-label="Modificar el precio de la venta" class="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 -mr-1.5 decoration-dotted underline-offset-4 hover:bg-slate-100 hover:underline dark:hover:bg-slate-800">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5 text-slate-400" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round" /></svg>
-              <span id="pos-confirmar-total"></span>
+          <ul id="pos-confirmar-lineas" class="hidden group-data-[teclado=true]:hidden max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 px-3 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
+          <div class="mt-3 text-center">
+            <p class="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">Total a cobrar</p>
+            <p id="pos-confirmar-total" class="mt-0.5 text-3xl font-bold tabular-nums tracking-tight"></p>
+            <p id="pos-confirmar-total-bs" class="group-data-[teclado=true]:hidden mt-0.5 text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
+            <button id="pos-confirmar-total-btn" type="button" aria-label="Modificar el precio de la venta" class="group-data-[teclado=true]:hidden mt-1.5 inline-flex items-center gap-1 rounded px-1 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3 w-3" aria-hidden="true"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" stroke-linecap="round" stroke-linejoin="round" /></svg>
+              Cambiar precio
             </button>
           </div>
-          <p id="pos-confirmar-total-bs" class="group-data-[teclado=true]:hidden text-right text-sm tabular-nums text-slate-500 dark:text-slate-400"></p>
-          <p id="pos-confirmar-precio-nota" class="group-data-[teclado=true]:hidden text-right text-[11px] text-slate-400 dark:text-slate-500">Toca el total para modificar el precio</p>
         </div>
 
         <section data-paso="escaneo" class="hidden space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <div>
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Escanea lo que vas a vender</p>
-          </div>
           <ul id="pos-escaneo-lista" class="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm dark:divide-slate-800 dark:border-slate-700"></ul>
           <div class="relative">
             <input id="pos-escaneo-codigo" type="text" inputmode="numeric" autocomplete="off" placeholder="Escanea o escribe el código de la etiqueta..." aria-label="Código de la unidad" class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-3 pr-12 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
@@ -328,16 +318,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <div id="pos-formulario-pagos"></div>
 
           <!-- Referencia del pago móvil: obligatoria si algún cobro es "Bs pago móvil" (se muestra solo entonces) -->
-          <div id="pos-comprobante" class="hidden space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-            <label for="pos-comprobante-ref" class="block text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">Referencia del pago móvil *</label>
-            <p class="text-xs text-amber-800 dark:text-amber-300">Escribe los <strong>4 últimos dígitos</strong> de la referencia. Sin esto no se puede procesar la venta.</p>
-            <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-32 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-center font-mono text-lg tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-            <p id="pos-comprobante-error" role="alert" class="hidden text-xs text-red-700 dark:text-red-400"></p>
+          <div id="pos-comprobante" class="mt-3 hidden">
+            <div class="flex items-center justify-between gap-3">
+              <label for="pos-comprobante-ref" class="text-sm text-slate-600 dark:text-slate-300">Referencia <span class="text-xs text-slate-400">(4 últimos dígitos)</span></label>
+              <input id="pos-comprobante-ref" type="text" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" placeholder="0000" class="w-28 rounded-lg border border-slate-200 bg-white px-3 py-2 text-center font-mono text-lg font-semibold tracking-[0.3em] text-slate-900 placeholder:text-slate-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            </div>
+            <p id="pos-comprobante-error" role="alert" class="mt-1 hidden text-right text-xs text-red-700 dark:text-red-400"></p>
           </div>
 
           <!-- Cobro rápido (Local Vidrios): datos del cliente opcionales, plegados; el paso «Datos del cliente» se mueve aquí -->
           <div id="pos-cli-opcional-bloque" class="hidden border-t border-slate-200 pt-3 dark:border-slate-800">
-            <button id="pos-cli-toggle" type="button" aria-expanded="false" class="text-sm font-semibold text-brand-700 hover:underline dark:text-brand-300">+ Datos del cliente (opcional)</button>
+            <button id="pos-cli-toggle" type="button" aria-expanded="false" class="text-xs font-medium text-slate-500 hover:text-brand-700 hover:underline dark:text-slate-400 dark:hover:text-brand-300">+ Datos del cliente (opcional)</button>
             <div id="pos-cli-opcional" class="mt-3 hidden">
               <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">Déjalo en blanco si el cliente no quiere dar sus datos. Si escribes algo, completa cédula, nombre y teléfono.</p>
             </div>
@@ -345,19 +336,22 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
 
         <p id="pos-confirmar-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
-        <p id="pos-confirmar-nota" class="hidden text-xs text-slate-500 dark:text-slate-400">Al confirmar, el stock se descontará del inventario.</p>
       </div>
 
-      <div class="flex flex-wrap gap-3 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
-        <button id="pos-confirmar-espera" type="button" class="hidden basis-full rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
-          Dejar en espera
-        </button>
-        <button id="pos-confirmar-no" type="button" class="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-          Cancelar
-        </button>
-        <button id="pos-confirmar-si" type="submit" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">
-          Sí, procesar venta
-        </button>
+      <div class="border-t border-slate-200 bg-slate-50 px-5 pb-4 pt-3 dark:border-slate-800 dark:bg-slate-800/40">
+        <div class="flex gap-3">
+          <button id="pos-confirmar-no" type="button" class="shrink-0 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+            Cancelar
+          </button>
+          <button id="pos-confirmar-si" type="submit" class="bg-marca flex min-h-[3.25rem] flex-1 flex-col items-center justify-center rounded-lg px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110">
+            Siguiente
+          </button>
+        </div>
+        <div class="text-center">
+          <button id="pos-confirmar-espera" type="button" class="mt-2 hidden text-xs font-medium text-slate-500 underline-offset-2 hover:text-brand-700 hover:underline dark:text-slate-400 dark:hover:text-brand-300">
+            Dejar en espera
+          </button>
+        </div>
       </div>
     </form>
   </dialog>
@@ -705,6 +699,8 @@ import { alCambiarDatos } from '../lib/realtime';
   let instalacionDisponible = false;
   /** Cobro rápido (Local Vidrios): sin paso de datos del cliente, tipos de cobro de un toque y último tipo recordado */
   let cobroRapido = false;
+  /** «Dejar en espera» existe solo en el Local Vidrios (se muestra en el paso de cobro) */
+  let esperaDisponible = false;
   /** Datos del promotor que instala (cuando no hay un promotor del precio ya autorizado); viajan con la venta */
   let promotorInstalacion: DatosPromotor | null = null;
   let localActivoId = '';
@@ -1170,7 +1166,6 @@ import { alCambiarDatos } from '../lib/realtime';
   // Formas de pago (una o varias) y vuelto: lo maneja utils/formularioPagos.ts
   const contenedorPagos = document.getElementById('pos-formulario-pagos')!;
   const formPagos = new FormularioPagos(contenedorPagos);
-  let totalAConfirmar = 0;
 
   // --- Referencia del pago móvil (4 dígitos; ya no se pide foto) ---------------------------------------
   const bloqueComprobante = document.getElementById('pos-comprobante')!;
@@ -1191,6 +1186,11 @@ import { alCambiarDatos } from '../lib/realtime';
     errorConfirmar.classList.add('hidden');
   });
   contenedorPagos.addEventListener('easystem:pagos-cambiaron', pintarComprobante);
+  // Al tocar «Pago móvil» el cursor pasa directo a la referencia (lo único que falta para cobrar)
+  contenedorPagos.addEventListener('easystem:metodo-elegido', (e) => {
+    if ((e as CustomEvent<{ metodo: string }>).detail?.metodo === 'BS_PAGO_MOVIL') campoReferencia.focus();
+  });
+  formPagos.fijarExtraBajoMetodos(bloqueComprobante);
   pintarComprobante();
 
   // --- Cobro rápido (Local Vidrios): los datos del cliente son opcionales y viven dentro del cobro ---------------------
@@ -1218,7 +1218,7 @@ import { alCambiarDatos } from '../lib/realtime';
     formPagos.activarCobroRapido(ultimoMetodo);
     // En el Local Vidrios también hay ventas en espera
     document.getElementById('pos-espera-abrir')!.classList.remove('hidden');
-    document.getElementById('pos-confirmar-espera')!.classList.remove('hidden');
+    esperaDisponible = true;
   }
   botonClienteOpcional.addEventListener('click', () => {
     const abrir = contenedorClienteOpcional.classList.contains('hidden');
@@ -1243,7 +1243,7 @@ import { alCambiarDatos } from '../lib/realtime';
     }
   }
   function recordarUltimoMetodo(pagos: PagoVenta[]) {
-    if (!cobroRapido || pagos.length !== 1) return;
+    if (pagos.length !== 1) return;
     try {
       localStorage.setItem(claveUltimoMetodo(), pagos[0].metodo);
     } catch {
@@ -1312,10 +1312,7 @@ import { alCambiarDatos } from '../lib/realtime';
   function pedirConfirmacion() {
     if (carrito.length === 0 || dialogoConfirmar.open) return;
     if (autorizacionVencida() || autorizacionDanadosVencida()) return;
-    const unidades = carrito.reduce((suma, l) => suma + l.cantidad, 0);
-
-    document.getElementById('pos-confirmar-resumen')!.textContent =
-      `${carrito.length} línea${carrito.length === 1 ? '' : 's'} · ${unidades} unidad${unidades === 1 ? '' : 'es'}`;
+    danadosAbiertos.clear();
     pintarResumenConfirmar();
 
     errorConfirmar.classList.add('hidden');
@@ -1330,8 +1327,7 @@ import { alCambiarDatos } from '../lib/realtime';
   }
 
   function pedirConfirmacionActualiza() {
-    const tasaDia = tasaActual.get();
-    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(totalEnBsParaMostrar(totalAConfirmar)!)} (tasa ${formatearBolivares(tasaDia)})` : '';
+    pintarTotalesCobro();
     formPagos.refrescar();
   }
 
@@ -1594,7 +1590,11 @@ import { alCambiarDatos } from '../lib/realtime';
     const objetivo = e.target as HTMLElement;
     const sumar = objetivo.closest<HTMLButtonElement>('[data-danados-sumar]');
     const restar = objetivo.closest<HTMLButtonElement>('[data-danados-restar]');
-    if (sumar?.dataset.danadosSumar) cambiarDanados(sumar.dataset.danadosSumar, 1);
+    const abrir = objetivo.closest<HTMLButtonElement>('[data-danados-abrir]');
+    if (abrir?.dataset.danadosAbrir) {
+      danadosAbiertos.add(abrir.dataset.danadosAbrir);
+      pintarResumenConfirmar();
+    } else if (sumar?.dataset.danadosSumar) cambiarDanados(sumar.dataset.danadosSumar, 1);
     else if (restar?.dataset.danadosRestar) cambiarDanados(restar.dataset.danadosRestar, -1);
   });
 
@@ -1846,11 +1846,15 @@ import { alCambiarDatos } from '../lib/realtime';
     if (!puedeMarcarDanados || !esPorCantidad(linea.producto)) return '';
     const id = escaparHtml(linea.producto.id);
     const danados = linea.danados ?? 0;
+    // Plegado por defecto: es un caso raro y no debe ocupar el cobro de cada venta
+    if (danados === 0 && !danadosAbiertos.has(linea.producto.id)) {
+      return `<button type="button" data-danados-abrir="${id}" class="mt-1 text-xs font-medium text-slate-500 underline-offset-2 hover:text-brand-700 hover:underline dark:text-slate-400 dark:hover:text-brand-300">+ Pieza defectuosa</button>`;
+    }
     const alMaximo = ocupadas(linea) >= linea.producto.stock_actual;
-    const boton = 'h-9 w-9 rounded-lg border border-orange-200 text-lg leading-none text-orange-800 hover:bg-orange-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-orange-500/40 dark:text-orange-300 dark:hover:bg-orange-500/20';
-    return `<div class="mt-2 rounded-lg border border-orange-200 bg-orange-50/60 px-3 py-2 dark:border-orange-500/30 dark:bg-orange-500/10">
+    const boton = 'h-9 w-9 rounded-lg border border-slate-200 bg-white text-lg leading-none text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-700';
+    return `<div class="mt-2 rounded-lg bg-slate-100 px-3 py-2 dark:bg-slate-800">
         <div class="flex items-center justify-between gap-3">
-          <p class="text-xs font-semibold text-orange-800 dark:text-orange-300">Pieza defectuosa (no se cobra)</p>
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Pieza defectuosa <span class="font-normal text-slate-500 dark:text-slate-400">(no se cobra)</span></p>
           <div class="flex items-center gap-1">
             <button type="button" data-danados-restar="${id}" ${danados === 0 ? 'disabled' : ''} aria-label="Quitar una pieza defectuosa" class="${boton}">−</button>
             <span class="w-8 text-center text-base font-semibold text-slate-900 dark:text-white">${danados}</span>
@@ -1859,7 +1863,7 @@ import { alCambiarDatos } from '../lib/realtime';
         </div>
         ${
           danados > 0
-            ? `<select data-danados-motivo="${id}" aria-label="Motivo de la pieza defectuosa (opcional)" class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-white">
+            ? `<select data-danados-motivo="${id}" aria-label="Motivo de la pieza defectuosa (opcional)" class="mt-2 w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-white">
                 <option value="">Motivo (opcional)</option>
                 ${MOTIVOS_MERMA.map((m) => `<option value="${m.id}" ${linea.danadosMotivo === m.id ? 'selected' : ''}>${escaparHtml(m.nombre)}</option>`).join('')}
               </select>`
@@ -1868,21 +1872,60 @@ import { alCambiarDatos } from '../lib/realtime';
       </div>`;
   }
 
+  /**
+   * El cobro se muestra en la moneda real de lo que se vende: bolívares cuando TODAS las líneas tienen precio en bolívares
+   * (precio fijo en Bs o precio escrito en Bs) y dólares en los demás casos. La otra moneda va pequeña.
+   */
+  function textosCobro(): { principal: string; otro: string; tasa: string } {
+    const total = totalDelCarrito();
+    const tasaDia = tasaActual.get();
+    const bsExacto = totalBsExactoDelCarrito();
+    const enBs = !!tasaDia && bsExacto !== null && carrito.every((l) => bsExactoDeLinea(l, tasaDia) !== null);
+    const totalBs = totalEnBsParaMostrar(total);
+    return {
+      principal: enBs ? formatearBolivares(bsExacto!) : formatearMoneda(total),
+      otro: enBs ? formatearMoneda(total) : totalBs !== null ? formatearBolivares(totalBs) : '',
+      tasa: tasaDia ? formatearBolivares(tasaDia) : '',
+    };
+  }
+
+  /** Total grande, la otra moneda pequeña y el texto del botón principal (que dice cuánto se cobra) */
+  function pintarTotalesCobro() {
+    const { principal, otro, tasa } = textosCobro();
+    document.getElementById('pos-confirmar-total')!.textContent = principal;
+    document.getElementById('pos-confirmar-total-bs')!.textContent = otro ? `≈ ${otro}${tasa ? ` · tasa ${tasa}` : ''}` : '';
+    pintarBotonPrincipal();
+  }
+
+  /** Piezas defectuosas: el control solo se despliega si se toca «+ Pieza defectuosa» (o ya hay alguna marcada) */
+  const danadosAbiertos = new Set<string>();
+
   function pintarResumenConfirmar() {
     const total = totalDelCarrito();
-    document.getElementById('pos-confirmar-total')!.textContent = formatearMoneda(total);
-    totalAConfirmar = total;
     formPagos.establecerTotal(total, totalBsExactoDelCarrito());
+    pintarTotalesCobro();
     const tasaDia = tasaActual.get();
-    document.getElementById('pos-confirmar-total-bs')!.textContent = tasaDia ? `≈ ${formatearBolivares(totalEnBsParaMostrar(total)!)} (tasa ${formatearBolivares(tasaDia)})` : '';
+    const enBs = textosCobro().principal.startsWith('Bs');
+    const etiqueta = (clase: string, texto: string) => `<span class="ml-1 text-[11px] font-medium ${clase}">(${texto})</span>`;
+    const neutro = 'text-slate-500 dark:text-slate-400';
     document.getElementById('pos-confirmar-lineas')!.innerHTML = carrito
-      .map(
-        (linea) => `
-          <li class="px-3 py-2"><div class="flex items-center justify-between gap-3">
-            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${linea.precioPromotor !== undefined ? (linea.precioPromotor < linea.producto.precio_venta ? '<span class="ml-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">(con descuento)</span>' : autorizacionPrecio?.modo === 'local' ? '<span class="ml-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">(precio del local)</span>' : '<span class="ml-1 text-[11px] font-medium text-amber-700 dark:text-amber-400">(precio de promotor)</span>') : ''}${linea.instalacion ? '<span class="ml-1 text-[11px] font-medium text-sky-700 dark:text-sky-400">(con instalación)</span>' : ''}</span>
-            <span class="shrink-0 font-medium text-slate-900 dark:text-white">${formatearMoneda(totalLineaCarrito(linea))}</span>
-          </div>${htmlDanadosCobro(linea)}</li>`
-      )
+      .map((linea) => {
+        const bsLinea = enBs && tasaDia ? bsExactoDeLinea(linea, tasaDia) : null;
+        const monto = bsLinea !== null ? formatearBolivares(bsLinea) : formatearMoneda(totalLineaCarrito(linea));
+        const notaPrecio =
+          linea.precioPromotor === undefined
+            ? ''
+            : linea.precioPromotor < linea.producto.precio_venta
+              ? etiqueta(neutro, 'con descuento')
+              : autorizacionPrecio?.modo === 'local'
+                ? etiqueta(neutro, 'precio del local')
+                : etiqueta(neutro, 'precio de promotor');
+        return `
+          <li class="py-2"><div class="flex items-start justify-between gap-3">
+            <span class="min-w-0 flex-1 break-words text-slate-700 dark:text-slate-300">${linea.cantidad} × ${escaparHtml(linea.producto.nombre)}${notaPrecio}${linea.instalacion ? etiqueta(neutro, 'con instalación') : ''}</span>
+            <span class="shrink-0 font-medium tabular-nums text-slate-900 dark:text-white">${monto}</span>
+          </div>${htmlDanadosCobro(linea)}</li>`;
+      })
       .join('');
   }
 
@@ -2378,7 +2421,7 @@ import { alCambiarDatos } from '../lib/realtime';
 
   // --- Pasos de "Procesar venta": 1) escanear el QR de cada unidad, 2) datos del cliente, 3) cobro ---------------------------
   type Paso = 'escaneo' | 'cliente' | 'pago';
-  const TITULO_PASO: Record<Paso, string> = { escaneo: 'Escanea lo que vas a vender', cliente: 'Datos del cliente', pago: 'Cobro' };
+  const TITULO_PASO: Record<Paso, string> = { escaneo: 'Escanear unidades', cliente: 'Datos del cliente', pago: 'Cobro' };
   let pasos: Paso[] = ['cliente', 'pago'];
   let pasoActual = 0;
 
@@ -2411,24 +2454,37 @@ import { alCambiarDatos } from '../lib/realtime';
   function pintarPasos() {
     const paso = pasos[pasoActual];
     for (const seccion of dialogoConfirmar.querySelectorAll<HTMLElement>('[data-paso]')) seccion.classList.toggle('hidden', seccion.dataset.paso !== paso);
-    // Con un solo paso (cobro rápido) no hace falta «Paso 1 de 1»
-    document.getElementById('pos-confirmar-resumen')!.textContent = pasos.length === 1 ? TITULO_PASO[paso] : `Paso ${pasoActual + 1} de ${pasos.length} · ${TITULO_PASO[paso]}`;
+    // Encabezado de una línea: «Cobro · 2 artículos» (en los otros pasos, «Datos del cliente · paso 2 de 3»)
+    const articulos = carrito.reduce((suma, l) => suma + l.cantidad, 0);
+    document.getElementById('pos-confirmar-titulo')!.textContent = TITULO_PASO[paso];
+    document.getElementById('pos-confirmar-resumen')!.textContent =
+      paso === 'pago' ? `· ${articulos} artículo${articulos === 1 ? '' : 's'}` : pasos.length > 1 ? `· paso ${pasoActual + 1} de ${pasos.length}` : '';
     document.getElementById('pos-pasos')!.classList.toggle('hidden', pasos.length === 1);
     document.getElementById('pos-pasos')!.innerHTML = pasos
       .map((_, i) => `<li class="h-1.5 flex-1 rounded-full ${i <= pasoActual ? 'bg-brand-600' : 'bg-slate-200 dark:bg-slate-700'}"></li>`)
       .join('');
     // La lista de productos y el aviso de stock solo en el cobro; el total, siempre
     document.getElementById('pos-confirmar-lineas')!.classList.toggle('hidden', paso !== 'pago');
-    document.getElementById('pos-confirmar-nota')!.classList.toggle('hidden', paso !== 'pago');
+    document.getElementById('pos-confirmar-espera')!.classList.toggle('hidden', !(esperaDisponible && paso === 'pago'));
     errorConfirmar.classList.add('hidden');
     errorEscaneo.classList.add('hidden');
     botonSinConexion.classList.toggle('hidden', !(paso === 'escaneo' && navigator.onLine === false));
 
-    const ultimo = pasoActual === pasos.length - 1;
     botonAtras.textContent = pasoActual === 0 ? 'Cancelar' : 'Atrás';
-    botonSiguiente.textContent = ultimo ? 'Sí, procesar venta' : 'Siguiente';
+    pintarBotonPrincipal();
     botonSiguiente.disabled = paso === 'escaneo' && pendientesDeEscanear().length > 0;
     if (paso === 'escaneo') pintarEscaneo();
+  }
+
+  /** El botón principal: «Siguiente» en los pasos previos y, al final, «Cobrar» con el monto en la moneda real y la otra pequeña */
+  function pintarBotonPrincipal() {
+    const ultimo = pasoActual === pasos.length - 1;
+    if (!ultimo || carrito.length === 0) {
+      botonSiguiente.textContent = 'Siguiente';
+      return;
+    }
+    const { principal, otro } = textosCobro();
+    botonSiguiente.innerHTML = `<span class="block text-base font-bold tabular-nums">Cobrar ${escaparHtml(principal)}</span>${otro ? `<span class="block text-[11px] font-medium tabular-nums opacity-80">≈ ${escaparHtml(otro)}</span>` : ''}`;
   }
 
   function enfocarPaso() {
@@ -3113,6 +3169,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (contexto?.local) {
       localActivoId = contexto.local.id;
       if (contexto.local.tipo === 'vidrios') activarCobroRapido(leerUltimoMetodo());
+      else formPagos.activarCobroRapido(leerUltimoMetodo()); // los demás locales: mismos botones de tipo de cobro, sin datos del cliente opcionales
       // Desde Pendientes → «Cobrar ahora» se llega con ?espera=<id>: se retoma esa venta en cuanto carga el catálogo
       void cargarProductos().then(() => {
         const espera = new URLSearchParams(window.location.search).get('espera');
