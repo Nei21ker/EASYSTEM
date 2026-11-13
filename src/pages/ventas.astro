@@ -517,6 +517,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <p id="pos-precio-descripcion" class="mt-0.5 text-sm text-slate-600 dark:text-slate-300">Escribe el precio al que paga el cliente.</p>
       </div>
       <div class="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs font-medium text-slate-600 dark:text-slate-300">Escribir el precio en</span>
+          <div role="group" aria-label="Moneda en que se escribe el precio" class="inline-flex shrink-0 overflow-hidden rounded-md border border-slate-200 text-xs font-semibold dark:border-slate-700">
+            <button type="button" id="pos-precio-mon-usd" aria-pressed="true" class="px-3 py-1.5">$</button>
+            <button type="button" id="pos-precio-mon-bs" aria-pressed="false" class="border-l border-slate-200 px-3 py-1.5 dark:border-slate-700">Bs</button>
+          </div>
+        </div>
         <ul id="pos-precio-lineas" class="space-y-3"></ul>
         <p id="pos-precio-comision" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
         <fieldset id="pos-promotor-bloque" class="space-y-2">
@@ -612,7 +619,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
   import { convertirABs, estadoStock, formatearBolivares, formatearMoneda, htmlPrecioDual } from '../utils/format';
-  import { tienePrecioEnBs } from '../utils/precioBs';
+  import { leerPrecioEscrito, textoPrecioCampo, tienePrecioEnBs, usdDesdeBs } from '../utils/precioBs';
   import { animarLista, reanimar } from '../utils/animaciones';
 import { alCambiarDatos } from '../lib/realtime';
   import { htmlMiniatura } from '../utils/imagenes';
@@ -637,6 +644,8 @@ import { alCambiarDatos } from '../lib/realtime';
     unidades: string[];
     /** Precio modificado y autorizado por un supervisor (mayor al del catálogo: promotor; menor: descuento); si no hay, se cobra el del catálogo */
     precioPromotor?: number;
+    /** Si el precio se escribió en BOLÍVARES: los Bs por unidad (exactos; `precioPromotor` es su equivalente en dólares a la tasa del día) */
+    precioBs?: number;
     /** Precio de catálogo que tenía el producto cuando se autorizó (si el catálogo cambia después, la autorización ya no vale) */
     listaAutorizada?: number;
     /** Solo productos por cantidad: piezas defectuosas que se botan en esta venta y NO se cobran (aparte de `cantidad`, que sí se cobra) */
@@ -674,7 +683,12 @@ import { alCambiarDatos } from '../lib/realtime';
    * tasa alta, cada centavo son varios bolívares (1100 Bs saldrían como 1.098). La instalación sigue en dólares y se convierte con la tasa.
    */
   const bsExactoDeLinea = (l: LineaCarrito, tasa: number | null): number | null => {
-    if (!tasa || l.precioPromotor !== undefined || !tienePrecioEnBs(l.producto)) return null;
+    if (!tasa) return null;
+    // Precio escrito en bolívares (precio de promotor o del local): esos Bs exactos
+    if (l.precioPromotor !== undefined) {
+      return l.precioBs === undefined ? null : Math.round((l.precioBs * l.cantidad + convertirABs(instalacionDe(l), tasa)) * 100) / 100;
+    }
+    if (!tienePrecioEnBs(l.producto)) return null;
     return Math.round((l.producto.precio_bs! * l.cantidad + convertirABs(instalacionDe(l), tasa)) * 100) / 100;
   };
   /** Total del carrito en bolívares cuando alguna línea tiene precio fijo en Bs (null = el normal: total en $ × tasa) */
@@ -887,7 +901,7 @@ import { alCambiarDatos } from '../lib/realtime';
               ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
               <div class="min-w-0 flex-1">
                 <p class="text-sm font-medium leading-snug text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-                <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio, linea.precioPromotor === undefined ? bsFijoDe(producto) : null)} c/u</p>
+                <p class="text-xs text-slate-500 dark:text-slate-400">${precioEnLinea(precio, linea.precioPromotor === undefined ? bsFijoDe(producto) : (linea.precioBs ?? null))} c/u</p>
                 ${detallePrecio}
                 ${detalleInstalacion}
                 ${codigos}
@@ -1522,6 +1536,7 @@ import { alCambiarDatos } from '../lib/realtime';
       // Si el precio de catálogo cambió desde que se autorizó el precio modificado, esa autorización ya no vale
       if (linea.precioPromotor !== undefined && Math.abs(actual.precio_venta - (linea.listaAutorizada ?? actual.precio_venta)) > 0.005) {
         delete linea.precioPromotor;
+        delete linea.precioBs;
         delete linea.listaAutorizada;
         avisos.push(`El precio de "${actual.nombre}" cambió en el catálogo: se quitó el precio modificado de esa línea.`);
       }
@@ -1729,16 +1744,72 @@ import { alCambiarDatos } from '../lib/realtime';
   const numeroEscrito = (texto: string): number => Number(texto.trim().replace(',', '.'));
   const camposPrecio = () => [...listaPrecio.querySelectorAll<HTMLInputElement>('input[data-precio-de]')];
 
-  /** Precios escritos distintos al del catálogo (más caros o más baratos): [línea, precio]. Los campos vacíos o iguales al catálogo no cuentan. */
-  function preciosEscritos(): { linea: LineaCarrito; precio: number }[] {
-    const resultado: { linea: LineaCarrito; precio: number }[] = [];
+  // El precio se puede escribir en dólares o en bolívares (se convierte a dólares con la tasa de hoy; los Bs escritos quedan exactos)
+  let monedaPrecio: 'USD' | 'BS' = 'USD';
+  const botonMonUsd = document.getElementById('pos-precio-mon-usd') as HTMLButtonElement;
+  const botonMonBs = document.getElementById('pos-precio-mon-bs') as HTMLButtonElement;
+
+  function pintarMonedaPrecio() {
+    const hayTasa = !!tasaActual.get();
+    botonMonBs.disabled = !hayTasa;
+    botonMonBs.title = hayTasa ? '' : 'Registra la tasa del día para escribir precios en bolívares';
+    for (const [boton, activo] of [[botonMonUsd, monedaPrecio === 'USD'], [botonMonBs, monedaPrecio === 'BS']] as const) {
+      boton.setAttribute('aria-pressed', String(activo));
+      boton.className = `${boton === botonMonBs ? 'border-l border-slate-200 dark:border-slate-700 ' : ''}px-3 py-1.5 ${activo ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300'}${boton.disabled ? ' opacity-50' : ''}`;
+    }
+  }
+
+  /** Lo escrito en un campo: dólares (con la tasa si se escribió en Bs) y los Bs exactos; null si no es un número válido */
+  function leerCampoPrecio(campo: HTMLInputElement): { usd: number; bs: number | null } | null {
+    if (monedaPrecio === 'BS') {
+      const tasa = tasaActual.get();
+      const bs = leerPrecioEscrito(campo.value, 'BS');
+      if (!tasa || bs === null || !(bs > 0)) return null;
+      return { usd: usdDesdeBs(bs, tasa), bs };
+    }
+    const usd = Math.round(numeroEscrito(campo.value) * 100) / 100;
+    return Number.isFinite(usd) && usd > 0 ? { usd, bs: null } : null;
+  }
+
+  /** Precios escritos distintos al del catálogo (más caros o más baratos): [línea, precio en $, Bs si se escribió en Bs]. Los campos vacíos o iguales al catálogo no cuentan. */
+  function preciosEscritos(): { linea: LineaCarrito; precio: number; bs: number | null }[] {
+    const resultado: { linea: LineaCarrito; precio: number; bs: number | null }[] = [];
     for (const campo of camposPrecio()) {
       const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
-      const precio = Math.round(numeroEscrito(campo.value) * 100) / 100;
-      if (linea && campo.value.trim() !== '' && Number.isFinite(precio) && precio > 0 && Math.abs(precio - linea.producto.precio_venta) > 0.005) resultado.push({ linea, precio });
+      const leido = campo.value.trim() === '' ? null : leerCampoPrecio(campo);
+      if (linea && leido && Math.abs(leido.usd - linea.producto.precio_venta) > 0.005) resultado.push({ linea, precio: leido.usd, bs: leido.bs });
     }
     return resultado;
   }
+
+  /** Debajo de cada campo: su equivalente en la otra moneda (según la tasa de hoy) */
+  function pintarEquivalentesPrecio() {
+    const tasa = tasaActual.get();
+    for (const campo of camposPrecio()) {
+      const destino = listaPrecio.querySelector<HTMLElement>(`[data-equiv-de="${CSS.escape(campo.dataset.precioDe ?? '')}"]`);
+      if (!destino) continue;
+      const leido = campo.value.trim() === '' ? null : leerCampoPrecio(campo);
+      destino.textContent = !leido || !tasa ? '' : monedaPrecio === 'BS' ? `≈ ${formatearMoneda(leido.usd)} a la tasa de hoy` : `≈ ${formatearBolivares(convertirABs(leido.usd, tasa))}`;
+    }
+  }
+
+  function cambiarMonedaPrecio(nueva: 'USD' | 'BS') {
+    if (nueva === monedaPrecio || (nueva === 'BS' && !tasaActual.get())) return;
+    const tasa = tasaActual.get();
+    // Lo que ya se escribió se convierte para no perderlo
+    for (const campo of camposPrecio()) {
+      const leido = campo.value.trim() === '' ? null : leerCampoPrecio(campo);
+      const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
+      if (leido && tasa) campo.value = nueva === 'BS' ? textoPrecioCampo(Math.round(convertirABs(leido.usd, tasa) * 100) / 100) : leido.usd.toFixed(2);
+      else if (campo.value.trim() !== '') campo.value = '';
+      if (linea) campo.placeholder = nueva === 'BS' && tasa ? textoPrecioCampo(Math.round(convertirABs(linea.producto.precio_venta, tasa) * 100) / 100) : linea.producto.precio_venta.toFixed(2);
+    }
+    monedaPrecio = nueva;
+    pintarMonedaPrecio();
+    textoComision();
+  }
+  botonMonUsd.addEventListener('click', () => cambiarMonedaPrecio('USD'));
+  botonMonBs.addEventListener('click', () => cambiarMonedaPrecio('BS'));
 
   /**
    * Según lo escrito: la comisión del promotor (precios mayores), el descuento (precios menores) y quién puede autorizar.
@@ -1751,7 +1822,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const partes: string[] = [];
     if (modoPrecio === 'local') {
       if (comision > 0) partes.push(`El precio sube ${formatearMoneda(comision)} para la tienda (sin comisión de promotor).`);
-      if (descuento > 0) partes.push(`Descuento de ${formatearMoneda(descuento)}: solo lo autoriza un gerente o un administrador.`);
+      if (descuento > 0) partes.push(`Descuento de ${formatearMoneda(descuento)}: pide la contraseña de un gerente o un administrador.`);
     } else {
       if (comision > 0) partes.push(`La tienda le paga ${formatearMoneda(comision)} de comisión al promotor.`);
       if (descuento > 0) partes.push('En el precio de promotor el precio no puede ser menor al del catálogo: para un descuento elige «Precio del local».');
@@ -1759,10 +1830,10 @@ import { alCambiarDatos } from '../lib/realtime';
     document.getElementById('pos-precio-comision')!.textContent = partes.length > 0 ? partes.join(' ') : 'Escribe un precio distinto al del catálogo en alguno de los productos.';
     // El promotor solo existe en el precio de promotor (el precio del local no lleva promotor ni comisión)
     document.getElementById('pos-promotor-bloque')!.classList.toggle('hidden', modoPrecio === 'local');
-    // El precio de promotor (siempre más caro que el catálogo) no pide contraseña; el precio del local, sí
-    document.getElementById('pos-precio-clave-bloque')!.classList.toggle('hidden', modoPrecio === 'promotor');
-    document.getElementById('pos-precio-clave-titulo')!.textContent =
-      descuento > 0 ? 'Contraseña de un gerente o administrador' : 'Contraseña de un encargado, gerente o administrador';
+    // Un precio más caro (de promotor o del local) no pide contraseña; solo un descuento (que se hace en «Precio del local»)
+    document.getElementById('pos-precio-clave-bloque')!.classList.toggle('hidden', modoPrecio === 'promotor' || descuento <= 0);
+    document.getElementById('pos-precio-clave-titulo')!.textContent = 'Contraseña de un gerente o administrador';
+    pintarEquivalentesPrecio();
   }
 
   function errorDePrecio(mensaje: string) {
@@ -1823,17 +1894,23 @@ import { alCambiarDatos } from '../lib/realtime';
     document.getElementById('pos-precio-titulo')!.textContent = modo === 'local' ? 'Precio del local' : 'Precio de promotor';
     document.getElementById('pos-precio-descripcion')!.textContent =
       modo === 'local'
-        ? 'Escribe el precio al que la tienda vende. Más caro o con descuento, sin promotor ni comisión.'
+        ? 'Escribe el precio al que la tienda vende, sin promotor ni comisión. Más caro no pide contraseña; con descuento sí.'
         : 'Escribe el precio al que paga el cliente. La diferencia sobre el catálogo es la comisión del promotor. No pide contraseña.';
     // Los precios y el promotor ya autorizados solo se muestran si se vuelve a abrir el MISMO modo
     const mismoModo = !autorizacionPrecio || autorizacionPrecio.modo === modo;
+    // Si los precios ya autorizados se escribieron en bolívares, se vuelve a abrir en Bs (con los mismos Bs exactos)
+    const conPrecio = carrito.filter((l) => l.precioPromotor !== undefined);
+    const tasaHoy = tasaActual.get();
+    monedaPrecio = !!tasaHoy && mismoModo && conPrecio.length > 0 && conPrecio.every((l) => l.precioBs !== undefined) ? 'BS' : 'USD';
+    pintarMonedaPrecio();
     listaPrecio.innerHTML = carrito
       .map(
         (l) => `<li>
           <label class="block">
             <span class="block break-words text-sm font-medium text-slate-800 dark:text-slate-100">${l.cantidad} × ${escaparHtml(l.producto.nombre)}</span>
-            <span class="text-xs text-slate-500 dark:text-slate-400">Catálogo: ${formatearMoneda(l.producto.precio_venta)} c/u</span>
-            <input data-precio-de="${escaparHtml(l.producto.id)}" type="text" inputmode="decimal" placeholder="${l.producto.precio_venta.toFixed(2)}" value="${mismoModo && l.precioPromotor !== undefined ? l.precioPromotor.toFixed(2) : ''}" aria-label="Precio al que paga el cliente por cada uno, en dólares" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <span class="text-xs text-slate-500 dark:text-slate-400">Catálogo: ${precioEnLinea(l.producto.precio_venta, bsFijoDe(l.producto))} c/u</span>
+            <input data-precio-de="${escaparHtml(l.producto.id)}" type="text" inputmode="decimal" placeholder="${monedaPrecio === 'BS' && tasaHoy ? textoPrecioCampo(Math.round(convertirABs(l.producto.precio_venta, tasaHoy) * 100) / 100) : l.producto.precio_venta.toFixed(2)}" value="${mismoModo && l.precioPromotor !== undefined ? (monedaPrecio === 'BS' ? textoPrecioCampo(l.precioBs!) : l.precioPromotor.toFixed(2)) : ''}" aria-label="Precio al que paga el cliente por cada uno" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <span data-equiv-de="${escaparHtml(l.producto.id)}" class="mt-1 block text-[11px] tabular-nums text-slate-500 dark:text-slate-400"></span>
           </label>
         </li>`
       )
@@ -1932,8 +2009,7 @@ import { alCambiarDatos } from '../lib/realtime';
     for (const campo of camposPrecio()) {
       const linea = carrito.find((l) => l.producto.id === campo.dataset.precioDe);
       if (!linea || campo.value.trim() === '') continue;
-      const valor = numeroEscrito(campo.value);
-      if (!Number.isFinite(valor) || valor <= 0) return errorDePrecio(`El precio de «${linea.producto.nombre}» no es válido.`);
+      if (!leerCampoPrecio(campo)) return errorDePrecio(`El precio de «${linea.producto.nombre}» no es válido.`);
     }
     const cambios = preciosEscritos();
     const hayDescuento = cambios.some(({ linea, precio }) => precio < linea.producto.precio_venta);
@@ -1944,6 +2020,7 @@ import { alCambiarDatos } from '../lib/realtime';
       if (!carrito.some((l) => l.precioPromotor !== undefined)) return errorDePrecio('Escribe un precio distinto al del catálogo en alguno de los productos.');
       for (const l of carrito) {
         delete l.precioPromotor;
+        delete l.precioBs;
         delete l.listaAutorizada;
       }
       promotorVenta = null;
@@ -1958,25 +2035,28 @@ import { alCambiarDatos } from '../lib/realtime';
     // El promotor solo existe en el precio de promotor (con un precio mayor); el precio del local no lleva promotor
     const promotor: { datos: DatosPromotor } | { error: string } = modoPrecio === 'promotor' && hayAumento ? leerPromotor() : { datos: { cedula: null, nombre: '', apellido: '', telefono: '' } };
     if ('error' in promotor) return errorDePrecio(promotor.error);
-    // Solo el precio del local pide contraseña (el de promotor, siempre más caro que el catálogo, no)
-    if (modoPrecio === 'local' && !campoClaveSupervisor.value) return errorDePrecio(hayDescuento ? 'Escribe la contraseña de un gerente o administrador.' : 'Escribe la contraseña de un encargado, gerente o administrador.');
+    // Solo un descuento pide contraseña (un precio más caro, de promotor o del local, no)
+    const pideClave = modoPrecio === 'local' && hayDescuento;
+    if (pideClave && !campoClaveSupervisor.value) return errorDePrecio('Escribe la contraseña de un gerente o administrador.');
 
     errorPrecio.classList.add('hidden');
     botonAutorizar.disabled = true;
     botonAutorizar.textContent = 'Verificando...';
     try {
       const aut = await inventoryService.autorizarPrecioVenta({
-        clave: modoPrecio === 'local' ? campoClaveSupervisor.value : undefined,
+        clave: pideClave ? campoClaveSupervisor.value : undefined,
         promotor: promotor.datos,
         modo: modoPrecio,
         lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),
       });
       for (const l of carrito) {
         delete l.precioPromotor;
+        delete l.precioBs;
         delete l.listaAutorizada;
       }
-      for (const { linea, precio } of cambios) {
+      for (const { linea, precio, bs } of cambios) {
         linea.precioPromotor = precio;
+        if (bs !== null) linea.precioBs = bs;
         linea.listaAutorizada = linea.producto.precio_venta;
       }
       promotorVenta = { datos: promotor.datos, nombre: aut.promotor };
@@ -2000,6 +2080,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const linea = carrito.find((l) => l.producto.id === productoId);
     if (!linea) return;
     delete linea.precioPromotor;
+    delete linea.precioBs;
     delete linea.listaAutorizada;
     if (!carrito.some((l) => l.precioPromotor !== undefined)) {
       promotorVenta = null;
@@ -2015,6 +2096,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (!autorizacionPrecio || autorizacionPrecio.vence_en > Date.now() + 15_000) return false;
     for (const l of carrito) {
       delete l.precioPromotor;
+      delete l.precioBs;
       delete l.listaAutorizada;
     }
     renderCarrito();

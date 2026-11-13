@@ -1984,8 +1984,8 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave?: str
   }
   // Un precio menor al del catálogo (descuento) solo lo autoriza un gerente o un administrador
   const hayDescuento = pedido.lineas.some((l) => l.precio < (db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0) - 0.005);
-  // Precio de promotor con precios MAYORES: sin contraseña (quien vende lo anota solo). Un descuento o el precio del local sí la piden.
-  const sinClave = modo === 'promotor' && !hayDescuento && !(pedido.clave ?? '');
+  // Un precio MAYOR (promotor o del local): sin contraseña (quien vende lo anota solo). Solo un descuento la pide.
+  const sinClave = !hayDescuento && !(pedido.clave ?? '');
   const supervisor = sinClave ? { id: null, nombre: null } : verificarSupervisorDemo(pedido.email, pedido.clave ?? '', local_id, hayDescuento);
   if (!supervisor) {
     throw new Error(hayDescuento ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.' : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');

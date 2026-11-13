@@ -3,7 +3,8 @@
 // El cliente paga, por ejemplo, $15 por un control de lista $12; los $3 de diferencia son la comisión del promotor (un trabajador
 // independiente) y la tienda se la paga aparte. La venta guarda lo que de verdad se cobró ($15), el precio de lista ($12) y la comisión.
 //
-// Quien puede autorizar: un precio mayor, el encargado del local, el gerente y el administrador; un precio MENOR, solo el gerente y el administrador. Con SU contraseña de ingreso al sistema (se teclea en el equipo
+// Un precio MAYOR (promotor o del local) lo anota quien vende, sin contraseña. Un precio MENOR (descuento) lo autoriza solo el gerente o el administrador.
+// (Antes un precio mayor lo autorizaba el encargado del local, el gerente o el administrador; esas contraseñas se siguen aceptando si un cliente anterior las manda.) Con SU contraseña de ingreso al sistema (se teclea en el equipo
 // de quien vende). El servidor la verifica y devuelve una autorización firmada (HMAC, 20 minutos) atada a quien vende, el local, el
 // promotor y los precios exactos: no sirve para otro vendedor, otro precio ni otro promotor, y no se puede alterar. `guardarVenta` la
 // exige para cualquier línea cuyo precio no sea el del catálogo.
@@ -38,7 +39,7 @@ export interface CargaAutorizacion {
   ln: [string, number][];
   /** Modo: "local" = la tienda cambia el precio (sin promotor ni comisión); ausente o "promotor" = precio de promotor */
   m?: ModoPrecio;
-  /** 1 = precio de promotor anotado por quien vende, SIN contraseña de supervisor (solo precios MAYORES al del catálogo); `a`/`an` son quien vende */
+  /** 1 = precio (de promotor o del local) anotado por quien vende, SIN contraseña de supervisor (solo precios MAYORES al del catálogo); `a`/`an` son quien vende */
   s?: 1;
   /** Vence (ms desde 1970) */
   exp: number;
@@ -371,11 +372,11 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
   // Un precio MENOR al del catálogo (descuento) solo lo autoriza un gerente o un administrador; uno mayor, también el encargado del local
   const hayDescuento = pedido.lineas.some((l) => l.precio < (lista.get(l.producto_id)?.precio_venta ?? 0) - TOLERANCIA);
 
-  // Precio de promotor con precios MAYORES: no pide contraseña (muchas veces el promotor está apurado). Un descuento o el precio del local sí.
+  // Un precio MAYOR (precio de promotor o precio del local) no pide contraseña: quien vende lo anota solo. Solo un descuento la pide.
   // Si un cliente anterior sí manda una contraseña, se verifica como siempre y queda registrado quién autorizó.
-  const sinClave = modo === 'promotor' && !hayDescuento && !(pedido.clave ?? '');
+  const sinClave = !hayDescuento && !(pedido.clave ?? '');
   if (!sinClave && !(pedido.clave ?? '')) {
-    throw new ErrorApi(403, hayDescuento ? 'Un precio menor al del catálogo necesita la contraseña de un gerente o un administrador.' : 'El precio del local necesita la contraseña de un encargado, gerente o administrador.', 'sin_permiso');
+    throw new ErrorApi(403, 'Un precio menor al del catálogo necesita la contraseña de un gerente o un administrador.', 'sin_permiso');
   }
   const supervisor = sinClave ? { id: sesion.userId, nombre: sesion.nombre } : await identificarSupervisor(env, sesion, pedido.email, pedido.clave ?? '', pedido.local_id, hayDescuento);
 
@@ -436,8 +437,8 @@ export async function verificarPrecioPromotor(
   }
   const c = r.carga;
   const modo: ModoPrecio = c.m === 'local' ? 'local' : 'promotor';
-  // Sin contraseña solo vale el precio de promotor con precios MAYORES (un descuento o el precio del local siempre la piden)
-  if (c.s && (modo !== 'promotor' || hayDescuento)) throw sinAutorizacion('Un descuento o el precio del local necesita la contraseña de un gerente o un administrador.');
+  // Sin contraseña solo valen los precios MAYORES (precio de promotor o del local); un descuento siempre la pide
+  if (c.s && hayDescuento) throw sinAutorizacion('Un descuento necesita la contraseña de un gerente o un administrador.');
   // En modo local no hay promotor: lo que haya enviado el cliente se ignora (la autorización se firmó sin promotor)
   const promotor = promotorValido(modo === 'local' ? null : datos.promotor);
   if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== promotor.clave) {

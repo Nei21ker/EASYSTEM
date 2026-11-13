@@ -376,6 +376,30 @@ describe('precio del local (modo "local"): la tienda cambia el precio, sin promo
     expect(v.items[0]).toMatchObject({ precio_unitario: 15, precio_lista: 12, precio_tipo: 'local' });
   });
 
+  it('un precio más caro del local NO pide contraseña: quien vende lo anota solo, sin comisión ni supervisor', async () => {
+    const r = await autorizarPrecio(env, sV, { local_id: accesorios, modo: 'local', promotor: null, lineas: [{ producto_id: PRODUCTO, precio: 15 }] });
+    expect(r).toMatchObject({ modo: 'local', autorizado_por: '' });
+    const v = await guardarVenta(env, sV, ventaLocal(r.token, 15));
+    expect(v.comision).toBe(0);
+    expect(v.precio_autorizado_por).toBeNull();
+    expect(v.items[0]).toMatchObject({ precio_unitario: 15, precio_lista: 12, precio_tipo: 'local' });
+  });
+
+  it('un precio escrito en bolívares llega como dólares con 6 decimales (precio exacto) y se guarda tal cual', async () => {
+    // Bs 13.500 a una tasa de 893,16 = $15,113… (con 6 decimales): lo que manda el POS al escribir el precio en Bs
+    const precio = Math.round((13500 / 893.16) * 1_000_000) / 1_000_000;
+    const r = await autorizarPrecio(env, sV, { local_id: accesorios, modo: 'local', promotor: null, lineas: [{ producto_id: PRODUCTO, precio }] });
+    const v = await guardarVenta(env, sV, ventaLocal(r.token, precio));
+    expect(v.items[0].precio_unitario).toBe(precio);
+    expect(v.items[0]).toMatchObject({ precio_lista: 12, precio_tipo: 'local' });
+  });
+
+  it('una autorización de precio del local sin contraseña no vale para un descuento forjado', async () => {
+    const { firmarAutorizacion } = await import('../../src/server/servicios/autorizaciones');
+    const forjado = await firmarAutorizacion(env, { v: 1, u: sV.userId, a: sV.userId, an: 'Vera', s: 1, m: 'local', l: accesorios, p: '', pn: '', ln: [[PRODUCTO, 9]], exp: Date.now() + 60_000 });
+    await rechazo(guardarVenta(env, sV, ventaLocal(forjado, 9)), 400, /contraseña/i);
+  });
+
   it('aunque el cliente mande datos de promotor, en el modo local se ignoran y no hay comisión', async () => {
     const { token } = await autorizarPrecio(env, sV, pedidoLocal(gerente, 15, { promotor: PROMOTOR }));
     const v = await guardarVenta(env, sV, ventaLocal(token, 15, { promotor: PROMOTOR }));
@@ -431,9 +455,10 @@ describe('precio de promotor SIN contraseña (precios mayores al catálogo)', ()
     expect(v.promotor_nombre).toBeNull();
   });
 
-  it('un descuento o el precio del local SIGUEN pidiendo contraseña: sin ella, 403', async () => {
+  it('un descuento SIGUE pidiendo contraseña (también en el precio del local): sin ella, 403; el precio del local más caro no la pide', async () => {
     await rechazo(autorizarPrecio(env, sV, sinClave({ lineas: [{ producto_id: PRODUCTO, precio: 9 }], promotor: null })), 403, /gerente o un administrador/i);
-    await rechazo(autorizarPrecio(env, sV, sinClave({ modo: 'local', promotor: null })), 403, /encargado, gerente o administrador/i);
+    await rechazo(autorizarPrecio(env, sV, sinClave({ modo: 'local', promotor: null, lineas: [{ producto_id: PRODUCTO, precio: 9 }] })), 403, /gerente o un administrador/i);
+    expect((await autorizarPrecio(env, sV, sinClave({ modo: 'local', promotor: null }))).modo).toBe('local');
     await rechazo(autorizarPrecio(env, sV, sinClave({ lineas: [{ producto_id: PRODUCTO, precio: 15 }, { producto_id: 'p-otro', precio: 8 }] })), 403, /gerente o un administrador/i);
   });
 

@@ -127,7 +127,7 @@ describe('demo: comisión por venta con precio de promotor', () => {
     expect((await s.buscarPromotorPorCedula('V-12345678'))?.banco).toBe('Banesco');
   });
 
-  it('el precio de promotor (más caro) se autoriza SIN contraseña; un descuento o el precio del local la siguen pidiendo', async () => {
+  it('el precio de promotor y el del local (más caros) se autorizan SIN contraseña; un descuento la sigue pidiendo', async () => {
     const s = await encargado();
     const prod = await s.crearProducto(vidrio);
     await s.registrarMovimiento({ producto_id: prod.id, tipo: 'ENTRADA', cantidad: 5, motivo: 'Compra' });
@@ -140,7 +140,8 @@ describe('demo: comisión por venta con precio de promotor', () => {
     expect(venta).toMatchObject({ comision: 6, promotor_nombre: 'Luis Rojas', precio_autorizado_por: null, precio_autorizado_nombre: null });
     expect(await s.listarPendientes({ tipo: 'COMISION' })).toHaveLength(1);
     await expect(s.autorizarPrecioVenta({ lineas: [{ producto_id: prod.id, precio: 3 }] })).rejects.toThrow(/contraseña/i);
-    await expect(s.autorizarPrecioVenta({ modo: 'local', lineas: [{ producto_id: prod.id, precio: 8 }] })).rejects.toThrow(/contraseña/i);
+    await expect(s.autorizarPrecioVenta({ modo: 'local', lineas: [{ producto_id: prod.id, precio: 3 }] })).rejects.toThrow(/contraseña/i);
+    expect(await s.autorizarPrecioVenta({ modo: 'local', lineas: [{ producto_id: prod.id, precio: 8 }] })).toMatchObject({ modo: 'local' });
   });
 
   it('sin cédula de promotor también se anota la comisión, sin promotor registrado', async () => {
