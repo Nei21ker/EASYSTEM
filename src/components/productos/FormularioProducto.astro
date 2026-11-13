@@ -2,8 +2,9 @@
 // Formulario para crear/editar un producto (administrador, gerente y encargado; el precio de compra solo lo
 // ven y editan administrador y gerente).
 // Se abre con el evento window "easystem:abrir-producto" ({ detail: { productoId?, sinStock? } }); con
-// `sinStock` no pide el stock inicial (lo registra el módulo de ingreso de mercancía); `codigo` precarga el código de barras.
-// Avisa con "easystem:productos-cambiaron" al guardar y con "easystem:producto-guardado" ({ productoId, nuevo }),
+// `sinStock` no registra stock aquí (lo registra el módulo de ingreso de mercancía); `codigo` precarga el código de barras;
+// `pedirCantidad` (solo con `sinStock`, lo usa Ingreso) muestra «Cantidad que ingresa» y la devuelve en el evento para que el lote la use.
+// Avisa con "easystem:productos-cambiaron" al guardar y con "easystem:producto-guardado" ({ productoId, nuevo, cantidad? }),
 // igual que el escáner de cámara: la página que lo usa no depende de sus detalles internos.
 const claseCampo =
   'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -105,7 +106,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <input id="fp-precio-compra" type="text" inputmode="decimal" autocomplete="off" value="0" class={claseCampo} />
         </div>
         <div id="fp-grupo-stock">
-          <label for="fp-stock" class={claseEtiqueta}>Stock inicial</label>
+          <label for="fp-stock" id="fp-stock-etiqueta" class={claseEtiqueta}>Stock inicial</label>
           <input id="fp-stock" type="number" inputmode="numeric" min="0" step="1" value="0" class={claseCampo} />
         </div>
         <div>
@@ -176,6 +177,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let editando: ProductoConRelaciones | null = null;
   /** Se abrió desde el ingreso de mercancía: no se pide el stock inicial */
   let sinStockInicial = false;
+  let pedirCantidad = false;
   /** El precio de compra es de administrador y gerente: el encargado no lo ve ni lo modifica */
   let veCosto = true;
   const seleccion = new Set<string>();
@@ -311,11 +313,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     campos.prefijo.value = campos.prefijo.value.toUpperCase().replace(/[^A-Z]/g, '');
   });
 
-  async function abrir(productoId?: string, sinStock = false, codigoInicial?: string) {
+  async function abrir(productoId?: string, sinStock = false, codigoInicial?: string, pedirCant = false) {
     error.classList.add('hidden');
     const sesion = await obtenerSesionActual();
     if (!esGerencia(sesion?.rol)) return;
     sinStockInicial = sinStock;
+    pedirCantidad = sinStock && pedirCant && !productoId;
+    $('fp-stock-etiqueta').textContent = pedirCantidad ? 'Cantidad que ingresa' : 'Stock inicial';
     veCosto = esGlobal(sesion?.rol);
     $('fp-grupo-compra').classList.toggle('hidden', !veCosto);
 
@@ -332,7 +336,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     seleccion.clear();
     buscarModelo.value = '';
-    $('fp-grupo-stock').classList.toggle('hidden', editando !== null || sinStockInicial);
+    $('fp-grupo-stock').classList.toggle('hidden', editando !== null || (sinStockInicial && !pedirCantidad));
     $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
 
     if (editando) {
@@ -364,7 +368,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       form.reset();
       moneda = 'USD';
       campos.precioCompra.value = '0';
-      campos.stock.value = '0';
+      campos.stock.value = pedirCantidad ? '1' : '0';
       campos.minimo.value = '0';
       campos.porCantidad.checked = false;
       campos.porCantidad.disabled = false;
@@ -424,6 +428,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const precioVenta = leerPrecioEscrito(campos.precioVenta.value, moneda) ?? Number.NaN;
     const precioCompra = campos.precioCompra.value.trim() ? (leerPrecioEscrito(campos.precioCompra.value, 'USD') ?? Number.NaN) : 0;
     const stock = sinStockInicial ? 0 : Number(campos.stock.value || 0);
+    // Con «Cantidad que ingresa» no se mueve stock aquí: el lote de Ingreso la registra
+    const cantidadLote = pedirCantidad ? Math.max(0, Math.floor(Number(campos.stock.value || 0)) || 0) : undefined;
     const minimo = Number(campos.minimo.value || 0);
 
     const prefijo = campos.prefijo.value.trim().toUpperCase();
@@ -518,7 +524,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       const productoId = editando?.id ?? idCreado;
       dialogo.close();
       window.dispatchEvent(new Event('easystem:productos-cambiaron'));
-      if (productoId) window.dispatchEvent(new CustomEvent('easystem:producto-guardado', { detail: { productoId, nuevo: !editando } }));
+      if (productoId) window.dispatchEvent(new CustomEvent('easystem:producto-guardado', { detail: { productoId, nuevo: !editando, cantidad: cantidadLote } }));
     } catch (err) {
       mostrarError(err instanceof Error ? err.message : 'No se pudo guardar el producto.');
     } finally {
@@ -534,7 +540,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (e.target === dialogo) dialogo.close();
   });
 
-  window.addEventListener('easystem:abrir-producto', ((e: CustomEvent<{ productoId?: string; sinStock?: boolean; codigo?: string }>) => {
-    abrir(e.detail?.productoId, e.detail?.sinStock === true, e.detail?.codigo);
+  window.addEventListener('easystem:abrir-producto', ((e: CustomEvent<{ productoId?: string; sinStock?: boolean; codigo?: string; pedirCantidad?: boolean }>) => {
+    abrir(e.detail?.productoId, e.detail?.sinStock === true, e.detail?.codigo, e.detail?.pedirCantidad === true);
   }) as EventListener);
 </script>

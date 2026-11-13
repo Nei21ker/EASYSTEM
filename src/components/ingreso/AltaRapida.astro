@@ -1,6 +1,6 @@
 ---
 // Alta rápida de productos nuevos (administrador, gerente y encargado): en vez de llenar un formulario por producto, se escribe UN
-// PRODUCTO POR LÍNEA y la categoría, el prefijo, el precio y la cantidad se ponen una sola vez. En el teléfono ocupa toda la pantalla.
+// PRODUCTO POR LÍNEA y la categoría, el prefijo, el precio se pone una sola vez (la cantidad va por línea con x3). En el teléfono ocupa toda la pantalla.
 // Se abre con el evento window "easystem:abrir-alta-rapida" y, al crear, avisa con "easystem:alta-rapida-creada"
 // ({ items: [{ productoId, cantidad }] }) para que la página los meta al lote; también avisa "easystem:productos-cambiaron".
 // "Crear y tomar fotos" además abre la cámara de ráfaga (RafagaFotos) con los productos NUEVOS, en el orden en que se escribieron.
@@ -32,10 +32,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <div>
           <label for="ar-prefijo" class={claseEtiqueta}>Prefijo del código</label>
           <input id="ar-prefijo" type="text" maxlength="4" autocapitalize="characters" autocomplete="off" enterkeyhint="next" placeholder="CTL" class={`${claseCampo} uppercase`} />
-        </div>
-        <div>
-          <label for="ar-cantidad" class={claseEtiqueta}>Cantidad c/u</label>
-          <input id="ar-cantidad" type="number" inputmode="numeric" min="0" max="999" step="1" value="1" enterkeyhint="next" class={claseCampo} />
         </div>
         <div>
           <div class="flex items-center justify-between gap-2">
@@ -119,7 +115,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const form = $<HTMLFormElement>('ar-form');
   const campoCategoria = $<HTMLInputElement>('ar-categoria');
   const campoPrefijo = $<HTMLInputElement>('ar-prefijo');
-  const campoCantidad = $<HTMLInputElement>('ar-cantidad');
   const campoPrecio = $<HTMLInputElement>('ar-precio');
   const campoCompra = $<HTMLInputElement>('ar-compra');
   const campoTexto = $<HTMLTextAreaElement>('ar-texto');
@@ -166,7 +161,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     try {
       localStorage.setItem(
         LS,
-        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, cantidad: campoCantidad.value, precio: campoPrecio.value, moneda, compra: campoCompra.value, texto: campoTexto.value, porCantidad: campoPorCantidad.checked ? '1' : '' })
+        JSON.stringify({ categoria: campoCategoria.value, prefijo: campoPrefijo.value, precio: campoPrecio.value, moneda, compra: campoCompra.value, texto: campoTexto.value, porCantidad: campoPorCantidad.checked ? '1' : '' })
       );
     } catch {
       /* sin almacenamiento: no se recuerda nada */
@@ -179,7 +174,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       if (!b) return;
       campoCategoria.value = b.categoria ?? '';
       campoPrefijo.value = b.prefijo ?? '';
-      campoCantidad.value = b.cantidad ?? '1';
       campoPrecio.value = b.precio ?? '';
       moneda = b.moneda === 'BS' ? 'BS' : 'USD';
       campoCompra.value = b.compra ?? '';
@@ -197,8 +191,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   function defectos() {
-    const cantidad = Math.floor(Number(campoCantidad.value));
-    return { cantidad: Number.isFinite(cantidad) && cantidad >= 0 ? cantidad : 1, precio: campoPrecio.value.trim() ? leerPrecioEscrito(campoPrecio.value, moneda) : null, maximoPrecio: maximoPrecio() };
+    // Sin campo de cantidad: cada línea es 1 unidad (se cambia con «x3» al final de la línea o en el lote)
+    return { cantidad: 1, precio: campoPrecio.value.trim() ? leerPrecioEscrito(campoPrecio.value, moneda) : null, maximoPrecio: maximoPrecio() };
   }
 
   function pintarVista(limpiarError = true) {
@@ -251,7 +245,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   // Enter en un campo pasa al siguiente (el teclado del teléfono muestra "Siguiente"); en el texto, Enter es salto de línea
-  const orden = [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto];
+  const orden = [campoCategoria, campoPrefijo, campoPrecio, campoCompra, campoTexto];
   for (const [i, campo] of orden.entries()) {
     if (campo === campoTexto) continue;
     campo.addEventListener('keydown', (ev: Event) => {
@@ -265,7 +259,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   campoPrefijo.addEventListener('input', () => {
     campoPrefijo.value = campoPrefijo.value.toUpperCase().replace(/[^A-Z]/g, '');
   });
-  for (const campo of [campoCategoria, campoPrefijo, campoCantidad, campoPrecio, campoCompra, campoTexto]) campo.addEventListener('input', () => pintarVista());
+  for (const campo of [campoCategoria, campoPrefijo, campoPrecio, campoCompra, campoTexto]) campo.addEventListener('input', () => pintarVista());
   campoPorCantidad.addEventListener('change', () => pintarVista());
   for (const [boton, valor] of [[botonUsd, 'USD'], [botonBs, 'BS']] as const) {
     boton.addEventListener('click', () => {

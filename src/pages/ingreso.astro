@@ -521,7 +521,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   // --- Lote -------------------------------------------------------------------------
-  function agregar(id: string) {
+  function agregar(id: string, cantidadInicial = 1) {
     if (!producto(id)) return;
     buscar.value = '';
     pintarResultados();
@@ -529,10 +529,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const existente = lote.find((l) => l.id === id);
     if (existente) {
       // Escanear otra vez el mismo producto = una unidad más
-      existente.cantidad += 1;
+      existente.cantidad += cantidadInicial;
       if (!existente.manual) existente.copias = (existente.unidades?.length ?? 0) + existente.cantidad;
     } else {
-      lote.push(lineaNueva(id, 1));
+      lote.push(lineaNueva(id, cantidadInicial));
     }
     guardarLote();
     pintarLote();
@@ -1183,7 +1183,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
   // --- Producto nuevo / editado desde el formulario ---------------------------------------------
   $('ig-nuevo').addEventListener('click', () => {
-    window.dispatchEvent(new CustomEvent('easystem:abrir-producto', { detail: { sinStock: true, codigo: ultimoCodigoDesconocido || undefined } }));
+    window.dispatchEvent(new CustomEvent('easystem:abrir-producto', { detail: { sinStock: true, pedirCantidad: true, codigo: ultimoCodigoDesconocido || undefined } }));
     ultimoCodigoDesconocido = '';
     aviso.classList.add('hidden');
   });
@@ -1227,10 +1227,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     pintarLote();
   }) as unknown as EventListener);
 
-  window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean }>) => {
+  window.addEventListener('easystem:producto-guardado', (async (e: CustomEvent<{ productoId: string; nuevo: boolean; cantidad?: number }>) => {
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });
-    // Un producto creado desde la pestaña Cambio entra a ESA lista, no al lote de Ingreso
-    if (e.detail.nuevo && !document.getElementById('mc-panel-ingreso')?.classList.contains('hidden')) agregar(e.detail.productoId);
+    // Un producto creado desde la pestaña Cambio entra a ESA lista, no al lote de Ingreso; con la cantidad que se escribió en el formulario
+    if (e.detail.nuevo && !document.getElementById('mc-panel-ingreso')?.classList.contains('hidden')) agregar(e.detail.productoId, e.detail.cantidad ?? 1);
     else pintarLote();
   }) as unknown as EventListener);
 
