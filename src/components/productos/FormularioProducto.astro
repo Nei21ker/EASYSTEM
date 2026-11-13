@@ -117,7 +117,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       <p class="-mt-2 text-xs text-slate-400">Stock mínimo 0 = el producto no genera alertas de reabastecimiento.</p>
       <p id="fp-local-nota" class="-mt-1 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
 
-      <div>
+      <div id="fp-grupo-compat">
         <div class="flex items-baseline justify-between">
           <span class={claseEtiqueta}>Compatible con</span>
           <span id="fp-modelos-contador" class="text-xs text-slate-400">0 seleccionados</span>
@@ -337,6 +337,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     seleccion.clear();
     buscarModelo.value = '';
     $('fp-grupo-stock').classList.toggle('hidden', editando !== null || (sinStockInicial && !pedirCantidad));
+    // «Compatible con» no se pide al crear un producto en los locales de controles, vidrios y servicio técnico (solo accesorios, o la vista «Todos»)
+    $('fp-grupo-compat').classList.toggle('hidden', editando === null && !!contexto?.local && contexto.local.tipo !== 'accesorios');
     $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
 
     if (editando) {
