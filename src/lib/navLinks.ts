@@ -59,19 +59,18 @@ export const enlacesNav: EnlaceNav[] = [
     icono: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM12 18h.01',
     roles: TODOS,
     // El Local de controles no trabaja con forros/vidrios por modelo: su encargado y vendedores no lo necesitan. El Local Vidrios
-    // usa ese lugar del menú para Pendientes y no lo muestra a nadie (tampoco al administrador ni al gerente mientras lo miran).
+    // no lo muestra a nadie (tampoco al administrador ni al gerente mientras lo miran).
     ocultoEnLocal: [
       { tipo: 'controles', roles: ['encargado', 'vendedor'] },
       { tipo: 'vidrios', roles: TODOS },
     ],
   },
   {
-    // Local Vidrios: lo que un promotor se llevó y vendrá a pagar, y las comisiones que se le deben por los clientes que trajo
+    // Todos los locales: lo que un promotor se llevó y vendrá a pagar, y las comisiones que se le deben por los clientes que trajo
     href: '/pendientes',
     etiqueta: 'Pendientes',
     icono: 'M12 8v4l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
     roles: GERENCIA,
-    soloTipoLocal: 'vidrios',
   },
   // La gerencia llega a los movimientos desde las pestañas de "Historial"; el técnico (que no ve ventas) solo tiene este enlace
   { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: ['tecnico'] },

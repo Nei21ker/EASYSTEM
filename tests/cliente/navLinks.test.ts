@@ -48,14 +48,15 @@ describe('Local Vidrios: Pendientes en lugar de Modelos de teléfono', () => {
     for (const rol of ['encargado', 'vendedor', 'tecnico', 'contador'] as const) expect(enlaceVisible(inversion, rol, 'vidrios', false)).toBe(false);
   });
 
-  it('Pendientes lo ven el encargado, el gerente y el administrador en el Local Vidrios (o en "Todos"); nadie más ni en otro local', () => {
-    for (const rol of ['administrador', 'gerente', 'encargado'] as const) expect(enlaceVisible(pendientes, rol, 'vidrios', false)).toBe(true);
+  it('Pendientes lo ven el encargado, el gerente y el administrador en TODOS los locales (y en "Todos"); el vendedor, el técnico y el contador no', () => {
+    for (const rol of ['administrador', 'gerente', 'encargado'] as const) {
+      for (const tipo of ['vidrios', 'accesorios', 'servicio_tecnico', 'controles'] as const) expect(enlaceVisible(pendientes, rol, tipo, false)).toBe(true);
+    }
     expect(enlaceVisible(pendientes, 'administrador', null, true)).toBe(true);
     expect(enlaceVisible(pendientes, 'vendedor', 'vidrios', false)).toBe(false);
     expect(enlaceVisible(pendientes, 'tecnico', 'vidrios', false)).toBe(false);
     expect(enlaceVisible(pendientes, 'contador', 'vidrios', false)).toBe(false);
-    expect(enlaceVisible(pendientes, 'encargado', 'accesorios', false)).toBe(false);
-    expect(enlaceVisible(pendientes, 'gerente', 'controles', false)).toBe(false);
+    expect(enlaceVisible(pendientes, 'vendedor', 'accesorios', false)).toBe(false);
   });
 });
 
