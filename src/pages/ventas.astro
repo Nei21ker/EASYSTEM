@@ -521,6 +521,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <p id="pos-precio-comision" class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
         <fieldset id="pos-promotor-bloque" class="space-y-2">
           <legend class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor <span class="font-normal text-slate-400">(opcional)</span></legend>
+          <button type="button" id="pos-promotor-lista-abrir" class="flex w-full items-center justify-center gap-2 rounded-lg border border-brand-300 bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-700 dark:bg-brand-500/10 dark:text-brand-300">Elegir promotor registrado</button>
+          <div id="pos-promotor-lista" class="hidden rounded-lg border border-slate-200 dark:border-slate-700">
+            <input id="pos-promotor-lista-buscar" type="search" autocomplete="off" placeholder="Buscar por nombre o cédula..." aria-label="Buscar promotor registrado" class="w-full rounded-t-lg border-0 border-b border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+            <ul id="pos-promotor-lista-items" class="max-h-52 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+            <p id="pos-promotor-lista-vacio" class="hidden px-3 py-3 text-xs text-slate-500 dark:text-slate-400"></p>
+          </div>
           <div class="flex gap-2">
             <select id="pos-promotor-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
             <input id="pos-promotor-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
@@ -570,6 +576,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <p id="pos-inst-promotor-actual" class="hidden rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-500/10 dark:text-amber-300"></p>
           <fieldset id="pos-inst-promotor-campos" class="space-y-2">
             <legend class="text-xs font-medium text-slate-600 dark:text-slate-300">Promotor que instala</legend>
+            <button type="button" id="pos-inst-lista-abrir" class="flex w-full items-center justify-center gap-2 rounded-lg border border-brand-300 bg-brand-50 px-3 py-2.5 text-sm font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-700 dark:bg-brand-500/10 dark:text-brand-300">Elegir promotor registrado</button>
+            <div id="pos-inst-lista" class="hidden rounded-lg border border-slate-200 dark:border-slate-700">
+              <input id="pos-inst-lista-buscar" type="search" autocomplete="off" placeholder="Buscar por nombre o cédula..." aria-label="Buscar promotor registrado" class="w-full rounded-t-lg border-0 border-b border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              <ul id="pos-inst-lista-items" class="max-h-52 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800"></ul>
+              <p id="pos-inst-lista-vacio" class="hidden px-3 py-3 text-xs text-slate-500 dark:text-slate-400"></p>
+            </div>
             <div class="flex gap-2">
               <select id="pos-inst-nac" aria-label="Nacionalidad del promotor" class="rounded-lg border border-slate-200 bg-white px-2.5 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"><option value="V">V</option><option value="E">E</option></select>
               <input id="pos-inst-cedula" type="text" inputmode="numeric" maxlength="9" autocomplete="off" placeholder="Cédula" aria-label="Cédula del promotor" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
@@ -608,6 +620,7 @@ import { alCambiarDatos } from '../lib/realtime';
   import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
   import { MOTIVOS_MERMA, type MotivoMerma } from '../types/database.types';
   import { normalizarPromotor, separarNombreCompleto, unirNombre } from '../utils/promotor';
+  import { montarSelectorPromotor, partirCedula } from '../utils/selectorPromotor';
   import { errorPrecioInstalacion, hayInstalacionDelPromotor, INSTALACION_PREDETERMINADA_USD, montoInstalacion, totalLinea, type QuienInstala } from '../utils/instalacion';
   import { esErrorDeRed } from '../utils/red';
   import { alertaUnidadNoVendible, type AlertaUnidad } from '../utils/unidadesVenta';
@@ -1836,6 +1849,7 @@ import { alCambiarDatos } from '../lib/realtime';
     promotorTelefono.value = previo?.telefono ?? '';
     promotorBanco.value = previo?.banco ?? '';
     promotorRegistrado.classList.add('hidden');
+    selectorPromotor.cerrar();
     botonAutorizar.disabled = false;
     textoComision();
     dialogoPrecio.showModal();
@@ -1884,6 +1898,25 @@ import { alCambiarDatos } from '../lib/realtime';
     window.clearTimeout(esperaPromotor);
     esperaPromotor = window.setTimeout(() => void completarPromotorRegistrado(), 350);
   };
+  // Lista de promotores registrados en este local: al elegir uno se llenan sus datos
+  const selectorPromotor = montarSelectorPromotor({
+    boton: document.getElementById('pos-promotor-lista-abrir')!,
+    panel: document.getElementById('pos-promotor-lista')!,
+    buscador: document.getElementById('pos-promotor-lista-buscar') as HTMLInputElement,
+    lista: document.getElementById('pos-promotor-lista-items')!,
+    vacio: document.getElementById('pos-promotor-lista-vacio')!,
+    cargar: () => inventoryService.listarPromotoresDelLocal(),
+    alElegir: (p) => {
+      const c = partirCedula(p.cedula);
+      promotorNac.value = c.nac;
+      promotorCedula.value = c.numero;
+      promotorNombre.value = unirNombre(p.nombre, p.apellido);
+      promotorTelefono.value = p.telefono ?? '';
+      promotorBanco.value = p.banco ?? '';
+      promotorRegistrado.textContent = `Promotor registrado: ${`${p.nombre} ${p.apellido}`.trim()}. Se completaron sus datos.`;
+      promotorRegistrado.classList.remove('hidden');
+    },
+  });
   promotorNac.addEventListener('change', programarBusquedaPromotor);
   promotorCedula.addEventListener('input', () => {
     promotorCedula.value = promotorCedula.value.replace(/\D/g, '');
@@ -2677,6 +2710,7 @@ import { alCambiarDatos } from '../lib/realtime';
     instNombre.value = unirNombre(previo?.nombre, previo?.apellido);
     instTelefono.value = previo?.telefono ?? '';
     instBanco.value = previo?.banco ?? '';
+    selectorInst.cerrar();
     instRegistrado.classList.add('hidden');
     instError.classList.add('hidden');
     actualizarInstalacion();
@@ -2711,6 +2745,25 @@ import { alCambiarDatos } from '../lib/realtime';
     window.clearTimeout(esperaInst);
     esperaInst = window.setTimeout(() => void completarPromotorInstalacion(), 350);
   };
+  // Lista de promotores registrados en este local
+  const selectorInst = montarSelectorPromotor({
+    boton: document.getElementById('pos-inst-lista-abrir')!,
+    panel: document.getElementById('pos-inst-lista')!,
+    buscador: document.getElementById('pos-inst-lista-buscar') as HTMLInputElement,
+    lista: document.getElementById('pos-inst-lista-items')!,
+    vacio: document.getElementById('pos-inst-lista-vacio')!,
+    cargar: () => inventoryService.listarPromotoresDelLocal(),
+    alElegir: (p) => {
+      const c = partirCedula(p.cedula);
+      instNac.value = c.nac;
+      instCedula.value = c.numero;
+      instNombre.value = unirNombre(p.nombre, p.apellido);
+      instTelefono.value = p.telefono ?? '';
+      instBanco.value = p.banco ?? '';
+      instRegistrado.textContent = `Promotor registrado: ${`${p.nombre} ${p.apellido}`.trim()}. Se completaron sus datos.`;
+      instRegistrado.classList.remove('hidden');
+    },
+  });
   instNac.addEventListener('change', programarBusquedaInst);
   instCedula.addEventListener('input', () => {
     instCedula.value = instCedula.value.replace(/\D/g, '');

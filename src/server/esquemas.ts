@@ -78,6 +78,7 @@ export const esquemaNuevoPromotor = z.object({
   apellido: z.string().min(1).max(80),
   telefono: z.string().max(30).nullable().optional(),
   banco: z.string().max(80).nullable().optional(),
+  local_id: z.string().max(64).nullable().optional(),
 });
 export const esquemaPendienteMercancia = z.object({
   localId: z.string(),

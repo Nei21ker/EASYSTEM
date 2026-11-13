@@ -423,6 +423,8 @@ export interface Promotor {
   telefono: string | null;
   banco: string | null;
   creado_por_nombre?: string | null;
+  /** Solo en la demo (LocalStorage): locales donde está registrado; sin valor = Local Vidrios. En el servidor vive en `promotor_locales`. */
+  local_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -443,6 +445,8 @@ export interface DatosNuevoPromotor {
   apellido: string;
   telefono?: string | null;
   banco?: string | null;
+  /** Local donde se registra (el que se está usando); sin él, el único local de quien lo crea */
+  local_id?: string | null;
 }
 
 /** MERCANCIA = se llevó mercancía y vendrá a pagarla · COMISION = se le debe la comisión de una venta que trajo */

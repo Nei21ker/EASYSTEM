@@ -4,6 +4,9 @@ import type { DatosNuevoPromotor, EstadoPendiente, NuevoPendienteMercancia, Pend
 
 export const buscarPromotorPorCedula = async (cedula: string): Promise<Promotor | null> => (await api.get<{ promotor: Promotor | null }>('/api/promotores', { cedula })).promotor;
 
+/** Promotores registrados en un local (lista del cobro con precio de promotor) */
+export const listarPromotoresDelLocal = (localId?: string | null) => api.get<Promotor[]>('/api/promotores', { para: 'venta', localId });
+
 export const listarPromotores = (opciones: { localId?: string | null; buscar?: string } = {}) => api.get<PromotorResumen[]>('/api/promotores', opciones);
 
 export const crearPromotor = (datos: DatosNuevoPromotor) => api.post<Promotor>('/api/promotores', datos);

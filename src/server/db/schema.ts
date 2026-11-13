@@ -190,6 +190,16 @@ export const promotores = sqliteTable('promotores', {
   updated_at: marca('updated_at'),
 });
 
+/** Locales donde está registrado cada promotor (lista del selector del cobro con precio de promotor; migración 0028) */
+export const promotor_locales = sqliteTable(
+  'promotor_locales',
+  {
+    promotor_id: text('promotor_id').notNull(),
+    local_id: text('local_id').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.promotor_id, t.local_id] })]
+);
+
 export const pendientes = sqliteTable('pendientes', {
   id: text('id').primaryKey(),
   local_id: text('local_id').notNull(),

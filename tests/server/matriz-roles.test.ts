@@ -98,6 +98,7 @@ function casos(): Caso[] {
     // Promotores y pendientes (lo que el vendedor y el técnico no ven; el POS busca al promotor por cédula)
     { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores', permitidos: PENDIENTES },
     { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores?cedula=V-12345678', permitidos: CAJERO },
+    { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores?para=venta', permitidos: CAJERO }, // lista de promotores del local para el cobro
     { archivo: 'promotores/index.ts', metodo: 'POST', url: '/api/promotores', cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
     { archivo: 'promotores/[id].ts', metodo: 'PUT', url: '/api/promotores/no-existe', params: { id: 'no-existe' }, cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
     { archivo: 'pendientes/index.ts', metodo: 'GET', url: '/api/pendientes', permitidos: PENDIENTES },

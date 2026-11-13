@@ -2407,6 +2407,18 @@ export async function buscarPromotorPorCedula(cedula: string): Promise<Promotor 
   return (leerDB().promotores ?? []).find((p) => p.cedula === r.promotor.cedula) ?? null;
 }
 
+/**
+ * Los promotores registrados en el local activo (lista del cobro con precio de promotor). Los usa también el vendedor. En «Todos los
+ * locales» (administrador, gerente) trae todos. En la demo, un promotor sin `local_ids` cuenta como del Local Vidrios.
+ */
+export async function listarPromotoresDelLocal(): Promise<Promotor[]> {
+  const { localId } = await alcanceActual();
+  if (modoServidor) return promotoresDb.listarPromotoresDelLocal(localId);
+  return (leerDB().promotores ?? [])
+    .filter((p) => !localId || (p.local_ids ?? [LOCAL_VIDRIOS_ID]).includes(localId))
+    .sort((a, b) => nombreCompleto(a).localeCompare(nombreCompleto(b), 'es'));
+}
+
 /** El directorio con lo pendiente con cada promotor (administrador, gerente, encargado y contador). */
 export async function listarPromotores(opciones: { localId?: string | null; buscar?: string } = {}): Promise<PromotorResumen[]> {
   const sesion = await sesionDePendientes();
@@ -2429,13 +2441,14 @@ export async function listarPromotores(opciones: { localId?: string | null; busc
 export async function crearPromotor(datos: DatosNuevoPromotor): Promise<Promotor> {
   const sesion = await sesionDePendientes();
   const p = validarPromotorDemo(datos);
-  if (modoServidor) return promotoresDb.crearPromotor(datos);
+  const localActual = (await alcanceActual()).localId;
+  if (modoServidor) return promotoresDb.crearPromotor({ ...datos, local_id: datos.local_id ?? localActual });
   const db = leerDB();
   const lista = db.promotores ?? (db.promotores = []);
   const existente = lista.find((x) => x.cedula === p.cedula);
   if (existente) throw new Error(`Ya hay un promotor con la cédula ${p.cedula}: ${nombreCompleto(existente) || 'sin nombre'}. Búscalo en la lista.`);
   const ahora = new Date().toISOString();
-  const nuevo: Promotor = { id: generarId(), cedula: p.cedula!, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion.nombre, created_at: ahora, updated_at: ahora };
+  const nuevo: Promotor = { id: generarId(), cedula: p.cedula!, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion.nombre, created_at: ahora, updated_at: ahora, ...(localActual ? { local_ids: [localActual] } : {}) };
   lista.push(nuevo);
   guardarDB(db);
   return nuevo;
@@ -2695,8 +2708,11 @@ function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormal
       registrado.telefono = p.telefono ?? registrado.telefono;
       registrado.banco = p.banco ?? registrado.banco;
       registrado.updated_at = ahora;
+      // Queda también en la lista del local donde se vendió
+      const locales = registrado.local_ids ?? [LOCAL_VIDRIOS_ID];
+      if (!locales.includes(venta.local_id)) registrado.local_ids = [...locales, venta.local_id];
     } else {
-      registrado = { id: generarId(), cedula: p.cedula, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion?.nombre ?? null, created_at: ahora, updated_at: ahora };
+      registrado = { id: generarId(), cedula: p.cedula, nombre: p.nombrePropio, apellido: p.apellido, telefono: p.telefono, banco: p.banco, creado_por_nombre: sesion?.nombre ?? null, created_at: ahora, updated_at: ahora, local_ids: [venta.local_id] };
       lista.push(registrado);
     }
   }

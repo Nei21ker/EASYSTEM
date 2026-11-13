@@ -56,6 +56,25 @@ export async function buscarPromotorPorCedula(env: Entorno, sesion: Sesion, cedu
   return fila ? aPromotor(fila) : null;
 }
 
+/**
+ * Los promotores registrados en el local donde se vende (selector del cobro con precio de promotor). Cualquier rol que venda
+ * (administrador, gerente, encargado y vendedor); el administrador y el gerente piden el local con `localId`.
+ */
+export async function listarPromotoresDelLocal(env: Entorno, sesion: Sesion, localId?: string): Promise<Promotor[]> {
+  if (sesion.rol === 'tecnico') throw new ErrorApi(403, 'Tu rol no tiene permiso para hacer esto.', 'sin_permiso');
+  const alcance = await alcanceDe(env, sesion, localId); // contador, sin local o local suspendido: 403
+  if (alcance.tipo === 'locales' && alcance.ids.length === 1) {
+    const filas = await env.DB
+      .prepare('SELECT p.* FROM promotores p JOIN promotor_locales pl ON pl.promotor_id = p.id WHERE pl.local_id = ? ORDER BY lower(p.nombre), lower(p.apellido) LIMIT 500')
+      .bind(alcance.ids[0])
+      .all<Record<string, unknown>>();
+    return filas.results.map(aPromotor);
+  }
+  // Administrador o gerente sin elegir un local: el directorio completo
+  const filas = await env.DB.prepare('SELECT * FROM promotores ORDER BY lower(nombre), lower(apellido) LIMIT 500').all<Record<string, unknown>>();
+  return filas.results.map(aPromotor);
+}
+
 /** El directorio, con lo que queda pendiente con cada promotor dentro del alcance de quien consulta. */
 export async function listarPromotores(env: Entorno, sesion: Sesion, opciones: { localId?: string; buscar?: string; limite?: number } = {}): Promise<PromotorResumen[]> {
   const alcance = await alcanceDePendientes(env, sesion, opciones.localId);
@@ -92,7 +111,9 @@ export async function listarPromotores(env: Entorno, sesion: Sesion, opciones: {
 
 /** Agrega un promotor al directorio. La cédula es única: si ya existe se avisa quién es. */
 export async function crearPromotor(env: Entorno, sesion: Sesion, datos: DatosNuevoPromotor): Promise<Promotor> {
-  await alcanceDePendientes(env, sesion);
+  const alcance = await alcanceDePendientes(env, sesion, datos.local_id ?? undefined);
+  // El promotor queda en la lista del local donde se registra (si no se sabe cuál, el único local de quien lo crea)
+  const localDestino = alcance.tipo === 'locales' && alcance.ids.length === 1 ? alcance.ids[0] : null;
   const p = datosDelDirectorio(datos);
   const existente = await env.DB.prepare('SELECT nombre, apellido FROM promotores WHERE cedula = ?').bind(p.cedula).first<{ nombre: string; apellido: string }>();
   if (existente) {
@@ -100,10 +121,13 @@ export async function crearPromotor(env: Entorno, sesion: Sesion, datos: DatosNu
   }
   const id = nuevoId();
   const marca = ahora();
-  await env.DB
-    .prepare('INSERT INTO promotores (id, cedula, nombre, apellido, telefono, banco, creado_por_nombre, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, sesion.nombre, marca, marca)
-    .run();
+  const sentencias = [
+    env.DB
+      .prepare('INSERT INTO promotores (id, cedula, nombre, apellido, telefono, banco, creado_por_nombre, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(id, p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, sesion.nombre, marca, marca),
+  ];
+  if (localDestino) sentencias.push(env.DB.prepare('INSERT OR IGNORE INTO promotor_locales (promotor_id, local_id) VALUES (?, ?)').bind(id, localDestino));
+  await env.DB.batch(sentencias);
   await avisarCambio(env.DB, ['promotores']);
   const fila = await env.DB.prepare('SELECT * FROM promotores WHERE id = ?').bind(id).first<Record<string, unknown>>();
   return aPromotor(fila!);

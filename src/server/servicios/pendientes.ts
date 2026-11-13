@@ -256,7 +256,9 @@ export function sentenciasComisionPromotor(
              banco = COALESCE(excluded.banco, promotores.banco),
              updated_at = excluded.updated_at`
         )
-        .bind(nuevoId(), p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, sesion.nombre, marca, marca)
+        .bind(nuevoId(), p.cedula, p.nombrePropio, p.apellido, p.telefono, p.banco, sesion.nombre, marca, marca),
+      // El promotor queda también en la lista del local donde se vendió (selector del cobro con precio de promotor)
+      db.prepare('INSERT OR IGNORE INTO promotor_locales (promotor_id, local_id) SELECT id, ? FROM promotores WHERE cedula = ?').bind(d.localId, p.cedula)
     );
   }
   sentencias.push(
