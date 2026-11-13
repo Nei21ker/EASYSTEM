@@ -20,4 +20,7 @@ export const crearPendienteMercancia = (datos: NuevoPendienteMercancia) => api.p
 
 export const cerrarPendiente = (id: string, accion: 'pagar' | 'anular', nota?: string | null) => api.post<Pendiente>(`/api/pendientes/${encodeURIComponent(id)}/cerrar`, { accion, nota: nota ?? null });
 
+export const pagarComisionesPromotor = (promotorId: string, ids: string[], nota?: string | null) =>
+  api.post<{ pagadas: number; total_usd: number }>(`/api/promotores/${encodeURIComponent(promotorId)}/pagar-comisiones`, { ids, nota: nota ?? null });
+
 export const asignarPromotorAPendiente = (id: string, promotorId: string) => api.put<Pendiente>(`/api/pendientes/${encodeURIComponent(id)}/promotor`, { promotorId });

@@ -2584,6 +2584,25 @@ export async function cerrarPendiente(id: string, accion: 'pagar' | 'anular', no
   return pendienteConPromotor(db2, y);
 }
 
+/** Marca como pagadas, de una vez, las comisiones pendientes elegidas de un promotor (administrador, gerente o contador). */
+export async function pagarComisionesPromotor(promotorId: string, ids: string[], nota?: string | null): Promise<{ pagadas: number; total_usd: number }> {
+  const sesion = await sesionDePendientes();
+  const texto = (nota ?? '').trim().replace(/\s+/g, ' ');
+  if (texto.length > 300) throw new Error('La nota es muy larga (máximo 300 caracteres).');
+  if (modoServidor) return promotoresDb.pagarComisionesPromotor(promotorId, ids, texto || null);
+  if (!(esGlobal(sesion.rol) || sesion.rol === 'contador')) throw new Error('Las comisiones las paga el gerente, el administrador o el contador desde Nómina.');
+  const db = leerDB();
+  const pedidas = new Set(ids);
+  const x = (db.pendientes ?? []).filter(
+    (y) => pedidas.has(y.id) && y.tipo === 'COMISION' && y.estado === 'PENDIENTE' && y.promotor_id === promotorId && (sesion.rol === 'contador' || esGlobal(sesion.rol) || y.local_id === sesion.local_id)
+  );
+  if (x.length === 0) throw new Error('Ya no hay comisiones pendientes para pagar de este promotor.');
+  const cerradoEn = new Date().toISOString();
+  for (const y of x) Object.assign(y, { estado: 'PAGADO', cerrado_en: cerradoEn, cerrado_por_nombre: sesion.nombre, nota_cierre: texto || null });
+  guardarDB(db);
+  return { pagadas: x.length, total_usd: Math.round(x.reduce((s, y) => s + y.monto_usd, 0) * 100) / 100 };
+}
+
 /** Ata a un promotor registrado un pendiente abierto que se creó sin sus datos. */
 export async function asignarPromotorAPendiente(id: string, promotorId: string): Promise<Pendiente> {
   const sesion = await sesionDePendientes();

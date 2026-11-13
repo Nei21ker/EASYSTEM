@@ -34,7 +34,7 @@ const campo =
   import { activarBotonesCopiar, htmlBotonesCopiarPago, textoUsdYBs } from '../../utils/pagoMovil';
   import { tasaActual } from '../../stores/tasa';
   import { escaparHtml } from '../../utils/productosUI';
-  import type { Pendiente } from '../../types/database.types';
+  import type { Pendiente, PromotorResumen } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('cp-dialogo');
@@ -42,10 +42,33 @@ const campo =
   const error = $('cp-error');
   let pendiente: Pendiente | null = null;
   let accion: 'pagar' | 'anular' = 'pagar';
+  // «Marcar todo pagado» de la tarjeta de un promotor: las comisiones que se le muestran, pagadas de una vez
+  let lote: { promotorId: string; nombre: string; ids: string[] } | null = null;
 
   window.addEventListener('easystem:cerrar-pendiente', (e) => {
-    const d = (e as CustomEvent<{ pendiente: Pendiente; accion: 'pagar' | 'anular' }>).detail;
-    pendiente = d.pendiente;
+    const d = (e as CustomEvent<{ pendiente?: Pendiente; accion: 'pagar' | 'anular'; lote?: { promotor: PromotorResumen; pendientes: Pendiente[] } }>).detail;
+    if (d.lote) {
+      const { promotor, pendientes } = d.lote;
+      const total = Math.round(pendientes.reduce((s, x) => s + x.monto_usd, 0) * 100) / 100;
+      const nombre = `${promotor.nombre} ${promotor.apellido}`.trim() || 'Promotor sin nombre';
+      lote = { promotorId: promotor.id, nombre, ids: pendientes.map((x) => x.id) };
+      pendiente = null;
+      accion = 'pagar';
+      $('cp-titulo').textContent = 'Marcar todo pagado';
+      $('cp-resumen').innerHTML = `<p class="font-semibold">${escaparHtml(nombre)}</p>
+        <p class="mt-0.5 text-sm">${pendientes.length} comision${pendientes.length === 1 ? '' : 'es'} · <strong>${textoUsdYBs(total, tasaActual.get())}</strong></p>
+        ${promotor.banco ? `<p class="mt-1 text-xs"><span class="text-slate-500 dark:text-slate-400">Banco receptor:</span> <strong>${escaparHtml(promotor.banco)}</strong></p>` : ''}
+        <div class="mt-2">${htmlBotonesCopiarPago({ nombre, cedula: promotor.cedula, telefono: promotor.telefono, banco: promotor.banco, montoUsd: total }, tasaActual.get())}</div>`;
+      $('cp-aviso').textContent = `Confirma cuando ya le hayas pagado las ${pendientes.length} comisiones juntas. Se marcan todas como pagadas con la misma nota. No se puede deshacer.`;
+      confirmar.textContent = 'Sí, ya se pagó todo';
+      ($('cp-nota') as HTMLInputElement).value = '';
+      error.classList.add('hidden');
+      confirmar.disabled = false;
+      if (!dialogo.open) dialogo.showModal();
+      return;
+    }
+    lote = null;
+    pendiente = d.pendiente!;
     accion = d.accion;
     const pagar = accion === 'pagar';
     const comision = pendiente.tipo === 'COMISION';
@@ -76,11 +99,12 @@ const campo =
 
   $('cp-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    if (!pendiente) return;
+    if (!pendiente && !lote) return;
     confirmar.disabled = true;
     error.classList.add('hidden');
     try {
-      await inventoryService.cerrarPendiente(pendiente.id, accion, ($('cp-nota') as HTMLInputElement).value || null);
+      if (lote) await inventoryService.pagarComisionesPromotor(lote.promotorId, lote.ids, ($('cp-nota') as HTMLInputElement).value || null);
+      else await inventoryService.cerrarPendiente(pendiente!.id, accion, ($('cp-nota') as HTMLInputElement).value || null);
       dialogo.close();
       window.dispatchEvent(new CustomEvent('easystem:pendiente-cambiado', { detail: { accion } }));
     } catch (err) {

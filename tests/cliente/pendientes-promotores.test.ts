@@ -203,4 +203,24 @@ describe('demo: comisión por venta con precio de promotor', () => {
     await expect(e.cerrarPendiente(c.id, 'pagar')).rejects.toThrow(/Las comisiones las paga/);
     await expect(e.cerrarPendiente(c.id, 'anular')).rejects.toThrow(/Las comisiones las paga/);
   });
+
+  it('«Marcar todo pagado»: paga de una vez las comisiones elegidas de un promotor; el encargado no puede', async () => {
+    const a = await admin();
+    await ventaConPromotor(a, promotor);
+    await ventaConPromotor(a, promotor);
+    const comisiones = await a.listarPendientes({ tipo: 'COMISION', estado: 'PENDIENTE' });
+    expect(comisiones).toHaveLength(2);
+    const promotorId = comisiones[0].promotor_id!;
+    const ids = comisiones.map((c) => c.id);
+
+    const e = await cargarComo('encargado@edwardaccesorios.com', 'encargado123');
+    await expect(e.pagarComisionesPromotor(promotorId, ids)).rejects.toThrow(/Las comisiones las paga/);
+
+    const g = await admin();
+    expect(await g.pagarComisionesPromotor(promotorId, ids, 'Transferencia 0123')).toEqual({ pagadas: 2, total_usd: 12 });
+    const pagadas = await g.listarPendientes({ tipo: 'COMISION', estado: 'PAGADO' });
+    expect(pagadas).toHaveLength(2);
+    expect(pagadas.every((c) => c.nota_cierre === 'Transferencia 0123')).toBe(true);
+    await expect(g.pagarComisionesPromotor(promotorId, ids)).rejects.toThrow(/Ya no hay comisiones pendientes/);
+  });
 });

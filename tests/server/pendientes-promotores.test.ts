@@ -5,7 +5,7 @@ import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, 
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { autorizarPrecio } from '../../src/server/servicios/autorizaciones';
-import { asignarPromotorAPendiente, cerrarPendiente, crearPendienteMercancia, listarPendientes } from '../../src/server/servicios/pendientes';
+import { asignarPromotorAPendiente, cerrarPendiente, crearPendienteMercancia, listarPendientes, pagarComisionesPromotor } from '../../src/server/servicios/pendientes';
 import { actualizarPromotor, buscarPromotorPorCedula, crearPromotor, listarPromotores } from '../../src/server/servicios/promotores';
 import { eliminarVentas, guardarVenta } from '../../src/server/servicios/ventas';
 import type { NuevaVenta } from '../../src/types/database.types';
@@ -276,5 +276,53 @@ describe('si la venta se elimina, su comisión por pagar desaparece con ella', (
     await eliminarVentas(env, admin, [v1.id, v2.id]);
     const quedan = await listarPendientes(env, gerente);
     expect(quedan.map((p) => p.estado)).toEqual(['PAGADO']);
+  });
+});
+
+describe('«Marcar todo pagado» de la tarjeta de un promotor', () => {
+  async function dosComisiones() {
+    await ventaConPromotor();
+    await ventaConPromotor(PROMOTOR, { cliente_cedula: 'V-22222222' });
+    const [promotor] = await listarPromotores(env, gerente);
+    const ids = (await listarPendientes(env, gerente, { estado: 'PENDIENTE' })).map((p) => p.id);
+    return { promotor, ids };
+  }
+
+  it('el contador (o gerente/administrador) paga todas las comisiones elegidas de una vez, con la misma nota', async () => {
+    const { promotor, ids } = await dosComisiones();
+    expect(ids).toHaveLength(2);
+    const r = await pagarComisionesPromotor(env, contador, promotor.id, ids, 'Transferencia 0123');
+    expect(r).toEqual({ pagadas: 2, total_usd: 6 });
+    const pagadas = await listarPendientes(env, gerente, { estado: 'PAGADO' });
+    expect(pagadas).toHaveLength(2);
+    expect(pagadas.every((p) => p.cerrado_por_nombre === 'Cora Contadora' && p.nota_cierre === 'Transferencia 0123')).toBe(true);
+    expect((await listarPromotores(env, gerente))[0].comision_pendiente).toBe(0);
+  });
+
+  it('solo paga lo que sigue pendiente: una ya pagada no se repite y si no queda ninguna da 409', async () => {
+    const { promotor, ids } = await dosComisiones();
+    await cerrarPendiente(env, gerente, ids[0], 'pagar', 'ya');
+    const r = await pagarComisionesPromotor(env, gerente, promotor.id, ids);
+    expect(r).toEqual({ pagadas: 1, total_usd: 3 });
+    await rechazo(pagarComisionesPromotor(env, gerente, promotor.id, ids), 409, 'pendiente_cerrado');
+  });
+
+  it('no toca comisiones de otro promotor ni mercancía, aunque lleguen sus ids', async () => {
+    const { promotor, ids } = await dosComisiones();
+    const otro = await crearPromotor(env, gerente, { cedula: 'V-55555555', nombre: 'Otro', apellido: 'Promotor' });
+    await rechazo(pagarComisionesPromotor(env, gerente, otro.id, ids), 409, 'pendiente_cerrado');
+    const merc = await crearPendienteMercancia(env, encargado, { localId: vidrios, promotorId: promotor.id, descripcion: 'Vidrios', monto_usd: 5 });
+    const r = await pagarComisionesPromotor(env, gerente, promotor.id, [...ids, merc.id]);
+    expect(r.pagadas).toBe(2);
+    expect((await listarPendientes(env, gerente, { estado: 'PENDIENTE' })).map((p) => p.id)).toEqual([merc.id]);
+  });
+
+  it('el encargado, el vendedor y el técnico no pueden (403); una nota muy larga es 400', async () => {
+    const { promotor, ids } = await dosComisiones();
+    await rechazo(pagarComisionesPromotor(env, encargado, promotor.id, ids), 403);
+    await rechazo(pagarComisionesPromotor(env, vendedor, promotor.id, ids), 403);
+    await rechazo(pagarComisionesPromotor(env, tecnico, promotor.id, ids), 403);
+    await rechazo(pagarComisionesPromotor(env, gerente, promotor.id, ids, 'x'.repeat(301)), 400, 'datos_invalidos');
+    expect(await n("SELECT count(*) AS n FROM pendientes WHERE estado = 'PAGADO'")).toBe(0);
   });
 });

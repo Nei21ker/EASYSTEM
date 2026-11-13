@@ -183,6 +183,60 @@ export async function cerrarPendiente(env: Entorno, sesion: Sesion, id: string, 
   return pendienteDelAlcance(env, sesion, id);
 }
 
+/**
+ * Marca como pagadas varias comisiones de UN promotor de una vez («Marcar todo pagado» de su tarjeta). Mismos permisos que pagar una por una
+ * (administrador, gerente o contador). Solo se pagan las que siguen PENDIENTE, son comisiones de ese promotor y están en el alcance de quien
+ * paga; las demás se ignoran. Todo en UN batch atómico.
+ */
+export async function pagarComisionesPromotor(
+  env: Entorno,
+  sesion: Sesion,
+  promotorId: string,
+  ids: string[],
+  notaTexto?: string | null
+): Promise<{ pagadas: number; total_usd: number }> {
+  const alcance = await alcanceDePendientes(env, sesion);
+  if (!puedeCerrar(sesion, 'COMISION', 'pagar')) {
+    throw new ErrorApi(403, 'Las comisiones las paga el gerente, el administrador o el contador desde Nómina.', 'sin_permiso');
+  }
+  const nota = (notaTexto ?? '').trim().replace(/\s+/g, ' ');
+  if (nota.length > 300) throw new ErrorApi(400, 'La nota es muy larga (máximo 300 caracteres).', 'datos_invalidos');
+  const unicos = [...new Set(ids)];
+  const db = env.DB;
+  const { sql, valores } = condicionAlcance(alcance, 'x.local_id');
+  // Se leen primero (dentro del alcance) para saber qué se va a pagar y de qué locales avisar; el UPDATE vuelve a exigir PENDIENTE
+  const elegibles: { id: string; local_id: string; monto_usd: number }[] = [];
+  for (let i = 0; i < unicos.length; i += 80) {
+    const trozo = unicos.slice(i, i + 80);
+    const filas = await db
+      .prepare(
+        `SELECT x.id, x.local_id, x.monto_usd FROM pendientes x WHERE x.promotor_id = ? AND x.tipo = 'COMISION' AND x.estado = 'PENDIENTE' AND x.id IN (${trozo.map(() => '?').join(',')}) AND ${sql}`
+      )
+      .bind(promotorId, ...trozo, ...valores)
+      .all<{ id: string; local_id: string; monto_usd: number }>();
+    elegibles.push(...filas.results);
+  }
+  if (elegibles.length === 0) throw new ErrorApi(409, 'Ya no hay comisiones pendientes para pagar de este promotor.', 'pendiente_cerrado');
+
+  const cerradoEn = ahora();
+  const sentencias: D1PreparedStatement[] = [];
+  for (let i = 0; i < elegibles.length; i += 80) {
+    const trozo = elegibles.slice(i, i + 80);
+    sentencias.push(
+      db
+        .prepare(
+          `UPDATE pendientes SET estado = 'PAGADO', cerrado_en = ?, cerrado_por_nombre = ?, nota_cierre = ? WHERE estado = 'PENDIENTE' AND tipo = 'COMISION' AND promotor_id = ? AND id IN (${trozo.map(() => '?').join(',')})`
+        )
+        .bind(cerradoEn, sesion.nombre, nota || null, promotorId, ...trozo.map((e) => e.id))
+    );
+  }
+  for (const localId of new Set(elegibles.map((e) => e.local_id))) sentencias.push(...sentenciasCambio(db, ['pendientes'], localId));
+  const resultados = await db.batch(sentencias);
+  const pagadas = resultados.slice(0, Math.ceil(elegibles.length / 80)).reduce((s, r) => s + (r.meta.changes ?? 0), 0);
+  if (pagadas === 0) throw new ErrorApi(409, 'Otra persona acaba de pagar estas comisiones.', 'pendiente_cerrado');
+  return { pagadas, total_usd: redondear2(elegibles.reduce((s, e) => s + e.monto_usd, 0)) };
+}
+
 /** Que cada producto de la mercancía exista y tenga stock suficiente en el local del pendiente; si no, 409 diciendo cuál falta. */
 async function comprobarStockDelPendiente(env: Entorno, pendiente: Pendiente): Promise<void> {
   for (const i of pendiente.items ?? []) {

@@ -100,6 +100,7 @@ function casos(): Caso[] {
     { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores?cedula=V-12345678', permitidos: CAJERO },
     { archivo: 'promotores/index.ts', metodo: 'GET', url: '/api/promotores?para=venta', permitidos: CAJERO }, // lista de promotores del local para el cobro
     { archivo: 'promotores/index.ts', metodo: 'POST', url: '/api/promotores', cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
+    { archivo: 'promotores/[id]/pagar-comisiones.ts', metodo: 'POST', url: '/api/promotores/no-existe/pagar-comisiones', params: { id: 'no-existe' }, cuerpo: { ids: ['x'] }, permitidos: NOMINA },
     { archivo: 'promotores/[id].ts', metodo: 'PUT', url: '/api/promotores/no-existe', params: { id: 'no-existe' }, cuerpo: { cedula: 'V-12345678', nombre: 'Luis', apellido: 'Mora' }, permitidos: PENDIENTES },
     { archivo: 'pendientes/index.ts', metodo: 'GET', url: '/api/pendientes', permitidos: PENDIENTES },
     { archivo: 'pendientes/index.ts', metodo: 'POST', url: '/api/pendientes', cuerpo: { localId: accesorios, promotorId: 'no-existe', descripcion: 'Vidrios', monto_usd: 5 }, permitidos: GERENCIA },

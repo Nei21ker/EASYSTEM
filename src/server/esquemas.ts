@@ -108,6 +108,11 @@ export const esquemaCerrarPendiente = z.object({
   accion: z.enum(['pagar', 'anular']),
   nota: z.string().max(300).nullable().optional(),
 });
+export const esquemaPagarComisiones = z.object({
+  /** Las comisiones que la pantalla muestra en la tarjeta del promotor (así no se paga una que apareció después) */
+  ids: z.array(z.string().min(1).max(100)).min(1).max(200),
+  nota: z.string().max(300).nullable().optional(),
+});
 export const esquemaAsignarPromotor = z.object({ promotorId: z.string().min(1).max(100) });
 export const esquemaPago = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable(), monto_bs_debido: z.number().nullable().optional() });
 export const esquemaDinero = z.object({ metodo, monto_usd: z.number(), monto_bs: z.number().nullable() });
