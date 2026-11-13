@@ -28,8 +28,13 @@ export function leerClaveOculta(texto) {
           resolver(clave);
           return;
         }
-        if (tecla === '\u007f' || tecla === '\b') clave = clave.slice(0, -1);
-        else if (tecla >= ' ') clave += tecla;
+        if (tecla === '\u007f' || tecla === '\b') {
+          if (clave.length > 0) process.stdout.write('\b \b');
+          clave = clave.slice(0, -1);
+        } else if (tecla >= ' ') {
+          clave += tecla;
+          process.stdout.write('*'); // un asterisco por tecla, para ver que sí está escribiendo (la clave no se muestra)
+        }
       }
     };
     entrada.on('data', alTeclear);
