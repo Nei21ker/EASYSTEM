@@ -148,8 +148,9 @@ export const esquemaAutorizarPrecio = z.object({
   local_id: z.string(),
   promotor: esquemaPromotor.nullable().optional(),
   /** "promotor" (por defecto, clientes anteriores) o "local": la tienda cambia el precio, sin promotor ni comisión */
-  modo: z.enum(['promotor', 'local']).optional(),
-  lineas: z.array(z.object({ producto_id: z.string(), precio: z.number() })).min(1).max(100),
+  modo: z.enum(['promotor', 'local', 'divisas']).optional(),
+  /** `comision` = lo que se le da al promotor POR UNIDAD; solo se usa (y es obligatoria) en el modo "divisas" */
+  lineas: z.array(z.object({ producto_id: z.string(), precio: z.number(), comision: z.number().optional() })).min(1).max(100),
 });
 
 export const esquemaDevolucion = z.object({

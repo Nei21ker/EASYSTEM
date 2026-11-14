@@ -35,9 +35,9 @@ export interface CargaAutorizacion {
   /** Promotor: texto canónico de los datos que se anotaron (cédula, nombre, teléfono) y su nombre; ambos pueden ir vacíos */
   p: string;
   pn: string;
-  /** [producto_id, precio autorizado] */
-  ln: [string, number][];
-  /** Modo: "local" = la tienda cambia el precio (sin promotor ni comisión); ausente o "promotor" = precio de promotor */
+  /** [producto_id, precio autorizado] o, en el modo "divisas", [producto_id, precio autorizado, comisión al promotor POR UNIDAD] */
+  ln: ([string, number] | [string, number, number])[];
+  /** Modo: "local" = la tienda cambia el precio (sin promotor ni comisión); "divisas" = descuento por pagar todo en dólares (efectivo/Binance) con comisión fija al promotor; ausente o "promotor" = precio de promotor */
   m?: ModoPrecio;
   /** 1 = precio (de promotor o del local) anotado por quien vende, SIN contraseña de supervisor (solo precios MAYORES al del catálogo); `a`/`an` son quien vende */
   s?: 1;
@@ -345,14 +345,15 @@ export interface PedidoAutorizacion {
   promotor?: DatosPromotor | null;
   /** Por defecto "promotor". Con "local" no hay promotor ni comisión (cualquier dato de promotor enviado se ignora) */
   modo?: ModoPrecio;
-  lineas: { producto_id: string; precio: number }[];
+  /** En el modo "divisas", `comision` (lo que se le da al promotor POR UNIDAD) es obligatoria en cada línea */
+  lineas: { producto_id: string; precio: number; comision?: number }[];
 }
 
 export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: PedidoAutorizacion): Promise<AutorizacionPrecio> {
   if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
 
   // Primero lo que se pide (no cuenta como intento fallido): el promotor y los precios
-  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : 'promotor';
+  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : pedido.modo === 'divisas' ? 'divisas' : 'promotor';
   const promotor = promotorValido(modo === 'local' ? null : pedido.promotor);
   if (!Array.isArray(pedido.lineas) || pedido.lineas.length === 0) throw new ErrorApi(400, 'No hay precios que autorizar.', 'datos_invalidos');
   const vistos = new Set<string>();
@@ -371,12 +372,24 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     const producto = lista.get(l.producto_id);
     if (!producto) throw new ErrorApi(400, 'Uno de los productos no existe en el catálogo.', 'datos_invalidos');
   }
+  const lista_de = (id: string): number => lista.get(id)?.precio_venta ?? 0;
+  // Divisas: el cliente paga todo en dólares en efectivo/Binance y por eso el precio BAJA; de lo que se rebaja, una parte fija es del promotor.
+  // Sin contraseña (lo anota quien vende; queda en el historial y en Pendientes): cada línea debe ser un precio menor al del catálogo con su comisión.
+  if (modo === 'divisas') {
+    for (const l of pedido.lineas) {
+      const lista = lista_de(l.producto_id);
+      if (!(l.precio < lista - TOLERANCIA)) throw new ErrorApi(400, 'En divisas el precio debe ser menor al del catálogo.', 'datos_invalidos');
+      const c = l.comision;
+      if (c === undefined || !Number.isFinite(c) || c <= 0) throw new ErrorApi(400, 'Escribe cuánto se le da al promotor por cada unidad.', 'datos_invalidos');
+      if (c > l.precio + TOLERANCIA) throw new ErrorApi(400, 'La comisión del promotor no puede ser mayor que el precio cobrado.', 'datos_invalidos');
+    }
+  }
   // Un precio MENOR al del catálogo (descuento) solo lo autoriza un gerente o un administrador; uno mayor, también el encargado del local
-  const hayDescuento = pedido.lineas.some((l) => l.precio < (lista.get(l.producto_id)?.precio_venta ?? 0) - TOLERANCIA);
+  const hayDescuento = modo !== 'divisas' && pedido.lineas.some((l) => l.precio < (lista.get(l.producto_id)?.precio_venta ?? 0) - TOLERANCIA);
 
   // Un precio MAYOR (precio de promotor o precio del local) no pide contraseña: quien vende lo anota solo. Solo un descuento la pide.
   // Si un cliente anterior sí manda una contraseña, se verifica como siempre y queda registrado quién autorizó.
-  const sinClave = !hayDescuento && !(pedido.clave ?? '');
+  const sinClave = modo === 'divisas' || (!hayDescuento && !(pedido.clave ?? ''));
   if (!sinClave && !(pedido.clave ?? '')) {
     throw new ErrorApi(403, 'Un precio menor al del catálogo necesita la contraseña de un gerente o un administrador.', 'sin_permiso');
   }
@@ -392,8 +405,8 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
     l: pedido.local_id,
     p: promotor.clave,
     pn: promotor.nombre ?? '',
-    ln: pedido.lineas.map((l) => [l.producto_id, redondear2(l.precio)]),
-    ...(modo === 'local' ? { m: 'local' as const } : {}),
+    ln: pedido.lineas.map((l) => (modo === 'divisas' ? [l.producto_id, redondear2(l.precio), redondear2(l.comision ?? 0)] : [l.producto_id, redondear2(l.precio)])),
+    ...(modo === 'local' ? { m: 'local' as const } : modo === 'divisas' ? { m: 'divisas' as const } : {}),
     exp: vence,
   });
   return { token, modo, vence_en: vence, autorizado_por: sinClave ? '' : supervisor.nombre, promotor: promotor.nombre ?? '' };
@@ -403,6 +416,8 @@ export async function autorizarPrecio(env: Entorno, sesion: Sesion, pedido: Pedi
 export interface PrecioPromotorVerificado {
   /** Con qué modo se autorizó: en "local" no hay promotor ni comisión */
   modo: ModoPrecio;
+  /** Solo en el modo "divisas": comisión al promotor POR UNIDAD firmada para cada producto */
+  comisiones: Map<string, number>;
   promotor_nombre: string | null;
   promotor_cedula: string | null;
   promotor_telefono: string | null;
@@ -438,15 +453,18 @@ export async function verificarPrecioPromotor(
       : sinAutorizacion('La autorización no es válida. Vuelve a pedirla.');
   }
   const c = r.carga;
-  const modo: ModoPrecio = c.m === 'local' ? 'local' : 'promotor';
-  // Sin contraseña solo valen los precios MAYORES (precio de promotor o del local); un descuento siempre la pide
-  if (c.s && hayDescuento) throw sinAutorizacion('Un descuento necesita la contraseña de un gerente o un administrador.');
+  const modo: ModoPrecio = c.m === 'local' ? 'local' : c.m === 'divisas' ? 'divisas' : 'promotor';
+  // Sin contraseña solo valen los precios MAYORES (precio de promotor o del local) y el descuento por divisas (que además exige pagar todo en divisas); otro descuento siempre la pide
+  if (c.s && hayDescuento && modo !== 'divisas') throw sinAutorizacion('Un descuento necesita la contraseña de un gerente o un administrador.');
   // En modo local no hay promotor: lo que haya enviado el cliente se ignora (la autorización se firmó sin promotor)
   const promotor = promotorValido(modo === 'local' ? null : datos.promotor);
   if (c.u !== sesion.userId || c.l !== datos.local_id || c.p !== promotor.clave) {
     throw sinAutorizacion('Esa autorización es de otra venta, vendedor o promotor. Vuelve a pedirla.');
   }
-  const autorizados = new Map(c.ln);
+  const autorizados = new Map<string, number>(c.ln.map(([id, precio]) => [id, precio]));
+  const comisiones = new Map<string, number>(c.ln.flatMap((l) => (l.length === 3 ? [[l[0], l[2]] as [string, number]] : [])));
+  // Un token de divisas siempre lleva comisión en todas sus líneas
+  if (modo === 'divisas' && c.ln.some((l) => l.length !== 3)) throw sinAutorizacion('La autorización no es válida. Vuelve a pedirla.');
   for (const [productoId, cobrado] of desviadas) {
     const permitido = autorizados.get(productoId);
     if (permitido === undefined || Math.abs(permitido - cobrado) > TOLERANCIA) {
@@ -454,5 +472,5 @@ export async function verificarPrecioPromotor(
     }
   }
   if (!c.s && !(await supervisorSigueVigente(env, c.a, datos.local_id, hayDescuento))) throw sinAutorizacion('Quien autorizó ya no puede hacerlo. Vuelve a pedirla.');
-  return { modo, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, promotor_banco: promotor.banco, promotor_nombre_propio: promotor.nombrePropio, promotor_apellido: promotor.apellido, autorizado_por: c.s ? null : c.a, autorizado_nombre: c.s ? null : c.an };
+  return { modo, comisiones, promotor_nombre: promotor.nombre, promotor_cedula: promotor.cedula, promotor_telefono: promotor.telefono, promotor_banco: promotor.banco, promotor_nombre_propio: promotor.nombrePropio, promotor_apellido: promotor.apellido, autorizado_por: c.s ? null : c.a, autorizado_nombre: c.s ? null : c.an };
 }

@@ -17,8 +17,8 @@ import { sentenciasBorrarComisiones, sentenciasComisionPromotor } from './pendie
 import { descripcionInstalacionPromotor, instalacionDelPromotor, limpiarInstalacion } from '../../utils/instalacion';
 import { normalizarPromotor } from '../../utils/promotor';
 import { CLIENTE_SIN_DATOS, clienteVacio } from '../../utils/clienteSinDatos';
-import { redondeoValido } from '../../utils/pagos';
-import type { Devolucion, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
+import { esMetodoBolivares, redondeoValido } from '../../utils/pagos';
+import type { Devolucion, MetodoPago, NuevaDevolucion, NuevaVenta, Venta, VentaItem } from '../../types/database.types';
 
 const METODOS = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT', 'MIXTO'];
 
@@ -95,6 +95,9 @@ interface PrecioPromotorDeVenta {
  * si es más cara (precio de promotor) la diferencia es la comisión; si es más barata (descuento) la autoriza solo un gerente o un administrador. Los productos que no están en el catálogo se
  * dejan pasar (no hay con qué comparar).
  */
+/** ¿Alguna línea se cobra MÁS cara que el catálogo? */
+const hayAlza = (items: VentaItem[]): boolean => items.some((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista + 0.005);
+
 async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaVenta): Promise<PrecioPromotorDeVenta> {
   const ids = [...new Set(datos.items.map((i) => i.producto_id))];
   const precios = new Map<string, number>();
@@ -115,7 +118,7 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   const items = datos.items.map((item): VentaItem => {
     const lista = precios.get(item.producto_id);
     if (lista === undefined) return item;
-    const { precio_lista: _ignorado, precio_tipo: _tipo, ...limpio } = item;
+    const { precio_lista: _ignorado, precio_tipo: _tipo, comision_unidad: _comision, ...limpio } = item;
     if (Math.abs(item.precio_unitario - lista) <= 0.005) return limpio;
     // Más caro (precio de promotor) o más barato (descuento) que el catálogo: exige la autorización firmada de un supervisor
     desviadas.push([item.producto_id, item.precio_unitario]);
@@ -125,6 +128,22 @@ async function aplicarPrecioPromotor(env: Entorno, sesion: Sesion, datos: NuevaV
   if (desviadas.length === 0) return { items, comision: 0, promotor: null };
 
   const promotor = await verificarPrecioPromotor(env, sesion, datos, desviadas, hayDescuento);
+  if (promotor.modo === 'divisas') {
+    // Descuento por pagar en divisas: TODO el cobro debe ser en dólares en efectivo o Binance (nada en bolívares), solo con precios MENORES al catálogo,
+    // y la comisión al promotor sale de la autorización firmada (no de lo que mande el cliente): Σ cantidad × comisión por unidad.
+    const pagos = datos.pagos ?? [];
+    const hayBs = pagos.length === 0 ? datos.metodo_pago === 'MIXTO' || esMetodoBolivares(datos.metodo_pago as MetodoPago) : pagos.some((p) => esMetodoBolivares(p.metodo));
+    if (hayBs) throw new ErrorApi(400, 'El precio en divisas solo vale si se paga todo en dólares en efectivo o con Binance (nada en bolívares).', 'pago_no_divisas');
+    if (hayAlza(items)) throw new ErrorApi(400, 'El precio en divisas solo puede ser menor al del catálogo.', 'precio_no_autorizado');
+    const marcados = items.map((i): VentaItem => {
+      if (i.precio_lista === undefined) return i;
+      const c = promotor.comisiones.get(i.producto_id);
+      if (c === undefined) throw new ErrorApi(400, 'El precio no está autorizado. Vuelve a pedir la autorización.', 'precio_no_autorizado');
+      return { ...i, precio_tipo: 'divisas', comision_unidad: c };
+    });
+    const comision = redondear2(marcados.reduce((suma, i) => suma + (i.comision_unidad === undefined ? 0 : i.cantidad * i.comision_unidad), 0));
+    return { items: marcados, comision, promotor };
+  }
   if (promotor.modo === 'local') {
     // Precio del local: la tienda cambió el precio (más caro o con descuento) por su cuenta: sin promotor y sin comisión
     return { items: items.map((i) => (i.precio_lista === undefined ? i : { ...i, precio_tipo: 'local' as const })), comision: 0, promotor };
@@ -169,11 +188,17 @@ function limpiarDanados(sesion: Sesion, items: VentaItem[]): VentaItem[] {
 
 /** Texto del pendiente de comisión: qué productos se vendieron más caros que la lista y a cuánto. */
 function descripcionComision(items: VentaItem[]): string {
-  const lineas = items
-    .filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista)
-    .map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
-  const texto = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
-  return `Comisión por venta con precio de promotor: ${texto}`;
+  const resumir = (lineas: string[]) => lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? '; y ' + (lineas.length - 3) + ' más' : '');
+  const partes: string[] = [];
+  const alzas = items
+    .filter((i) => i.precio_tipo !== 'divisas' && i.precio_lista !== undefined && i.precio_unitario > i.precio_lista)
+    .map((i) => i.cantidad + ' × ' + i.nombre + ' ($' + i.precio_unitario + ' cobrado, lista $' + i.precio_lista + ')');
+  if (alzas.length > 0) partes.push('Comisión por venta con precio de promotor: ' + resumir(alzas));
+  const divisas = items
+    .filter((i) => i.precio_tipo === 'divisas' && i.comision_unidad !== undefined)
+    .map((i) => i.cantidad + ' × ' + i.nombre + ' ($' + i.precio_unitario + ' en divisas, lista $' + i.precio_lista + '; $' + i.comision_unidad + ' al promotor por unidad)');
+  if (divisas.length > 0) partes.push('Comisión por venta en divisas con descuento: ' + resumir(divisas));
+  return partes.join(' · ');
 }
 
 type PromotorDeVenta = { cedula: string | null; nombre: string | null; nombrePropio: string; apellido: string; telefono: string | null; banco: string | null };
@@ -230,7 +255,7 @@ export async function guardarVenta(env: Entorno, sesion: Sesion, datos: NuevaVen
   // Instalación hecha por el promotor: es dinero que la tienda le entrega, así que se suma a lo que se le debe (comisión del precio + instalación).
   // El promotor sale de la autorización del precio si la hay; si no, de los datos que anotó quien vendió.
   const instalacionPromotor = instalacionDelPromotor(itemsGuardados);
-  let identidad: PromotorDeVenta | null = precios.promotor?.modo === 'promotor' ? identidadDeAutorizacion(precios.promotor) : null;
+  let identidad: PromotorDeVenta | null = precios.promotor && precios.promotor.modo !== 'local' ? identidadDeAutorizacion(precios.promotor) : null;
   if (!identidad && instalacionPromotor > 0) {
     const r = normalizarPromotor(datos.promotor ?? null);
     if (!r.ok) throw new ErrorApi(400, r.mensaje, 'datos_invalidos');

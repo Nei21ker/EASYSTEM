@@ -266,7 +266,9 @@ export interface VentaItem {
   /** Precio de catálogo al momento de la venta; solo se guarda en las ventas de promotor, donde `precio_unitario` (lo que pagó el cliente) es mayor */
   precio_lista?: number;
   /** Quién fijó el precio distinto al del catálogo: "local" = la tienda cambió el precio (sin promotor ni comisión). Ausente = precio de promotor o descuento anteriores. Lo pone el servidor */
-  precio_tipo?: 'local';
+  precio_tipo?: 'local' | 'divisas';
+  /** Solo con `precio_tipo = 'divisas'` (descuento por pagar en dólares en efectivo o Binance): lo que se le da al promotor POR UNIDAD. Lo firma la autorización y lo pone el servidor */
+  comision_unidad?: number;
   /** Instalación de vidrios (Local Vidrios): quién la hizo y su precio POR UNIDAD; suma al total de la línea (ver utils/instalacion.ts) */
   instalacion_por?: 'LOCAL' | 'PROMOTOR';
   instalacion_usd?: number;
@@ -381,9 +383,10 @@ export interface Venta extends NuevaVenta {
 
 /**
  * Para qué se cambia el precio: "promotor" = el cliente paga más y la diferencia es la comisión de un promotor; "local" = la tienda
- * misma cambia el precio (más caro o con descuento), sin promotor ni comisión.
+ * misma cambia el precio (más caro o con descuento), sin promotor ni comisión; "divisas" = el cliente paga TODO en dólares en efectivo
+ * (o Binance) y por eso el precio baja (p. ej. $12 → $10) y se anota cuánto de eso se le da al promotor (p. ej. $1 por unidad).
  */
-export type ModoPrecio = 'promotor' | 'local';
+export type ModoPrecio = 'promotor' | 'local' | 'divisas';
 
 /** Respuesta de pedir la autorización de precio (supervisor + contraseña) */
 export interface AutorizacionPrecio {

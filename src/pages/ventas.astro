@@ -494,6 +494,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <span class="mt-1 block text-xs text-slate-600 dark:text-slate-300">La tienda cambia el precio por su cuenta: más caro o con descuento, sin promotor ni comisión.</span>
           <span class="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">Más caro: un encargado, un gerente o un administrador. Con descuento: solo un gerente o un administrador.</span>
         </button>
+        <button type="button" data-modo-precio="divisas" class="block w-full rounded-xl border border-slate-200 p-4 text-left transition hover:border-brand-500 hover:bg-brand-50 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:hover:bg-slate-800">
+          <span class="block text-sm font-semibold text-slate-900 dark:text-white">Precio en divisas</span>
+          <span class="mt-1 block text-xs text-slate-600 dark:text-slate-300">El cliente paga todo en dólares en efectivo (o Binance) y el precio baja (p. ej. $12 → $10). Se anota cuánto de eso se le da al promotor.</span>
+          <span class="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">No pide contraseña. Solo se puede cobrar en efectivo $ o Binance.</span>
+        </button>
     </div>
     <div class="border-t border-slate-200 bg-slate-50 px-5 py-3 dark:border-slate-800 dark:bg-slate-800/40">
       <button id="pos-precio-modo-cancelar" type="button" class="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
@@ -607,7 +612,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../lib/inventoryService';
   import type { VentaRegistrada } from '../lib/inventoryService';
   import { esGerencia, obtenerSesionActual } from '../lib/auth';
-  import { etiquetaMetodoPago, incluyePagoMovil, METODOS_PAGO, pagosDeVenta } from '../utils/pagos';
+  import { esMetodoBolivares, etiquetaMetodoPago, incluyePagoMovil, METODOS_PAGO, pagosDeVenta } from '../utils/pagos';
   import { mensajeSinPrecio, tienePrecioDeVenta } from '../utils/cargaInicial';
   import { FormularioPagos } from '../utils/formularioPagos';
   import { tasaActual } from '../stores/tasa';
@@ -637,6 +642,8 @@ import { alCambiarDatos } from '../lib/realtime';
     unidades: string[];
     /** Precio modificado y autorizado por un supervisor (mayor al del catálogo: promotor; menor: descuento); si no hay, se cobra el del catálogo */
     precioPromotor?: number;
+    /** Precio en divisas: lo que se le da al promotor POR UNIDAD (el precio baja por pagar en dólares en efectivo/Binance) */
+    comisionDivisas?: number;
     /** Si el precio se escribió en BOLÍVARES: los Bs por unidad (exactos; `precioPromotor` es su equivalente en dólares a la tasa del día) */
     precioBs?: number;
     /** Precio de catálogo que tenía el producto cuando se autorizó (si el catálogo cambia después, la autorización ya no vale) */
@@ -866,8 +873,12 @@ import { alCambiarDatos } from '../lib/realtime';
         const conPromotor = linea.precioPromotor !== undefined;
         const esDescuento = conPromotor && precio < producto.precio_venta - 0.005;
         const esLocal = autorizacionPrecio?.modo === 'local';
+        const esDivisas = autorizacionPrecio?.modo === 'divisas';
         const detallePrecio = conPromotor
-          ? esDescuento
+          ? esDivisas
+            ? `<p class="text-xs font-medium text-emerald-700 dark:text-emerald-400">Precio en divisas${promotorVenta?.nombre ? ` · ${escaparHtml(promotorVenta.nombre)}` : ''}</p>
+             <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · comisión del promotor ${formatearMoneda((linea.comisionDivisas ?? 0) * cantidad)}</p>`
+            : esDescuento
             ? `<p class="text-xs font-medium text-emerald-700 dark:text-emerald-400">Precio con descuento</p>
              <p class="text-xs text-slate-500 dark:text-slate-400">Lista ${formatearMoneda(producto.precio_venta)} · descuento ${formatearMoneda((producto.precio_venta - precio) * cantidad)}</p>`
             : esLocal
@@ -1314,6 +1325,9 @@ import { alCambiarDatos } from '../lib/realtime';
     }
     const lectura = formPagos.leer();
     if (!lectura.ok) return fallar(lectura.mensaje, lectura.foco);
+    if (autorizacionPrecio?.modo === 'divisas' && lectura.pagos.some((x) => esMetodoBolivares(x.metodo))) {
+      return fallar('El precio en divisas solo vale si se paga todo con efectivo $ o Binance. Cambia la forma de pago o quita el precio en divisas.', null);
+    }
     errorConfirmar.classList.add('hidden');
     return { cliente, pagos: lectura.pagos, vuelto: lectura.vuelto };
   }
@@ -1543,6 +1557,7 @@ import { alCambiarDatos } from '../lib/realtime';
         delete linea.precioPromotor;
         delete linea.precioBs;
         delete linea.listaAutorizada;
+        delete linea.comisionDivisas;
         avisos.push(`El precio de "${actual.nombre}" cambió en el catálogo: se quitó el precio modificado de esa línea.`);
       }
       if (ocupadas(linea) > actual.stock_actual) {
@@ -1746,12 +1761,19 @@ import { alCambiarDatos } from '../lib/realtime';
     const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-modo-precio]');
     if (!boton) return;
     dialogoModo.close();
-    void abrirPrecioPromotor(boton.dataset.modoPrecio === 'local' ? 'local' : 'promotor', productoDestacadoPrecio);
+    void abrirPrecioPromotor(boton.dataset.modoPrecio === 'local' ? 'local' : boton.dataset.modoPrecio === 'divisas' ? 'divisas' : 'promotor', productoDestacadoPrecio);
   });
   document.getElementById('pos-precio-modo-cancelar')!.addEventListener('click', () => dialogoModo.close());
 
   const numeroEscrito = (texto: string): number => Number(texto.trim().replace(',', '.'));
   const camposPrecio = () => [...listaPrecio.querySelectorAll<HTMLInputElement>('input[data-precio-de]')];
+  /** Precio en divisas: la comisión por unidad escrita para ese producto (null si está vacía o no es un número válido) */
+  const comisionEscrita = (productoId: string): number | null => {
+    const campo = listaPrecio.querySelector<HTMLInputElement>(`input[data-comision-de="${CSS.escape(productoId)}"]`);
+    if (!campo || campo.value.trim() === '') return null;
+    const n = Math.round(numeroEscrito(campo.value) * 100) / 100;
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
 
   // El precio se puede escribir en dólares o en bolívares (se convierte a dólares con la tasa de hoy; los Bs escritos quedan exactos)
   let monedaPrecio: 'USD' | 'BS' = 'USD';
@@ -1760,8 +1782,9 @@ import { alCambiarDatos } from '../lib/realtime';
 
   function pintarMonedaPrecio() {
     const hayTasa = !!tasaActual.get();
-    botonMonBs.disabled = !hayTasa;
-    botonMonBs.title = hayTasa ? '' : 'Registra la tasa del día para escribir precios en bolívares';
+    // En divisas el precio es siempre en dólares (se paga en dólares)
+    botonMonBs.disabled = !hayTasa || modoPrecio === 'divisas';
+    botonMonBs.title = modoPrecio === 'divisas' ? 'El precio en divisas se escribe en dólares' : hayTasa ? '' : 'Registra la tasa del día para escribir precios en bolívares';
     for (const [boton, activo] of [[botonMonUsd, monedaPrecio === 'USD'], [botonMonBs, monedaPrecio === 'BS']] as const) {
       boton.setAttribute('aria-pressed', String(activo));
       boton.className = `${boton === botonMonBs ? 'border-l border-slate-200 dark:border-slate-700 ' : ''}px-3 py-1.5 ${activo ? 'bg-brand-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300'}${boton.disabled ? ' opacity-50' : ''}`;
@@ -1829,7 +1852,13 @@ import { alCambiarDatos } from '../lib/realtime';
     const comision = cambios.reduce((suma, { linea, precio }) => suma + Math.max(0, precio - linea.producto.precio_venta) * linea.cantidad, 0);
     const descuento = cambios.reduce((suma, { linea, precio }) => suma + Math.max(0, linea.producto.precio_venta - precio) * linea.cantidad, 0);
     const partes: string[] = [];
-    if (modoPrecio === 'local') {
+    if (modoPrecio === 'divisas') {
+      const total = cambios.reduce((suma, { linea }) => suma + (comisionEscrita(linea.producto.id) ?? 0) * linea.cantidad, 0);
+      if (descuento > 0) partes.push(`El cliente se ahorra ${formatearMoneda(descuento)} por pagar en divisas.`);
+      if (total > 0) partes.push(`La tienda le da ${formatearMoneda(total)} al promotor.`);
+      if (comision > 0) partes.push('En divisas el precio debe ser menor al del catálogo.');
+      partes.push('Solo se puede cobrar con efectivo $ o Binance.');
+    } else if (modoPrecio === 'local') {
       if (comision > 0) partes.push(`El precio sube ${formatearMoneda(comision)} para la tienda (sin comisión de promotor).`);
       if (descuento > 0) partes.push(`Descuento de ${formatearMoneda(descuento)}: pide la contraseña de un gerente o un administrador.`);
     } else {
@@ -1839,8 +1868,9 @@ import { alCambiarDatos } from '../lib/realtime';
     document.getElementById('pos-precio-comision')!.textContent = partes.length > 0 ? partes.join(' ') : 'Escribe un precio distinto al del catálogo en alguno de los productos.';
     // El promotor solo existe en el precio de promotor (el precio del local no lleva promotor ni comisión)
     document.getElementById('pos-promotor-bloque')!.classList.toggle('hidden', modoPrecio === 'local');
+    for (const campo of camposPrecio()) campo.closest('li')?.querySelector('[data-comision-de]')?.closest('label')?.classList.toggle('hidden', modoPrecio !== 'divisas');
     // Un precio más caro (de promotor o del local) no pide contraseña; solo un descuento (que se hace en «Precio del local»)
-    document.getElementById('pos-precio-clave-bloque')!.classList.toggle('hidden', modoPrecio === 'promotor' || descuento <= 0);
+    document.getElementById('pos-precio-clave-bloque')!.classList.toggle('hidden', modoPrecio !== 'local' || descuento <= 0);
     document.getElementById('pos-precio-clave-titulo')!.textContent = 'Contraseña de un gerente o administrador';
     pintarEquivalentesPrecio();
   }
@@ -1925,6 +1955,8 @@ import { alCambiarDatos } from '../lib/realtime';
         const notaPrecio =
           linea.precioPromotor === undefined
             ? ''
+            : autorizacionPrecio?.modo === 'divisas'
+              ? etiqueta(neutro, 'precio en divisas')
             : linea.precioPromotor < linea.producto.precio_venta
               ? etiqueta(neutro, 'con descuento')
               : autorizacionPrecio?.modo === 'local'
@@ -1943,7 +1975,7 @@ import { alCambiarDatos } from '../lib/realtime';
     if (carrito.length === 0) return;
     limpiarError();
     modoPrecio = modo;
-    document.getElementById('pos-precio-titulo')!.textContent = modo === 'local' ? 'Precio del local' : 'Precio de promotor';
+    document.getElementById('pos-precio-titulo')!.textContent = modo === 'local' ? 'Precio del local' : modo === 'divisas' ? 'Precio en divisas' : 'Precio de promotor';
     // Los precios y el promotor ya autorizados solo se muestran si se vuelve a abrir el MISMO modo
     const mismoModo = !autorizacionPrecio || autorizacionPrecio.modo === modo;
     // Si los precios ya autorizados se escribieron en bolívares, se vuelve a abrir en Bs (con los mismos Bs exactos)
@@ -1960,6 +1992,8 @@ import { alCambiarDatos } from '../lib/realtime';
             <input data-precio-de="${escaparHtml(l.producto.id)}" type="text" inputmode="decimal" placeholder="${monedaPrecio === 'BS' && tasaHoy ? textoPrecioCampo(Math.round(convertirABs(l.producto.precio_venta, tasaHoy) * 100) / 100) : l.producto.precio_venta.toFixed(2)}" value="${mismoModo && l.precioPromotor !== undefined ? (monedaPrecio === 'BS' ? textoPrecioCampo(l.precioBs!) : l.precioPromotor.toFixed(2)) : ''}" aria-label="Precio al que paga el cliente por cada uno" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
             <span data-equiv-de="${escaparHtml(l.producto.id)}" class="mt-1 block text-[11px] tabular-nums text-slate-500 dark:text-slate-400"></span>
           </label>
+          ${modo === 'divisas' ? `<label class="mt-2 block"><span class="text-xs font-medium text-slate-600 dark:text-slate-300">Para el promotor, por cada unidad ($)</span>
+            <input data-comision-de="${escaparHtml(l.producto.id)}" type="text" inputmode="decimal" placeholder="0.00" value="${mismoModo && l.comisionDivisas !== undefined ? l.comisionDivisas.toFixed(2) : ''}" aria-label="Cuánto se le da al promotor por cada unidad, en dólares" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base tabular-nums text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" /></label>` : ''}
         </li>`
       )
       .join('');
@@ -2048,6 +2082,11 @@ import { alCambiarDatos } from '../lib/realtime';
     programarBusquedaPromotor();
   });
   listaPrecio.addEventListener('input', textoComision);
+  // Las comisiones por unidad solo aceptan números con coma o punto
+  listaPrecio.addEventListener('input', (e) => {
+    const c = e.target as HTMLInputElement;
+    if (c.dataset.comisionDe) c.value = c.value.replace(/[^\d.,]/g, '');
+  });
   document.getElementById('pos-precio-cancelar')!.addEventListener('click', cerrarPrecioPromotor);
   dialogoPrecio.addEventListener('close', () => (campoClaveSupervisor.value = ''));
   document.getElementById('pos-confirmar-total-btn')!.addEventListener('click', () => elegirModoPrecio());
@@ -2070,6 +2109,7 @@ import { alCambiarDatos } from '../lib/realtime';
         delete l.precioPromotor;
         delete l.precioBs;
         delete l.listaAutorizada;
+        delete l.comisionDivisas;
       }
       promotorVenta = null;
       autorizacionPrecio = null;
@@ -2080,8 +2120,16 @@ import { alCambiarDatos } from '../lib/realtime';
     }
 
     if (modoPrecio === 'promotor' && hayDescuento) return errorDePrecio('En el precio de promotor el precio no puede ser menor al del catálogo. Para un descuento elige «Precio del local».');
-    // El promotor solo existe en el precio de promotor (con un precio mayor); el precio del local no lleva promotor
-    const promotor: { datos: DatosPromotor } | { error: string } = modoPrecio === 'promotor' && hayAumento ? leerPromotor() : { datos: { cedula: null, nombre: '', apellido: '', telefono: '' } };
+    if (modoPrecio === 'divisas') {
+      if (hayAumento) return errorDePrecio('En divisas el precio debe ser menor al del catálogo.');
+      for (const { linea, precio } of cambios) {
+        const c = comisionEscrita(linea.producto.id);
+        if (c === null) return errorDePrecio(`Escribe cuánto se le da al promotor por cada unidad de «${linea.producto.nombre}».`);
+        if (c > precio + 0.005) return errorDePrecio(`La comisión de «${linea.producto.nombre}» no puede ser mayor que su precio.`);
+      }
+    }
+    // El promotor solo existe en el precio de promotor (con un precio mayor) y en el de divisas; el precio del local no lleva promotor
+    const promotor: { datos: DatosPromotor } | { error: string } = (modoPrecio === 'promotor' && hayAumento) || modoPrecio === 'divisas' ? leerPromotor() : { datos: { cedula: null, nombre: '', apellido: '', telefono: '' } };
     if ('error' in promotor) return errorDePrecio(promotor.error);
     // Solo un descuento pide contraseña (un precio más caro, de promotor o del local, no)
     const pideClave = modoPrecio === 'local' && hayDescuento;
@@ -2095,17 +2143,19 @@ import { alCambiarDatos } from '../lib/realtime';
         clave: pideClave ? campoClaveSupervisor.value : undefined,
         promotor: promotor.datos,
         modo: modoPrecio,
-        lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio })),
+        lineas: cambios.map(({ linea, precio }) => ({ producto_id: linea.producto.id, precio, ...(modoPrecio === 'divisas' ? { comision: comisionEscrita(linea.producto.id) ?? 0 } : {}) })),
       });
       for (const l of carrito) {
         delete l.precioPromotor;
         delete l.precioBs;
         delete l.listaAutorizada;
+        delete l.comisionDivisas;
       }
       for (const { linea, precio, bs } of cambios) {
         linea.precioPromotor = precio;
         if (bs !== null) linea.precioBs = bs;
         linea.listaAutorizada = linea.producto.precio_venta;
+        if (modoPrecio === 'divisas') linea.comisionDivisas = comisionEscrita(linea.producto.id) ?? 0;
       }
       promotorVenta = { datos: promotor.datos, nombre: aut.promotor };
       autorizacionPrecio = aut;
@@ -2130,6 +2180,7 @@ import { alCambiarDatos } from '../lib/realtime';
     delete linea.precioPromotor;
     delete linea.precioBs;
     delete linea.listaAutorizada;
+    delete linea.comisionDivisas;
     if (!carrito.some((l) => l.precioPromotor !== undefined)) {
       promotorVenta = null;
       autorizacionPrecio = null;
@@ -2146,6 +2197,7 @@ import { alCambiarDatos } from '../lib/realtime';
       delete l.precioPromotor;
       delete l.precioBs;
       delete l.listaAutorizada;
+      delete l.comisionDivisas;
     }
     renderCarrito();
     mostrarError('La autorización del precio venció: las líneas volvieron al precio de catálogo. Vuelve a pedir la autorización.');

@@ -2009,19 +2009,19 @@ export const comisionDePromotor = (items: VentaItem[]): number =>
   Math.round(items.reduce((s, i) => s + (i.precio_lista !== undefined && i.precio_unitario > i.precio_lista ? i.cantidad * (i.precio_unitario - i.precio_lista) : 0), 0) * 100) / 100;
 
 // Modo demo: las autorizaciones viven en memoria (no hay servidor que las firme); se pierden al recargar la página
-const autorizacionesDemo = new Map<string, { modo: ModoPrecio; promotor_clave: string; supervisor_id: string | null; supervisor_nombre: string | null; vence_en: number; lineas: Map<string, number> }>();
+const autorizacionesDemo = new Map<string, { modo: ModoPrecio; promotor_clave: string; supervisor_id: string | null; supervisor_nombre: string | null; vence_en: number; lineas: Map<string, number>; comisiones?: Map<string, number> }>();
 const VIDA_AUTORIZACION_DEMO_MS = 20 * 60_000;
 
 /**
  * Un encargado (de este local), gerente o administrador autoriza vender a precios mayores al del catálogo tecleando SU correo y
  * contraseña. `lineas` = los productos con su nuevo precio. Devuelve la autorización que se manda con la venta (dura 20 minutos).
  */
-export async function autorizarPrecioVenta(pedido: { email?: string; clave?: string; promotor?: DatosPromotor | null; modo?: ModoPrecio; lineas: { producto_id: string; precio: number }[] }): Promise<AutorizacionPrecio> {
+export async function autorizarPrecioVenta(pedido: { email?: string; clave?: string; promotor?: DatosPromotor | null; modo?: ModoPrecio; lineas: { producto_id: string; precio: number; comision?: number }[] }): Promise<AutorizacionPrecio> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarPrecio({ ...pedido, local_id });
 
   const db = leerDB();
-  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : 'promotor';
+  const modo: ModoPrecio = pedido.modo === 'local' ? 'local' : pedido.modo === 'divisas' ? 'divisas' : 'promotor';
   const datosPromotor = normalizarPromotor(modo === 'local' ? null : pedido.promotor);
   if (!datosPromotor.ok) throw new Error(datosPromotor.mensaje);
   const promotor = datosPromotor.promotor;
@@ -2030,10 +2030,20 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave?: str
     const producto = db.productos.find((p) => p.id === l.producto_id);
     if (!producto) throw new Error('Uno de los productos no existe en el catálogo.');
   }
+  // Divisas: el cliente paga todo en dólares en efectivo/Binance y por eso el precio BAJA; una parte fija de lo rebajado es del promotor.
+  // Sin contraseña (igual que el servidor): cada línea debe ser un precio menor al del catálogo con su comisión por unidad.
+  if (modo === 'divisas') {
+    for (const l of pedido.lineas) {
+      const lista = db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0;
+      if (!(l.precio < lista - 0.005)) throw new Error('En divisas el precio debe ser menor al del catálogo.');
+      if (l.comision === undefined || !Number.isFinite(l.comision) || l.comision <= 0) throw new Error('Escribe cuánto se le da al promotor por cada unidad.');
+      if (l.comision > l.precio + 0.005) throw new Error('La comisión del promotor no puede ser mayor que el precio cobrado.');
+    }
+  }
   // Un precio menor al del catálogo (descuento) solo lo autoriza un gerente o un administrador
-  const hayDescuento = pedido.lineas.some((l) => l.precio < (db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0) - 0.005);
-  // Un precio MAYOR (promotor o del local): sin contraseña (quien vende lo anota solo). Solo un descuento la pide.
-  const sinClave = !hayDescuento && !(pedido.clave ?? '');
+  const hayDescuento = modo !== 'divisas' && pedido.lineas.some((l) => l.precio < (db.productos.find((p) => p.id === l.producto_id)?.precio_venta ?? 0) - 0.005);
+  // Un precio MAYOR (promotor o del local): sin contraseña (quien vende lo anota solo). Solo un descuento la pide (salvo el de divisas).
+  const sinClave = modo === 'divisas' || (!hayDescuento && !(pedido.clave ?? ''));
   const supervisor = sinClave ? { id: null, nombre: null } : verificarSupervisorDemo(pedido.email, pedido.clave ?? '', local_id, hayDescuento);
   if (!supervisor) {
     throw new Error(hayDescuento ? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.' : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
@@ -2047,6 +2057,7 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave?: str
     supervisor_nombre: supervisor.nombre,
     vence_en,
     lineas: new Map(pedido.lineas.map((l) => [l.producto_id, l.precio])),
+    ...(modo === 'divisas' ? { comisiones: new Map(pedido.lineas.map((l) => [l.producto_id, Math.round((l.comision ?? 0) * 100) / 100])) } : {}),
   });
   return { token, modo, vence_en, autorizado_por: supervisor.nombre ?? '', promotor: promotor.nombre ?? '' };
 }
@@ -2783,10 +2794,12 @@ function anotarComisionPromotorDemo(db: LocalDB, venta: Venta, p: PromotorNormal
       lista.push(registrado);
     }
   }
-  const lineas = venta.items.filter((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista).map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
+  const lineas = venta.items.filter((i) => i.precio_tipo !== 'divisas' && i.precio_lista !== undefined && i.precio_unitario > i.precio_lista).map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} cobrado, lista $${i.precio_lista})`);
+  const lineasDivisas = venta.items.filter((i) => i.precio_tipo === 'divisas' && i.comision_unidad !== undefined).map((i) => `${i.cantidad} × ${i.nombre} ($${i.precio_unitario} en divisas, lista $${i.precio_lista}; $${i.comision_unidad} al promotor por unidad)`);
   const textoPrecio = lineas.slice(0, 3).join('; ') + (lineas.length > 3 ? `; y ${lineas.length - 3} más` : '');
   const partes: string[] = [];
   if (lineas.length > 0) partes.push(`Comisión por venta con precio de promotor: ${textoPrecio}`);
+  if (lineasDivisas.length > 0) partes.push(`Comisión por venta en divisas con descuento: ${lineasDivisas.slice(0, 3).join('; ')}${lineasDivisas.length > 3 ? `; y ${lineasDivisas.length - 3} más` : ''}`);
   if (instalacionDelPromotor(venta.items) > 0) partes.push(`Instalación hecha por el promotor: ${descripcionInstalacionPromotor(venta.items)}`);
   (db.pendientes ?? (db.pendientes = [])).unshift({
     id: generarId(),
@@ -2830,23 +2843,36 @@ async function guardarRegistroDeVenta(registro: NuevaVenta): Promise<VentaRegist
       if (!aut || aut.vence_en < Date.now() || aut.promotor_clave !== promotorVenta.promotor.clave || desviadas.some((i) => Math.abs((aut.lineas.get(i.producto_id) ?? -1) - i.precio_unitario) > 0.005)) {
         throw new Error('El precio no está autorizado o la autorización venció. Vuelve a pedirla.');
       }
+      if (aut.modo === 'divisas') {
+        // Descuento por pagar en divisas: solo precios menores y TODO el cobro en dólares en efectivo o Binance (misma regla del servidor)
+        const pagosVenta = registro.pagos ?? [];
+        if (pagosVenta.some((x) => esMetodoBolivares(x.metodo))) throw new Error('El precio en divisas solo vale si se paga todo en dólares en efectivo o con Binance (nada en bolívares).');
+        if (desviadas.some((i) => i.precio_lista !== undefined && i.precio_unitario > i.precio_lista)) throw new Error('El precio en divisas solo puede ser menor al del catálogo.');
+      }
       promotorDeLaVenta = {
         promotor_id: null,
         promotor_nombre: promotorVenta.promotor.nombre,
         promotor_cedula: promotorVenta.promotor.cedula,
         promotor_telefono: promotorVenta.promotor.telefono,
         promotor_banco: promotorVenta.promotor.banco,
-        comision: aut.modo === 'local' ? 0 : comisionDePromotor(registro.items),
+        comision: aut.modo === 'local' ? 0 : aut.modo === 'divisas' ? Math.round(desviadas.reduce((suma, i) => suma + i.cantidad * (aut.comisiones?.get(i.producto_id) ?? 0), 0) * 100) / 100 : comisionDePromotor(registro.items),
         precio_autorizado_por: aut.supervisor_id,
         precio_autorizado_nombre: aut.supervisor_nombre,
       };
       if (aut.modo !== 'local') promotorNormalizado = promotorVenta.promotor;
     }
     // Códigos elegidos a mano: se guardan marcados y con quién los autorizó (nunca la autorización en sí), como hace el servidor
-    const modoLocal = !!autorizacion_precio && autorizacionesDemo.get(autorizacion_precio)?.modo === 'local';
+    const autDemo = autorizacion_precio ? autorizacionesDemo.get(autorizacion_precio) : undefined;
+    const modoLocal = autDemo?.modo === 'local';
+    const modoDivisas = autDemo?.modo === 'divisas';
     base.items = base.items.map((item) => {
-      const { codigos_manuales, autorizacion_codigo, precio_tipo: _tipo, ...sinTipo } = item;
-      const limpio: VentaItem = modoLocal && sinTipo.precio_lista !== undefined ? { ...sinTipo, precio_tipo: 'local' } : sinTipo;
+      const { codigos_manuales, autorizacion_codigo, precio_tipo: _tipo, comision_unidad: _comision, ...sinTipo } = item;
+      const limpio: VentaItem =
+        modoLocal && sinTipo.precio_lista !== undefined
+          ? { ...sinTipo, precio_tipo: 'local' }
+          : modoDivisas && sinTipo.precio_lista !== undefined
+            ? { ...sinTipo, precio_tipo: 'divisas', comision_unidad: autDemo?.comisiones?.get(sinTipo.producto_id) ?? 0 }
+            : sinTipo;
       const aut = autorizacion_codigo ? codigosManualesDemo.get(autorizacion_codigo) : undefined;
       if (!codigos_manuales?.length || !aut) return limpio;
       return { ...limpio, seleccion_manual: { codigos: codigos_manuales, autorizado_por: aut.supervisor_id, autorizado_nombre: aut.supervisor_nombre } };
@@ -2987,6 +3013,9 @@ export async function registrarVenta(items: VentaItem[], datos: DatosVenta): Pro
       throw new Error('Para vender con precio de promotor necesitas conexión: la autorización se comprueba en el servidor.');
     }
     if (!modoServidor && !autorizacionesDemo.has(pp.autorizacion.token)) throw new Error('La autorización del precio no es válida. Vuelve a pedirla.');
+    if (pp.autorizacion.modo === 'divisas' && datos.pagos.some((x) => esMetodoBolivares(x.metodo))) {
+      throw new Error('El precio en divisas solo vale si se paga todo en dólares en efectivo o con Binance (nada en bolívares).');
+    }
   }
 
   // Códigos elegidos a mano: cada línea necesita su autorización vigente, y se comprueba ANTES de mover el inventario
