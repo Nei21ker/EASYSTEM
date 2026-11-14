@@ -1,22 +1,39 @@
 ---
 // Selector de local ("Store Switcher") del encabezado.
-//  · Administrador: menú desplegable "Todos los locales / Local Accesorios / Local Vidrios / Local Servicio Técnico".
-//    Al cambiar, se guarda la elección y se recarga la vista: Dashboard, POS, Inventario, Movimientos, Ventas y
-//    Reportes se vuelven a pedir ya filtrados por ese local.
-//  · Resto de roles: el selector queda deshabilitado y muestra de forma fija el nombre de su local asignado;
-//    todo lo que ven está limitado a ese local (además lo exige la base de datos con RLS).
+//  · Administrador, gerente y supervisor: lista desplegable propia (no el menú nativo del teléfono, que se veía fuera de lugar):
+//    "Todos los locales / Local Accesorios / ...". Al elegir uno, se guarda la elección y se recarga la vista: Dashboard, POS,
+//    Inventario, Movimientos, Ventas y Reportes se vuelven a pedir ya filtrados por ese local. Sigue los colores del sistema
+//    (azul de marca) en modo día y modo noche, y se maneja con teclado (flechas, Esc).
+//  · Resto de roles: el botón queda deshabilitado y muestra de forma fija el nombre de su local asignado;
+//    todo lo que ven está limitado a ese local (además lo exige la base de datos).
 ---
 
-<label id="ls-raiz" class="order-3 hidden w-full min-w-0 items-center gap-2 text-xs text-slate-500 sm:order-1 sm:ml-auto sm:mr-3 sm:w-auto sm:gap-1.5 dark:text-slate-400">
+<div id="ls-raiz" class="relative order-3 hidden w-full min-w-0 items-center gap-2 text-xs text-slate-500 sm:order-1 sm:ml-auto sm:mr-3 sm:w-auto sm:gap-1.5 dark:text-slate-400">
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4 shrink-0 text-brand-600 dark:text-brand-300" aria-hidden="true">
     <path d="M3 9l1-5h16l1 5M3 9v11h18V9M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M9 20v-6h6v6" stroke-linecap="round" stroke-linejoin="round" />
   </svg>
   <span class="sr-only">Local</span>
-  <select
-    id="ls-select"
-    class="min-w-0 flex-1 truncate rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-sm font-semibold sm:flex-none sm:px-2 sm:py-1.5 sm:text-xs text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:opacity-100 disabled:bg-slate-50 sm:max-w-[13rem] text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:disabled:bg-slate-800/60"
-  ></select>
-</label>
+  <button
+    id="ls-boton"
+    type="button"
+    aria-haspopup="listbox"
+    aria-expanded="false"
+    aria-controls="ls-lista"
+    class="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-left text-sm font-semibold text-slate-700 shadow-sm transition hover:border-brand-300 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:cursor-not-allowed disabled:bg-slate-50 sm:max-w-[13rem] sm:flex-none sm:px-2 sm:py-1.5 sm:text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-brand-500 dark:disabled:bg-slate-800/60"
+  >
+    <span id="ls-texto" class="min-w-0 flex-1 truncate">Local</span>
+    <svg id="ls-flecha" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 shrink-0 text-slate-400 transition-transform dark:text-slate-500" aria-hidden="true">
+      <path fill-rule="evenodd" d="M5.22 7.22a.75.75 0 0 1 1.06 0L10 10.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 8.28a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd"></path>
+    </svg>
+  </button>
+  <ul
+    id="ls-lista"
+    role="listbox"
+    aria-label="Elegir local"
+    class="absolute right-0 top-full z-50 mt-1.5 hidden max-h-[min(22rem,70dvh)] w-full overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-slate-900/5 sm:w-64 dark:border-slate-700 dark:bg-slate-800 dark:ring-white/5"
+  >
+  </ul>
+</div>
 
 <script>
   import { $contextoLocal } from '../../stores/local';
@@ -25,13 +42,46 @@
   import { veTodosLosLocales } from '../../lib/auth';
 
   const raiz = document.getElementById('ls-raiz') as HTMLElement;
-  const select = document.getElementById('ls-select') as HTMLSelectElement;
+  const boton = document.getElementById('ls-boton') as HTMLButtonElement;
+  const texto = document.getElementById('ls-texto') as HTMLElement;
+  const flecha = document.getElementById('ls-flecha') as unknown as SVGElement;
+  const lista = document.getElementById('ls-lista') as HTMLUListElement;
 
-  function escapar(texto: string) {
+  function escapar(valor: string) {
     const div = document.createElement('div');
-    div.textContent = texto;
+    div.textContent = valor;
     return div.innerHTML;
   }
+
+  const abierta = () => !lista.classList.contains('hidden');
+  const opciones = () => [...lista.querySelectorAll<HTMLButtonElement>('button[data-valor]:not(:disabled)')];
+
+  function cerrar(devolverFoco = false) {
+    lista.classList.add('hidden');
+    boton.setAttribute('aria-expanded', 'false');
+    flecha.classList.remove('rotate-180');
+    if (devolverFoco) boton.focus();
+  }
+
+  function abrir() {
+    if (boton.disabled) return;
+    lista.classList.remove('hidden');
+    boton.setAttribute('aria-expanded', 'true');
+    flecha.classList.add('rotate-180');
+    // El foco va a la opción elegida (o a la primera) para poder moverse con el teclado
+    (lista.querySelector<HTMLButtonElement>('button[aria-selected="true"]:not(:disabled)') ?? opciones()[0])?.focus();
+  }
+
+  const claseOpcion = (elegida: boolean, deshabilitada: boolean) =>
+    'flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition focus:outline-none ' +
+    (deshabilitada
+      ? 'cursor-not-allowed text-slate-400 dark:text-slate-500'
+      : elegida
+        ? 'bg-brand-50 font-semibold text-brand-700 dark:bg-brand-500/15 dark:text-brand-300'
+        : 'text-slate-700 hover:bg-slate-100 focus:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-700/60 dark:focus:bg-slate-700/60');
+
+  const marca =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="h-4 w-4 shrink-0" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-7.5 7.5a1 1 0 0 1-1.4 0L3.3 9.7a1 1 0 1 1 1.4-1.4l3.8 3.8 6.8-6.8a1 1 0 0 1 1.4 0Z" clip-rule="evenodd" /></svg>';
 
   function pintar() {
     const contexto = $contextoLocal.get();
@@ -42,24 +92,68 @@
     const puedeEntrar = (l: (typeof contexto.locales)[number]) => contexto.sesion.rol === 'administrador' || localVigente(l);
 
     if (esAdmin) {
-      select.innerHTML =
-        `<option value="${ALCANCE_TODOS}">Todos los locales</option>` +
-        contexto.locales
-          .map((l) => `<option value="${l.id}" ${puedeEntrar(l) ? '' : 'disabled'}>${escapar(l.nombre)}${localVigente(l) ? '' : ' (suspendido)'}</option>`)
-          .join('');
-      select.value = contexto.alcance ?? ALCANCE_TODOS;
-      select.disabled = false;
-      select.title = 'Filtra todo el sistema por local';
+      const actual = contexto.alcance ?? ALCANCE_TODOS;
+      const todas = [
+        { valor: ALCANCE_TODOS as string, nombre: 'Todos los locales', habilitada: true },
+        ...contexto.locales.map((l) => ({ valor: l.id, nombre: l.nombre + (localVigente(l) ? '' : ' (suspendido)'), habilitada: puedeEntrar(l) })),
+      ];
+      lista.innerHTML = todas
+        .map(
+          (o) =>
+            `<li role="presentation"><button type="button" role="option" data-valor="${escapar(o.valor)}" aria-selected="${o.valor === actual}" ${o.habilitada ? '' : 'disabled'} class="${claseOpcion(o.valor === actual, !o.habilitada)}"><span class="min-w-0 flex-1 break-words">${escapar(o.nombre)}</span>${o.valor === actual ? marca : ''}</button></li>`
+        )
+        .join('');
+      texto.textContent = todas.find((o) => o.valor === actual)?.nombre ?? 'Todos los locales';
+      boton.disabled = false;
+      boton.title = 'Filtra todo el sistema por local';
     } else {
-      select.innerHTML = `<option>${escapar(contexto.local?.nombre ?? 'Sin local asignado')}</option>`;
-      select.disabled = true;
-      select.title = 'Tu local asignado (solo el administrador o el gerente pueden cambiar de local)';
+      lista.innerHTML = '';
+      texto.textContent = contexto.local?.nombre ?? 'Sin local asignado';
+      boton.disabled = true;
+      boton.title = 'Tu local asignado (solo el administrador o el gerente pueden cambiar de local)';
+      flecha.classList.add('hidden');
     }
     raiz.classList.remove('hidden');
     raiz.classList.add('flex');
   }
 
-  select.addEventListener('change', () => cambiarLocalActivo(select.value));
+  boton.addEventListener('click', () => (abierta() ? cerrar() : abrir()));
+
+  lista.addEventListener('click', (e) => {
+    const opcion = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-valor]');
+    if (!opcion || opcion.disabled) return;
+    const valor = opcion.dataset.valor!;
+    cerrar();
+    if (valor !== ($contextoLocal.get()?.alcance ?? ALCANCE_TODOS)) cambiarLocalActivo(valor);
+  });
+
+  // Teclado: flechas para moverse, Esc cierra y devuelve el foco al botón
+  raiz.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && abierta()) {
+      e.preventDefault();
+      cerrar(true);
+      return;
+    }
+    const lis = opciones();
+    const i = lis.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!abierta()) abrir();
+      else lis[Math.min(lis.length - 1, i + 1)]?.focus();
+    } else if (e.key === 'ArrowUp' && abierta()) {
+      e.preventDefault();
+      lis[Math.max(0, i - 1)]?.focus();
+    }
+  });
+
+  // Tocar fuera o salir con Tab cierra la lista
+  document.addEventListener('click', (e) => {
+    if (abierta() && !raiz.contains(e.target as Node)) cerrar();
+  });
+  raiz.addEventListener('focusout', (e) => {
+    const destino = (e as FocusEvent).relatedTarget as Node | null;
+    if (abierta() && destino && !raiz.contains(destino)) cerrar();
+  });
 
   obtenerContextoLocal().then(pintar);
 </script>
