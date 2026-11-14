@@ -93,17 +93,21 @@
 
     if (esAdmin) {
       const actual = contexto.alcance ?? ALCANCE_TODOS;
-      const todas = [
-        { valor: ALCANCE_TODOS as string, nombre: 'Todos los locales', habilitada: true },
-        ...contexto.locales.map((l) => ({ valor: l.id, nombre: l.nombre + (localVigente(l) ? '' : ' (suspendido)'), habilitada: puedeEntrar(l) })),
-      ];
-      lista.innerHTML = todas
-        .map(
-          (o) =>
-            `<li role="presentation"><button type="button" role="option" data-valor="${escapar(o.valor)}" aria-selected="${o.valor === actual}" ${o.habilitada ? '' : 'disabled'} class="${claseOpcion(o.valor === actual, !o.habilitada)}"><span class="min-w-0 flex-1 break-words">${escapar(o.nombre)}</span>${o.valor === actual ? marca : ''}</button></li>`
-        )
-        .join('');
-      texto.textContent = todas.find((o) => o.valor === actual)?.nombre ?? 'Todos los locales';
+      const locales = contexto.locales.map((l) => ({ valor: l.id, nombre: l.nombre + (localVigente(l) ? '' : ' (suspendido)'), habilitada: puedeEntrar(l), sede: (l.sede ?? '').trim() }));
+      // Con más de una sede (p. ej. Cosmos y Barquicenter) la lista se separa por sede, con su rótulo; la primera sede que aparece va primero
+      const sedes = [...new Set(locales.map((l) => l.sede))];
+      const agrupar = sedes.filter(Boolean).length > 1;
+      const opcion = (o: { valor: string; nombre: string; habilitada: boolean }) =>
+        '<li role="presentation"><button type="button" role="option" data-valor="' + escapar(o.valor) + '" aria-selected="' + (o.valor === actual) + '" ' + (o.habilitada ? '' : 'disabled') + ' class="' + claseOpcion(o.valor === actual, !o.habilitada) + '"><span class="min-w-0 flex-1 break-words">' + escapar(o.nombre) + '</span>' + (o.valor === actual ? marca : '') + '</button></li>';
+      const rotulo = (sede: string) =>
+        '<li role="presentation" class="px-3 pb-1 pt-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">' + escapar(sede || 'Otros') + '</li>';
+      const todos = { valor: ALCANCE_TODOS as string, nombre: 'Todos los locales', habilitada: true };
+      lista.innerHTML = agrupar
+        ? opcion(todos) + sedes.map((sede) => rotulo(sede) + locales.filter((l) => l.sede === sede).map(opcion).join('')).join('')
+        : [todos, ...locales].map(opcion).join('');
+      const elegido = [todos, ...locales].find((o) => o.valor === actual);
+      const sedeElegida = agrupar ? (locales.find((l) => l.valor === actual)?.sede ?? '') : '';
+      texto.textContent = elegido ? (sedeElegida ? sedeElegida + ' · ' : '') + elegido.nombre : 'Todos los locales';
       boton.disabled = false;
       boton.title = 'Filtra todo el sistema por local';
     } else {
