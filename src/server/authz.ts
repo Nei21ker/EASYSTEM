@@ -9,7 +9,7 @@ import type { Entorno } from './entorno';
 import { ErrorApi } from './errores';
 import { cargarLocales } from './repos/locales';
 
-export type Rol = 'administrador' | 'gerente' | 'encargado' | 'vendedor' | 'tecnico' | 'contador';
+export type Rol = 'administrador' | 'gerente' | 'supervisor' | 'encargado' | 'vendedor' | 'tecnico' | 'contador';
 
 export interface Sesion {
   userId: string;
@@ -31,8 +31,14 @@ export type Alcance = { tipo: 'todos' } | { tipo: 'locales'; ids: string[] };
 export const esAdministrador = (rol: Rol): boolean => rol === 'administrador';
 /** Administrador y gerente: ven todos los locales y el catálogo. */
 export const esGlobal = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente';
-/** Administrador, gerente y encargado. */
-export const esGerencia = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente' || rol === 'encargado';
+/** Supervisor: tiene los permisos y los módulos del encargado, pero en TODOS los locales (sin local propio). */
+export const esSupervisor = (rol: Rol): boolean => rol === 'supervisor';
+/** Administrador, gerente, supervisor y encargado (el nivel «encargado» o superior). */
+export const esGerencia = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente' || rol === 'supervisor' || rol === 'encargado';
+/** Quienes tienen los límites del encargado (no ven ni fijan el precio de compra, no autorizan descuentos): encargado y supervisor. */
+export const conLimitesDeEncargado = (rol: Rol): boolean => rol === 'encargado' || rol === 'supervisor';
+/** Quienes trabajan en cualquier local (no tienen uno propio): administrador, gerente y supervisor. */
+export const veTodosLosLocales = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente' || rol === 'supervisor';
 
 export function exigirRol(sesion: Pick<Sesion, 'rol'>, roles: Rol[]): void {
   if (!roles.includes(sesion.rol)) throw new ErrorApi(403, 'Tu rol no tiene permiso para hacer esto.', 'sin_permiso');
@@ -49,14 +55,14 @@ interface FilaPerfil {
   debe_cambiar_clave: number;
 }
 
-export const ROLES: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico', 'contador'];
+export const ROLES: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'];
 /** Roles que no pertenecen a un local concreto. */
-export const esSinLocal = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente' || rol === 'contador';
+export const esSinLocal = (rol: Rol): boolean => rol === 'administrador' || rol === 'gerente' || rol === 'supervisor' || rol === 'contador';
 
 /** Roles que cada quien puede asignar al crear o editar usuarios (mismas reglas que el cliente: rolesAsignables). */
 export function rolesAsignables(rol: Rol): Rol[] {
   if (rol === 'administrador') return ROLES;
-  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico', 'contador'];
+  if (rol === 'gerente') return ['supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'];
   return [];
 }
 
@@ -101,7 +107,7 @@ const sinLocalesVigentes = () =>
   new ErrorApi(403, 'La suscripción de tu local está suspendida. Comunícate con el administrador del sistema.', 'local_suspendido');
 
 /**
- * Locales de negocio que la sesión puede usar. administrador: todos (aunque estén suspendidos); gerente: los vigentes;
+ * Locales de negocio que la sesión puede usar. administrador: todos (aunque estén suspendidos); gerente y supervisor: los vigentes;
  * encargado/vendedor/técnico: solo el suyo si está vigente; contador: ninguno (no ve datos del negocio).
  * `localSolicitado` restringe el resultado a ese local (403 si no es accesible).
  */
@@ -113,7 +119,7 @@ export async function alcanceDe(env: Entorno, sesion: Sesion, localSolicitado?: 
   }
 
   const locales = await cargarLocales(env);
-  if (sesion.rol === 'gerente') {
+  if (sesion.rol === 'gerente' || sesion.rol === 'supervisor') {
     const ids = locales.filter(localVigente).map((l) => l.id);
     if (ids.length === 0) throw sinLocalesVigentes();
     if (localSolicitado) {

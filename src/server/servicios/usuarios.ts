@@ -74,7 +74,7 @@ export async function crearUsuario(
 ): Promise<string> {
   await exigirGestion(env, actor, 'Solo un administrador o gerente puede crear usuarios.');
   if (!rolesAsignables(actor.rol).includes(datos.rol)) {
-    throw sinPermiso(actor.rol === 'gerente' ? 'Un gerente solo puede crear encargados, vendedores, técnicos y contadores.' : 'No puedes crear usuarios con ese rol.');
+    throw sinPermiso(actor.rol === 'gerente' ? 'Un gerente solo puede crear supervisores, encargados, vendedores, técnicos y contadores.' : 'No puedes crear usuarios con ese rol.');
   }
   const localId = esSinLocal(datos.rol) ? null : datos.localId;
   if (!esSinLocal(datos.rol)) {

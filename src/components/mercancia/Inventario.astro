@@ -61,7 +61,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { esGlobal, esGerencia } from '../../lib/auth';
+  import { esGerencia, veTodosLosLocales } from '../../lib/auth';
   import { codigoVisible } from '../../utils/codigos';
   import { escaparHtml } from '../../utils/productosUI';
   import { htmlInventarioPorPieza, htmlInventarioPorProducto, imprimirHoja } from '../../utils/hojasImpresas';
@@ -178,7 +178,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     if (!contexto || !esGerencia(contexto.sesion.rol)) return;
     miNombre = contexto.sesion.nombre;
     locales = lista;
-    if (esGlobal(contexto.sesion.rol)) {
+    if (veTodosLosLocales(contexto.sesion.rol)) {
       $('iv-bloque-local').classList.remove('hidden');
       const select = $<HTMLSelectElement>('iv-local');
       select.innerHTML = locales.map((l) => `<option value="${escaparHtml(l.id)}">${escaparHtml(l.nombre)}</option>`).join('');

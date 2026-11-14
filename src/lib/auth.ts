@@ -19,27 +19,30 @@ import type { EstadoSuscripcion, Local, TipoLocal } from '../types/database.type
  *   locales y cierra sesiones. Nunca queda bloqueado por una suscripción.
  * gerente: dueño del negocio cliente; acceso global (todos los locales vigentes); en usuarios solo crea,
  *   edita y elimina encargados, vendedores y técnicos.
+ * supervisor: los permisos y los módulos del encargado, pero en TODOS los locales (sin local propio; no gestiona usuarios, ni ve
+ *   Reportes, Inversión ni Nómina).
  * contador: solo ve el módulo de Nómina, de todos los locales; no ve ventas, stock ni catálogo. Lo gestiona el administrador.
  * encargado: gerente de UN local. vendedor: cajero de un local. tecnico: servicio técnico de un local.
  * Los tres últimos solo ven y modifican datos de su local y no gestionan usuarios.
  */
-export type Rol = 'administrador' | 'gerente' | 'contador' | 'encargado' | 'vendedor' | 'tecnico';
+export type Rol = 'administrador' | 'gerente' | 'supervisor' | 'contador' | 'encargado' | 'vendedor' | 'tecnico';
 
 export const ETIQUETAS_ROL: Record<Rol, string> = {
   administrador: 'Administrador',
   gerente: 'Gerente',
+  supervisor: 'Supervisor',
   contador: 'Contador',
   encargado: 'Encargado',
   vendedor: 'Vendedor (cajero)',
   tecnico: 'Técnico',
 };
 
-export const ROLES: Rol[] = ['administrador', 'gerente', 'contador', 'encargado', 'vendedor', 'tecnico'];
+export const ROLES: Rol[] = ['administrador', 'gerente', 'supervisor', 'contador', 'encargado', 'vendedor', 'tecnico'];
 
 /** Roles que cada quien puede asignar al crear o editar usuarios. */
 export function rolesAsignables(rol?: Rol | null): Rol[] {
   if (rol === 'administrador') return ROLES;
-  if (rol === 'gerente') return ['encargado', 'vendedor', 'tecnico', 'contador'];
+  if (rol === 'gerente') return ['supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'];
   return [];
 }
 
@@ -109,12 +112,18 @@ export interface UsuarioSistema {
 export const esAdministrador = (rol?: Rol | null) => rol === 'administrador';
 /** Administrador o gerente: acceso a TODOS los locales, catálogo y usuarios (los permisos de usuarios los acota `rolesAsignables`) */
 export const esGlobal = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente';
-/** Sin local asignado: ven varios locales (administrador y gerente) o ninguno de operación (contador). */
-export const esSinLocal = (rol?: Rol | null) => esGlobal(rol) || rol === 'contador';
+/** Sin local asignado: ven varios locales (administrador, gerente y supervisor) o ninguno de operación (contador). */
+export const esSinLocal = (rol?: Rol | null) => esGlobal(rol) || rol === 'supervisor' || rol === 'contador';
+/** Supervisor: los permisos y los módulos del encargado, pero en TODOS los locales (sin local propio). */
+export const esSupervisor = (rol?: Rol | null) => rol === 'supervisor';
+/** Trabajan en cualquier local y eligen cuál ven en el encabezado («Todos» o uno): administrador, gerente y supervisor. */
+export const veTodosLosLocales = (rol?: Rol | null) => esGlobal(rol) || rol === 'supervisor';
+/** Encargado o supervisor: los límites del encargado (sin precio de compra, sin descuentos, sin borrar ni revertir). */
+export const conLimitesDeEncargado = (rol?: Rol | null) => rol === 'encargado' || rol === 'supervisor';
 /** Nómina y personal: administrador, gerente y contador (de todos los locales). */
 export const puedeNomina = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'contador';
-/** Registrar entradas de mercancía y devoluciones, y ver reportes de su local */
-export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'encargado';
+/** Registrar entradas de mercancía y devoluciones y ver el cuadre: el nivel «encargado» o superior (administrador, gerente, supervisor y encargado) */
+export const esGerencia = (rol?: Rol | null) => rol === 'administrador' || rol === 'gerente' || rol === 'supervisor' || rol === 'encargado';
 
 const LS_SESION = 'easystem:sesion';
 // Última sesión conocida en modo servidor (para abrir el sistema sin conexión)
@@ -148,6 +157,7 @@ function seedUsuariosLocales(): UsuarioLocal[] {
     { id: generarId(), email: 'encargado@edwardaccesorios.com', password: 'encargado123', nombre: 'Encargado Vidrios', rol: 'encargado', local_id: LOCAL_VIDRIOS_ID },
     { id: generarId(), email: 'tecnico@edwardaccesorios.com', password: 'tecnico123', nombre: 'Técnico de Servicio', rol: 'tecnico', local_id: LOCAL_SERVICIO_TECNICO_ID },
     { id: generarId(), email: 'gerente@edwardaccesorios.com', password: 'gerente123', nombre: 'Gerente', rol: 'gerente', local_id: null },
+    { id: generarId(), email: 'supervisor@edwardaccesorios.com', password: 'supervisor123', nombre: 'Supervisor', rol: 'supervisor', local_id: null },
     { id: generarId(), email: 'contador@edwardaccesorios.com', password: 'contador123', nombre: 'Contador', rol: 'contador', local_id: null },
   ];
 }
@@ -225,13 +235,13 @@ export const MIN_CLAVE = modoServidor ? 8 : 6;
 
 /**
  * Solo modo demo (LocalStorage): ¿este correo y contraseña son de alguien que puede autorizar precios en ese local (encargado de ese
- * local, gerente o administrador)? Con el servidor lo decide el servidor (`POST /api/ventas/autorizar-precio`). No cambia la sesión.
+ * local, supervisor, gerente o administrador)? Con el servidor lo decide el servidor (`POST /api/ventas/autorizar-precio`). No cambia la sesión.
  */
 export function verificarSupervisorDemo(email: string | undefined, clave: string, localId: string, soloGlobal = false): { id: string; nombre: string } | null {
   const correo = (email ?? '').trim().toLowerCase();
   // Sin correo basta la contraseña: la de cualquiera que pueda autorizar en este local
   const puedeAutorizar = (u: { rol: string; local_id?: string | null; status?: string }) =>
-    (u.status ?? 'active') === 'active' && (u.rol === 'administrador' || u.rol === 'gerente' || (!soloGlobal && u.rol === 'encargado' && u.local_id === localId));
+    (u.status ?? 'active') === 'active' && (u.rol === 'administrador' || u.rol === 'gerente' || (!soloGlobal && (u.rol === 'supervisor' || (u.rol === 'encargado' && u.local_id === localId))));
   const u = leerUsuariosLocales().find((x) => (!correo || x.email.toLowerCase() === correo) && x.password === clave && puedeAutorizar(x));
   return u ? { id: u.id, nombre: u.nombre } : null;
 }

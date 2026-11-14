@@ -41,7 +41,7 @@ export async function estadoCuenta(env: Entorno, request: Request): Promise<Esta
     motivo = 'sesion_cerrada';
   } else if (perfil.rol === 'administrador') {
     motivo = 'ok'; // el administrador nunca queda bloqueado por una suscripción
-  } else if (perfil.rol === 'gerente' || perfil.rol === 'contador') {
+  } else if (perfil.rol === 'gerente' || perfil.rol === 'supervisor' || perfil.rol === 'contador') {
     if (!locales.some(localVigente)) motivo = 'local_suspendido';
   } else if (!local || !localVigente(local)) {
     motivo = 'local_suspendido';

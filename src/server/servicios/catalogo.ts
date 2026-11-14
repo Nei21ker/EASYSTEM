@@ -5,7 +5,7 @@
 //     modelos y el importador en lote: solo administrador y gerente
 //   · inventario por local: administrador y gerente (cualquier local accesible) y el encargado (el suyo), y solo el
 //     MÍNIMO y el alta: el stock cambia únicamente por movimientos (trigger de la base de datos)
-import { alcanceDe, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
+import { alcanceDe, conLimitesDeEncargado, esAdministrador, esGerencia, esGlobal, localAccesible, type Sesion } from '../authz';
 import { avisarCambio, sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
@@ -205,7 +205,7 @@ export async function crearProducto(env: Entorno, sesion: Sesion, datos: DatosPr
     nombre: datos.nombre.trim(),
     categoria: datos.categoria.trim(),
     // El encargado no ve ni fija el precio de compra
-    precio_compra: sesion.rol === 'encargado' ? 0 : redondear2(datos.precio_compra ?? 0),
+    precio_compra: conLimitesDeEncargado(sesion.rol) ? 0 : redondear2(datos.precio_compra ?? 0),
     ...precio,
     stock_minimo: datos.stock_minimo ?? 5,
     imagen_url: datos.imagen_url ?? null,
@@ -282,7 +282,7 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
   // Solo estos campos se editan: el stock no (cambia por movimientos) y el encargado no toca el precio de compra
   const permitidos: (keyof DatosProducto)[] = ['codigo_barras', 'nombre', 'categoria', 'precio_venta', 'stock_minimo', 'imagen_url', 'prefijo_codigo'];
   if (cambiaControl) permitidos.push('control_por_cantidad');
-  if (sesion.rol !== 'encargado') permitidos.push('precio_compra');
+  if (!conLimitesDeEncargado(sesion.rol)) permitidos.push('precio_compra');
   const columnas: string[] = [];
   const valores: unknown[] = [];
   if (precioNuevo) {
@@ -480,7 +480,7 @@ async function insertarProductosNuevos(env: Entorno, sesion: Sesion, filas: Dato
         env.DB
           .prepare('INSERT INTO productos (id, codigo_barras, nombre, categoria, precio_compra, precio_venta, moneda_precio, precio_bs, stock_minimo, imagen_url, prefijo_codigo, referencia, control_por_cantidad, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
           // El encargado no ve ni fija el precio de compra
-          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), sesion.rol === 'encargado' ? 0 : redondear2(f.precio_compra ?? 0), precios[i].precio_venta, precios[i].moneda_precio, precios[i].precio_bs, f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, f.control_por_cantidad === 1 ? 1 : 0, ahora)
+          .bind(id, codigo_barras, f.nombre.trim(), f.categoria.trim(), conLimitesDeEncargado(sesion.rol) ? 0 : redondear2(f.precio_compra ?? 0), precios[i].precio_venta, precios[i].moneda_precio, precios[i].precio_bs, f.stock_minimo ?? 5, f.imagen_url ?? null, prefijo, referencia, f.control_por_cantidad === 1 ? 1 : 0, ahora)
       )
     );
   } catch (err) {
@@ -757,9 +757,9 @@ export async function eliminarModelo(env: Entorno, sesion: Sesion, id: string): 
 }
 
 // --- Locales -----------------------------------------------------------------------------------------------------------------
-/** Administrador, gerente y contador ven todos los locales; el resto, solo el suyo. */
+/** Administrador, gerente, supervisor y contador ven todos los locales; el resto, solo el suyo. */
 export async function listarLocalesVisibles(env: Entorno, sesion: Sesion): Promise<Local[]> {
   const locales = await cargarLocales(env);
-  if (esAdministrador(sesion.rol) || esGlobal(sesion.rol) || sesion.rol === 'contador') return locales;
+  if (esAdministrador(sesion.rol) || esGlobal(sesion.rol) || sesion.rol === 'supervisor' || sesion.rol === 'contador') return locales;
   return locales.filter((l) => l.id === sesion.localId);
 }

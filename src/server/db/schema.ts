@@ -102,7 +102,7 @@ export const perfiles = sqliteTable('perfiles', {
   id: text('id').primaryKey(),
   email: text('email').notNull(),
   nombre: text('nombre').notNull(),
-  rol: text('rol', { enum: ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico', 'contador'] }).notNull().default('vendedor'),
+  rol: text('rol', { enum: ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'] }).notNull().default('vendedor'),
   local_id: text('local_id'),
   status: text('status', { enum: ['active', 'inactive'] }).notNull().default('active'),
   last_force_logout_at: text('last_force_logout_at'),

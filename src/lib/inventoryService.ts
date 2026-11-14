@@ -37,7 +37,7 @@ import * as trasladosDb from './db/traslados';
 import * as cuadresDb from './db/cuadres';
 import * as clientesDb from './db/clientes';
 import type { ProductoConInventario } from './db/productos';
-import { esGerencia, esGlobal, leerSuscripcionesLocales, obtenerSesionActual, verificarSupervisorDemo, type SesionUsuario } from './auth';
+import { esGerencia, esGlobal, veTodosLosLocales, leerSuscripcionesLocales, obtenerSesionActual, verificarSupervisorDemo, type SesionUsuario } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto, agregarLocalesFaltantes } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
@@ -781,14 +781,14 @@ async function cargarContexto(): Promise<ContextoLocal | null> {
 
   const locales = await listarLocales();
   let alcance: string | null;
-  if (esGlobal(sesion.rol)) {
+  if (veTodosLosLocales(sesion.rol)) {
     let guardado: string | null = null;
     try {
       guardado = localStorage.getItem(LS_LOCAL_ACTIVO);
     } catch {
       /* sin almacenamiento: vista "Todos" */
     }
-    // Al gerente un local suspendido no le devuelve nada, así que no se puede elegir: vuelve a "Todos".
+    // Al gerente y al supervisor un local suspendido no les devuelve nada, así que no se puede elegir: vuelve a "Todos".
     // El administrador entra a cualquier local, aunque esté suspendido.
     alcance =
       guardado && (guardado === ALCANCE_TODOS || locales.some((l) => l.id === guardado && (sesion.rol === 'administrador' || localVigente(l))))
@@ -815,7 +815,7 @@ export function obtenerContextoLocal(): Promise<ContextoLocal | null> {
  */
 export function cambiarLocalActivo(alcance: string): void {
   const contexto = $contextoLocal.get();
-  if (!esGlobal(contexto?.sesion.rol)) return;
+  if (!veTodosLosLocales(contexto?.sesion.rol)) return;
   if (alcance !== ALCANCE_TODOS && !contexto.locales.some((l) => l.id === alcance)) return;
   try {
     localStorage.setItem(LS_LOCAL_ACTIVO, alcance);
@@ -1027,7 +1027,7 @@ async function sesionDeMercancia(): Promise<SesionUsuario> {
   return sesion;
 }
 
-const puedeEnLocal = (sesion: SesionUsuario, localId: string) => esGlobal(sesion.rol) || sesion.local_id === localId;
+const puedeEnLocal = (sesion: SesionUsuario, localId: string) => veTodosLosLocales(sesion.rol) || sesion.local_id === localId;
 
 /** Mueve el stock de un local con un movimiento (demo). Las piezas ya cambiaron de estado: aquí solo se cuenta y se anota. */
 function movimientoDemo(db: LocalDB, tipo: TipoMovimiento, productoId: string, localId: string, codigos: string[], motivo: string): void {
@@ -1063,7 +1063,7 @@ export async function listarTraslados(estado?: EstadoTraslado): Promise<Traslado
   const sesion = await sesionDeMercancia();
   if (!modoServidor) {
     return (leerDB().traslados ?? [])
-      .filter((t) => (!estado || t.estado === estado) && (esGlobal(sesion.rol) || t.origen_local_id === sesion.local_id || t.destino_local_id === sesion.local_id))
+      .filter((t) => (!estado || t.estado === estado) && (veTodosLosLocales(sesion.rol) || t.origen_local_id === sesion.local_id || t.destino_local_id === sesion.local_id))
       .sort((a, b) => b.folio - a.folio);
   }
   return trasladosDb.listarTraslados(estado);
@@ -1531,7 +1531,7 @@ export async function establecerCantidadEnCarga(productoId: string, localId: str
   if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no tiene permiso para hacer esto.');
   const mensaje = errorCantidadCarga(cantidad);
   if (mensaje) throw new Error(mensaje);
-  if (!(esGlobal(sesion.rol) || sesion.local_id === localId)) throw new Error('No tienes acceso a ese local.');
+  if (!(veTodosLosLocales(sesion.rol) || sesion.local_id === localId)) throw new Error('No tienes acceso a ese local.');
   const db = leerDB();
   const local = (db.locales ?? []).find((l) => l.id === localId);
   if (!local) throw new Error('Local no encontrado.');
@@ -4401,7 +4401,7 @@ export async function guardarPagoIndependiente(datos: DatosPagoIndependiente): P
 async function accesoCuadre(localId?: string): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
   if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no tiene acceso al cuadre de caja.');
-  if (localId && !esGlobal(sesion.rol) && sesion.local_id !== localId) throw new Error('Solo puedes hacer el cuadre de tu local.');
+  if (localId && !veTodosLosLocales(sesion.rol) && sesion.local_id !== localId) throw new Error('Solo puedes hacer el cuadre de tu local.');
   return sesion;
 }
 
@@ -4424,7 +4424,7 @@ export async function calcularEsperadoCuadre(localId: string, fecha: string): Pr
 /** Los cuadres de un día de los locales que el usuario puede ver (todos para administrador y gerente, el suyo para el encargado). */
 export async function listarCuadresDelDia(fecha: string): Promise<CuadreCaja[]> {
   const sesion = await accesoCuadre();
-  if (!modoServidor) return (leerDB().cuadres ?? []).filter((c) => c.fecha === fecha && (esGlobal(sesion.rol) || c.local_id === sesion.local_id));
+  if (!modoServidor) return (leerDB().cuadres ?? []).filter((c) => c.fecha === fecha && (veTodosLosLocales(sesion.rol) || c.local_id === sesion.local_id));
   return cuadresDb.listarCuadresDelDia(fecha);
 }
 

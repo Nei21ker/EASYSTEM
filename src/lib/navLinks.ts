@@ -20,9 +20,9 @@ export interface EnlaceNav {
   tambienActivoEn?: string[];
 }
 
-const TODOS: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'];
-const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
-const CAJA: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor'];
+const TODOS: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico'];
+const GERENCIA: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado'];
+const CAJA: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'];
 
 export const enlacesNav: EnlaceNav[] = [
   { href: '/', etiqueta: 'Página principal', icono: 'M3 12l9-9 9 9M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10', roles: TODOS },
@@ -81,11 +81,11 @@ export const enlacesNav: EnlaceNav[] = [
     roles: ['administrador', 'gerente'],
   },
   {
-    // El encargado solo ve el cuadre de su local (sin reportes); administrador y gerente lo tienen dentro de Reportes y cuadre
+    // El encargado solo ve el cuadre de su local (sin reportes) y el supervisor el de cualquier local; administrador y gerente lo tienen dentro de Reportes y cuadre
     href: '/cuadre',
     etiqueta: 'Cuadre de caja',
     icono: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM8 7h8M8 11h2m4 0h2M8 15h2m4 0h2',
-    roles: ['encargado'],
+    roles: ['supervisor', 'encargado'],
   },
   {
     // Compras de mercancía nueva y pérdidas por local, anotadas a mano (solo administrador y gerente)

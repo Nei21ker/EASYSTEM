@@ -162,7 +162,8 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
   const AYUDA_ROL: Record<Rol, string> = {
     administrador: 'Dueño del servicio: acceso total, suscripciones, sesiones y gestión de cualquier usuario.',
     contador: 'Solo ve la Nómina, de todos los locales. Lo crean el administrador o el gerente.',
-    gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina encargados, vendedores, técnicos y contadores.',
+    gerente: 'Dueño del negocio: acceso a TODOS los locales, catálogo y reportes. Crea y elimina supervisores, encargados, vendedores, técnicos y contadores.',
+    supervisor: 'Encargado de TODOS los locales: los mismos módulos y permisos del encargado (mercancía, productos, historial, pendientes y cuadre), eligiendo el local en el encabezado. Sin reportes, inversión ni nómina.',
     encargado: 'Gerente de su local: entradas de stock, devoluciones y reportes de ese local.',
     vendedor: 'Cajero de su local: ventas y consulta de productos.',
     tecnico: 'Servicio técnico de su local: órdenes de servicio y repuestos.',
@@ -195,10 +196,11 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
 
   // La lista se agrupa por jerarquía. Los administradores solo llegan aquí si quien mira es administrador
   // (la base de datos y listarUsuarios() se los ocultan a los demás).
-  const ORDEN_JERARQUIA: Rol[] = ['administrador', 'gerente', 'contador', 'encargado', 'tecnico', 'vendedor'];
+  const ORDEN_JERARQUIA: Rol[] = ['administrador', 'gerente', 'supervisor', 'contador', 'encargado', 'tecnico', 'vendedor'];
   const TITULO_GRUPO: Record<Rol, string> = {
     administrador: 'Administradores',
     gerente: 'Gerentes',
+    supervisor: 'Supervisores',
     contador: 'Contadores',
     encargado: 'Encargados',
     tecnico: 'Técnicos',
@@ -221,7 +223,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     filas.innerHTML = ordenados
       .map((u, indice) => {
         const yo = u.id === miId;
-        // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo encargados, vendedores, técnicos y contadores); nunca a uno mismo
+        // Se puede gestionar a quien está por debajo en la jerarquía (el gerente solo supervisores, encargados, vendedores, técnicos y contadores); nunca a uno mismo
         const gestionable = !yo && puedeGestionarUsuario(miRol, u.rol);
         const inactivo = u.status === 'inactive';
         const nombreLocal = locales.find((l) => l.id === u.local_id)?.nombre;
@@ -453,7 +455,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     selectRolNuevo.innerHTML = opcionesRol('vendedor');
     selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${l.nombre}</option>`).join('');
     if (miRol === 'gerente') {
-      (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar encargados, vendedores, técnicos y contadores.';
+      (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar supervisores, encargados, vendedores, técnicos y contadores.';
     }
     actualizarFormularioNuevo();
     cargarUsuarios();

@@ -140,7 +140,7 @@ const credencialesInvalidas = (soloGlobal = false, textoGlobal?: string) =>
     403,
     soloGlobal
       ? (textoGlobal ?? 'Contraseña incorrecta: un precio menor al del catálogo solo lo autoriza un gerente o un administrador.')
-      : 'Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.',
+      : 'Contraseña incorrecta: debe ser la de un encargado de este local, un supervisor, un gerente o un administrador.',
     'autorizador_invalido'
   );
 
@@ -151,7 +151,9 @@ const credencialesInvalidas = (soloGlobal = false, textoGlobal?: string) =>
 function puedeAutorizar(f: Pick<FilaSupervisor, 'rol' | 'local_id' | 'status'>, localId: string, soloGlobal = false): boolean {
   if (f.status !== 'active') return false;
   if (f.rol === 'administrador' || f.rol === 'gerente') return true;
-  return !soloGlobal && f.rol === 'encargado' && f.local_id === localId;
+  if (soloGlobal) return false;
+  // El encargado autoriza en su local; el supervisor (encargado de todos los locales), en cualquiera
+  return f.rol === 'supervisor' || (f.rol === 'encargado' && f.local_id === localId);
 }
 
 /** Vuelve a mirar, al cobrar, que quien autorizó siga pudiendo hacerlo (no lo desactivaron ni lo cambiaron de local en esos minutos). */
@@ -218,7 +220,7 @@ async function identificarSupervisor(env: Entorno, sesion: Sesion, email: string
       .prepare(
         `SELECT p.id, p.nombre, p.rol, p.local_id, p.status, a.password
            FROM perfiles p JOIN account a ON a.userId = p.id AND a.providerId = 'credential'
-          WHERE p.status = 'active' AND (p.rol IN ('administrador', 'gerente') OR (? = 0 AND p.rol = 'encargado' AND p.local_id = ?))
+          WHERE p.status = 'active' AND (p.rol IN ('administrador', 'gerente') OR (? = 0 AND (p.rol = 'supervisor' OR (p.rol = 'encargado' AND p.local_id = ?))))
           ORDER BY p.id`
       )
       .bind(soloGlobal ? 1 : 0, localId)

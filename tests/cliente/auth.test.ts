@@ -128,17 +128,17 @@ describe('auth en modo demo', () => {
 });
 
 describe('jerarquía de roles al crear usuarios', () => {
-  it('el gerente asigna encargado, vendedor, técnico y contador; nunca administrador ni gerente', async () => {
+  it('el gerente asigna supervisor, encargado, vendedor, técnico y contador; nunca administrador ni gerente', async () => {
     const { rolesAsignables, puedeGestionarUsuario } = await cargarAuth(false);
-    expect(rolesAsignables('gerente').sort()).toEqual(['contador', 'encargado', 'tecnico', 'vendedor']);
+    expect(rolesAsignables('gerente').sort()).toEqual(['contador', 'encargado', 'supervisor', 'tecnico', 'vendedor']);
     expect(puedeGestionarUsuario('gerente', 'contador')).toBe(true);
     expect(puedeGestionarUsuario('gerente', 'gerente')).toBe(false);
     expect(puedeGestionarUsuario('gerente', 'administrador')).toBe(false);
   });
 
-  it('encargado, vendedor, técnico y contador no asignan ningún rol', async () => {
+  it('supervisor, encargado, vendedor, técnico y contador no asignan ningún rol', async () => {
     const { rolesAsignables } = await cargarAuth(false);
-    for (const rol of ['encargado', 'vendedor', 'tecnico', 'contador'] as const) expect(rolesAsignables(rol)).toEqual([]);
+    for (const rol of ['supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'] as const) expect(rolesAsignables(rol)).toEqual([]);
   });
 });
 

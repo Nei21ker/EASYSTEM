@@ -17,7 +17,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   titulo="Pendientes"
   subtitulo="Mercancía que se llevó un promotor y comisiones por pagarle"
   tituloPestana="Pendientes · EASYSTEM"
-  roles={['administrador', 'gerente', 'encargado']}
+  roles={['administrador', 'gerente', 'supervisor', 'encargado']}
 >
   <div class="flex flex-wrap gap-2" role="tablist" aria-label="Secciones de pendientes">
     <button id="pd-tab-pendientes" type="button" role="tab" aria-selected="true" class="rounded-lg border px-4 py-2 text-sm font-semibold transition">Pendientes</button>
@@ -114,7 +114,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   let verTodosLosLocales = false;
 
   const esGlobalRol = () => rol === 'administrador' || rol === 'gerente';
-  const puedePagar = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' : esGlobalRol());
+  const puedePagar = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' || rol === 'supervisor' : esGlobalRol());
   const puedeAnular = puedePagar;
 
   const claseBoton = 'rounded-lg border px-3 py-2 text-xs font-semibold transition';

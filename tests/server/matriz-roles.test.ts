@@ -19,13 +19,13 @@ const cargar = (archivo: string) => {
   return modulos[clave]();
 };
 
-const TODOS: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico', 'contador'];
-const NEGOCIO: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico']; // todo menos contador
-const GERENCIA: Rol[] = ['administrador', 'gerente', 'encargado'];
+const TODOS: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico', 'contador'];
+const NEGOCIO: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico']; // todo menos contador
+const GERENCIA: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado']; // el supervisor tiene los permisos del encargado (en todos los locales)
 const GLOBAL: Rol[] = ['administrador', 'gerente'];
 const NOMINA: Rol[] = ['administrador', 'gerente', 'contador'];
-const PENDIENTES: Rol[] = ['administrador', 'gerente', 'encargado', 'contador']; // directorio de promotores y pendientes: gerencia + nómina
-const CAJERO: Rol[] = ['administrador', 'gerente', 'encargado', 'vendedor']; // quienes cobran en el POS
+const PENDIENTES: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'contador']; // directorio de promotores y pendientes: gerencia + nómina
+const CAJERO: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor']; // quienes cobran en el POS
 
 interface Caso {
   /** Archivo de la ruta dentro de src/pages/api */
@@ -197,6 +197,7 @@ beforeAll(async () => {
   await sembrarLocales(env.DB);
   usuarios.administrador = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null });
   usuarios.gerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null });
+  usuarios.supervisor = await crearUsuarioDePrueba(env, { rol: 'supervisor', localId: null });
   usuarios.encargado = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: accesorios });
   usuarios.vendedor = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios });
   usuarios.tecnico = await crearUsuarioDePrueba(env, { rol: 'tecnico', localId: accesorios });
@@ -335,14 +336,14 @@ describe('bloqueos de cuenta y de suscripción en toda la API', () => {
     }
   });
 
-  it('si TODOS los locales están bloqueados, también el gerente y el contador reciben 403 en toda ruta; el administrador nunca', async () => {
+  it('si TODOS los locales están bloqueados, también el gerente, el supervisor y el contador reciben 403 en toda ruta; el administrador nunca', async () => {
     await env.DB.prepare("UPDATE locales SET subscription_status = 'PAST_DUE'").run();
     try {
       const fallos: string[] = [];
       for (const caso of casos()) {
         if (SIEMPRE_RESPONDEN.has(caso.archivo)) continue;
         const etiqueta = `${caso.metodo} ${caso.archivo}`;
-        for (const rol of ['gerente', 'contador'] as const) {
+        for (const rol of ['gerente', 'supervisor', 'contador'] as const) {
           if (!caso.permitidos.includes(rol)) continue;
           const estado = await llamar(caso, usuarios[rol]);
           if (estado !== 403) fallos.push(`${etiqueta}: ${rol} con todos los locales bloqueados → ${estado} (debía ser 403)`);

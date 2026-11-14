@@ -112,7 +112,7 @@ const claseCampo =
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { esGlobal } from '../../lib/auth';
+  import { esGlobal, veTodosLosLocales } from '../../lib/auth';
   import { alCambiarDatos } from '../../lib/realtime';
   import { reducirImagen } from '../../utils/imagenes';
   import { fechaLocalISO, formatearBolivares, formatearMoneda } from '../../utils/format';
@@ -145,7 +145,10 @@ const claseCampo =
   const botonFinalizar = $<HTMLButtonElement>('cq-finalizar');
   const botonReabrir = $<HTMLButtonElement>('cq-reabrir');
 
+  /** Trabaja en cualquier local (administrador, gerente y supervisor): elige el local y ve el estado de todos */
   let esGlobalUsuario = false;
+  /** Reabrir un cuadre cerrado: solo administrador y gerente */
+  let puedeReabrir = false;
   let locales: Local[] = [];
   let localId = '';
   let fecha = fechaLocalISO();
@@ -334,7 +337,7 @@ const claseCampo =
     }
     botonGuardar.classList.toggle('hidden', cerrado());
     botonFinalizar.classList.toggle('hidden', cerrado());
-    botonReabrir.classList.toggle('hidden', !(cerrado() && esGlobalUsuario));
+    botonReabrir.classList.toggle('hidden', !(cerrado() && puedeReabrir));
     notas.disabled = cerrado();
     restablecerBotonCierre();
   }
@@ -425,7 +428,8 @@ const claseCampo =
   async function abrir() {
     const contexto = await inventoryService.obtenerContextoLocal();
     if (!contexto) return;
-    esGlobalUsuario = esGlobal(contexto.sesion.rol);
+    esGlobalUsuario = veTodosLosLocales(contexto.sesion.rol);
+    puedeReabrir = esGlobal(contexto.sesion.rol);
     locales = esGlobalUsuario ? contexto.locales : contexto.locales.filter((l) => l.id === contexto.sesion.local_id);
     if (locales.length === 0) {
       errorCarga.textContent = 'Tu usuario no tiene un local asignado: pídele al administrador que te asigne uno.';
@@ -441,7 +445,7 @@ const claseCampo =
     if (!locales.some((l) => l.id === localId)) localId = locales[0].id;
     selectLocal.innerHTML = locales.map((l) => `<option value="${l.id}">${escapar(l.nombre)}</option>`).join('');
     selectLocal.value = localId;
-    // El encargado ve su local fijo; administrador y gerente eligen
+    // El encargado ve su local fijo; administrador, gerente y supervisor eligen
     selectLocal.classList.toggle('hidden', !esGlobalUsuario);
     localFijo.classList.toggle('hidden', esGlobalUsuario);
     localFijo.textContent = nombreLocal(localId);

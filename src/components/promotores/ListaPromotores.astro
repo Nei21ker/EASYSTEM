@@ -44,8 +44,8 @@
 
   // Quién puede cerrar qué (el servidor lo vuelve a exigir)
   const esGlobalRol = () => rol === 'administrador' || rol === 'gerente';
-  const puedePagar = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' : esGlobalRol() || rol === 'contador');
-  const puedeAnular = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' : esGlobalRol());
+  const puedePagar = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' || rol === 'supervisor' : esGlobalRol() || rol === 'contador');
+  const puedeAnular = (p: Pendiente) => (p.tipo === 'MERCANCIA' ? esGlobalRol() || rol === 'encargado' || rol === 'supervisor' : esGlobalRol());
 
   const claseBoton = 'rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition';
   const botonPagar = `${claseBoton} border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-300 dark:hover:bg-emerald-500/10`;

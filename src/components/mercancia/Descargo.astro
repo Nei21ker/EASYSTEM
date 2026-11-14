@@ -253,7 +253,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { esGlobal, esGerencia } from '../../lib/auth';
+  import { esGlobal, esGerencia, veTodosLosLocales } from '../../lib/auth';
   import { alCambiarDatos } from '../../lib/realtime';
   import { esCodigoUnidad, normalizarCodigoUnidad } from '../../utils/codigos';
   import { escaparHtml } from '../../utils/productosUI';
@@ -298,7 +298,10 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
   let piezas: Pieza[] = [];
   let origenId: string | null = null;
   let miLocalId: string | null = null;
+  /** Trabaja en cualquier local (administrador, gerente y supervisor): elige el origen, recibe y cierra en todos */
   let esGlobalUsuario = false;
+  /** Revertir una baja: solo administrador y gerente (el supervisor tiene los límites del encargado) */
+  let puedeRevertirBajas = false;
   let locales: Local[] = [];
   let nombresLocal = new Map<string, string>();
   let nombresProducto = new Map<string, string>();
@@ -897,7 +900,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
               <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(nombresProducto.get(u.producto_id) ?? 'Producto')} <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-400">${escaparHtml(motivo)}</span></p>
               <p class="text-xs text-slate-500 dark:text-slate-400"><span class="font-mono">${escaparHtml(u.codigo)}</span> · ${escaparHtml(nombresLocal.get(u.local_id) ?? '')} · ${u.baja_en ? escaparHtml(formatearFecha(u.baja_en)) : ''}${u.baja_por ? ` · ${escaparHtml(u.baja_por)}` : ''}${u.baja_nota ? ` · ${escaparHtml(u.baja_nota)}` : ''}</p>
             </div>
-            ${esGlobalUsuario ? `<button type="button" data-revertir="${escaparHtml(u.codigo)}" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Revertir</button>` : ''}
+            ${puedeRevertirBajas ? `<button type="button" data-revertir="${escaparHtml(u.codigo)}" class="shrink-0 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Revertir</button>` : ''}
           </li>`;
         })
         .join('');
@@ -931,7 +934,8 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
       inventoryService.listarLocales(),
     ]);
     if (!contexto || !esGerencia(contexto.sesion.rol)) return;
-    esGlobalUsuario = esGlobal(contexto.sesion.rol);
+    esGlobalUsuario = veTodosLosLocales(contexto.sesion.rol);
+    puedeRevertirBajas = esGlobal(contexto.sesion.rol);
     miLocalId = contexto.sesion.local_id;
     miNombre = contexto.sesion.nombre;
     locales = lista;
@@ -958,7 +962,7 @@ const claseTarjeta = 'rounded-xl border border-slate-200 bg-white p-4 shadow-sm 
     }
     $('ds-origen-texto').textContent = origenId ? `Sale de: ${nombresLocal.get(origenId) ?? 'este local'}` : '';
 
-    // Bajas por cantidad: el encargado usa su local; administrador y gerente eligen
+    // Bajas por cantidad: el encargado usa su local; administrador, gerente y supervisor eligen
     localCantidad = origenId;
     if (esGlobalUsuario) {
       const selectorLocal = $<HTMLSelectElement>('dc-local');

@@ -22,7 +22,7 @@
   import { $contextoLocal } from '../../stores/local';
   import { cambiarLocalActivo, obtenerContextoLocal } from '../../lib/inventoryService';
   import { ALCANCE_TODOS, localVigente } from '../../lib/constantes-locales';
-  import { esGlobal } from '../../lib/auth';
+  import { veTodosLosLocales } from '../../lib/auth';
 
   const raiz = document.getElementById('ls-raiz') as HTMLElement;
   const select = document.getElementById('ls-select') as HTMLSelectElement;
@@ -37,8 +37,8 @@
     const contexto = $contextoLocal.get();
     if (!contexto) return;
     if (contexto.sesion.rol === 'contador') return; // la nómina tiene su propio filtro por local
-    const esAdmin = esGlobal(contexto.sesion.rol);
-    // El administrador entra a cualquier local (aunque esté suspendido); el gerente solo a los vigentes
+    const esAdmin = veTodosLosLocales(contexto.sesion.rol);
+    // El administrador entra a cualquier local (aunque esté suspendido); el gerente y el supervisor solo a los vigentes
     const puedeEntrar = (l: (typeof contexto.locales)[number]) => contexto.sesion.rol === 'administrador' || localVigente(l);
 
     if (esAdmin) {

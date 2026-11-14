@@ -94,3 +94,24 @@ describe('Historial: ventas y movimientos en un solo módulo', () => {
     expect(visibles('tecnico')).not.toContain('/historial-ventas');
   });
 });
+
+describe('Supervisor: los módulos del encargado, en todos los locales', () => {
+  const visibles = (rol: Parameters<typeof enlaceVisible>[1], tipo: Parameters<typeof enlaceVisible>[2] = 'accesorios', todos = false) =>
+    enlacesNav.filter((e) => enlaceVisible(e, rol, tipo, todos)).map((e) => e.href);
+
+  it('ve exactamente los mismos enlaces que el encargado en cada tipo de local (salvo Modelos en controles, que a él sí se le muestra)', () => {
+    for (const tipo of ['accesorios', 'vidrios', 'servicio_tecnico'] as const) expect(visibles('supervisor', tipo)).toEqual(visibles('encargado', tipo));
+    expect(visibles('encargado', 'controles')).not.toContain('/modelos');
+    expect(visibles('supervisor', 'controles')).toContain('/modelos');
+  });
+
+  it('tiene Mercancía, Pendientes, Historial y Cuadre de caja, y no Reportes, Inversión, Usuarios, Nómina, Suscripciones ni Tiempo real', () => {
+    const v = visibles('supervisor', null, true);
+    for (const href of ['/', '/ventas', '/historial-ventas', '/ingreso', '/productos', '/pendientes', '/cuadre']) expect(v).toContain(href);
+    for (const href of ['/reportes', '/inversion', '/usuarios', '/payroll', '/admin/subscriptions', '/admin/monitoreo']) expect(v).not.toContain(href);
+  });
+
+  it('en la vista «Todos» ve Servicio técnico como el administrador', () => {
+    expect(enlaceVisible(enlace('/servicio-tecnico'), 'supervisor', null, true)).toBe(true);
+  });
+});
