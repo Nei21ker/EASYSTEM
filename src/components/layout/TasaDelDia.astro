@@ -173,8 +173,8 @@ const claseCampo =
 
   // Arranque: ¿ya hay tasa de hoy? Si no, ventana obligatoria.
   obtenerSesionActual().then(async (sesion) => {
-    // El contador solo trabaja en la nómina: no maneja la tasa del dólar del negocio
-    if (!sesion || sesion.rol === 'contador') return;
+    // El contador (solo nómina) y el técnico (solo servicio técnico) no manejan la tasa del dólar del negocio
+    if (!sesion || sesion.rol === 'contador' || sesion.rol === 'tecnico') return;
     // Otro dispositivo registró la tasa: se actualiza aquí; si esta ventana era obligatoria, ya no hace falta
     alCambiarDatos(['tasas_cambio'], async () => {
       const { hoy, ultima } = await inventoryService.obtenerTasaVigente();

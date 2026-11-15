@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
-import { actualizarOrden, crearOrden, listarOrdenes, obtenerOrden } from '../../src/server/servicios/ordenes';
+import { actualizarOrden, cobrarOrden, crearOrden, listarOrdenes, obtenerOrden } from '../../src/server/servicios/ordenes';
 
 const env = crearEntornoDePrueba();
 const { accesorios, servicio } = IDS_LOCALES;
@@ -16,7 +16,7 @@ beforeEach(async () => {
   await sembrarLocales(env.DB);
   admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null });
   tecnico = await crearUsuarioDePrueba(env, { rol: 'tecnico', localId: servicio, nombre: 'Tito Técnico' });
-  encargadoServ = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: servicio });
+  encargadoServ = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: servicio, nombre: 'Elena Encargada' });
   vendedorAcc = await crearUsuarioDePrueba(env, { rol: 'vendedor', localId: accesorios });
   contador = await crearUsuarioDePrueba(env, { rol: 'contador', localId: null });
   [sA, sT, sES, sVA, sC] = await Promise.all([admin, tecnico, encargadoServ, vendedorAcc, contador].map(sesionDe));
@@ -50,9 +50,9 @@ const nueva = (localId: string = servicio, extra: Record<string, unknown> = {}) 
 const repuesto = (cantidad: number, precio: number) => ({ producto_id: 'p1', nombre: 'Pantalla', codigo_barras: '2000000000015', cantidad, precio_unitario: precio });
 
 describe('crear órdenes', () => {
-  it('el técnico registra un equipo: queda pendiente, con folio y su nombre', async () => {
-    const o = await crearOrden(env, sT, nueva());
-    expect(o).toMatchObject({ folio: 1, estado: 'pendiente', local_id: servicio, equipo_modelo: 'iPhone 11', repuestos: [], mano_de_obra_usd: 0, total_usd: 0, listo_en: null, entregada_en: null, registrado_nombre: 'Tito Técnico' });
+  it('la encargada registra un equipo: queda pendiente, con folio y su nombre', async () => {
+    const o = await crearOrden(env, sES, nueva());
+    expect(o).toMatchObject({ folio: 1, estado: 'pendiente', local_id: servicio, equipo_modelo: 'iPhone 11', repuestos: [], mano_de_obra_usd: 0, total_usd: 0, listo_en: null, entregada_en: null, registrado_nombre: 'Elena Encargada' });
     expect((await crearOrden(env, sES, nueva())).folio).toBe(2);
   });
 
@@ -67,17 +67,17 @@ describe('crear órdenes', () => {
   });
 
   it('valida cliente, equipo y falla', async () => {
-    await rechazo(crearOrden(env, sT, nueva(servicio, { cliente_nombre: '' })), 400, /Faltan datos del cliente/);
-    await rechazo(crearOrden(env, sT, nueva(servicio, { equipo_marca: ' ' })), 400, 'Indica la marca y el modelo del equipo.');
-    await rechazo(crearOrden(env, sT, nueva(servicio, { falla_reportada: 'a' })), 400, 'Describe la falla que reporta el cliente.');
+    await rechazo(crearOrden(env, sES, nueva(servicio, { cliente_nombre: '' })), 400, /Faltan datos del cliente/);
+    await rechazo(crearOrden(env, sES, nueva(servicio, { equipo_marca: ' ' })), 400, 'Indica la marca y el modelo del equipo.');
+    await rechazo(crearOrden(env, sES, nueva(servicio, { falla_reportada: 'a' })), 400, 'Describe la falla que reporta el cliente.');
   });
 });
 
 describe('leer órdenes', () => {
   it('los de ese local las ven (más nuevas primero); los de otro local y el contador no', async () => {
-    const a = await crearOrden(env, sT, nueva());
+    const a = await crearOrden(env, sES, nueva());
     await new Promise((r) => setTimeout(r, 5));
-    const b = await crearOrden(env, sT, nueva());
+    const b = await crearOrden(env, sES, nueva());
     expect((await listarOrdenes(env, sES, {})).map((o) => o.id)).toEqual([b.id, a.id]);
     expect(await listarOrdenes(env, sVA, {})).toEqual([]);
     expect((await listarOrdenes(env, sA, { localId: servicio, limite: 1 })).map((o) => o.id)).toEqual([b.id]);
@@ -85,57 +85,60 @@ describe('leer órdenes', () => {
   });
 
   it('obtenerOrden devuelve null si es de un local al que no se accede', async () => {
-    const o = await crearOrden(env, sT, nueva());
+    const o = await crearOrden(env, sES, nueva());
     expect((await obtenerOrden(env, sES, o.id))?.id).toBe(o.id);
     expect(await obtenerOrden(env, sVA, o.id)).toBeNull();
-    expect(await obtenerOrden(env, sT, 'no-existe')).toBeNull();
+    expect(await obtenerOrden(env, sES, 'no-existe')).toBeNull();
   });
 });
 
 describe('actualizar órdenes', () => {
-  it('pasar a listo y a entregado anota las fechas; entregada ya no se modifica', async () => {
-    const o = await crearOrden(env, sT, nueva());
-    const lista = await actualizarOrden(env, sT, o.id, { estado: 'listo', diagnostico: 'Pantalla rota' });
+  it('pasar a listo anota la fecha; «entregado» solo se alcanza cobrando (y una entregada ya no se modifica)', async () => {
+    const o = await crearOrden(env, sES, nueva());
+    const lista = await actualizarOrden(env, sES, o.id, { estado: 'listo', diagnostico: 'Pantalla rota' });
     expect(lista).toMatchObject({ estado: 'listo', diagnostico: 'Pantalla rota' });
     expect(lista.listo_en).toMatch(/^\d{4}-\d\d-\d\dT/);
-    const entregada = await actualizarOrden(env, sT, o.id, { estado: 'entregado' });
+    await rechazo(actualizarOrden(env, sES, o.id, { estado: 'entregado' }), 409, /cobrar/);
+    await actualizarOrden(env, sES, o.id, { tecnico_id: tecnico.id });
+    const entregada = await cobrarOrden(env, sES, o.id, { total_usd: 0, porcentaje_local: 30, pagos: [] });
     expect(entregada.entregada_en).toMatch(/^\d{4}-\d\d-\d\dT/);
-    await rechazo(actualizarOrden(env, sT, o.id, { diagnostico: 'otra cosa' }), 409, 'Esa orden ya fue entregada y no se puede modificar.');
+    expect(entregada).toMatchObject({ total_usd: 0, comision_local_usd: 0, pago_tecnico_usd: 0 });
+    await rechazo(actualizarOrden(env, sES, o.id, { diagnostico: 'otra cosa' }), 409, 'Esa orden ya fue entregada y no se puede modificar.');
   });
 
   it('el total siempre es repuestos + mano de obra (se ignora el que mande el cliente)', async () => {
-    const o = await crearOrden(env, sT, nueva());
-    const a = await actualizarOrden(env, sT, o.id, { repuestos: [repuesto(2, 25), repuesto(1, 3)], mano_de_obra_usd: 10, total_usd: 999 });
+    const o = await crearOrden(env, sES, nueva());
+    const a = await actualizarOrden(env, sES, o.id, { repuestos: [repuesto(2, 25), repuesto(1, 3)], mano_de_obra_usd: 10, total_usd: 999 });
     expect(a.total_usd).toBe(63);
-    const b = await actualizarOrden(env, sT, o.id, { mano_de_obra_usd: 20 });
+    const b = await actualizarOrden(env, sES, o.id, { mano_de_obra_usd: 20 });
     expect(b.total_usd).toBe(73);
     expect(b.repuestos).toHaveLength(2);
   });
 
   it('asigna técnico y valida estado y mano de obra', async () => {
-    const o = await crearOrden(env, sT, nueva());
+    const o = await crearOrden(env, sES, nueva());
     const a = await actualizarOrden(env, sES, o.id, { tecnico_id: tecnico.id, tecnico_nombre: 'Tito Técnico', estado: 'en_reparacion' });
     expect(a).toMatchObject({ tecnico_id: tecnico.id, tecnico_nombre: 'Tito Técnico', estado: 'en_reparacion' });
-    await rechazo(actualizarOrden(env, sT, o.id, { estado: 'perdido' as never }), 400);
-    await rechazo(actualizarOrden(env, sT, o.id, { mano_de_obra_usd: -5 }), 400);
+    await rechazo(actualizarOrden(env, sES, o.id, { estado: 'perdido' as never }), 400);
+    await rechazo(actualizarOrden(env, sES, o.id, { mano_de_obra_usd: -5 }), 400);
   });
 
   it('una orden de otro local o inexistente responde 404; el contador 403', async () => {
-    const o = await crearOrden(env, sT, nueva());
+    const o = await crearOrden(env, sES, nueva());
     await rechazo(actualizarOrden(env, sVA, o.id, { diagnostico: 'x' }), 404);
-    await rechazo(actualizarOrden(env, sT, 'no-existe', { diagnostico: 'x' }), 404);
+    await rechazo(actualizarOrden(env, sES, 'no-existe', { diagnostico: 'x' }), 404);
     await rechazo(actualizarOrden(env, sC, o.id, { diagnostico: 'x' }), 403);
   });
 
   it('el local de una orden no se cambia', async () => {
-    const o = await crearOrden(env, sT, nueva());
-    const a = await actualizarOrden(env, sT, o.id, { local_id: accesorios, diagnostico: 'ok' } as never);
+    const o = await crearOrden(env, sES, nueva());
+    const a = await actualizarOrden(env, sES, o.id, { local_id: accesorios, diagnostico: 'ok' } as never);
     expect(a.local_id).toBe(servicio);
   });
 
   it('sube la versión de ordenes_servicio en ese local', async () => {
     await env.DB.prepare('DELETE FROM cambios').run();
-    await crearOrden(env, sT, nueva());
+    await crearOrden(env, sES, nueva());
     expect(await env.DB.prepare('SELECT tabla, local_id, version FROM cambios').all()).toMatchObject({ results: [{ tabla: 'ordenes_servicio', local_id: servicio, version: 1 }] });
   });
 });

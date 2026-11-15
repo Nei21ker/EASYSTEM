@@ -136,12 +136,16 @@ function casos(): Caso[] {
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { local_id: accesorios, simular: true }, permitidos: ['administrador'] },
     { archivo: 'ventas/eliminar.ts', metodo: 'POST', url: '/api/ventas/eliminar', cuerpo: { ids: ['no-existe'], simular: true }, permitidos: ['administrador', 'gerente'] },
     { archivo: 'reportes/resetear.ts', metodo: 'POST', url: '/api/reportes/resetear', cuerpo: { local_id: accesorios, simular: true }, permitidos: ['administrador'] },
-    { archivo: 'ordenes/index.ts', metodo: 'POST', url: '/api/ordenes', cuerpo: orden, permitidos: NEGOCIO },
+    { archivo: 'ordenes/index.ts', metodo: 'POST', url: '/api/ordenes', cuerpo: orden, permitidos: CAJERO }, // el técnico no registra equipos
     { archivo: 'devoluciones/index.ts', metodo: 'GET', url: '/api/devoluciones', permitidos: NEGOCIO },
     { archivo: 'devoluciones/index.ts', metodo: 'POST', url: '/api/devoluciones', cuerpo: devolucion, permitidos: GERENCIA },
     { archivo: 'ordenes/index.ts', metodo: 'GET', url: '/api/ordenes', permitidos: NEGOCIO },
     { archivo: 'ordenes/[id].ts', metodo: 'GET', url: `/api/ordenes/${ids.orden}`, params: { id: ids.orden }, permitidos: NEGOCIO },
     { archivo: 'ordenes/[id].ts', metodo: 'PATCH', url: `/api/ordenes/${ids.orden}`, params: { id: ids.orden }, cuerpo: { diagnostico: 'Matriz' }, permitidos: NEGOCIO },
+    // Servicio técnico: cobrar la reparación (quien cobra), pagarle al técnico (gerencia) y elegir al técnico (quien registra equipos)
+    { archivo: 'ordenes/[id]/cobrar.ts', metodo: 'POST', url: '/api/ordenes/no-existe/cobrar', params: { id: 'no-existe' }, cuerpo: { total_usd: 25, porcentaje_local: 30, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 25, monto_bs: null }] }, permitidos: CAJERO },
+    { archivo: 'ordenes/pagar-tecnico.ts', metodo: 'POST', url: '/api/ordenes/pagar-tecnico', cuerpo: { ids: ['no-existe'] }, permitidos: GERENCIA },
+    { archivo: 'ordenes/tecnicos.ts', metodo: 'GET', url: `/api/ordenes/tecnicos?localId=${accesorios}`, permitidos: CAJERO },
     // Cuadre de caja
     { archivo: 'cuadres/index.ts', metodo: 'GET', url: `/api/cuadres?fecha=${dia}`, permitidos: GERENCIA },
     { archivo: 'cuadres/[localId]/[fecha]/index.ts', metodo: 'GET', url: `/api/cuadres/${accesorios}/${dia}`, params: { localId: accesorios, fecha: dia }, permitidos: GERENCIA },

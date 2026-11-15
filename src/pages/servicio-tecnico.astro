@@ -2,9 +2,14 @@
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import NuevaOrden from '../components/servicio/NuevaOrden.astro';
 import DetalleOrden from '../components/servicio/DetalleOrden.astro';
+import CobrarOrden from '../components/servicio/CobrarOrden.astro';
 ---
 
-<DashboardLayout titulo="Servicio técnico" subtitulo="Recepción de equipos, reparaciones y repuestos del local">
+<DashboardLayout
+  titulo="Servicio técnico"
+  subtitulo="Recepción de equipos, reparaciones, cobro y pago a técnicos"
+  roles={['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico']}
+>
   <div class="space-y-4">
     <!-- Aviso: este módulo es del local de servicio técnico -->
     <div id="st-sin-local" class="hidden rounded-xl border border-amber-300 bg-amber-50 p-6 text-center dark:border-amber-500/40 dark:bg-amber-500/10">
@@ -15,6 +20,23 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
     </div>
 
     <div id="st-contenido" class="space-y-4">
+      <!-- Resumen del período: del técnico (sus trabajos y lo que ganó) o de la tienda (cobrado, comisión y lo de los técnicos) -->
+      <section id="st-resumen" class="hidden space-y-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="st-resumen-titulo" class="text-sm font-semibold text-slate-900 dark:text-white"></h2>
+          <div id="st-periodos" class="flex gap-1.5" role="group" aria-label="Período del resumen"></div>
+        </div>
+        <div id="st-tarjetas" class="grid grid-cols-2 gap-3 lg:grid-cols-5"></div>
+      </section>
+
+      <!-- Pago a los técnicos (la encargada les paga después de cobrar) -->
+      <section id="st-pago-tecnicos" class="hidden rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Pago a técnicos</h2>
+        <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">Lo que se les debe por los trabajos ya cobrados (ganancia menos la parte de la tienda).</p>
+        <ul id="st-tecnicos-lista" class="mt-3 divide-y divide-slate-100 dark:divide-slate-800"></ul>
+        <p id="st-tecnicos-error" role="alert" class="mt-2 hidden text-xs text-red-600 dark:text-red-400"></p>
+      </section>
+
       <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div class="relative flex-1">
@@ -59,7 +81,7 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
                 <th class="px-4 py-3 font-semibold">Equipo</th>
                 <th class="px-4 py-3 font-semibold">Falla reportada</th>
                 <th class="px-4 py-3 font-semibold">Estado</th>
-                <th class="px-4 py-3 text-right font-semibold">Total</th>
+                <th id="st-th-total" class="px-4 py-3 text-right font-semibold">Total</th>
               </tr>
             </thead>
             <tbody id="st-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
@@ -77,15 +99,16 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
 
   <NuevaOrden />
   <DetalleOrden />
+  <CobrarOrden />
 </DashboardLayout>
 
 <script>
   import * as inventoryService from '../lib/inventoryService';
   import { ESTADOS_ORDEN } from '../lib/inventoryService';
-  import { veTodosLosLocales } from '../lib/auth';
+  import { esGerencia, veTodosLosLocales } from '../lib/auth';
   import { alCambiarDatos } from '../lib/realtime';
-  import { htmlPrecioDual } from '../utils/format';
-  import { formatearFecha } from '../utils/format';
+  import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../utils/format';
+  import { inicioDelPeriodo, resumenPorTecnico, resumirTecnico, resumirTienda, type PeriodoResumen } from '../utils/servicioTecnico';
   import { animarLista } from '../utils/animaciones';
   import { escaparHtml, normalizarTexto } from '../utils/productosUI';
   import { tasaActual } from '../stores/tasa';
@@ -96,6 +119,18 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
   let primeraVez = true;
   let nombresLocales = new Map<string, string>();
   let verLocal = false;
+  /** Quién mira: el técnico ve solo lo suyo (sin precios de cobro); la gerencia ve el reparto y paga a los técnicos */
+  let soyTecnico = false;
+  let soyGerencia = false;
+  let miId = '';
+  let periodo: PeriodoResumen = 'mes';
+
+  const PERIODOS: { valor: PeriodoResumen; etiqueta: string }[] = [
+    { valor: 'hoy', etiqueta: 'Hoy' },
+    { valor: 'semana', etiqueta: 'Semana' },
+    { valor: 'mes', etiqueta: 'Mes' },
+    { valor: 'todo', etiqueta: 'Todo' },
+  ];
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const filas = $<HTMLTableSectionElement>('st-filas');
@@ -132,6 +167,18 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
     });
   }
 
+  /** Última columna: para el técnico lo que ganó; para el resto el total de la orden (y, cobrada, quién y cuándo) */
+  function celdaDinero(o: OrdenServicio): string {
+    if (soyTecnico) {
+      if (o.cobrado_en == null) return '<span class="text-xs font-normal text-slate-400">—</span>';
+      const pagado = o.tecnico_pagado_en
+        ? '<span class="block text-[11px] font-normal text-emerald-600 dark:text-emerald-400">Pagado</span>'
+        : '<span class="block text-[11px] font-normal text-amber-600 dark:text-amber-400">Por cobrar</span>';
+      return `${formatearMoneda(o.pago_tecnico_usd ?? 0)}${pagado}`;
+    }
+    return htmlPrecioDual(o.total_usd, tasaActual.get());
+  }
+
   function filaHtml(o: OrdenServicio): string {
     return `
       <tr data-orden="${o.id}" class="cursor-pointer align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
@@ -155,17 +202,106 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
         <td data-label="Falla" class="px-4 py-3"><p class="line-clamp-2 break-words text-xs text-slate-600 dark:text-slate-400">${escaparHtml(o.falla_reportada)}</p></td>
         <td data-label="Estado" class="px-4 py-3">
           <span class="inline-flex whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${ESTILO_ESTADO[o.estado]}">${etiquetaEstado(o.estado)}</span>
+          ${o.tecnico_nombre && !soyTecnico ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Técnico: ${escaparHtml(o.tecnico_nombre)}</p>` : ''}
           ${o.repuestos.length ? `<p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">${o.repuestos.length} repuesto${o.repuestos.length === 1 ? '' : 's'}</p>` : ''}
         </td>
-        <td data-label="Total" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(o.total_usd, tasaActual.get())}</td>
+        <td data-label="${soyTecnico ? 'Mi ganancia' : 'Total'}" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${celdaDinero(o)}</td>
       </tr>`;
   }
+
+  function tarjeta(titulo: string, valor: string, nota = '') {
+    return `<div class="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <p class="text-[11px] uppercase tracking-wide text-slate-500 dark:text-slate-400">${titulo}</p>
+      <p class="mt-1 text-lg font-semibold tabular-nums text-slate-900 dark:text-white">${valor}</p>
+      ${nota ? `<p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${nota}</p>` : ''}
+    </div>`;
+  }
+
+  /** Resumen del período: el técnico ve sus trabajos y ganancias; la gerencia lo cobrado, la parte de la tienda y lo de los técnicos */
+  function pintarResumen() {
+    if (!soyTecnico && !soyGerencia) return;
+    const desde = inicioDelPeriodo(periodo, new Date());
+    $('st-resumen').classList.remove('hidden');
+    const base = 'shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold transition';
+    $('st-periodos').innerHTML = PERIODOS.map(
+      (p) =>
+        `<button type="button" data-periodo="${p.valor}" aria-pressed="${periodo === p.valor}" class="${base} ${
+          periodo === p.valor ? 'border-brand-600 bg-brand-600 text-white shadow-sm' : 'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300'
+        }">${p.etiqueta}</button>`
+    ).join('');
+    if (soyTecnico) {
+      const r = resumirTecnico(ordenes, miId, desde);
+      $('st-resumen-titulo').textContent = 'Mis trabajos';
+      $('st-tarjetas').innerHTML =
+        tarjeta('Trabajos hechos', String(r.trabajos)) +
+        tarjeta('Total ganado', formatearMoneda(r.ganado)) +
+        tarjeta('Por cobrar', formatearMoneda(r.pendiente), 'Aún no te lo han pagado') +
+        tarjeta('Ya pagado', formatearMoneda(r.pagado)) +
+        tarjeta('En curso', String(r.enCurso), 'Trabajos sin entregar');
+    } else {
+      const r = resumirTienda(ordenes, desde);
+      $('st-resumen-titulo').textContent = 'Resumen del servicio técnico';
+      $('st-tarjetas').innerHTML =
+        tarjeta('Trabajos cobrados', String(r.trabajos)) +
+        tarjeta('Cobrado a clientes', formatearMoneda(r.cobrado)) +
+        tarjeta('Para la tienda', formatearMoneda(r.comision), 'Comisión (sin contar repuestos)') +
+        tarjeta('Para los técnicos', formatearMoneda(r.paraTecnicos));
+    }
+  }
+
+  /** Pago a técnicos: lo que se le debe a cada uno por lo ya cobrado, con un botón para liquidarlo */
+  function pintarPagoTecnicos() {
+    if (!soyGerencia) return;
+    const lista = resumenPorTecnico(ordenes);
+    const caja = $('st-pago-tecnicos');
+    caja.classList.toggle('hidden', lista.length === 0);
+    $('st-tecnicos-lista').innerHTML = lista
+      .map(
+        (t) => `
+          <li class="flex flex-wrap items-center gap-3 py-2.5">
+            <div class="min-w-0 flex-1">
+              <p class="font-medium text-slate-900 dark:text-white">${escaparHtml(t.tecnico_nombre)}</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">${t.trabajos} trabajo${t.trabajos === 1 ? '' : 's'} · ganó ${formatearMoneda(t.ganado)} · pagado ${formatearMoneda(t.pagado)}</p>
+            </div>
+            ${
+              t.pendiente > 0
+                ? `<button type="button" data-pagar="${escaparHtml(t.tecnico_id)}" class="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700">Pagar ${formatearMoneda(t.pendiente)}</button>`
+                : '<span class="text-xs text-slate-400">Al día</span>'
+            }
+          </li>`
+      )
+      .join('');
+  }
+
+  $('st-tecnicos-lista').addEventListener('click', async (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-pagar]')?.dataset.pagar;
+    const tecnico = id ? resumenPorTecnico(ordenes).find((t) => t.tecnico_id === id) : null;
+    if (!tecnico) return;
+    const error = $('st-tecnicos-error');
+    error.classList.add('hidden');
+    if (!window.confirm(`¿Marcar como pagados ${formatearMoneda(tecnico.pendiente)} a ${tecnico.tecnico_nombre} (${tecnico.idsPendientes.length} trabajo${tecnico.idsPendientes.length === 1 ? '' : 's'})?`)) return;
+    try {
+      await inventoryService.pagarTecnicosOrdenes(tecnico.idsPendientes.slice(0, 200));
+      await cargar();
+    } catch (err) {
+      error.textContent = err instanceof Error ? err.message : 'No se pudo registrar el pago.';
+      error.classList.remove('hidden');
+    }
+  });
+  $('st-periodos').addEventListener('click', (e) => {
+    const valor = (e.target as HTMLElement).closest<HTMLElement>('[data-periodo]')?.dataset.periodo as PeriodoResumen | undefined;
+    if (!valor) return;
+    periodo = valor;
+    pintarResumen();
+  });
 
   function pintar() {
     const lista = filtrar();
     filas.innerHTML = lista.map(filaHtml).join('');
     $('st-vacio').classList.toggle('hidden', lista.length > 0);
     pintarEstados();
+    pintarResumen();
+    pintarPagoTecnicos();
   }
 
   async function cargar() {
@@ -221,7 +357,15 @@ import DetalleOrden from '../components/servicio/DetalleOrden.astro';
       return;
     }
     // En la vista "Todos" se consultan todas las órdenes, pero recibir un equipo exige estar en el local de servicio técnico
+    soyTecnico = contexto.sesion.rol === 'tecnico';
+    soyGerencia = esGerencia(contexto.sesion.rol);
+    miId = contexto.sesion.id;
+    if (soyTecnico) {
+      $('st-th-total').textContent = 'Mi ganancia';
+      $('st-buscador').setAttribute('placeholder', 'Buscar por folio, cliente o equipo...');
+    }
     const nueva = $<HTMLButtonElement>('st-nueva');
+    nueva.classList.toggle('hidden', soyTecnico);
     nueva.disabled = !esServicio;
     nueva.title = esServicio ? '' : 'Elige el Local Servicio Técnico en el selector del encabezado para recibir un equipo';
     void cargar();

@@ -692,6 +692,12 @@ export async function protegerPagina(opciones?: { roles?: Rol[] }): Promise<Sesi
     throw new Error('EASYSTEM_REDIRECT');
   }
 
+  // El técnico (acceso mínimo) solo trabaja en Servicio técnico: cualquier otra página lo lleva allí
+  if (sesion.rol === 'tecnico' && !roles?.includes('tecnico')) {
+    window.location.href = '/servicio-tecnico';
+    throw new Error('EASYSTEM_REDIRECT');
+  }
+
   if (roles && roles.length > 0 && !roles.includes(sesion.rol)) {
     window.location.href = '/';
     throw new Error('EASYSTEM_REDIRECT');

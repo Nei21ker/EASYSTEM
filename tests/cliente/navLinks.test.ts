@@ -87,11 +87,18 @@ describe('Historial: ventas y movimientos en un solo módulo', () => {
     }
   });
 
-  it('el vendedor no ve ninguno de los dos y el técnico solo Movimientos', () => {
-    expect(visibles('vendedor')).not.toContain('/historial-ventas');
-    expect(visibles('vendedor')).not.toContain('/movimientos');
-    expect(visibles('tecnico')).toContain('/movimientos');
-    expect(visibles('tecnico')).not.toContain('/historial-ventas');
+  it('el vendedor y el técnico no ven ninguno de los dos', () => {
+    for (const rol of ['vendedor', 'tecnico'] as const) {
+      expect(visibles(rol)).not.toContain('/historial-ventas');
+      expect(visibles(rol)).not.toContain('/movimientos');
+    }
+  });
+});
+
+describe('Técnico: acceso mínimo, solo el módulo de Servicio técnico', () => {
+  it('en su local solo ve Servicio técnico (nada de página principal, productos, movimientos, etc.)', () => {
+    const visibles = enlacesNav.filter((e) => enlaceVisible(e, 'tecnico', 'servicio_tecnico', false)).map((e) => e.href);
+    expect(visibles).toEqual(['/servicio-tecnico']);
   });
 });
 

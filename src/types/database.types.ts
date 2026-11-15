@@ -694,6 +694,46 @@ export interface OrdenServicio extends NuevaOrdenServicio {
   actualizada_en: string;
   listo_en?: string | null;
   entregada_en?: string | null;
+  /** Cobro al cliente (migración 0030): la orden queda entregada al cobrarla. Sin `cobrado_en` = orden anterior al nuevo esquema. */
+  porcentaje_local?: number | null;
+  /** Parte de la ganancia (cobrado − repuestos) que se queda la tienda por usar sus instalaciones */
+  comision_local_usd?: number | null;
+  /** Lo que se le debe al técnico: ganancia − comisión de la tienda */
+  pago_tecnico_usd?: number | null;
+  pagos?: PagoVenta[] | null;
+  vuelto?: DineroEntregado | null;
+  tasa_cambio?: number | null;
+  total_bs?: number | null;
+  cobrado_en?: string | null;
+  cobrado_por?: string | null;
+  cobrado_nombre?: string | null;
+  /** Cuándo y quién le pagó su parte al técnico (null = todavía se le debe) */
+  tecnico_pagado_en?: string | null;
+  tecnico_pagado_por?: string | null;
+  tecnico_pagado_nombre?: string | null;
+}
+
+/** Datos con los que la encargada cobra una reparación (el servidor calcula el reparto). */
+export interface CobroOrdenServicio {
+  /** Total que paga el cliente, en dólares (repuestos + ganancia) */
+  total_usd: number;
+  /** % de la ganancia que se queda la tienda (0–100) */
+  porcentaje_local: number;
+  pagos: PagoVenta[];
+  vuelto?: DineroEntregado | null;
+  tasa_cambio?: number | null;
+}
+
+export interface ResultadoPagoTecnico {
+  pagadas: number;
+  total_usd: number;
+}
+
+/** Un técnico (usuario con rol técnico) asignable a una orden de su local. */
+export interface TecnicoDeLocal {
+  id: string;
+  nombre: string;
+  local_id: string | null;
 }
 
 // ----------------------------------------------------------------------------

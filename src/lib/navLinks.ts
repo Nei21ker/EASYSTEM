@@ -20,7 +20,8 @@ export interface EnlaceNav {
   tambienActivoEn?: string[];
 }
 
-const TODOS: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor', 'tecnico'];
+// El técnico (acceso mínimo) solo ve «Servicio técnico»: sus trabajos y lo que ganó; el resto del sistema no le aparece.
+const TODOS: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'];
 const GERENCIA: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado'];
 const CAJA: Rol[] = ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'];
 
@@ -43,7 +44,7 @@ export const enlacesNav: EnlaceNav[] = [
     href: '/servicio-tecnico',
     etiqueta: 'Servicio técnico',
     icono: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z',
-    roles: TODOS,
+    roles: [...TODOS, 'tecnico'],
     soloTipoLocal: 'servicio_tecnico',
   },
   {
@@ -72,8 +73,6 @@ export const enlacesNav: EnlaceNav[] = [
     icono: 'M12 8v4l3 2m6-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
     roles: GERENCIA,
   },
-  // La gerencia llega a los movimientos desde las pestañas de "Historial"; el técnico (que no ve ventas) solo tiene este enlace
-  { href: '/movimientos', etiqueta: 'Movimientos', icono: 'M3 3h18v4H3zM3 21V9h18v12M9 13h6', roles: ['tecnico'] },
   {
     href: '/reportes',
     etiqueta: 'Reportes y cuadre',

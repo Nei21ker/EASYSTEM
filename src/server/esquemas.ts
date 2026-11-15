@@ -213,3 +213,14 @@ export const esquemaProveedor = z.object({
   telefono: z.string().max(30).nullable().optional(),
   nota: z.string().max(300).nullable().optional(),
 });
+
+/** Cobro de una reparación (servicio técnico): lo que pagó el cliente y el % de la ganancia para la tienda; el reparto lo calcula el servidor. */
+export const esquemaCobroOrden = z.object({
+  total_usd: z.number(),
+  porcentaje_local: z.number(),
+  pagos: z.array(esquemaPago).max(5),
+  vuelto: esquemaDinero.nullable().optional(),
+  tasa_cambio: z.number().nullable().optional(),
+});
+/** Las órdenes cobradas cuya parte se le paga al técnico. */
+export const esquemaPagarTecnicos = z.object({ ids: z.array(z.string().min(1).max(100)).min(1).max(200) });

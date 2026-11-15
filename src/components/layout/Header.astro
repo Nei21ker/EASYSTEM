@@ -61,8 +61,8 @@ const { titulo, subtitulo } = Astro.props;
   tasaActual.listen(pintar);
   const chip = document.getElementById('tasa-chip')!;
   chip.addEventListener('click', () => window.dispatchEvent(new Event('easystem:abrir-tasa')));
-  // El contador solo trabaja en la nómina: no ve la tasa del negocio
+  // El contador (solo nómina) y el técnico (solo servicio técnico) no ven la tasa del negocio
   obtenerSesionActual().then((sesion) => {
-    if (sesion?.rol === 'contador') chip.style.display = 'none';
+    if (sesion?.rol === 'contador' || sesion?.rol === 'tecnico') chip.style.display = 'none';
   });
 </script>

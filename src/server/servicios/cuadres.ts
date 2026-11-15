@@ -9,7 +9,7 @@ import { ErrorApi } from '../errores';
 import { ahoraISO, nuevoId, rangoDelDiaUTC, redondear2 } from '../util';
 import { esperadoDelDia, problemaParaCerrar, TIPOS_FOTO_CUADRE } from '../../utils/cuadre';
 import { METODOS_PAGO } from '../../utils/pagos';
-import type { ContadoCuadre, CuadreCaja, EsperadoCuadre, FotoCuadre } from '../../types/database.types';
+import type { ContadoCuadre, CuadreCaja, EsperadoCuadre, FotoCuadre, PagoVenta } from '../../types/database.types';
 
 const ZONA_POR_DEFECTO = 'America/Caracas';
 const MAX_FOTOS = 40;
@@ -46,9 +46,14 @@ export async function calcularEsperadoCuadre(env: Entorno, sesion: Sesion, local
   await exigirAcceso(env, sesion, localId);
   validarFecha(fecha);
   const { desde, hasta } = rangoDelDiaUTC(fecha, env.ZONA_HORARIA ?? ZONA_POR_DEFECTO);
-  const [ventas, devoluciones] = await Promise.all([
+  const [ventas, ordenes, devoluciones] = await Promise.all([
     env.DB
       .prepare('SELECT pagos, vuelto, metodo_pago, total, total_bs FROM ventas WHERE local_id = ? AND fecha >= ? AND fecha < ?')
+      .bind(localId, desde, hasta)
+      .all<Record<string, unknown>>(),
+    // Lo que se cobró por reparaciones (servicio técnico) también entra a la caja del local ese día
+    env.DB
+      .prepare('SELECT pagos, vuelto, total_usd, total_bs FROM ordenes_servicio WHERE local_id = ? AND cobrado_en >= ? AND cobrado_en < ? AND pagos IS NOT NULL')
       .bind(localId, desde, hasta)
       .all<Record<string, unknown>>(),
     env.DB
@@ -57,9 +62,18 @@ export async function calcularEsperadoCuadre(env: Entorno, sesion: Sesion, local
       .all<Record<string, unknown>>(),
   ]);
   return esperadoDelDia(
-    ventas.results.map((v) => ({
-      pagos: analizar(v.pagos, null), vuelto: analizar(v.vuelto, null), metodo_pago: v.metodo_pago as never, total: v.total as number, total_bs: (v.total_bs as number | null) ?? null,
-    })),
+    [
+      ...ventas.results.map((v) => ({
+        pagos: analizar(v.pagos, null), vuelto: analizar(v.vuelto, null), metodo_pago: v.metodo_pago as never, total: v.total as number, total_bs: (v.total_bs as number | null) ?? null,
+      })),
+      ...ordenes.results.map((o) => {
+        const pagos = analizar<PagoVenta[]>(o.pagos, []);
+        return {
+          pagos, vuelto: analizar(o.vuelto, null), metodo_pago: (pagos.length === 1 ? pagos[0].metodo : 'MIXTO') as never, total: o.total_usd as number,
+          total_bs: (o.total_bs as number | null) ?? null,
+        };
+      }),
+    ],
     devoluciones.results.map((d) => ({ pagos: analizar(d.pagos, null), vuelto: analizar(d.vuelto, null), reembolso: analizar(d.reembolso, null) }))
   );
 }

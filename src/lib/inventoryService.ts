@@ -37,7 +37,7 @@ import * as trasladosDb from './db/traslados';
 import * as cuadresDb from './db/cuadres';
 import * as clientesDb from './db/clientes';
 import type { ProductoConInventario } from './db/productos';
-import { esGerencia, esGlobal, veTodosLosLocales, leerSuscripcionesLocales, obtenerSesionActual, verificarSupervisorDemo, type SesionUsuario } from './auth';
+import { esGerencia, esGlobal, listarUsuarios, veTodosLosLocales, leerSuscripcionesLocales, obtenerSesionActual, verificarSupervisorDemo, type SesionUsuario } from './auth';
 import { $contextoLocal, type ContextoLocal } from '../stores/local';
 import { ALCANCE_TODOS, LOCAL_ACCESORIOS_ID, LOCAL_SERVICIO_TECNICO_ID, LOCAL_VIDRIOS_ID, localVigente, localesPorDefecto, agregarLocalesFaltantes } from './constantes-locales';
 import type { MovimientoConProducto } from './db/movimientos';
@@ -46,6 +46,7 @@ import { pagoBaseQuincenal, totalPago, validarAjustes } from '../utils/nomina';
 import { imagenDemoParaProducto } from './imagenes-demo';
 import { construirCodigoUnidad, construirReferencia, esCodigoUnidad, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../utils/codigos';
 import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre';
+import { errorDeCobro, repartoDeCobro, repuestosDeOrdenUsd, validarPagosCobro } from '../utils/servicioTecnico';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
 import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
@@ -108,6 +109,9 @@ import type {
   Nomina,
   ProductoReventa,
   OrdenServicio,
+  CobroOrdenServicio,
+  ResultadoPagoTecnico,
+  TecnicoDeLocal,
   PagoVenta,
   ProductoStockBajo,
   RepuestoOrden,
@@ -3612,7 +3616,11 @@ export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio
   const delAlcance = (o: OrdenServicio) => alcance.todos || o.local_id === alcance.localId;
   const masNuevasPrimero = (a: OrdenServicio, b: OrdenServicio) => new Date(b.recibida_en).getTime() - new Date(a.recibida_en).getTime();
 
-  if (!modoServidor) return (leerDB().ordenes ?? []).filter(delAlcance).sort(masNuevasPrimero).slice(0, limite);
+  if (!modoServidor) {
+    const sesion = await obtenerSesionActual();
+    const visible = (o: OrdenServicio) => sesion?.rol !== 'tecnico' || o.tecnico_id === sesion.id;
+    return (leerDB().ordenes ?? []).filter((o) => delAlcance(o) && visible(o)).sort(masNuevasPrimero).slice(0, limite);
+  }
 
   try {
     const ordenes = await ordenesDb.listarOrdenes({ limite, localId: alcance.localId });
@@ -3626,9 +3634,10 @@ export async function listarOrdenesServicio(limite = 500): Promise<OrdenServicio
 }
 
 async function obtenerOrdenServicio(id: string): Promise<OrdenServicio> {
+  const sesion = modoServidor ? null : await obtenerSesionActual();
   const orden = modoServidor
     ? await ordenesDb.obtenerOrden(id)
-    : ((leerDB().ordenes ?? []).find((o) => o.id === id) ?? null);
+    : ((leerDB().ordenes ?? []).find((o) => o.id === id && (sesion?.rol !== 'tecnico' || o.tecnico_id === sesion.id)) ?? null);
   if (!orden) throw new Error('Orden de servicio no encontrada.');
   return orden;
 }
@@ -3670,6 +3679,7 @@ export interface DatosNuevaOrden {
 
 /** Recibe un equipo: crea la orden en estado Pendiente en el local de servicio técnico activo. */
 export async function crearOrdenServicio(datos: DatosNuevaOrden): Promise<OrdenServicio> {
+  if ((await obtenerSesionActual())?.rol === 'tecnico') throw new Error('Los equipos los registra la encargada del local.');
   const local_id = await exigirLocal('recibir un equipo');
   const contexto = await obtenerContextoLocal();
   const local = contexto?.locales.find((l) => l.id === local_id);
@@ -3727,8 +3737,28 @@ export async function actualizarOrdenServicio(
 ): Promise<OrdenServicio> {
   const orden = await obtenerOrdenServicio(id);
   if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
+  const sesion = await obtenerSesionActual();
+  if (sesion?.rol === 'tecnico') {
+    if (cambios.mano_de_obra_usd !== undefined || cambios.tecnico_id !== undefined || cambios.tecnico_nombre !== undefined) {
+      throw new Error('El técnico solo puede anotar el diagnóstico y marcar el trabajo como listo.');
+    }
+    if (cambios.estado !== undefined && cambios.estado !== 'en_reparacion' && cambios.estado !== 'listo') {
+      throw new Error('El técnico solo puede marcar el trabajo «en reparación» o «listo»; la entrega la hace la encargada al cobrar.');
+    }
+  }
+  if (cambios.estado === 'entregado') throw new Error('Para entregar el equipo hay que cobrar la reparación.');
   if (cambios.mano_de_obra_usd !== undefined && !(cambios.mano_de_obra_usd >= 0)) throw new Error('La mano de obra debe ser 0 o más.');
-  return guardarCambiosOrden(orden, cambios);
+  const parche = { ...cambios };
+  if (cambios.tecnico_id !== undefined) {
+    if (cambios.tecnico_id === null) parche.tecnico_nombre = null;
+    else if (modoServidor) parche.tecnico_nombre = undefined; // el servidor pone el nombre desde el perfil
+    else {
+      const tecnico = (await listarTecnicosDeLocal(orden.local_id)).find((x) => x.id === cambios.tecnico_id);
+      if (!tecnico) throw new Error('Elige un técnico activo de este local.');
+      parche.tecnico_nombre = tecnico.nombre;
+    }
+  }
+  return guardarCambiosOrden(orden, parche);
 }
 
 /** Descuenta un repuesto del stock del local de la orden y lo suma a la orden (si ya estaba, suma la cantidad). */
@@ -3790,6 +3820,86 @@ export async function quitarRepuestoOrden(id: string, productoId: string): Promi
     unidad_codigos: repuesto.unidades?.slice(0, repuesto.cantidad),
   });
   return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r.producto_id !== productoId) });
+}
+
+/** Técnicos activos a quienes se les puede dar un trabajo en un local (por defecto el local activo). */
+export async function listarTecnicosDeLocal(localId?: string | null): Promise<TecnicoDeLocal[]> {
+  const local = localId ?? (await alcanceActual()).localId;
+  if (modoServidor) return ordenesDb.listarTecnicos(local);
+  return (await listarUsuarios())
+    .filter((u) => u.rol === 'tecnico' && (u.status ?? 'active') === 'active' && (!local || u.local_id === local))
+    .map((u) => ({ id: u.id, nombre: u.nombre, local_id: u.local_id }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
+/**
+ * Cobra la reparación (la encargada recibe el dinero): fija el total pagado por el cliente, calcula el reparto entre la tienda y el
+ * técnico (ganancia = total − repuestos; la tienda toma el porcentaje de la ganancia) y entrega la orden. Mismas reglas que el servidor.
+ */
+export async function cobrarOrdenServicio(id: string, cobro: CobroOrdenServicio): Promise<OrdenServicio> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'].includes(sesion.rol)) {
+    throw new Error('Tu rol no tiene permiso para cobrar reparaciones.');
+  }
+  if (modoServidor) return ordenesDb.cobrarOrden(id, cobro);
+
+  const orden = await obtenerOrdenServicio(id);
+  if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y cobrada.');
+  if (!orden.tecnico_id) throw new Error('Elige qué técnico hizo el trabajo antes de cobrarlo.');
+  if (orden.estado === 'pendiente') throw new Error('Todavía no se empezó la reparación: pasa la orden a «en reparación» antes de cobrar.');
+  const total = Math.round(cobro.total_usd * 100) / 100;
+  const repuestosUsd = repuestosDeOrdenUsd(orden.repuestos);
+  const problema = errorDeCobro({ totalCobrado: cobro.total_usd, repuestosUsd, porcentaje: cobro.porcentaje_local });
+  if (problema) throw new Error(problema);
+  const pagosValidos = validarPagosCobro({ pagos: cobro.pagos, vuelto: cobro.vuelto, tasa: cobro.tasa_cambio, total });
+  if ('error' in pagosValidos) throw new Error(pagosValidos.error);
+  const reparto = repartoDeCobro({ totalCobrado: total, repuestosUsd, porcentaje: cobro.porcentaje_local });
+
+  const ahora = new Date().toISOString();
+  const db = leerDB();
+  const guardada = (db.ordenes ?? []).find((o) => o.id === id);
+  if (!guardada) throw new Error('Orden de servicio no encontrada.');
+  Object.assign(guardada, {
+    estado: 'entregado' as const,
+    total_usd: total,
+    mano_de_obra_usd: reparto.ganancia,
+    porcentaje_local: cobro.porcentaje_local,
+    comision_local_usd: reparto.comision_local_usd,
+    pago_tecnico_usd: reparto.pago_tecnico_usd,
+    pagos: cobro.pagos,
+    vuelto: cobro.vuelto ?? null,
+    tasa_cambio: cobro.tasa_cambio ?? null,
+    total_bs: pagosValidos.totalBs,
+    cobrado_en: ahora,
+    cobrado_por: sesion.id,
+    cobrado_nombre: sesion.nombre,
+    tecnico_pagado_en: null,
+    entregada_en: ahora,
+    listo_en: guardada.listo_en ?? ahora,
+    actualizada_en: ahora,
+  });
+  guardarDB(db);
+  return guardada;
+}
+
+/** Marca como pagada la parte del técnico de las órdenes cobradas indicadas (administrador, gerente, supervisor y encargado). */
+export async function pagarTecnicosOrdenes(ids: string[]): Promise<ResultadoPagoTecnico> {
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol)) throw new Error('Tu rol no tiene permiso para pagarle a los técnicos.');
+  const unicos = [...new Set(ids)];
+  if (unicos.length === 0 || unicos.length > 200) throw new Error('Indica entre 1 y 200 órdenes.');
+  if (modoServidor) return ordenesDb.pagarTecnicos(unicos);
+
+  const alcance = veTodosLosLocales(sesion.rol) ? null : sesion.local_id;
+  const db = leerDB();
+  const pendientes = (db.ordenes ?? []).filter(
+    (o) => unicos.includes(o.id) && (!alcance || o.local_id === alcance) && o.cobrado_en && o.pago_tecnico_usd != null && !o.tecnico_pagado_en
+  );
+  if (pendientes.length === 0) throw new Error('No hay pagos por pagar en esas órdenes (ya se pagaron o todavía no se cobraron).');
+  const ahora = new Date().toISOString();
+  for (const o of pendientes) Object.assign(o, { tecnico_pagado_en: ahora, tecnico_pagado_por: sesion.id, tecnico_pagado_nombre: sesion.nombre });
+  guardarDB(db);
+  return { pagadas: pendientes.length, total_usd: Math.round(pendientes.reduce((s, o) => s + (o.pago_tecnico_usd ?? 0), 0) * 100) / 100 };
 }
 
 // ----------------------------------------------------------------------------
@@ -4454,7 +4564,17 @@ export async function calcularEsperadoCuadre(localId: string, fecha: string): Pr
     const t = new Date(iso).getTime();
     return t >= desde.getTime() && t <= hasta.getTime();
   };
-  return esperadoDelDia(ventas, devoluciones.filter((d) => enElDia(d.fecha)));
+  // Lo cobrado por reparaciones (servicio técnico) también entra a la caja del local ese día
+  const reparaciones = (leerDB().ordenes ?? [])
+    .filter((o) => o.local_id === localId && o.cobrado_en && o.pagos && enElDia(o.cobrado_en))
+    .map((o) => ({
+      pagos: o.pagos ?? null,
+      vuelto: o.vuelto ?? null,
+      metodo_pago: ((o.pagos ?? []).length === 1 ? o.pagos![0].metodo : 'MIXTO') as 'MIXTO',
+      total: o.total_usd,
+      total_bs: o.total_bs ?? null,
+    }));
+  return esperadoDelDia([...ventas, ...reparaciones], devoluciones.filter((d) => enElDia(d.fecha)));
 }
 
 /** Los cuadres de un día de los locales que el usuario puede ver (todos para administrador y gerente, el suyo para el encargado). */

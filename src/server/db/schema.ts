@@ -449,6 +449,20 @@ export const ordenes_servicio = sqliteTable('ordenes_servicio', {
   entregada_en: text('entregada_en'),
   registrado_por: text('registrado_por'),
   registrado_nombre: text('registrado_nombre'),
+  // Cobro y reparto (migración 0030)
+  porcentaje_local: real('porcentaje_local'),
+  comision_local_usd: real('comision_local_usd'),
+  pago_tecnico_usd: real('pago_tecnico_usd'),
+  pagos: json<PagoVenta[]>('pagos'),
+  vuelto: json<DineroEntregado>('vuelto'),
+  tasa_cambio: real('tasa_cambio'),
+  total_bs: real('total_bs'),
+  cobrado_en: text('cobrado_en'),
+  cobrado_por: text('cobrado_por'),
+  cobrado_nombre: text('cobrado_nombre'),
+  tecnico_pagado_en: text('tecnico_pagado_en'),
+  tecnico_pagado_por: text('tecnico_pagado_por'),
+  tecnico_pagado_nombre: text('tecnico_pagado_nombre'),
 });
 
 // --- Nómina ---------------------------------------------------------------------------------------------------

@@ -1,0 +1,226 @@
+---
+// Cobro de una reparación (lo hace la encargada, que recibe el dinero): se escribe lo que paga el cliente, el % de la ganancia que se
+// queda la tienda y cómo paga. Muestra en vivo el reparto (repuestos y comisión para la tienda, el resto para el técnico).
+// Se abre con "easystem:abrir-cobro-orden" ({ detail: { orden } }); al cobrar avisa con "easystem:orden-cobrada" y "easystem:ordenes-cambiaron".
+const claseCampo =
+  'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
+const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-400';
+---
+
+<dialog
+  id="co-dialogo"
+  aria-labelledby="co-titulo"
+  class="anim-escalar m-auto w-[min(32rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+>
+  <div class="flex max-h-[92dvh] flex-col">
+    <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+      <div class="min-w-0">
+        <h2 id="co-titulo" class="text-base font-semibold">Cobrar reparación</h2>
+        <p id="co-subtitulo" class="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400"></p>
+      </div>
+      <button type="button" id="co-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
+    </header>
+
+    <div class="space-y-4 overflow-y-auto px-5 py-4">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label for="co-total" class={claseEtiqueta}>Lo que paga el cliente ($)</label>
+          <input id="co-total" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" class={claseCampo + ' text-right text-lg font-semibold tabular-nums'} />
+          <p id="co-total-bs" class="mt-1 text-right text-[11px] text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <div>
+          <label for="co-pct" class={claseEtiqueta}>% de la ganancia para la tienda</label>
+          <input id="co-pct" type="text" inputmode="decimal" autocomplete="off" class={claseCampo + ' text-right text-lg font-semibold tabular-nums'} />
+          <div class="mt-1 flex justify-end gap-1.5">
+            {[20, 30, 40].map((p) => (
+              <button type="button" data-pct={p} class="rounded-full border border-slate-200 px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300">{p}%</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <!-- Reparto en vivo -->
+      <section class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/30">
+        <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Repuestos del inventario <span class="text-[11px]">(se queda la tienda)</span></span><span id="co-r-repuestos" class="tabular-nums"></span></div>
+        <div class="mt-1 flex justify-between"><span class="text-slate-500 dark:text-slate-400">Ganancia del trabajo</span><span id="co-r-ganancia" class="tabular-nums"></span></div>
+        <div class="mt-1 flex justify-between"><span class="text-slate-500 dark:text-slate-400">Tienda por sus instalaciones (<span id="co-r-pct">0</span>%)</span><span id="co-r-comision" class="tabular-nums"></span></div>
+        <div class="mt-2 flex justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
+          <span>Para <span id="co-r-tecnico-nombre">el técnico</span></span><span id="co-r-tecnico" class="tabular-nums text-emerald-700 dark:text-emerald-400"></span>
+        </div>
+        <p class="mt-1 text-[11px] text-slate-500 dark:text-slate-400">Si el técnico usó una pieza suya, no la anotes como repuesto: el porcentaje se calcula sobre todo lo cobrado.</p>
+      </section>
+
+      <section>
+        <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Cómo paga el cliente</p>
+        <div id="co-pagos" class="mt-2"></div>
+      </section>
+
+      <p id="co-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
+    </div>
+
+    <footer class="flex gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+      <button id="co-cancelar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cancelar</button>
+      <button id="co-cobrar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">Cobrar</button>
+    </footer>
+  </div>
+</dialog>
+
+<script>
+  import * as inventoryService from '../../lib/inventoryService';
+  import { tasaActual } from '../../stores/tasa';
+  import { FormularioPagos } from '../../utils/formularioPagos';
+  import { convertirABs, formatearBolivares, formatearMoneda } from '../../utils/format';
+  import { leerPrecioEscrito } from '../../utils/precioBs';
+  import { errorDeCobro, PORCENTAJE_LOCAL_PREDETERMINADO, repartoDeCobro, repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
+  import type { DineroEntregado, MetodoPago, OrdenServicio, PagoVenta } from '../../types/database.types';
+
+  const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+  const dialogo = $<HTMLDialogElement>('co-dialogo');
+  const campoTotal = $<HTMLInputElement>('co-total');
+  const campoPct = $<HTMLInputElement>('co-pct');
+  const errorEl = $('co-error');
+  const botonCobrar = $<HTMLButtonElement>('co-cobrar');
+  const formPagos = new FormularioPagos($('co-pagos'));
+
+  const claveUltimoMetodo = (localId: string) => `easystem:ultimo-metodo:${localId}`;
+  const clavePorcentaje = (localId: string) => `easystem:servicio-porcentaje:${localId}`;
+  const METODOS: MetodoPago[] = ['BS_PAGO_MOVIL', 'BS_PUNTO_VENTA', 'BS_EFECTIVO', 'USD_EFECTIVO', 'BINANCE_USDT'];
+
+  let orden: OrdenServicio | null = null;
+  let enviando = false;
+
+  const leerLS = (clave: string): string | null => {
+    try {
+      return localStorage.getItem(clave);
+    } catch {
+      return null;
+    }
+  };
+  const escribirLS = (clave: string, valor: string) => {
+    try {
+      localStorage.setItem(clave, valor);
+    } catch {
+      /* sin almacenamiento: no pasa nada */
+    }
+  };
+
+  function mostrarError(mensaje: string) {
+    errorEl.textContent = mensaje;
+    errorEl.classList.remove('hidden');
+  }
+
+  const total = () => leerPrecioEscrito(campoTotal.value, 'USD');
+  const porcentaje = () => leerPrecioEscrito(campoPct.value, 'USD') ?? Number.NaN;
+
+  /** Recalcula el reparto, el total en Bs y el texto del botón con lo escrito. */
+  function repintar() {
+    if (!orden) return;
+    const t = total();
+    const pct = porcentaje();
+    const repuestos = repuestosDeOrdenUsd(orden.repuestos);
+    $('co-r-repuestos').textContent = formatearMoneda(repuestos);
+    const tasa = tasaActual.get();
+    $('co-total-bs').textContent = t && tasa ? `≈ ${formatearBolivares(convertirABs(t, tasa))}` : '';
+
+    const valido = t !== null && !Number.isNaN(pct) && errorDeCobro({ totalCobrado: t, repuestosUsd: repuestos, porcentaje: pct }) === null;
+    if (valido) {
+      const r = repartoDeCobro({ totalCobrado: t, repuestosUsd: repuestos, porcentaje: pct });
+      $('co-r-ganancia').textContent = formatearMoneda(r.ganancia);
+      $('co-r-pct').textContent = String(pct);
+      $('co-r-comision').textContent = formatearMoneda(r.comision_local_usd);
+      $('co-r-tecnico').textContent = formatearMoneda(r.pago_tecnico_usd);
+    } else {
+      for (const id of ['co-r-ganancia', 'co-r-comision', 'co-r-tecnico']) $(id).textContent = '—';
+      $('co-r-pct').textContent = Number.isNaN(pct) ? '?' : String(pct);
+    }
+    botonCobrar.textContent = t !== null && t >= 0 ? `Cobrar ${formatearMoneda(t)}` : 'Cobrar';
+    if (t !== null && t >= 0) formPagos.establecerTotal(t);
+    $('co-pagos').classList.toggle('hidden', t === 0);
+  }
+
+  campoTotal.addEventListener('input', () => {
+    errorEl.classList.add('hidden');
+    repintar();
+  });
+  campoPct.addEventListener('input', () => {
+    errorEl.classList.add('hidden');
+    repintar();
+  });
+  dialogo.addEventListener('click', (e) => {
+    const p = (e.target as HTMLElement).closest<HTMLElement>('[data-pct]')?.dataset.pct;
+    if (!p) return;
+    campoPct.value = p;
+    repintar();
+  });
+  tasaActual.listen(() => {
+    if (!dialogo.open) return;
+    repintar();
+    formPagos.refrescar();
+  });
+
+  async function cobrar() {
+    if (!orden || enviando) return;
+    errorEl.classList.add('hidden');
+    const t = total();
+    const pct = porcentaje();
+    const repuestos = repuestosDeOrdenUsd(orden.repuestos);
+    if (t === null) return mostrarError('Escribe cuánto paga el cliente.');
+    if (Number.isNaN(pct)) return mostrarError('Escribe el porcentaje de la tienda (0 a 100).');
+    const problema = errorDeCobro({ totalCobrado: t, repuestosUsd: repuestos, porcentaje: pct });
+    if (problema) return mostrarError(problema);
+    let pagos: PagoVenta[] = [];
+    let vuelto: DineroEntregado | null = null;
+    if (t > 0) {
+      const lectura = formPagos.leer();
+      if (!lectura.ok) {
+        mostrarError(lectura.mensaje);
+        lectura.foco?.focus();
+        return;
+      }
+      pagos = lectura.pagos;
+      vuelto = lectura.vuelto;
+    }
+    enviando = true;
+    botonCobrar.disabled = true;
+    try {
+      const cobrada = await inventoryService.cobrarOrdenServicio(orden.id, { total_usd: t, porcentaje_local: pct, pagos, vuelto, tasa_cambio: tasaActual.get() });
+      escribirLS(clavePorcentaje(orden.local_id), String(pct));
+      if (pagos.length === 1) escribirLS(claveUltimoMetodo(orden.local_id), pagos[0].metodo);
+      dialogo.close();
+      window.dispatchEvent(new CustomEvent('easystem:orden-cobrada', { detail: { orden: cobrada } }));
+      window.dispatchEvent(new Event('easystem:ordenes-cambiaron'));
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo cobrar la reparación.');
+    } finally {
+      enviando = false;
+      botonCobrar.disabled = false;
+    }
+  }
+
+  function abrir(o: OrdenServicio) {
+    orden = o;
+    errorEl.classList.add('hidden');
+    $('co-titulo').textContent = `Cobrar orden #${String(o.folio).padStart(4, '0')}`;
+    $('co-subtitulo').textContent = `${o.equipo_marca} ${o.equipo_modelo} · ${o.cliente_nombre}`;
+    $('co-r-tecnico-nombre').textContent = o.tecnico_nombre || 'el técnico';
+    // El precio lo escribe la encargada: se propone el costo de los repuestos como mínimo (nunca se cobra menos)
+    const repuestos = repuestosDeOrdenUsd(o.repuestos);
+    campoTotal.value = repuestos > 0 ? repuestos.toFixed(2) : '';
+    const guardado = Number(leerLS(clavePorcentaje(o.local_id)));
+    campoPct.value = String(Number.isFinite(guardado) && guardado >= 0 && guardado <= 100 && leerLS(clavePorcentaje(o.local_id)) !== null ? guardado : PORCENTAJE_LOCAL_PREDETERMINADO);
+    const ultimo = leerLS(claveUltimoMetodo(o.local_id)) as MetodoPago | null;
+    formPagos.activarCobroRapido(ultimo && METODOS.includes(ultimo) ? ultimo : null);
+    repintar();
+    dialogo.showModal();
+    campoTotal.focus();
+    campoTotal.select();
+  }
+
+  botonCobrar.addEventListener('click', () => void cobrar());
+  $('co-cancelar').addEventListener('click', () => dialogo.close());
+  $('co-cerrar').addEventListener('click', () => dialogo.close());
+  dialogo.addEventListener('mousedown', (e) => {
+    if (e.target === dialogo) dialogo.close();
+  });
+  window.addEventListener('easystem:abrir-cobro-orden', ((e: CustomEvent<{ orden: OrdenServicio }>) => abrir(e.detail.orden)) as EventListener);
+</script>

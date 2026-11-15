@@ -1,6 +1,7 @@
 ---
-// Detalle y seguimiento de una orden de servicio: diagnóstico, técnico, mano de obra, repuestos (salen del
-// stock del local de la orden) y cambio de estado Pendiente → En reparación → Listo → Entregado.
+// Detalle y seguimiento de una orden de servicio: diagnóstico, técnico que hace el trabajo, repuestos (salen del stock del local de
+// la orden), cambio de estado Pendiente → En reparación → Listo y, al final, el cobro (lo hace la encargada, ver CobrarOrden.astro)
+// que reparte la ganancia entre la tienda y el técnico. El técnico ve solo sus trabajos: anota el diagnóstico y avanza el estado.
 // Se abre con "easystem:abrir-orden" ({ detail: { orden } }); cada cambio avisa con "easystem:ordenes-cambiaron".
 const claseCampo =
   'mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white';
@@ -34,29 +35,24 @@ const claseBotonSec =
         <dl id="do-datos" class="mt-2 grid grid-cols-1 gap-x-4 gap-y-2 text-sm sm:grid-cols-2"></dl>
       </section>
 
-      <!-- Diagnóstico, técnico y mano de obra -->
+      <!-- Diagnóstico y técnico -->
       <section class="space-y-3">
         <p class={claseTitulo}>Diagnóstico y reparación</p>
         <div>
           <label for="do-diagnostico" class={claseEtiqueta}>Diagnóstico</label>
           <textarea id="do-diagnostico" rows="2" maxlength="1000" placeholder="Qué se encontró y qué se va a hacer" class={claseCampo}></textarea>
         </div>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label for="do-mano" class={claseEtiqueta}>Mano de obra ($)</label>
-            <input id="do-mano" type="number" inputmode="decimal" min="0" step="0.01" class={claseCampo} />
-          </div>
-          <div>
-            <p class={claseEtiqueta}>Técnico</p>
-            <p id="do-tecnico" class="mt-1 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:bg-slate-800/60 dark:text-slate-200"></p>
-          </div>
+        <div>
+          <label for="do-tecnico-sel" class={claseEtiqueta}>Técnico que hace el trabajo</label>
+          <select id="do-tecnico-sel" class={claseCampo}></select>
+          <p id="do-tecnico" class="mt-1 hidden rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-700 dark:bg-slate-800/60 dark:text-slate-200"></p>
         </div>
-        <button id="do-guardar-datos" type="button" class={claseBotonSec}>Guardar diagnóstico y mano de obra</button>
+        <button id="do-guardar-datos" type="button" class={claseBotonSec}>Guardar diagnóstico y técnico</button>
       </section>
 
       <!-- Repuestos -->
       <section>
-        <p class={claseTitulo}>Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span></p>
+        <p id="do-repuestos-titulo" class={claseTitulo}>Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span></p>
         <ul id="do-repuestos" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm empty:hidden dark:divide-slate-800 dark:border-slate-700"></ul>
         <p id="do-sin-repuestos" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Todavía no se han usado repuestos.</p>
 
@@ -66,22 +62,16 @@ const claseBotonSec =
         </div>
       </section>
 
-      <!-- Totales -->
-      <section class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/30">
-        <div class="flex justify-between"><span class="text-slate-500 dark:text-slate-400">Repuestos</span><span id="do-total-repuestos" class="tabular-nums"></span></div>
-        <div class="mt-1 flex justify-between"><span class="text-slate-500 dark:text-slate-400">Mano de obra</span><span id="do-total-mano" class="tabular-nums"></span></div>
-        <div class="mt-2 flex items-start justify-between border-t border-slate-200 pt-2 font-semibold dark:border-slate-700">
-          <span>Total del servicio</span>
-          <span id="do-total" class="text-right tabular-nums"></span>
-        </div>
-      </section>
+      <!-- Totales / reparto -->
+      <section id="do-resumen" class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/30"></section>
 
       <p id="do-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
     </div>
 
     <footer class="flex flex-wrap gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
       <button id="do-atras" type="button" class={claseBotonSec}></button>
-      <button id="do-avanzar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"></button>
+      <button id="do-avanzar" type="button" class={claseBotonSec + ' flex-1'}></button>
+      <button id="do-cobrar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">Cobrar y entregar</button>
     </footer>
   </div>
 </dialog>
@@ -93,7 +83,8 @@ const claseBotonSec =
   import { tasaActual } from '../../stores/tasa';
   import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
-  import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones } from '../../types/database.types';
+  import { repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
+  import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones, TecnicoDeLocal } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('do-dialogo');
@@ -101,6 +92,8 @@ const claseBotonSec =
   const buscar = $<HTMLInputElement>('do-buscar');
   const botonAvanzar = $<HTMLButtonElement>('do-avanzar');
   const botonAtras = $<HTMLButtonElement>('do-atras');
+  const botonCobrar = $<HTMLButtonElement>('do-cobrar');
+  const selectorTecnico = $<HTMLSelectElement>('do-tecnico-sel');
 
   const ESTILO_ESTADO: Record<EstadoOrdenServicio, string> = {
     pendiente: 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400',
@@ -113,7 +106,10 @@ const claseBotonSec =
 
   let orden: OrdenServicio | null = null;
   let catalogo: ProductoConRelaciones[] = [];
+  let tecnicos: TecnicoDeLocal[] = [];
   let puedeQuitar = false;
+  let esTecnico = false;
+  let puedeCobrar = false;
 
   function mostrarError(mensaje: string) {
     errorEl.textContent = mensaje;
@@ -122,6 +118,49 @@ const claseBotonSec =
 
   function dato(titulo: string, valor: string | null | undefined, completo = false) {
     return `<div class="${completo ? 'sm:col-span-2' : ''}"><dt class="text-[11px] uppercase text-slate-500 dark:text-slate-400">${titulo}</dt><dd class="break-words font-medium text-slate-900 dark:text-white">${escaparHtml(valor || '—')}</dd></div>`;
+  }
+
+  const fila = (texto: string, valor: string, clases = '') =>
+    `<div class="mt-1 first:mt-0 flex justify-between gap-3 ${clases}"><span class="text-slate-500 dark:text-slate-400">${texto}</span><span class="text-right tabular-nums">${valor}</span></div>`;
+
+  /** Resumen de abajo: antes de cobrar solo los repuestos; ya cobrada, el reparto completo (el técnico ve solo lo suyo). */
+  function pintarResumen(o: OrdenServicio) {
+    const tasa = tasaActual.get();
+    const repuestos = repuestosDeOrdenUsd(o.repuestos);
+    const resumen = $('do-resumen');
+    if (o.estado !== 'entregado' || o.cobrado_en == null) {
+      resumen.innerHTML = fila(esTecnico ? 'Repuestos que se pidieron' : 'Repuestos del inventario', formatearMoneda(repuestos));
+      return;
+    }
+    const pagado = o.tecnico_pagado_en
+      ? `<span class="text-emerald-700 dark:text-emerald-400">Pagado el ${escaparHtml(formatearFecha(o.tecnico_pagado_en))}</span>`
+      : '<span class="text-amber-700 dark:text-amber-400">Por pagar</span>';
+    const tecnico = `<span class="font-semibold">${formatearMoneda(o.pago_tecnico_usd ?? 0)}</span> · ${pagado}`;
+    if (esTecnico) {
+      resumen.innerHTML =
+        fila('Repuestos que se pidieron', formatearMoneda(repuestos)) +
+        fila('Tu ganancia en este trabajo', tecnico, 'border-t border-slate-200 pt-2 mt-2 dark:border-slate-700');
+      return;
+    }
+    const pct = o.porcentaje_local ?? 0;
+    const bs = o.total_bs ? ` <span class="text-[11px] text-slate-500">(${o.total_bs.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Bs.)</span>` : '';
+    resumen.innerHTML =
+      fila('Cobrado al cliente', htmlPrecioDual(o.total_usd, tasa) + (o.total_bs ? bs : ''), 'font-semibold') +
+      fila('Repuestos (se queda la tienda)', formatearMoneda(repuestos)) +
+      fila('Ganancia del trabajo', formatearMoneda(o.mano_de_obra_usd)) +
+      fila(`Tienda (${pct}% de la ganancia)`, formatearMoneda(o.comision_local_usd ?? 0)) +
+      fila(`Para ${escaparHtml(o.tecnico_nombre || 'el técnico')}`, tecnico, 'border-t border-slate-200 pt-2 mt-2 font-semibold dark:border-slate-700') +
+      (o.cobrado_nombre ? `<p class="mt-2 text-[11px] text-slate-500 dark:text-slate-400">Cobró ${escaparHtml(o.cobrado_nombre)} el ${escaparHtml(formatearFecha(o.cobrado_en))}</p>` : '');
+  }
+
+  function llenarTecnicos(o: OrdenServicio) {
+    const opciones = ['<option value="">— Elige el técnico —</option>'];
+    const ids = new Set(tecnicos.map((t) => t.id));
+    for (const t of tecnicos) opciones.push(`<option value="${escaparHtml(t.id)}">${escaparHtml(t.nombre)}</option>`);
+    // Un técnico ya asignado que dejó de estar activo se sigue mostrando
+    if (o.tecnico_id && !ids.has(o.tecnico_id)) opciones.push(`<option value="${escaparHtml(o.tecnico_id)}">${escaparHtml(o.tecnico_nombre || 'Técnico')}</option>`);
+    selectorTecnico.innerHTML = opciones.join('');
+    selectorTecnico.value = o.tecnico_id ?? '';
   }
 
   function pintar() {
@@ -145,14 +184,23 @@ const claseBotonSec =
       dato('Recibida', formatearFecha(o.recibida_en)) +
       dato(final ? 'Entregada' : o.listo_en ? 'Lista desde' : 'Última actualización', formatearFecha(o.entregada_en ?? o.listo_en ?? o.actualizada_en));
 
-    $<HTMLTextAreaElement>('do-diagnostico').value = o.diagnostico ?? '';
-    $<HTMLTextAreaElement>('do-diagnostico').disabled = final;
-    $<HTMLInputElement>('do-mano').value = o.mano_de_obra_usd ? String(o.mano_de_obra_usd) : '';
-    $<HTMLInputElement>('do-mano').disabled = final;
-    $<HTMLButtonElement>('do-guardar-datos').disabled = final;
-    $('do-tecnico').textContent = o.tecnico_nombre || 'Sin asignar (se asigna al iniciar la reparación)';
+    const diagnostico = $<HTMLTextAreaElement>('do-diagnostico');
+    diagnostico.value = o.diagnostico ?? '';
+    diagnostico.disabled = final;
+    // El técnico se elige en una lista; el técnico mismo solo ve su nombre
+    selectorTecnico.classList.toggle('hidden', esTecnico);
+    selectorTecnico.disabled = final;
+    $('do-tecnico').classList.toggle('hidden', !esTecnico);
+    $('do-tecnico').textContent = o.tecnico_nombre || '—';
+    if (!esTecnico) llenarTecnicos(o);
+    const botonGuardar = $<HTMLButtonElement>('do-guardar-datos');
+    botonGuardar.disabled = final;
+    botonGuardar.textContent = esTecnico ? 'Guardar diagnóstico' : 'Guardar diagnóstico y técnico';
 
-    // Repuestos
+    // Repuestos (el técnico solo ve lo que se pidió; los anota la encargada)
+    $('do-repuestos-titulo').innerHTML = esTecnico
+      ? 'Repuestos que se pidieron'
+      : 'Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span>';
     $('do-repuestos').innerHTML = o.repuestos
       .map(
         (r) => `
@@ -162,27 +210,27 @@ const claseBotonSec =
               <p class="text-[11px] text-slate-500 dark:text-slate-400">${r.cantidad} × ${formatearMoneda(r.precio_unitario)}</p>
             </div>
             <div class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(r.precio_unitario * r.cantidad, tasa)}</div>
-            ${puedeQuitar && !final ? `<button type="button" data-quitar="${r.producto_id}" aria-label="Quitar y devolver al inventario" title="Quitar y devolver al inventario" class="shrink-0 text-slate-400 hover:text-red-600">✕</button>` : ''}
+            ${puedeQuitar && !final && !esTecnico ? `<button type="button" data-quitar="${r.producto_id}" aria-label="Quitar y devolver al inventario" title="Quitar y devolver al inventario" class="shrink-0 text-slate-400 hover:text-red-600">✕</button>` : ''}
           </li>`
       )
       .join('');
     $('do-sin-repuestos').classList.toggle('hidden', o.repuestos.length > 0);
-    $('do-agregar').classList.toggle('hidden', final);
+    $('do-sin-repuestos').textContent = esTecnico ? 'No se han pedido repuestos del inventario.' : 'Todavía no se han usado repuestos. Si el técnico usa una pieza suya, no la anotes aquí.';
+    $('do-agregar').classList.toggle('hidden', final || esTecnico);
 
-    // Totales
-    const totalRepuestos = o.total_usd - o.mano_de_obra_usd;
-    $('do-total-repuestos').textContent = formatearMoneda(totalRepuestos);
-    $('do-total-mano').textContent = formatearMoneda(o.mano_de_obra_usd);
-    $('do-total').innerHTML = htmlPrecioDual(o.total_usd, tasa);
+    pintarResumen(o);
 
-    // Botones de estado
+    // Botones: el técnico avanza su trabajo; la encargada cobra y entrega
     const i = ORDEN_ESTADOS.indexOf(o.estado);
     const siguiente = ORDEN_ESTADOS[i + 1];
     const anterior = ORDEN_ESTADOS[i - 1];
-    botonAvanzar.classList.toggle('hidden', !siguiente);
-    botonAvanzar.textContent = siguiente ? `Pasar a: ${etiqueta(siguiente)}` : '';
-    botonAtras.classList.toggle('hidden', !anterior || final);
+    const avanzaA = siguiente && siguiente !== 'entregado' ? siguiente : null;
+    botonAvanzar.classList.toggle('hidden', !avanzaA);
+    botonAvanzar.textContent = avanzaA ? `Pasar a: ${etiqueta(avanzaA)}` : '';
+    const atrasPermitido = anterior && !final && (!esTecnico || anterior === 'en_reparacion');
+    botonAtras.classList.toggle('hidden', !atrasPermitido);
     botonAtras.textContent = anterior ? `← Volver a ${etiqueta(anterior)}` : '';
+    botonCobrar.classList.toggle('hidden', !(puedeCobrar && (o.estado === 'en_reparacion' || o.estado === 'listo')));
   }
 
   // --- repuestos: buscar en el stock del local de la orden -----------------------------------------
@@ -191,8 +239,13 @@ const claseBotonSec =
     const lista = $('do-resultados');
     if (!q) return lista.classList.add('hidden');
     const yaUsados = new Set(orden!.repuestos.map((r) => r.producto_id));
+    const terminos = q.split(/\s+/);
     const coincidencias = catalogo
-      .filter((p) => p.stock_actual > 0 && !yaUsados.has(p.id) && normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria}`).split(/\s+/).length > 0 && q.split(/\s+/).every((t) => normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria}`).includes(t)))
+      .filter((p) => {
+        if (!(p.stock_actual > 0) || yaUsados.has(p.id)) return false;
+        const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ''} ${p.codigo_barras} ${p.categoria}`);
+        return terminos.every((t) => texto.includes(t));
+      })
       .slice(0, 8);
     lista.classList.remove('hidden');
     lista.innerHTML = coincidencias.length
@@ -246,39 +299,58 @@ const claseBotonSec =
     catalogo = await inventoryService.listarProductos({ localId: orden!.local_id });
   });
 
+  /** Lo que se guarda desde los campos: el diagnóstico y, si cambió, el técnico (el técnico mismo solo anota el diagnóstico). */
+  function camposEditados(): Parameters<typeof inventoryService.actualizarOrdenServicio>[1] {
+    const cambios: Parameters<typeof inventoryService.actualizarOrdenServicio>[1] = {
+      diagnostico: $<HTMLTextAreaElement>('do-diagnostico').value.trim() || null,
+    };
+    if (!esTecnico && (selectorTecnico.value || null) !== (orden!.tecnico_id ?? null)) cambios.tecnico_id = selectorTecnico.value || null;
+    return cambios;
+  }
+
   $('do-guardar-datos').addEventListener('click', () => {
     if (!orden) return;
-    const mano = Number($<HTMLInputElement>('do-mano').value || 0);
-    void aplicar(
-      () =>
-        inventoryService.actualizarOrdenServicio(orden!.id, {
-          diagnostico: $<HTMLTextAreaElement>('do-diagnostico').value.trim() || null,
-          mano_de_obra_usd: Math.round(mano * 100) / 100,
-        }),
-      'No se pudieron guardar los cambios.'
-    );
+    void aplicar(() => inventoryService.actualizarOrdenServicio(orden!.id, camposEditados()), 'No se pudieron guardar los cambios.');
   });
 
   async function cambiarEstado(nuevo: EstadoOrdenServicio) {
     if (!orden) return;
-    if (nuevo === 'entregado' && !window.confirm('¿Marcar la orden como ENTREGADA? Después ya no se podrá modificar.')) return;
-    const sesion = await obtenerSesionActual();
-    const cambios: Parameters<typeof inventoryService.actualizarOrdenServicio>[1] = { estado: nuevo };
-    // Al empezar la reparación, quien la inicia queda como técnico si no había uno
-    if (nuevo === 'en_reparacion' && !orden.tecnico_nombre && sesion) {
-      cambios.tecnico_id = sesion.id;
-      cambios.tecnico_nombre = sesion.nombre;
+    const cambios = { ...camposEditados(), estado: nuevo };
+    // Para empezar la reparación hay que saber quién la hace (ahí se reparte la ganancia al cobrar)
+    if (nuevo === 'en_reparacion' && !esTecnico && !(cambios.tecnico_id ?? orden.tecnico_id)) {
+      return mostrarError('Elige primero el técnico que va a hacer el trabajo.');
     }
     await aplicar(() => inventoryService.actualizarOrdenServicio(orden!.id, cambios), 'No se pudo cambiar el estado.');
   }
   botonAvanzar.addEventListener('click', () => {
     const siguiente = ORDEN_ESTADOS[ORDEN_ESTADOS.indexOf(orden!.estado) + 1];
-    if (siguiente) void cambiarEstado(siguiente);
+    if (siguiente && siguiente !== 'entregado') void cambiarEstado(siguiente);
   });
   botonAtras.addEventListener('click', () => {
     const anterior = ORDEN_ESTADOS[ORDEN_ESTADOS.indexOf(orden!.estado) - 1];
     if (anterior) void cambiarEstado(anterior);
   });
+
+  botonCobrar.addEventListener('click', () => {
+    if (!orden) return;
+    errorEl.classList.add('hidden');
+    // Lo escrito en el diagnóstico/técnico se guarda antes de cobrar (el cobro exige técnico asignado)
+    const cambios = camposEditados();
+    const hayCambios = cambios.tecnico_id !== undefined || (cambios.diagnostico ?? null) !== (orden.diagnostico ?? null);
+    const abrirCobro = () => {
+      if (!orden?.tecnico_id) return mostrarError('Elige qué técnico hizo el trabajo antes de cobrarlo.');
+      window.dispatchEvent(new CustomEvent('easystem:abrir-cobro-orden', { detail: { orden } }));
+    };
+    if (!hayCambios) return abrirCobro();
+    void aplicar(() => inventoryService.actualizarOrdenServicio(orden!.id, cambios), 'No se pudieron guardar los cambios.').then(abrirCobro);
+  });
+
+  // Ya cobrada desde la ventana de cobro: se muestra el reparto
+  window.addEventListener('easystem:orden-cobrada', ((e: CustomEvent<{ orden: OrdenServicio }>) => {
+    if (!dialogo.open) return;
+    orden = e.detail.orden;
+    pintar();
+  }) as EventListener);
 
   tasaActual.listen(() => {
     if (dialogo.open && orden) pintar();
@@ -286,14 +358,24 @@ const claseBotonSec =
 
   async function abrir(o: OrdenServicio) {
     const sesion = await obtenerSesionActual();
+    esTecnico = sesion?.rol === 'tecnico';
     puedeQuitar = esGerencia(sesion?.rol);
+    puedeCobrar = !!sesion && ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'].includes(sesion.rol);
     orden = o;
     errorEl.classList.add('hidden');
     buscar.value = '';
     $('do-resultados').classList.add('hidden');
+    tecnicos = [];
     pintar();
     dialogo.showModal();
-    // Repuestos: el stock del local de la orden
+    if (esTecnico) return;
+    // Técnicos del local de la orden y stock para los repuestos
+    try {
+      tecnicos = await inventoryService.listarTecnicosDeLocal(o.local_id);
+      if (orden?.id === o.id) llenarTecnicos(orden);
+    } catch {
+      tecnicos = [];
+    }
     try {
       catalogo = await inventoryService.listarProductos({ localId: o.local_id });
     } catch {

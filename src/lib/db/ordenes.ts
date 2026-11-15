@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { NuevaOrdenServicio, OrdenServicio } from '../../types/database.types';
+import type { CobroOrdenServicio, NuevaOrdenServicio, OrdenServicio, ResultadoPagoTecnico, TecnicoDeLocal } from '../../types/database.types';
 
 export async function listarOrdenes(opciones: { limite: number; localId?: string | null }): Promise<OrdenServicio[]> {
   return api.get<OrdenServicio[]>('/api/ordenes', { limite: opciones.limite, localId: opciones.localId });
@@ -23,4 +23,19 @@ export async function actualizarOrden(id: string, cambios: Partial<OrdenServicio
   // Solo estos campos se editan (el total se recalcula en el servidor con los repuestos y la mano de obra)
   const { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd } = cambios;
   return api.patch<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}`, { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd });
+}
+
+/** Cobra la reparación: el servidor calcula el reparto entre la tienda y el técnico y deja la orden entregada. */
+export async function cobrarOrden(id: string, cobro: CobroOrdenServicio): Promise<OrdenServicio> {
+  return api.post<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}/cobrar`, cobro);
+}
+
+/** Marca como pagada la parte del técnico de las órdenes elegidas. */
+export async function pagarTecnicos(ids: string[]): Promise<ResultadoPagoTecnico> {
+  return api.post<ResultadoPagoTecnico>('/api/ordenes/pagar-tecnico', { ids });
+}
+
+/** Técnicos activos de un local (a quienes se les puede dar un trabajo). */
+export async function listarTecnicos(localId: string | null): Promise<TecnicoDeLocal[]> {
+  return api.get<TecnicoDeLocal[]>('/api/ordenes/tecnicos', { localId });
 }
