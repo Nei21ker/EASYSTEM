@@ -48,7 +48,7 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
   return api.post<ResultadoEliminacionVentas>('/api/ventas/eliminar', { ids, simular: opciones.simular ?? false });
 }
 
-/** Borra todas las ventas y devoluciones y devuelve al stock las piezas vendidas (solo el administrador). Con `simular` solo cuenta. */
-export async function resetearVentas(opciones: { simular?: boolean }): Promise<ResultadoReseteoVentas> {
-  return api.post<ResultadoReseteoVentas>('/api/ventas/resetear', { simular: opciones.simular ?? false });
+/** Borra las ventas y devoluciones de UN local y devuelve al stock las piezas vendidas (solo el administrador). Con `simular` solo cuenta. */
+export async function resetearVentas(opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteoVentas> {
+  return api.post<ResultadoReseteoVentas>('/api/ventas/resetear', { local_id: opciones.localId, simular: opciones.simular ?? false });
 }

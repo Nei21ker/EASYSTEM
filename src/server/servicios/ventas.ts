@@ -540,19 +540,26 @@ async function reponerPiezas(env: Entorno, sesion: Sesion, grupos: Map<string, G
 }
 
 /**
- * Borra TODAS las ventas y devoluciones y devuelve al stock las piezas que esas ventas dejaron vendidas (las de la venta y las
- * entregadas a cambio, menos las que ya se devolvieron). Es para limpiar las ventas de prueba: solo el administrador.
+ * Borra las ventas y devoluciones de UN SOLO local y devuelve al stock las piezas que esas ventas dejaron vendidas (las de la venta y
+ * las entregadas a cambio, menos las que ya se devolvieron). Es para limpiar las ventas de prueba de un local: solo el administrador.
+ * Los demás locales no se tocan (ni ventas, ni piezas, ni comisiones). Resetear todos los locales de una vez ya no existe: un clic
+ * equivocado borraba el historial de toda la empresa.
  *
- * Primero repone el stock (una ENTRADA "Reseteo de ventas" por producto y local, que reactiva las mismas piezas) y al final borra los
+ * Primero repone el stock (una ENTRADA "Reseteo de ventas" por producto, que reactiva las mismas piezas) y al final borra los
  * registros. Si algo falla a medias, volver a ejecutarlo termina el trabajo: solo repone lo que sigue vendido. Las piezas vendidas
  * por otro motivo (un repuesto de una orden de servicio) no se tocan. Con `simular` solo cuenta, sin cambiar nada.
  */
-export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { simular?: boolean } = {}): Promise<ResultadoReseteo> {
+export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteo> {
   if (!esAdministrador(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador puede resetear las ventas.', 'sin_permiso');
   const db = env.DB;
+  const localId = (opciones.localId ?? '').trim();
+  if (!localId) throw new ErrorApi(400, 'Elige el local cuyas ventas quieres resetear.', 'datos_invalidos');
+  if (!(await db.prepare('SELECT 1 AS x FROM locales WHERE id = ?').bind(localId).first())) throw new ErrorApi(404, 'Ese local no existe.', 'no_encontrado');
 
-  const ventas = (await db.prepare('SELECT local_id, items FROM ventas').all<{ local_id: string; items: string }>()).results;
-  const devoluciones = (await db.prepare('SELECT local_id, items_devueltos, items_nuevos FROM devoluciones').all<{ local_id: string; items_devueltos: string; items_nuevos: string }>()).results;
+  const ventas = (await db.prepare('SELECT local_id, items FROM ventas WHERE local_id = ?').bind(localId).all<{ local_id: string; items: string }>()).results;
+  const devoluciones = (
+    await db.prepare('SELECT local_id, items_devueltos, items_nuevos FROM devoluciones WHERE local_id = ?').bind(localId).all<{ local_id: string; items_devueltos: string; items_nuevos: string }>()
+  ).results;
 
   // Piezas que estas ventas sacaron del stock: las de cada venta y las entregadas a cambio
   const codigos = new Set<string>();
@@ -575,14 +582,14 @@ export async function resetearVentas(env: Entorno, sesion: Sesion, opciones: { s
   await reponerPiezas(env, sesion, porGrupo, MOTIVO_RESETEO);
   await reponerCantidades(env, sesion, porCantidad, MOTIVO_RESETEO);
 
-  // 2. Borrar los registros (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas
-  const locales = new Set([...ventas.map((v) => v.local_id), ...devoluciones.map((d) => d.local_id)]);
+  // 2. Borrar los registros de ESE local (las devoluciones primero: apuntan a las ventas) y avisar a las pantallas abiertas.
+  // Las comisiones de promotor por pagar nacieron de esas ventas: desaparecen con ellas (las ya pagadas se conservan); se borran
+  // antes que las ventas porque se reconocen por la venta de la que salieron.
   await db.batch([
-    db.prepare('DELETE FROM devoluciones'),
-    db.prepare('DELETE FROM ventas'),
-    // Las comisiones de promotor por pagar nacieron de esas ventas: desaparecen con ellas (las ya pagadas se conservan)
-    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IS NOT NULL"),
-    ...[...locales].flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'pendientes'], localId)),
+    db.prepare('DELETE FROM devoluciones WHERE local_id = ?').bind(localId),
+    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IN (SELECT id FROM ventas WHERE local_id = ?)").bind(localId),
+    db.prepare('DELETE FROM ventas WHERE local_id = ?').bind(localId),
+    ...sentenciasCambio(db, ['ventas', 'devoluciones', 'pendientes'], localId),
   ]);
   return resultado;
 }

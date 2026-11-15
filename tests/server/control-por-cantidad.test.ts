@@ -309,8 +309,8 @@ describe('eliminar y resetear ventas con productos por cantidad', () => {
     await vender(p.id, 3);
     await vender(p.id, 2, 2);
     expect(await stock(p.id)).toBe(3);
-    expect(await resetearVentas(env, admin, { simular: true })).toMatchObject({ ventas: 2, piezas: 7 });
-    await resetearVentas(env, admin);
+    expect(await resetearVentas(env, admin, { localId: vidrios, simular: true })).toMatchObject({ ventas: 2, piezas: 7 });
+    await resetearVentas(env, admin, { localId: vidrios });
     expect(await stock(p.id)).toBe(10);
     expect(await n('SELECT count(*) AS n FROM ventas')).toBe(0);
   });

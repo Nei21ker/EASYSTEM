@@ -85,7 +85,7 @@ describe('resetearVentas', () => {
     await vender(Q, accesorios, 1);
     expect([await stock(P, accesorios), await stock(Q, accesorios)]).toEqual([5, 3]);
 
-    const r = await resetearVentas(env, sA);
+    const r = await resetearVentas(env, sA, { localId: accesorios });
 
     expect(r).toMatchObject({ ventas: 3, devoluciones: 0, piezas: 6, simulado: false });
     expect([await stock(P, accesorios), await stock(Q, accesorios)]).toEqual([10, 4]);
@@ -101,7 +101,7 @@ describe('resetearVentas', () => {
     await devolver(v, P, v.codigos.slice(0, 1));
     expect(await stock(P, accesorios)).toBe(3);
 
-    const r = await resetearVentas(env, sA);
+    const r = await resetearVentas(env, sA, { localId: accesorios });
 
     expect(r).toMatchObject({ ventas: 1, devoluciones: 1, piezas: 3 });
     expect(await stock(P, accesorios)).toBe(6);
@@ -118,21 +118,54 @@ describe('resetearVentas', () => {
     await devolver(v, P, v.codigos, [{ producto_id: Q, nombre: 'Cable', codigo_barras: '2000000000022', cantidad: 1, precio_unitario: 5, unidades: salida.unidadCodigos }]);
     expect([await stock(P, accesorios), await stock(Q, accesorios)]).toEqual([5, 4]);
 
-    await resetearVentas(env, sA);
+    await resetearVentas(env, sA, { localId: accesorios });
 
     expect([await stock(P, accesorios), await stock(Q, accesorios)]).toEqual([5, 5]);
     expect(await vendidas()).toBe(0);
   });
 
-  it('cada pieza vuelve al local donde estaba', async () => {
+  it('SOLO resetea el local indicado: las ventas, devoluciones, piezas y comisiones de los demás locales no se tocan', async () => {
     await entrada(P, accesorios, 3);
     await entrada(P, vidrios, 3);
     await vender(P, accesorios, 2);
     await vender(P, vidrios, 1, sA);
+    const ventasVidrios = await una<{ n: number }>('SELECT count(*) AS n FROM ventas WHERE local_id = ?', vidrios);
 
-    await resetearVentas(env, sA);
+    const r = await resetearVentas(env, sA, { localId: accesorios });
 
-    expect([await stock(P, accesorios), await stock(P, vidrios)]).toEqual([3, 3]);
+    expect(r).toMatchObject({ ventas: 1, piezas: 2, simulado: false });
+    expect([await stock(P, accesorios), await stock(P, vidrios)]).toEqual([3, 2]);
+    expect(await una<{ n: number }>('SELECT count(*) AS n FROM ventas WHERE local_id = ?', accesorios)).toEqual({ n: 0 });
+    expect(await una<{ n: number }>('SELECT count(*) AS n FROM ventas WHERE local_id = ?', vidrios)).toEqual(ventasVidrios);
+    expect(await una<{ n: number }>("SELECT count(*) AS n FROM unidades_producto WHERE estado = 'VENDIDA' AND local_id = ?", vidrios)).toEqual({ n: 1 });
+    expect(await una<{ n: number }>("SELECT count(*) AS n FROM unidades_producto WHERE estado = 'VENDIDA' AND local_id = ?", accesorios)).toEqual({ n: 0 });
+  });
+
+  it('con ventas en dos locales, resetear uno deja intactos el stock y las comisiones del otro', async () => {
+    await entrada(P, accesorios, 4);
+    await entrada(Q, vidrios, 4);
+    await vender(P, accesorios, 2);
+    await vender(Q, vidrios, 3, sA);
+    await env.DB.prepare(
+      "INSERT INTO pendientes (id, local_id, tipo, estado, monto_usd, descripcion, venta_id, creado_por_nombre) SELECT 'pc-' || id, local_id, 'COMISION', 'PENDIENTE', 1, 'x', id, 'Prueba' FROM ventas"
+    ).run();
+
+    await resetearVentas(env, sA, { localId: vidrios });
+
+    expect(await stock(Q, vidrios)).toBe(4);
+    expect(await stock(P, accesorios)).toBe(2);
+    expect(await contar('ventas')).toBe(1);
+    expect(await una<{ local_id: string }>("SELECT local_id FROM pendientes WHERE tipo = 'COMISION'")).toEqual({ local_id: accesorios });
+    expect(await contar('pendientes')).toBe(1);
+  });
+
+  it('exige un local que exista: sin local o con uno inventado responde error y no cambia nada', async () => {
+    await entrada(P, accesorios, 4);
+    await vender(P, accesorios, 2);
+    await rechazo(resetearVentas(env, sA, { localId: '' }), 400);
+    await rechazo(resetearVentas(env, sA, { localId: '00000000-0000-4000-8000-0000000000ff' }), 404);
+    expect(await contar('ventas')).toBe(1);
+    expect(await stock(P, accesorios)).toBe(2);
   });
 
   it('con miles de piezas lo hace por tramos y todas vuelven', async () => {
@@ -142,7 +175,7 @@ describe('resetearVentas', () => {
     await vender(P, accesorios, 260);
     expect(await stock(P, accesorios)).toBe(0);
 
-    const r = await resetearVentas(env, sA);
+    const r = await resetearVentas(env, sA, { localId: accesorios });
 
     expect(r.piezas).toBe(520);
     expect(await stock(P, accesorios)).toBe(520);
@@ -152,7 +185,7 @@ describe('resetearVentas', () => {
   it('deja un movimiento de entrada que explica el reseteo', async () => {
     await entrada(P, accesorios, 3);
     await vender(P, accesorios, 2);
-    await resetearVentas(env, sA);
+    await resetearVentas(env, sA, { localId: accesorios });
     const m = await una<{ motivo: string; tipo: string }>("SELECT motivo, tipo FROM movimientos_inventario WHERE motivo LIKE 'Reseteo de ventas%'");
     expect(m).toMatchObject({ tipo: 'ENTRADA' });
     expect(m!.motivo).toMatch(/Reseteo de ventas/);
@@ -163,7 +196,7 @@ describe('resetearVentas', () => {
     const v = await vender(P, accesorios, 3);
     await devolver(v, P, v.codigos.slice(0, 1));
 
-    const r = await resetearVentas(env, sA, { simular: true });
+    const r = await resetearVentas(env, sA, { localId: accesorios, simular: true });
 
     expect(r).toMatchObject({ ventas: 1, devoluciones: 1, piezas: 2, simulado: true });
     expect(await stock(P, accesorios)).toBe(3);
@@ -174,8 +207,8 @@ describe('resetearVentas', () => {
   it('sin ventas no hace nada y repetirlo no daña el stock', async () => {
     await entrada(P, accesorios, 4);
     await vender(P, accesorios, 2);
-    await resetearVentas(env, sA);
-    const otra = await resetearVentas(env, sA);
+    await resetearVentas(env, sA, { localId: accesorios });
+    const otra = await resetearVentas(env, sA, { localId: accesorios });
     expect(otra).toMatchObject({ ventas: 0, devoluciones: 0, piezas: 0 });
     expect(await stock(P, accesorios)).toBe(4);
   });
@@ -184,7 +217,7 @@ describe('resetearVentas', () => {
     await entrada(P, accesorios, 4);
     await vender(P, accesorios, 1);
     await registrarMovimiento(env, sE, { productoId: P, tipo: 'SALIDA', cantidad: 1, localId: accesorios, motivo: 'Repuesto, orden de servicio #1' });
-    await resetearVentas(env, sA);
+    await resetearVentas(env, sA, { localId: accesorios });
     expect(await stock(P, accesorios)).toBe(3);
     expect(await vendidas()).toBe(1);
   });
@@ -193,8 +226,8 @@ describe('resetearVentas', () => {
     await entrada(P, accesorios, 4);
     await vender(P, accesorios, 2);
     for (const s of [sG, sE, sV, sC]) {
-      await rechazo(resetearVentas(env, s), 403);
-      await rechazo(resetearVentas(env, s, { simular: true }), 403);
+      await rechazo(resetearVentas(env, s, { localId: accesorios }), 403);
+      await rechazo(resetearVentas(env, s, { localId: accesorios, simular: true }), 403);
     }
     expect(await contar('ventas')).toBe(1);
     expect(await stock(P, accesorios)).toBe(2);

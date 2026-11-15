@@ -3332,21 +3332,23 @@ export async function eliminarVentas(ids: string[], opciones: { simular?: boolea
 }
 
 /**
- * Resetear las ventas (solo el administrador): borra TODAS las ventas y devoluciones y devuelve al stock las piezas que quedaron
- * vendidas (las de las ventas y las entregadas a cambio; las ya devueltas no se cuentan dos veces). Sirve para limpiar las ventas de
- * prueba. Con `simular` solo cuenta lo que haría. Necesita conexión.
+ * Resetear las ventas de UN local (solo el administrador): borra las ventas y devoluciones de ese local y devuelve al stock las piezas
+ * que quedaron vendidas (las de las ventas y las entregadas a cambio; las ya devueltas no se cuentan dos veces). Los demás locales no se
+ * tocan. Sirve para limpiar las ventas de prueba. Por defecto usa el local activo (en «Todos los locales» no se puede). Con `simular`
+ * solo cuenta lo que haría. Necesita conexión.
  */
-export async function resetearVentas(opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoVentas> {
+export async function resetearVentas(opciones: { localId?: string; simular?: boolean } = {}): Promise<ResultadoReseteoVentas> {
   if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear las ventas.');
+  const localId = opciones.localId ?? (await exigirLocal('resetear las ventas de un local'));
   if (modoServidor) {
     if (!obtenerEstadoConexion().online) throw new Error('Resetear las ventas necesita conexión a internet.');
-    return ventasDb.resetearVentas({ simular: opciones.simular });
+    return ventasDb.resetearVentas({ localId, simular: opciones.simular });
   }
 
   // Modo demo (LocalStorage): mismas reglas que el servidor
   const db = leerDB();
-  const ventas = db.ventas ?? [];
-  const devoluciones = db.devoluciones ?? [];
+  const ventas = (db.ventas ?? []).filter((v) => v.local_id === localId);
+  const devoluciones = (db.devoluciones ?? []).filter((d) => d.local_id === localId);
   const codigos = new Set<string>();
   for (const v of ventas) for (const i of v.items) for (const c of i.unidades ?? []) codigos.add(c);
   for (const d of devoluciones) for (const i of d.items_nuevos) for (const c of i.unidades ?? []) codigos.add(c);
@@ -3367,9 +3369,10 @@ export async function resetearVentas(opciones: { simular?: boolean } = {}): Prom
   }
   for (const g of porCantidad) await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.cantidad, motivo: 'Reseteo de ventas (restaura el stock)', local_id: g.local_id });
   const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de vaciar los registros
-  despues.ventas = [];
-  despues.devoluciones = [];
-  despues.pendientes = (despues.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id));
+  const idsVentas = new Set(ventas.map((v) => v.id));
+  despues.ventas = (despues.ventas ?? []).filter((v) => v.local_id !== localId);
+  despues.devoluciones = (despues.devoluciones ?? []).filter((d) => d.local_id !== localId);
+  despues.pendientes = (despues.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id && idsVentas.has(x.venta_id)));
   guardarDB(despues);
   return resultado;
 }

@@ -178,10 +178,10 @@ const claseBotonSecundario =
 
   <dialog id="hv-reset-dialogo" class="m-auto w-[min(94vw,30rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div class="space-y-4 px-5 py-5 text-sm">
-      <h2 class="text-base font-semibold text-red-600 dark:text-red-400">Resetear las ventas</h2>
+      <h2 id="hv-reset-titulo" class="text-base font-semibold text-red-600 dark:text-red-400">Resetear las ventas</h2>
       <p id="hv-reset-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-slate-700 dark:bg-slate-800 dark:text-slate-200">Calculando…</p>
       <ul class="oculto-con-teclado list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
-        <li>Se borran <strong>todas</strong> las ventas y devoluciones de <strong>todos los locales y fechas</strong> (no solo las que ves ahora).</li>
+        <li>Se borran <strong>todas</strong> las ventas y devoluciones de <strong id="hv-reset-local">este local</strong>, de todas las fechas (no solo las que ves ahora). <strong>Los demás locales no se tocan.</strong></li>
         <li>Las piezas que esas ventas dejaron vendidas vuelven al stock de su local.</li>
         <li>Los movimientos de stock siguen en Movimientos, con una entrada "Reseteo de ventas".</li>
         <li><strong>No se puede deshacer.</strong></li>
@@ -702,18 +702,33 @@ import { alCambiarDatos } from '../lib/realtime';
   const errorReset = $('hv-reset-error');
   const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
+  // El reseteo es de UN solo local: el que está elegido en el selector del encabezado (en «Todos los locales» no se permite)
+  let localReset: { id: string; nombre: string } | null = null;
+
   $('hv-resetear').addEventListener('click', async () => {
     confirmarReset.value = '';
     ejecutarReset.disabled = true;
     errorReset.classList.add('hidden');
     $('hv-reset-resumen').textContent = 'Calculando…';
+    localReset = null;
     dialogoReset.showModal();
     try {
-      const r = await inventoryService.resetearVentas({ simular: true });
+      const contexto = await inventoryService.obtenerContextoLocal();
+      const id = contexto?.alcance && contexto.alcance !== 'todos' ? contexto.alcance : null;
+      if (!id) {
+        $('hv-reset-resumen').textContent = '';
+        errorReset.textContent = 'Resetear las ventas es de un solo local: elige el local en el selector del encabezado (arriba) y vuelve a intentarlo. No se puede en «Todos los locales».';
+        errorReset.classList.remove('hidden');
+        return;
+      }
+      localReset = { id, nombre: contexto?.locales.find((l) => l.id === id)?.nombre ?? 'este local' };
+      $('hv-reset-titulo').textContent = `Resetear las ventas de ${localReset.nombre}`;
+      $('hv-reset-local').textContent = localReset.nombre;
+      const r = await inventoryService.resetearVentas({ localId: id, simular: true });
       $('hv-reset-resumen').textContent =
         r.ventas === 0 && r.devoluciones === 0
-          ? 'No hay ventas que resetear.'
-          : `Se borrarán ${plural(r.ventas, 'venta', 'ventas')} y ${plural(r.devoluciones, 'devolución', 'devoluciones')}, y volverán al stock ${plural(r.piezas, 'pieza', 'piezas')}.`;
+          ? `No hay ventas que resetear en ${localReset.nombre}.`
+          : `En ${localReset.nombre} se borrarán ${plural(r.ventas, 'venta', 'ventas')} y ${plural(r.devoluciones, 'devolución', 'devoluciones')}, y volverán al stock ${plural(r.piezas, 'pieza', 'piezas')}.`;
     } catch (err) {
       $('hv-reset-resumen').textContent = '';
       errorReset.textContent = err instanceof Error ? err.message : 'No se pudo calcular el reseteo.';
@@ -721,19 +736,19 @@ import { alCambiarDatos } from '../lib/realtime';
     }
   });
   confirmarReset.addEventListener('input', () => {
-    ejecutarReset.disabled = confirmarReset.value.trim().toUpperCase() !== 'RESETEAR';
+    ejecutarReset.disabled = !localReset || confirmarReset.value.trim().toUpperCase() !== 'RESETEAR';
   });
   $('hv-reset-cancelar').addEventListener('click', () => dialogoReset.close());
   ejecutarReset.addEventListener('click', async () => {
-    if (confirmarReset.value.trim().toUpperCase() !== 'RESETEAR') return;
+    if (confirmarReset.value.trim().toUpperCase() !== 'RESETEAR' || !localReset) return;
     ejecutarReset.disabled = true;
     ejecutarReset.textContent = 'Reseteando…';
     errorReset.classList.add('hidden');
     try {
-      const r = await inventoryService.resetearVentas();
+      const r = await inventoryService.resetearVentas({ localId: localReset.id });
       dialogoReset.close();
       const aviso = $('hv-aviso-exito');
-      aviso.textContent = `Listo: se borraron ${plural(r.ventas, 'venta', 'ventas')} y ${plural(r.devoluciones, 'devolución', 'devoluciones')}; volvieron al stock ${plural(r.piezas, 'pieza', 'piezas')}.`;
+      aviso.textContent = `Listo (${localReset.nombre}): se borraron ${plural(r.ventas, 'venta', 'ventas')} y ${plural(r.devoluciones, 'devolución', 'devoluciones')}; volvieron al stock ${plural(r.piezas, 'pieza', 'piezas')}.`;
       aviso.classList.remove('hidden');
       setTimeout(() => aviso.classList.add('hidden'), 10000);
       void cargar();
