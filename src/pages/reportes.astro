@@ -108,10 +108,10 @@ import CuadreCaja from '../components/reportes/CuadreCaja.astro';
 
   <dialog id="rp-reset-dialogo" class="m-auto w-[min(94vw,30rem)] rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
     <div class="space-y-4 px-5 py-5 text-sm">
-      <h2 class="text-base font-semibold text-red-600 dark:text-red-400">Resetear los reportes</h2>
+      <h2 id="rp-reset-titulo" class="text-base font-semibold text-red-600 dark:text-red-400">Resetear los reportes</h2>
       <p id="rp-reset-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-slate-700 dark:bg-slate-800 dark:text-slate-200">Calculando…</p>
       <ul class="oculto-con-teclado list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
-        <li>Se borran <strong>todas</strong> las ventas, devoluciones y movimientos de compra y venta de <strong>todos los locales y fechas</strong>: los reportes, el historial de ventas y Movimientos quedan en cero.</li>
+        <li>Se borran <strong>todas</strong> las ventas, devoluciones y movimientos de compra y venta de <strong id="rp-reset-local">este local</strong>, de todas las fechas: sus reportes, su historial de ventas y sus Movimientos quedan en cero. <strong>Los demás locales no se tocan.</strong></li>
         <li>El <strong>stock no cambia</strong>: lo que hay en los estantes sigue igual y lo vendido sigue vendido. Para devolver al stock las piezas de ventas de prueba usa "Resetear ventas" en Historial.</li>
         <li>Se conserva el historial de bajas y traslados, y los cuadres de caja ya guardados.</li>
         <li><strong>No se puede deshacer.</strong> Haz una copia antes si tienes dudas.</li>
@@ -466,16 +466,30 @@ import { alCambiarDatos } from '../lib/realtime';
   obtenerSesionActual().then((sesion) => {
     if (sesion?.rol === 'administrador') document.getElementById('rp-resetear')?.classList.remove('hidden');
   });
+  // El reseteo es de UN solo local: el elegido en el selector del encabezado (en «Todos los locales» no se permite)
+  let localReset: { id: string; nombre: string } | null = null;
   document.getElementById('rp-resetear')?.addEventListener('click', async () => {
     confirmarReset.value = '';
     ejecutarReset.disabled = true;
     errorReset.classList.add('hidden');
     resumenReset.textContent = 'Calculando…';
+    localReset = null;
     dialogoReset.showModal();
     try {
-      const r = await inventoryService.resetearReportes({ simular: true });
+      const contexto = await inventoryService.obtenerContextoLocal();
+      const id = contexto?.alcance && contexto.alcance !== 'todos' ? contexto.alcance : null;
+      if (!id) {
+        resumenReset.textContent = '';
+        errorReset.textContent = 'Resetear los reportes es de un solo local: elige el local en el selector del encabezado (arriba) y vuelve a intentarlo. No se puede en «Todos los locales».';
+        errorReset.classList.remove('hidden');
+        return;
+      }
+      localReset = { id, nombre: contexto?.locales.find((l) => l.id === id)?.nombre ?? 'este local' };
+      document.getElementById('rp-reset-titulo')!.textContent = `Resetear los reportes de ${localReset.nombre}`;
+      document.getElementById('rp-reset-local')!.textContent = localReset.nombre;
+      const r = await inventoryService.resetearReportes({ localId: id, simular: true });
       resumenReset.textContent =
-        r.ventas === 0 && r.devoluciones === 0 && r.movimientos === 0 ? 'No hay datos de reportes que borrar.' : `Se borrarán ${textoBorrado(r)}.`;
+        r.ventas === 0 && r.devoluciones === 0 && r.movimientos === 0 ? `No hay datos de reportes que borrar en ${localReset.nombre}.` : `En ${localReset.nombre} se borrarán ${textoBorrado(r)}.`;
     } catch (err) {
       resumenReset.textContent = '';
       errorReset.textContent = err instanceof Error ? err.message : 'No se pudo calcular el reseteo.';
@@ -483,20 +497,20 @@ import { alCambiarDatos } from '../lib/realtime';
     }
   });
   confirmarReset.addEventListener('input', () => {
-    ejecutarReset.disabled = confirmarReset.value.trim().toUpperCase() !== 'RESETEAR';
+    ejecutarReset.disabled = !localReset || confirmarReset.value.trim().toUpperCase() !== 'RESETEAR';
   });
   document.getElementById('rp-reset-cancelar')?.addEventListener('click', () => dialogoReset.close());
   ejecutarReset.addEventListener('click', async () => {
-    if (confirmarReset.value.trim().toUpperCase() !== 'RESETEAR') return;
+    if (confirmarReset.value.trim().toUpperCase() !== 'RESETEAR' || !localReset) return;
     ejecutarReset.disabled = true;
     ejecutarReset.textContent = 'Reseteando…';
     errorReset.classList.add('hidden');
     try {
-      const r = await inventoryService.resetearReportes();
+      const r = await inventoryService.resetearReportes({ localId: localReset.id });
       dialogoReset.close();
       await cargarReporte();
       const aviso = document.getElementById('rp-metodos-error')!; // mismo aviso que usa el reporte para sus mensajes
-      aviso.textContent = `Reportes en cero: se borraron ${textoBorrado(r)}. El stock no cambió.`;
+      aviso.textContent = `Reportes de ${localReset.nombre} en cero: se borraron ${textoBorrado(r)}. El stock no cambió.`;
       aviso.classList.remove('hidden', 'text-red-600', 'dark:text-red-400');
       aviso.classList.add('text-emerald-600', 'dark:text-emerald-400');
       setTimeout(() => {

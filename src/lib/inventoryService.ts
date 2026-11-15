@@ -3378,31 +3378,35 @@ export async function resetearVentas(opciones: { localId?: string; simular?: boo
 }
 
 /**
- * Resetear los reportes (solo el administrador): borra TODAS las ventas, devoluciones y movimientos de compra (ENTRADA) y venta
- * (SALIDA), que es lo que alimenta los reportes. NO cambia el stock ni las piezas; las bajas y traslados se conservan. Con `simular`
- * solo cuenta. Necesita conexión (modo servidor).
+ * Resetear los reportes de UN local (solo el administrador): borra las ventas, devoluciones y movimientos de compra (ENTRADA) y venta
+ * (SALIDA) de ese local, que es lo que alimenta los reportes. Los demás locales no se tocan. NO cambia el stock ni las piezas; las
+ * bajas y traslados se conservan. Por defecto usa el local activo (en «Todos los locales» no se puede). Con `simular` solo cuenta.
+ * Necesita conexión (modo servidor).
  */
-export async function resetearReportes(opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoReportes> {
+export async function resetearReportes(opciones: { localId?: string; simular?: boolean } = {}): Promise<ResultadoReseteoReportes> {
   if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear los reportes.');
+  const localId = opciones.localId ?? (await exigirLocal('resetear los reportes de un local'));
   if (modoServidor) {
     if (!obtenerEstadoConexion().online) throw new Error('Resetear los reportes necesita conexión a internet.');
-    return ventasDb.resetearReportes({ simular: opciones.simular });
+    return ventasDb.resetearReportes({ localId, simular: opciones.simular });
   }
 
   // Modo demo (LocalStorage): mismas reglas que el servidor
   const db = leerDB();
   const cuentan = (m: { tipo: string }) => m.tipo === 'ENTRADA' || m.tipo === 'SALIDA';
+  const idsVentas = new Set((db.ventas ?? []).filter((v) => v.local_id === localId).map((v) => v.id));
+  const cuentaAqui = (m: { tipo: string; local_id: string }) => cuentan(m) && m.local_id === localId;
   const resultado: ResultadoReseteoReportes = {
-    ventas: (db.ventas ?? []).length,
-    devoluciones: (db.devoluciones ?? []).length,
-    movimientos: db.movimientos.filter(cuentan).length,
+    ventas: idsVentas.size,
+    devoluciones: (db.devoluciones ?? []).filter((d) => d.local_id === localId).length,
+    movimientos: db.movimientos.filter(cuentaAqui).length,
     simulado: !!opciones.simular,
   };
   if (opciones.simular) return resultado;
-  db.ventas = [];
-  db.devoluciones = [];
-  db.pendientes = (db.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id));
-  db.movimientos = db.movimientos.filter((m) => !cuentan(m));
+  db.ventas = (db.ventas ?? []).filter((v) => v.local_id !== localId);
+  db.devoluciones = (db.devoluciones ?? []).filter((d) => d.local_id !== localId);
+  db.pendientes = (db.pendientes ?? []).filter((x) => !(x.tipo === 'COMISION' && x.estado !== 'PAGADO' && x.venta_id && idsVentas.has(x.venta_id)));
+  db.movimientos = db.movimientos.filter((m) => !cuentaAqui(m));
   guardarDB(db);
   return resultado;
 }

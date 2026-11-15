@@ -736,34 +736,33 @@ export interface ResultadoReseteoReportes {
 }
 
 /**
- * Deja los reportes en cero: borra TODAS las ventas, las devoluciones y los movimientos ENTRADA/SALIDA (los únicos que los reportes
- * cuentan). NO toca el stock ni las piezas: lo que está en los estantes sigue igual y lo vendido sigue vendido (para devolver al stock
- * las piezas de ventas de prueba está "Resetear ventas"). El historial de bajas y traslados se conserva. Con `simular` solo cuenta.
- * Solo el administrador. Un solo lote atómico: o se borra todo o no se borra nada.
+ * Deja en cero los reportes de UN SOLO local: borra las ventas, las devoluciones y los movimientos ENTRADA/SALIDA (los únicos que los
+ * reportes cuentan) de ESE local. Los demás locales no se tocan. NO toca el stock ni las piezas: lo que está en los estantes sigue
+ * igual y lo vendido sigue vendido (para devolver al stock las piezas de ventas de prueba está "Resetear ventas"). El historial de
+ * bajas y traslados se conserva. Con `simular` solo cuenta. Solo el administrador. Un solo lote atómico: o se borra todo o nada.
  */
-export async function resetearReportes(env: Entorno, sesion: Sesion, opciones: { simular?: boolean } = {}): Promise<ResultadoReseteoReportes> {
+export async function resetearReportes(env: Entorno, sesion: Sesion, opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteoReportes> {
   if (!esAdministrador(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador puede resetear los reportes.', 'sin_permiso');
   const db = env.DB;
-  const cuenta = async (sql: string) => (await db.prepare(sql).first<{ n: number }>())!.n;
+  const localId = (opciones.localId ?? '').trim();
+  if (!localId) throw new ErrorApi(400, 'Elige el local cuyos reportes quieres resetear.', 'datos_invalidos');
+  if (!(await db.prepare('SELECT 1 AS x FROM locales WHERE id = ?').bind(localId).first())) throw new ErrorApi(404, 'Ese local no existe.', 'no_encontrado');
+  const cuenta = async (sql: string) => (await db.prepare(sql).bind(localId).first<{ n: number }>())!.n;
   const resultado: ResultadoReseteoReportes = {
-    ventas: await cuenta('SELECT count(*) AS n FROM ventas'),
-    devoluciones: await cuenta('SELECT count(*) AS n FROM devoluciones'),
-    movimientos: await cuenta("SELECT count(*) AS n FROM movimientos_inventario WHERE tipo IN ('ENTRADA','SALIDA')"),
+    ventas: await cuenta('SELECT count(*) AS n FROM ventas WHERE local_id = ?'),
+    devoluciones: await cuenta('SELECT count(*) AS n FROM devoluciones WHERE local_id = ?'),
+    movimientos: await cuenta("SELECT count(*) AS n FROM movimientos_inventario WHERE local_id = ? AND tipo IN ('ENTRADA','SALIDA')"),
     simulado: !!opciones.simular,
   };
   if (opciones.simular || (resultado.ventas === 0 && resultado.devoluciones === 0 && resultado.movimientos === 0)) return resultado;
 
-  const locales = (
-    await db
-      .prepare('SELECT local_id FROM ventas UNION SELECT local_id FROM devoluciones UNION SELECT local_id FROM movimientos_inventario WHERE tipo IN (\'ENTRADA\',\'SALIDA\')')
-      .all<{ local_id: string }>()
-  ).results.map((f) => f.local_id);
   await db.batch([
-    db.prepare('DELETE FROM devoluciones'), // primero: apuntan a las ventas
-    db.prepare('DELETE FROM ventas'),
-    db.prepare("DELETE FROM movimientos_inventario WHERE tipo IN ('ENTRADA','SALIDA')"),
-    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IS NOT NULL"),
-    ...locales.flatMap((localId) => sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'pendientes'], localId)),
+    db.prepare('DELETE FROM devoluciones WHERE local_id = ?').bind(localId), // primero: apuntan a las ventas
+    // Las comisiones por pagar de esas ventas desaparecen con ellas (las ya pagadas se conservan): antes de borrar las ventas
+    db.prepare("DELETE FROM pendientes WHERE tipo = 'COMISION' AND estado <> 'PAGADO' AND venta_id IN (SELECT id FROM ventas WHERE local_id = ?)").bind(localId),
+    db.prepare('DELETE FROM ventas WHERE local_id = ?').bind(localId),
+    db.prepare("DELETE FROM movimientos_inventario WHERE local_id = ? AND tipo IN ('ENTRADA','SALIDA')").bind(localId),
+    ...sentenciasCambio(db, ['ventas', 'devoluciones', 'movimientos_inventario', 'pendientes'], localId),
   ]);
   return resultado;
 }

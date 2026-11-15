@@ -9,7 +9,7 @@ import { guardarVenta, listarVentas, resetearReportes } from '../../src/server/s
 import type { NuevaVenta } from '../../src/types/database.types';
 
 const env = crearEntornoDePrueba();
-const { accesorios } = IDS_LOCALES;
+const { accesorios, vidrios } = IDS_LOCALES;
 
 let sA: Sesion, sG: Sesion, sE: Sesion, sV: Sesion, sC: Sesion, P: string;
 const sesionDe = (u: UsuarioDePrueba): Promise<Sesion> => cargarSesion(env, peticionComo(u));
@@ -61,7 +61,7 @@ describe('resetearReportes', () => {
     await escenario();
     expect(await stock()).toBe(6);
 
-    const r = await resetearReportes(env, sA);
+    const r = await resetearReportes(env, sA, { localId: accesorios });
 
     expect(r).toMatchObject({ ventas: 1, devoluciones: 0, movimientos: 2, simulado: false });
     expect(await contar('ventas')).toBe(0);
@@ -75,35 +75,63 @@ describe('resetearReportes', () => {
 
   it('conserva el historial de bajas y traslados (los reportes no lo cuentan)', async () => {
     await escenario();
-    await resetearReportes(env, sA);
+    await resetearReportes(env, sA, { localId: accesorios });
     expect(await contar('movimientos_inventario', "tipo = 'BAJA'")).toBe(1);
   });
 
   it('con simular solo cuenta, sin cambiar nada', async () => {
     await escenario();
-    const r = await resetearReportes(env, sA, { simular: true });
+    const r = await resetearReportes(env, sA, { localId: accesorios, simular: true });
     expect(r).toMatchObject({ ventas: 1, devoluciones: 0, movimientos: 2, simulado: true });
     expect(await contar('ventas')).toBe(1);
     expect(await contar('movimientos_inventario', "tipo IN ('ENTRADA','SALIDA')")).toBe(2);
   });
 
+  it('SOLO resetea el local indicado: las ventas y movimientos de los demás locales no se tocan', async () => {
+    await escenario();
+    await registrarMovimiento(env, sA, { productoId: P, tipo: 'ENTRADA', cantidad: 4, localId: vidrios, motivo: 'Compra' });
+    await registrarMovimiento(env, sA, { productoId: P, tipo: 'SALIDA', cantidad: 1, localId: vidrios, motivo: 'Venta POS' });
+    await env.DB.prepare(
+      "INSERT INTO ventas (id, folio, fecha, local_id, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, pagos, total, items, tasa_cambio) SELECT 'otra-venta', 99999, fecha, ?, cliente_cedula, cliente_nombre, cliente_telefono, metodo_pago, pagos, total, items, tasa_cambio FROM ventas LIMIT 1"
+    ).bind(vidrios).run();
+    await env.DB.prepare(
+      "INSERT INTO pendientes (id, local_id, tipo, estado, monto_usd, descripcion, venta_id, creado_por_nombre) VALUES ('c-acc', ?, 'COMISION', 'PENDIENTE', 1, 'x', (SELECT id FROM ventas WHERE local_id = ?), 'Prueba'), ('c-vid', ?, 'COMISION', 'PENDIENTE', 1, 'x', 'otra-venta', 'Prueba')"
+    ).bind(accesorios, accesorios, vidrios).run();
+
+    const r = await resetearReportes(env, sA, { localId: accesorios });
+
+    expect(r).toMatchObject({ ventas: 1, movimientos: 2, simulado: false });
+    expect(await contar('ventas', `local_id = '${accesorios}'`)).toBe(0);
+    expect(await contar('ventas', `local_id = '${vidrios}'`)).toBe(1);
+    expect(await contar('movimientos_inventario', `tipo IN ('ENTRADA','SALIDA') AND local_id = '${accesorios}'`)).toBe(0);
+    expect(await contar('movimientos_inventario', `tipo IN ('ENTRADA','SALIDA') AND local_id = '${vidrios}'`)).toBe(2);
+    expect((await env.DB.prepare('SELECT id FROM pendientes').all<{ id: string }>()).results.map((x) => x.id)).toEqual(['c-vid']);
+  });
+
+  it('exige un local que exista: sin local o con uno inventado responde error y no cambia nada', async () => {
+    await escenario();
+    await rechazo(resetearReportes(env, sA, { localId: '' }), 400);
+    await rechazo(resetearReportes(env, sA, { localId: '00000000-0000-4000-8000-0000000000ff' }), 404);
+    expect(await contar('ventas')).toBe(1);
+  });
+
   it('sube la versión de las pantallas en vivo para que se actualicen solas', async () => {
     await escenario();
     const antes = (await una<{ v: number }>("SELECT COALESCE(SUM(version),0) AS v FROM cambios WHERE tabla IN ('ventas','movimientos_inventario')"))!.v;
-    await resetearReportes(env, sA);
+    await resetearReportes(env, sA, { localId: accesorios });
     const despues = (await una<{ v: number }>("SELECT COALESCE(SUM(version),0) AS v FROM cambios WHERE tabla IN ('ventas','movimientos_inventario')"))!.v;
     expect(despues).toBeGreaterThan(antes);
   });
 
   it('sin nada que borrar no falla', async () => {
-    expect(await resetearReportes(env, sA)).toMatchObject({ ventas: 0, devoluciones: 0, movimientos: 0 });
+    expect(await resetearReportes(env, sA, { localId: accesorios })).toMatchObject({ ventas: 0, devoluciones: 0, movimientos: 0 });
   });
 
   it('solo el administrador: gerente, encargado, vendedor y contador reciben 403 (también al simular)', async () => {
     await escenario();
     for (const s of [sG, sE, sV, sC]) {
-      await rechazo(resetearReportes(env, s), 403);
-      await rechazo(resetearReportes(env, s, { simular: true }), 403);
+      await rechazo(resetearReportes(env, s, { localId: accesorios }), 403);
+      await rechazo(resetearReportes(env, s, { localId: accesorios, simular: true }), 403);
     }
     expect(await contar('ventas')).toBe(1);
   });

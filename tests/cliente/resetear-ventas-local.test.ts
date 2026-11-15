@@ -78,3 +78,26 @@ describe('demo: resetearVentas de un solo local', () => {
     expect(await aqui.resetearVentas()).toMatchObject({ ventas: 1 });
   });
 });
+
+describe('demo: resetearReportes de un solo local', () => {
+  it('borra ventas y movimientos de compra/venta solo del local pedido; en «Todos» pide elegir uno', async () => {
+    const accesorios = await cargarComo('admin@edwardaccesorios.com', 'admin123', LOCAL_ACCESORIOS_ID);
+    await venderAqui(accesorios, '2000000000015', 'Forro A');
+    const vidrios = await cargarComo('admin@edwardaccesorios.com', 'admin123', LOCAL_VIDRIOS_ID);
+    await venderAqui(vidrios, '2000000000022', 'Forro B');
+    const leer = () => JSON.parse(localStorage.getItem('easystem:db:v1') ?? '{}') as { ventas?: { local_id: string }[]; movimientos: { local_id: string; tipo: string }[] };
+    const cuentan = (m: { tipo: string }) => m.tipo === 'ENTRADA' || m.tipo === 'SALIDA';
+
+    const todos = await cargarComo('admin@edwardaccesorios.com', 'admin123', 'todos');
+    await expect(todos.resetearReportes()).rejects.toThrow(/Elige un local/);
+    expect(leer().ventas).toHaveLength(2);
+
+    expect(await vidrios.resetearReportes({ localId: LOCAL_VIDRIOS_ID, simular: true })).toMatchObject({ ventas: 1, simulado: true });
+    const r = await vidrios.resetearReportes({ localId: LOCAL_VIDRIOS_ID });
+
+    expect(r.ventas).toBe(1);
+    expect(leer().ventas!.map((v) => v.local_id)).toEqual([LOCAL_ACCESORIOS_ID]);
+    expect(leer().movimientos.filter((m) => cuentan(m) && m.local_id === LOCAL_VIDRIOS_ID)).toHaveLength(0);
+    expect(leer().movimientos.filter((m) => cuentan(m) && m.local_id === LOCAL_ACCESORIOS_ID).length).toBeGreaterThan(0);
+  });
+});
