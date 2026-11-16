@@ -8,6 +8,7 @@ import {
 } from '../authz';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
+import { esLocalSoloGerencia, MENSAJE_LOCAL_SOLO_GERENCIA } from '../../lib/constantes-locales';
 import { hashearClave, verificarClave } from '../password';
 import { ahoraISO, nuevoId } from '../util';
 
@@ -79,6 +80,7 @@ export async function crearUsuario(
   const localId = esSinLocal(datos.rol) ? null : datos.localId;
   if (!esSinLocal(datos.rol)) {
     if (!localId) throw new ErrorApi(400, 'Elige el local al que pertenece el empleado.', 'local_requerido');
+    if (esLocalSoloGerencia(localId)) throw new ErrorApi(400, MENSAJE_LOCAL_SOLO_GERENCIA, 'local_restringido');
     await exigirLocalExistente(env, localId);
   }
   // La clave la elige quien crea la cuenta: es temporal y la persona debe cambiarla al entrar
@@ -111,6 +113,7 @@ export async function actualizarUsuario(
   } else {
     localFinal = cambios.localId !== undefined ? cambios.localId : objetivo.local_id;
     if (!localFinal) throw new ErrorApi(400, 'Elige el local al que pertenece el empleado.', 'local_requerido');
+    if (esLocalSoloGerencia(localFinal)) throw new ErrorApi(400, MENSAJE_LOCAL_SOLO_GERENCIA, 'local_restringido');
     if (localFinal !== objetivo.local_id) await exigirLocalExistente(env, localFinal);
   }
 
