@@ -57,7 +57,21 @@ const claseBotonSec =
         <p id="do-sin-repuestos" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Todavía no se han usado repuestos.</p>
 
         <div id="do-agregar" class="mt-3">
-          <input id="do-buscar" type="search" autocomplete="off" placeholder="Buscar el repuesto en el stock del local..." class={claseCampo} />
+          <div class="relative">
+            <input id="do-buscar" type="search" autocomplete="off" placeholder="Buscar o escanear el repuesto..." class={claseCampo + ' pr-11'} />
+            <button
+              type="button"
+              data-abrir-escaner
+              aria-label="Escanear el repuesto con la cámara"
+              title="Escanear con la cámara"
+              class="absolute right-1.5 top-1/2 mt-0.5 -translate-y-1/2 rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-brand-600 dark:hover:bg-slate-700 dark:hover:text-brand-400"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round"></path>
+                <circle cx="12" cy="12" r="3" stroke-linecap="round"></circle>
+              </svg>
+            </button>
+          </div>
           <ul id="do-resultados" class="mt-2 hidden max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700"></ul>
         </div>
       </section>
@@ -83,6 +97,7 @@ const claseBotonSec =
   import { tasaActual } from '../../stores/tasa';
   import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
+  import { normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
   import { repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
   import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones, TecnicoDeLocal } from '../../types/database.types';
 
@@ -290,6 +305,43 @@ const claseBotonSec =
     catalogo = await inventoryService.listarProductos({ localId: orden.local_id });
     pintarResultados();
   });
+
+  // Escaneo con la cámara (ver CamaraEscaner.astro): la etiqueta de una pieza (INF000014) o el código/referencia del producto
+  // agregan 1 unidad de ese repuesto a la orden.
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    const cobro = document.getElementById('co-dialogo') as HTMLDialogElement | null;
+    if (!dialogo.open || cobro?.open || !orden || esTecnico || orden.estado === 'entregado') return;
+    void agregarEscaneado(String(e.detail.codigo ?? '').trim());
+  }) as EventListener);
+
+  async function agregarEscaneado(codigo: string) {
+    if (!orden || !codigo) return;
+    errorEl.classList.add('hidden');
+    try {
+      let producto: ProductoConRelaciones | undefined;
+      const codigoPieza = normalizarCodigoUnidad(codigo);
+      if (codigoPieza) {
+        const unidad = await inventoryService.obtenerUnidadPorCodigo(codigoPieza);
+        if (unidad) {
+          if (unidad.local_id !== orden.local_id) return mostrarError(`La pieza ${codigoPieza} es de otro local.`);
+          if (unidad.estado !== 'DISPONIBLE') return mostrarError(`La pieza ${codigoPieza} ya no está disponible (${unidad.estado.toLowerCase().replace('_', ' ')}).`);
+          producto = catalogo.find((p) => p.id === unidad.producto_id);
+        }
+      }
+      if (!producto) {
+        const referencia = normalizarReferencia(codigo);
+        producto = catalogo.find((p) => p.codigo_barras === codigo || (p.referencia && (p.referencia === codigo || p.referencia === referencia)));
+      }
+      if (!producto) return mostrarError(`No encontré un repuesto con el código ${codigo} en el stock de este local.`);
+      if (orden.repuestos.some((r) => r.producto_id === producto!.id)) return mostrarError(`«${producto.nombre}» ya está en la orden.`);
+      if (!(producto.stock_actual > 0)) return mostrarError(`«${producto.nombre}» no tiene stock en este local.`);
+      const elegido = producto;
+      await aplicar(() => inventoryService.agregarRepuestoOrden(orden!.id, elegido, 1), 'No se pudo agregar el repuesto.');
+      catalogo = await inventoryService.listarProductos({ localId: orden.local_id });
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : 'No se pudo leer el código.');
+    }
+  }
 
   $('do-repuestos').addEventListener('click', async (e) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar]')?.dataset.quitar;
