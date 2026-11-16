@@ -1,5 +1,5 @@
 import { api } from '../api';
-import type { CobroOrdenServicio, NuevaOrdenServicio, OrdenServicio, ResultadoPagoTecnico, TecnicoDeLocal } from '../../types/database.types';
+import type { CobroOrdenServicio, NuevaOrdenServicio, OrdenServicio, ResultadoPagoTecnico, ResultadoReseteoServicio, TecnicoDeLocal } from '../../types/database.types';
 
 export async function listarOrdenes(opciones: { limite: number; localId?: string | null }): Promise<OrdenServicio[]> {
   return api.get<OrdenServicio[]>('/api/ordenes', { limite: opciones.limite, localId: opciones.localId });
@@ -38,4 +38,9 @@ export async function pagarTecnicos(ids: string[]): Promise<ResultadoPagoTecnico
 /** Técnicos activos de un local (a quienes se les puede dar un trabajo). */
 export async function listarTecnicos(localId: string | null): Promise<TecnicoDeLocal[]> {
   return api.get<TecnicoDeLocal[]>('/api/ordenes/tecnicos', { localId });
+}
+
+/** Borra las órdenes de servicio de UN local y devuelve sus repuestos al inventario (solo el administrador). Con `simular` solo cuenta. */
+export async function resetearServicioTecnico(opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteoServicio> {
+  return api.post<ResultadoReseteoServicio>('/api/ordenes/resetear', { local_id: opciones.localId, simular: opciones.simular ?? false });
 }

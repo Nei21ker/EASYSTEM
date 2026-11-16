@@ -428,14 +428,14 @@ const MOTIVO_RESETEO = 'Reseteo de ventas (restaura el stock)';
 const PIEZAS_POR_TRAMO = 500; // tope de unidades por lote de movimientos
 const MOVIMIENTOS_POR_TRAMO = 50;
 
-interface GrupoPiezas {
+export interface GrupoPiezas {
   productoId: string;
   localId: string;
   codigos: string[];
 }
 
 /** De estos códigos, las piezas que siguen VENDIDAS (las devueltas ya están en el stock), agrupadas por producto y local. */
-async function piezasVendidas(db: D1Database, codigos: Iterable<string>): Promise<{ grupos: Map<string, GrupoPiezas>; piezas: number }> {
+export async function piezasVendidas(db: D1Database, codigos: Iterable<string>): Promise<{ grupos: Map<string, GrupoPiezas>; piezas: number }> {
   const grupos = new Map<string, GrupoPiezas>();
   let piezas = 0;
   for (const tramo of tramos([...new Set(codigos)])) {
@@ -455,7 +455,7 @@ async function piezasVendidas(db: D1Database, codigos: Iterable<string>): Promis
 }
 
 // Productos por cantidad (sin códigos de pieza): lo que una venta sacó del stock se repone por cantidad.
-interface GrupoCantidad {
+export interface GrupoCantidad {
   productoId: string;
   localId: string;
   cantidad: number;
@@ -467,7 +467,7 @@ type ItemConCantidad = { producto_id: string; cantidad: number; danados?: number
  * Cuánto de cada producto por cantidad sacaron esas ventas del stock de su local (lo cobrado, las piezas defectuosas que se botaron y lo
  * entregado a cambio en sus devoluciones) menos lo que ya volvió por devoluciones. Las piezas con código se reponen por código.
  */
-async function cantidadesPorCantidad(
+export async function cantidadesPorCantidad(
   db: D1Database,
   ventas: { local_id: string; items: string }[],
   devoluciones: { local_id: string; items_devueltos?: string; items_nuevos: string }[]
@@ -499,7 +499,7 @@ async function cantidadesPorCantidad(
 }
 
 /** Repone al stock esas cantidades (una ENTRADA por producto y local, en lotes que respetan los topes). */
-async function reponerCantidades(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoCantidad>, motivo: string): Promise<void> {
+export async function reponerCantidades(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoCantidad>, motivo: string): Promise<void> {
   let lote: EntradaMovimiento[] = [];
   let enLote = 0;
   const enviar = async () => {
@@ -520,7 +520,7 @@ async function reponerCantidades(env: Entorno, sesion: Sesion, grupos: Map<strin
 }
 
 /** Repone esas piezas al stock: una ENTRADA por producto y local que reactiva las MISMAS piezas, por lotes que respetan los topes. */
-async function reponerPiezas(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoPiezas>, motivo: string): Promise<void> {
+export async function reponerPiezas(env: Entorno, sesion: Sesion, grupos: Map<string, GrupoPiezas>, motivo: string): Promise<void> {
   let lote: EntradaMovimiento[] = [];
   let enLote = 0;
   const enviar = async () => {

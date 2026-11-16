@@ -145,6 +145,7 @@ function casos(): Caso[] {
     // Servicio técnico: cobrar la reparación (quien cobra), pagarle al técnico (gerencia) y elegir al técnico (quien registra equipos)
     { archivo: 'ordenes/[id]/cobrar.ts', metodo: 'POST', url: '/api/ordenes/no-existe/cobrar', params: { id: 'no-existe' }, cuerpo: { total_usd: 25, porcentaje_local: 30, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 25, monto_bs: null }] }, permitidos: CAJERO },
     { archivo: 'ordenes/pagar-tecnico.ts', metodo: 'POST', url: '/api/ordenes/pagar-tecnico', cuerpo: { ids: ['no-existe'] }, permitidos: GERENCIA },
+    { archivo: 'ordenes/resetear.ts', metodo: 'POST', url: '/api/ordenes/resetear', cuerpo: { local_id: servicio, simular: true }, permitidos: ['administrador'] },
     { archivo: 'ordenes/tecnicos.ts', metodo: 'GET', url: `/api/ordenes/tecnicos?localId=${accesorios}`, permitidos: CAJERO },
     // Cuadre de caja
     { archivo: 'cuadres/index.ts', metodo: 'GET', url: `/api/cuadres?fecha=${dia}`, permitidos: GERENCIA },

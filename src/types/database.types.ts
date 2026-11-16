@@ -724,6 +724,15 @@ export interface CobroOrdenServicio {
   tasa_cambio?: number | null;
 }
 
+/** Lo que borra (o borraría, en una simulación) el reseteo del servicio técnico de un local, y los repuestos que vuelven al inventario */
+export interface ResultadoReseteoServicio {
+  ordenes: number;
+  /** Cuántas de esas órdenes ya estaban cobradas (se pierde su registro de cobro y de pago al técnico) */
+  cobradas: number;
+  piezas: number;
+  simulado: boolean;
+}
+
 export interface ResultadoPagoTecnico {
   pagadas: number;
   total_usd: number;

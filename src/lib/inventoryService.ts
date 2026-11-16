@@ -94,6 +94,7 @@ import type {
   MotivoMerma,
   ResultadoReseteoReportes,
   ResultadoEliminacionVentas,
+  ResultadoReseteoServicio,
   ResultadoReseteoVentas,
   ModeloTelefono,
   MovimientoInventario,
@@ -3820,6 +3821,53 @@ export async function quitarRepuestoOrden(id: string, productoId: string): Promi
     unidad_codigos: repuesto.unidades?.slice(0, repuesto.cantidad),
   });
   return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r.producto_id !== productoId) });
+}
+
+/**
+ * Resetear el servicio técnico de UN local (solo el administrador): borra todas sus órdenes y devuelve al inventario los repuestos que
+ * usaron (las piezas con código vuelven con los mismos códigos; los productos por cantidad, por la cantidad usada). Los demás locales no se
+ * tocan. Por defecto usa el local activo (en «Todos los locales» no se puede). Con `simular` solo cuenta. Necesita conexión (modo servidor).
+ */
+export async function resetearServicioTecnico(opciones: { localId?: string; simular?: boolean } = {}): Promise<ResultadoReseteoServicio> {
+  if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear el servicio técnico.');
+  const localId = opciones.localId ?? (await exigirLocal('resetear el servicio técnico de un local'));
+  if (modoServidor) {
+    if (!obtenerEstadoConexion().online) throw new Error('Resetear el servicio técnico necesita conexión a internet.');
+    return ordenesDb.resetearServicioTecnico({ localId, simular: opciones.simular });
+  }
+
+  // Modo demo (LocalStorage): mismas reglas que el servidor
+  const db = leerDB();
+  const local = (db.locales ?? []).find((l) => l.id === localId);
+  if (local && local.tipo !== 'servicio_tecnico') throw new Error('Ese local no tiene servicio técnico.');
+  const ordenes = (db.ordenes ?? []).filter((o) => o.local_id === localId);
+  const codigos = new Set<string>();
+  for (const o of ordenes) for (const r of o.repuestos) for (const c of r.unidades ?? []) codigos.add(c);
+  const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && codigos.has(u.codigo));
+  const comoVentas = ordenes.map((o) => ({ local_id: o.local_id, items: o.repuestos })) as unknown as Venta[];
+  const { grupos: porCantidad } = cantidadesPorCantidadDemo(db, comoVentas, []);
+  const resultado: ResultadoReseteoServicio = {
+    ordenes: ordenes.length,
+    cobradas: ordenes.filter((o) => o.cobrado_en).length,
+    piezas: vendidas.length + porCantidad.reduce((s, g) => s + g.cantidad, 0),
+    simulado: !!opciones.simular,
+  };
+  if (opciones.simular) return resultado;
+
+  const motivo = 'Reseteo de servicio técnico (restaura el stock)';
+  const grupos = new Map<string, { producto_id: string; local_id: string; codigos: string[] }>();
+  for (const u of vendidas) {
+    const clave = `${u.producto_id}|${u.local_id}`;
+    const grupo = grupos.get(clave) ?? { producto_id: u.producto_id, local_id: u.local_id, codigos: [] };
+    grupo.codigos.push(u.codigo);
+    grupos.set(clave, grupo);
+  }
+  for (const g of grupos.values()) await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.codigos.length, motivo, local_id: g.local_id, unidad_codigos: g.codigos });
+  for (const g of porCantidad) await registrarMovimiento({ producto_id: g.producto_id, tipo: 'ENTRADA', cantidad: g.cantidad, motivo, local_id: g.local_id });
+  const despues = leerDB(); // registrarMovimiento guardó sus cambios: se relee antes de vaciar las órdenes
+  despues.ordenes = (despues.ordenes ?? []).filter((o) => o.local_id !== localId);
+  guardarDB(despues);
+  return resultado;
 }
 
 /** Técnicos activos a quienes se les puede dar un trabajo en un local (por defecto el local activo). */

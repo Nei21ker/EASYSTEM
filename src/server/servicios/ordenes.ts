@@ -8,8 +8,9 @@ import { sentenciasCambio } from '../cambios';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { ahoraISO, limiteSeguro, nuevoId, redondear2 } from '../util';
+import { cantidadesPorCantidad, piezasVendidas, reponerCantidades, reponerPiezas } from './ventas';
 import { errorDeCobro, repartoDeCobro, repuestosDeOrdenUsd, validarPagosCobro } from '../../utils/servicioTecnico';
-import type { CobroOrdenServicio, EstadoOrdenServicio, NuevaOrdenServicio, OrdenServicio, RepuestoOrden, ResultadoPagoTecnico, TecnicoDeLocal } from '../../types/database.types';
+import type { CobroOrdenServicio, EstadoOrdenServicio, NuevaOrdenServicio, OrdenServicio, RepuestoOrden, ResultadoPagoTecnico, ResultadoReseteoServicio, TecnicoDeLocal } from '../../types/database.types';
 
 const ESTADOS: EstadoOrdenServicio[] = ['pendiente', 'en_reparacion', 'listo', 'entregado'];
 
@@ -239,4 +240,43 @@ export async function pagarTecnicos(env: Entorno, sesion: Sesion, ids: string[])
     ...locales.flatMap((l) => sentenciasCambio(db, ['ordenes_servicio'], l)),
   ]);
   return { pagadas: pendientes.length, total_usd: redondear2(pendientes.reduce((s, p) => s + p.pago, 0)) };
+}
+
+// --- Resetear el servicio técnico de UN local (solo el administrador) --------------------------------------------------
+
+const MOTIVO_RESETEO_SERVICIO = 'Reseteo de servicio técnico (restaura el stock)';
+
+/**
+ * Borra TODAS las órdenes de servicio de UN local (las de prueba, o para empezar de cero) y devuelve al inventario los repuestos que esas
+ * órdenes sacaron: las piezas con código vuelven con LOS MISMOS códigos (una ENTRADA «Reseteo de servicio técnico» por producto, que las
+ * reactiva) y los productos por cantidad por la cantidad usada. Los repuestos que ya se quitaron de una orden ya volvieron al stock y no se
+ * cuentan dos veces. Los demás locales no se tocan. Los movimientos de stock siguen en Movimientos (y en Reportes: «Resetear reportes»
+ * los limpia aparte); el cobro de las órdenes y lo pagado a los técnicos desaparecen con ellas (el cuadre de un día ya cerrado conserva su foto).
+ *
+ * Primero repone el stock y al final borra las órdenes, así que si algo falla a medias volver a ejecutarlo termina el trabajo: solo repone lo
+ * que sigue vendido. Con `simular` solo cuenta. No se puede deshacer: respalda antes (`npm run backup`).
+ */
+export async function resetearServicioTecnico(env: Entorno, sesion: Sesion, opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteoServicio> {
+  if (sesion.rol !== 'administrador') throw new ErrorApi(403, 'Solo el administrador puede resetear el servicio técnico.', 'sin_permiso');
+  const db = env.DB;
+  const localId = (opciones.localId ?? '').trim();
+  if (!localId) throw new ErrorApi(400, 'Elige el local cuyo servicio técnico quieres resetear.', 'datos_invalidos');
+  const local = await db.prepare('SELECT tipo FROM locales WHERE id = ?').bind(localId).first<{ tipo: string }>();
+  if (!local) throw new ErrorApi(404, 'Ese local no existe.', 'no_encontrado');
+  if (local.tipo !== 'servicio_tecnico') throw new ErrorApi(400, 'Ese local no tiene servicio técnico.', 'solo_servicio_tecnico');
+
+  const ordenes = (await db.prepare('SELECT local_id, repuestos, cobrado_en FROM ordenes_servicio WHERE local_id = ?').bind(localId).all<{ local_id: string; repuestos: string; cobrado_en: string | null }>()).results;
+  const codigos = new Set<string>();
+  for (const o of ordenes) for (const r of JSON.parse(o.repuestos || '[]') as RepuestoOrden[]) for (const c of r.unidades ?? []) codigos.add(c);
+  const { grupos: porPieza, piezas: piezasConCodigo } = await piezasVendidas(db, codigos);
+  const { grupos: porCantidad } = await cantidadesPorCantidad(db, ordenes.map((o) => ({ local_id: o.local_id, items: o.repuestos || '[]' })), []);
+  const piezas = piezasConCodigo + [...porCantidad.values()].reduce((s, g) => s + g.cantidad, 0);
+
+  const resultado: ResultadoReseteoServicio = { ordenes: ordenes.length, cobradas: ordenes.filter((o) => o.cobrado_en).length, piezas, simulado: !!opciones.simular };
+  if (opciones.simular || (ordenes.length === 0 && piezas === 0)) return resultado;
+
+  await reponerPiezas(env, sesion, porPieza, MOTIVO_RESETEO_SERVICIO);
+  await reponerCantidades(env, sesion, porCantidad, MOTIVO_RESETEO_SERVICIO);
+  await db.batch([db.prepare('DELETE FROM ordenes_servicio WHERE local_id = ?').bind(localId), ...sentenciasCambio(db, ['ordenes_servicio'], localId)]);
+  return resultado;
 }
