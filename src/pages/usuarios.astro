@@ -144,7 +144,6 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     type Rol,
   } from '../lib/auth';
   import { listarLocales } from '../lib/inventoryService';
-  import { esLocalSoloGerencia } from '../lib/constantes-locales';
   import type { Local } from '../types/database.types';
   import { animarLista, reanimar } from '../utils/animaciones';
   import { alCambiarDatos } from '../lib/realtime';
@@ -176,7 +175,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
       .join('');
   const opcionesLocal = (seleccionado?: string | null) =>
     '<option value="">Sin local</option>' +
-    locales.filter((l) => !esLocalSoloGerencia(l.id)).map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${l.nombre}</option>`).join('');
+    locales.map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${l.nombre}</option>`).join('');
 
   const selectRolNuevo = document.getElementById('us-rol') as HTMLSelectElement;
   const selectLocalNuevo = document.getElementById('us-local') as HTMLSelectElement;

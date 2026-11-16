@@ -7,13 +7,16 @@ export const LOCAL_ACCESORIOS_ID = '00000000-0000-4000-8000-000000000001';
 export const LOCAL_VIDRIOS_ID = '00000000-0000-4000-8000-000000000002';
 export const LOCAL_SERVICIO_TECNICO_ID = '00000000-0000-4000-8000-000000000003';
 export const LOCAL_CONTROLES_ID = '00000000-0000-4000-8000-000000000004';
-/** Local de pantallas (migración 0031): solo lo usan administrador, gerente y supervisor; no se le asigna ningún empleado. */
+/** Local de pantallas (migración 0031, con su propio servicio técnico desde la 0032): lo opera la gerencia; solo se le asignan técnicos. */
 export const LOCAL_PANTALLAS_ID = '00000000-0000-4000-8000-000000000005';
 
-/** Locales a los que no se puede asignar un empleado (encargado, vendedor o técnico): solo los ve la gerencia global. */
+/** Locales operados solo por la gerencia global (administrador, gerente, supervisor): a ellos no se asigna un encargado ni un vendedor. */
 export const LOCALES_SOLO_GERENCIA: readonly string[] = [LOCAL_PANTALLAS_ID];
 export const esLocalSoloGerencia = (id: string | null | undefined): boolean => !!id && LOCALES_SOLO_GERENCIA.includes(id);
-export const MENSAJE_LOCAL_SOLO_GERENCIA = 'Ese local es solo para el administrador, el gerente y el supervisor: no se le puede asignar un empleado.';
+/** Único rol de local que sí se asigna a un local de gerencia: el técnico (su servicio técnico necesita técnicos para asignar y cobrar). */
+export const puedeAsignarseALocal = (rol: string, localId: string | null | undefined): boolean => !esLocalSoloGerencia(localId) || rol === 'tecnico';
+export const MENSAJE_LOCAL_SOLO_GERENCIA =
+  'Ese local lo opera solo la gerencia (administrador, gerente y supervisor): únicamente se le pueden asignar técnicos, no encargados ni vendedores.';
 
 /** Valor del selector de local que significa "todos los locales" (solo administrador). */
 export const ALCANCE_TODOS = 'todos';

@@ -3,6 +3,7 @@ import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, 
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { actualizarUsuario, crearUsuario } from '../../src/server/servicios/usuarios';
+import { actualizarOrden, crearOrden, listarTecnicosDeLocal } from '../../src/server/servicios/ordenes';
 import { LOCAL_PANTALLAS_ID } from '../../src/lib/constantes-locales';
 
 const env = crearEntornoDePrueba();
@@ -10,9 +11,9 @@ const ORIGEN = IDS_LOCALES.servicio;
 const entorno = env as unknown as { MIGRACIONES: { name: string; queries: string[] }[] };
 
 /** Corre las sentencias de la migración 0031 (la base de pruebas ya la aplicó vacía; aquí se repite con datos). */
-async function correrMigracion(): Promise<void> {
-  const m = entorno.MIGRACIONES.find((x) => x.name.startsWith('0031_local_pantallas'));
-  if (!m) throw new Error('No se encontró la migración 0031');
+async function correrMigracion(nombre = '0031_local_pantallas'): Promise<void> {
+  const m = entorno.MIGRACIONES.find((x) => x.name.startsWith(nombre));
+  if (!m) throw new Error(`No se encontró la migración ${nombre}`);
   for (const q of m.queries) await env.DB.prepare(q).run();
 }
 
@@ -126,42 +127,65 @@ describe('migración 0031: Local de pantallas', () => {
   });
 });
 
-describe('Local de pantallas: solo la gerencia', () => {
+describe('Local de pantallas: lo opera la gerencia, con su propio servicio técnico', () => {
   let admin: UsuarioDePrueba, gerente: UsuarioDePrueba, supervisor: UsuarioDePrueba, encargado: UsuarioDePrueba;
   const sesionDe = (u: UsuarioDePrueba): Promise<Sesion> => cargarSesion(env, peticionComo(u));
+  const orden = {
+    local_id: LOCAL_PANTALLAS_ID, cliente_cedula: 'V-12345678', cliente_nombre: 'Ana Pérez', cliente_telefono: '0414-1234567',
+    equipo_marca: 'Samsung', equipo_modelo: 'A07', equipo_imei: null, accesorios_recibidos: null, falla_reportada: 'Pantalla rota',
+  };
 
   beforeEach(async () => {
-    await correrMigracion();
+    await correrMigracion('0031_local_pantallas');
+    await correrMigracion('0032_pantallas_servicio_tecnico');
     admin = await crearUsuarioDePrueba(env, { rol: 'administrador', localId: null });
     gerente = await crearUsuarioDePrueba(env, { rol: 'gerente', localId: null });
     supervisor = await crearUsuarioDePrueba(env, { rol: 'supervisor', localId: null });
     encargado = await crearUsuarioDePrueba(env, { rol: 'encargado', localId: IDS_LOCALES.vidrios });
   });
 
-  async function rechazo(promesa: Promise<unknown>): Promise<void> {
+  async function rechazo(promesa: Promise<unknown>, texto = /solo la gerencia/): Promise<void> {
     try {
       await promesa;
     } catch (err) {
       expect(err).toBeInstanceOf(ErrorApi);
       expect((err as ErrorApi).status).toBe(400);
-      expect((err as ErrorApi).message).toMatch(/solo para el administrador, el gerente y el supervisor/);
+      expect((err as ErrorApi).message).toMatch(texto);
       return;
     }
     throw new Error('Debía rechazarse');
   }
 
-  it('no se puede crear un encargado, vendedor o técnico en ese local (ni el administrador ni el gerente)', async () => {
-    for (const rol of ['encargado', 'vendedor', 'tecnico'] as const) {
+  it('es de tipo servicio técnico (módulo de órdenes), sin cambiar nada de lo movido', async () => {
+    const l = await env.DB.prepare('SELECT tipo FROM locales WHERE id = ?').bind(LOCAL_PANTALLAS_ID).first<{ tipo: string }>();
+    expect(l?.tipo).toBe('servicio_tecnico');
+    expect(await stockEn(LOCAL_PANTALLAS_ID, '1')).toEqual({ s: 3, m: 2 });
+  });
+
+  it('no se puede asignar un encargado ni un vendedor a ese local (ni el administrador ni el gerente)', async () => {
+    for (const rol of ['encargado', 'vendedor'] as const) {
       await rechazo(crearUsuario(env, await sesionDe(admin), { email: `${rol}@pantallas.com`, nombre: `Ana ${rol}`, clave: 'Clave-nueva-123', rol, localId: LOCAL_PANTALLAS_ID }));
     }
     await rechazo(crearUsuario(env, await sesionDe(gerente), { email: 'g@pantallas.com', nombre: 'Gina Gerencia', clave: 'Clave-nueva-123', rol: 'encargado', localId: LOCAL_PANTALLAS_ID }));
   });
 
-  it('no se puede mover a un empleado a ese local', async () => {
+  it('no se puede mover a un encargado a ese local, ni dejar a un técnico allí al subirlo de rol', async () => {
     await rechazo(actualizarUsuario(env, await sesionDe(admin), encargado.id, { localId: LOCAL_PANTALLAS_ID }));
+    const tec = await crearUsuarioDePrueba(env, { rol: 'tecnico', localId: LOCAL_PANTALLAS_ID });
+    await rechazo(actualizarUsuario(env, await sesionDe(admin), tec.id, { rol: 'vendedor' }));
   });
 
-  it('administrador, gerente y supervisor sí trabajan ahí: ven el local entre sus locales', async () => {
+  it('los técnicos sí: se crean ahí, aparecen para asignar y la gerencia registra, asigna y avanza las órdenes', async () => {
+    const id = await crearUsuario(env, await sesionDe(gerente), { email: 'julio@pantallas.com', nombre: 'Julio Técnico', clave: 'Clave-nueva-123', rol: 'tecnico', localId: LOCAL_PANTALLAS_ID });
+    const sS = await sesionDe(supervisor);
+    expect((await listarTecnicosDeLocal(env, sS, LOCAL_PANTALLAS_ID)).map((x) => x.nombre)).toEqual(['Julio Técnico']);
+    const o = await crearOrden(env, sS, orden);
+    expect(o.local_id).toBe(LOCAL_PANTALLAS_ID);
+    const a = await actualizarOrden(env, sS, o.id, { tecnico_id: id, estado: 'en_reparacion' });
+    expect(a).toMatchObject({ tecnico_id: id, tecnico_nombre: 'Julio Técnico', estado: 'en_reparacion' });
+  });
+
+  it('administrador, gerente y supervisor ven el local entre sus locales', async () => {
     for (const u of [admin, gerente, supervisor]) {
       const { alcanceDe } = await import('../../src/server/authz');
       const alcance = await alcanceDe(env, await sesionDe(u));
