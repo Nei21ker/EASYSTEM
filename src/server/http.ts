@@ -49,9 +49,31 @@ async function respuestaLectura(peticion: Request, datos: unknown): Promise<Resp
   return new Response(cuerpo, { headers: { ...cabeceras, 'content-type': 'application/json' } });
 }
 
+/**
+ * Defensa extra contra peticiones de otros sitios: una escritura (POST/PATCH/PUT/DELETE) cuyo Origin no es el de este sitio, o que el
+ * navegador marca como `cross-site`, se rechaza. La cookie ya es SameSite=Lax; esto cubre lo que ese ajuste no. Sin cabecera de
+ * origen (scripts, pruebas) pasa: esas peticiones no las dispara el navegador de una víctima.
+ */
+export function exigirOrigenPropio(request: Request): void {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) return;
+  const origen = request.headers.get('origin');
+  let ajeno = request.headers.get('sec-fetch-site') === 'cross-site';
+  if (origen !== null && origen !== 'null') {
+    try {
+      ajeno ||= new URL(origen).origin !== new URL(request.url).origin;
+    } catch {
+      ajeno = true;
+    }
+  } else if (origen === 'null') {
+    ajeno = true;
+  }
+  if (ajeno) throw new ErrorApi(403, 'La petición no viene de este sitio.', 'origen_invalido');
+}
+
 export function conSesion(manejador: (contexto: Contexto) => Promise<unknown>): APIRoute {
   return async ({ request, params }) => {
     try {
+      exigirOrigenPropio(request);
       const entorno = env as unknown as Entorno;
       const sesion = await cargarSesion(entorno, request);
       // Clave temporal (la puso otra persona): hasta cambiarla no se atiende nada más que el cambio de clave

@@ -175,7 +175,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
       .join('');
   const opcionesLocal = (seleccionado?: string | null) =>
     '<option value="">Sin local</option>' +
-    locales.map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${l.nombre}</option>`).join('');
+    locales.map((l) => `<option value="${l.id}" ${l.id === seleccionado ? 'selected' : ''}>${escaparHtml(l.nombre)}</option>`).join('');
 
   const selectRolNuevo = document.getElementById('us-rol') as HTMLSelectElement;
   const selectLocalNuevo = document.getElementById('us-local') as HTMLSelectElement;
@@ -453,7 +453,7 @@ const MIN_CLAVE = import.meta.env.PUBLIC_USAR_API === 'true' ? 8 : 6;
     miRol = sesion?.rol ?? null;
     locales = lista;
     selectRolNuevo.innerHTML = opcionesRol('vendedor');
-    selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${l.nombre}</option>`).join('');
+    selectLocalNuevo.innerHTML = lista.map((l) => `<option value="${l.id}">${escaparHtml(l.nombre)}</option>`).join('');
     if (miRol === 'gerente') {
       (document.getElementById('us-subtitulo') as HTMLParagraphElement).textContent = 'Como gerente puedes crear, editar y eliminar supervisores, encargados, vendedores, técnicos y contadores.';
     }

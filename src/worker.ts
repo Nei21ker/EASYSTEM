@@ -1,12 +1,14 @@
 // Punto de entrada del Worker: atiende las peticiones con Astro (igual que antes) y, además, corre las tareas programadas (cron).
 import { handle } from '@astrojs/cloudflare/handler';
+import { conCabecerasDeSeguridad } from './server/cabeceras';
 import type { Entorno } from './server/entorno';
 import { actualizarTasaDesdeBcv } from './server/servicios/tasaBcv';
 
 type Contexto = { waitUntil(promesa: Promise<unknown>): void };
 
 export default {
-  fetch: handle,
+  // Toda respuesta que pasa por el Worker (API, archivos, redirecciones) sale con las cabeceras de seguridad
+  fetch: async (...args: Parameters<typeof handle>) => conCabecerasDeSeguridad(await handle(...args)),
 
   /**
    * Cron (ver `triggers.crons` en wrangler.jsonc, en UTC): 12:00, 13:00 y 14:00 UTC = 8, 9 y 10 a. m. en Caracas (UTC−4).

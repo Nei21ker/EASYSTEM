@@ -1,3 +1,15 @@
+# Seguridad de todas las páginas y archivos estáticos (la API y los archivos subidos las reciben del Worker: src/server/cabeceras.ts).
+# Todo el sitio carga recursos solo de su propio dominio. 'unsafe-inline' sigue en scripts y estilos porque Astro deja un script
+# pequeño dentro de cada página y Tailwind usa estilos en línea; lo que sí se corta: scripts/estilos de otros dominios, plugins
+# (object-src), cambiar la base de las rutas, enviar formularios a otro sitio y meter la página en un marco ajeno.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000
+  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()
+
 # Archivos sin hash en el nombre (no cambian casi nunca): una semana en el navegador, sin volver a preguntar en cada pantalla.
 /img/*
   Cache-Control: public, max-age=604800

@@ -338,7 +338,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     editando = productoId ? (productos.find((p) => p.id === productoId) ?? null) : null;
 
     const categorias = [...new Set([...CATEGORIAS_BASE, ...productos.map((p) => p.categoria)])].sort();
-    $('fp-categorias').innerHTML = categorias.map((c) => `<option value="${c}"></option>`).join('');
+    // Las categorías las escribe cualquier encargado: se arman como nodos (nunca como texto HTML)
+    $('fp-categorias').replaceChildren(...categorias.map((c) => new Option('', c)));
 
     seleccion.clear();
     buscarModelo.value = '';
