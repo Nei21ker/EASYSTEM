@@ -16,8 +16,8 @@ const ZONA_POR_DEFECTO = 'America/Caracas';
 const ahora = () => new Date().toISOString();
 
 /** El día de hoy del negocio ("aaaa-mm-dd", en la zona horaria del negocio). */
-export function hoyDelNegocio(env: Entorno): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: env.ZONA_HORARIA ?? ZONA_POR_DEFECTO, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+export function hoyDelNegocio(env: Entorno, ahora: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: env.ZONA_HORARIA ?? ZONA_POR_DEFECTO, year: 'numeric', month: '2-digit', day: '2-digit' }).format(ahora);
 }
 
 /** Solo administrador y gerente; devuelve el alcance de locales con el que se consulta. */

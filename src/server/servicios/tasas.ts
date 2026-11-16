@@ -28,15 +28,23 @@ export async function registrarTasa(
   if (!(datos.tasa > 0) || datos.tasa >= 10_000_000) throw new ErrorApi(400, 'La tasa debe ser un número mayor a 0.', 'tasa_invalida');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(datos.fecha)) throw new ErrorApi(400, 'La fecha de la tasa no es válida.', 'fecha_invalida');
 
-  const fila: TasaCambio & { registrado_por: string } = {
+  const fila = await guardarTasa(env, {
     id: nuevoId(),
     fecha: datos.fecha,
     tasa: datos.tasa,
     created_at: ahoraISO(),
     registrado_nombre: datos.registrado_nombre ?? sesion.nombre,
     registrado_por: sesion.userId,
-  };
-  // Los productos con precio FIJO en bolívares cambian su equivalente en dólares con la tasa nueva (en el mismo lote que la tasa)
+  });
+  const { registrado_por: _quien, ...tasa } = fila;
+  return tasa;
+}
+
+/**
+ * Inserta la fila de la tasa y, en el mismo lote, recalcula el equivalente en dólares de los productos con precio FIJO en bolívares.
+ * La usan quien la registra a mano (`registrarTasa`) y la actualización automática del BCV (`tasaBcv.ts`, sin usuario: `registrado_por` null).
+ */
+export async function guardarTasa<T extends TasaCambio & { registrado_por: string | null }>(env: Entorno, fila: T): Promise<T> {
   const resultados = await env.DB.batch([
     env.DB
       .prepare('INSERT INTO tasas_cambio (id, fecha, tasa, created_at, registrado_por, registrado_nombre) VALUES (?, ?, ?, ?, ?, ?)')
@@ -47,6 +55,5 @@ export async function registrarTasa(
   ]);
   const productosAjustados = (resultados[1].meta.changes ?? 0) > 0;
   await avisarCambio(env.DB, productosAjustados ? ['tasas_cambio', 'productos'] : ['tasas_cambio']);
-  const { registrado_por: _quien, ...tasa } = fila;
-  return tasa;
+  return fila;
 }
