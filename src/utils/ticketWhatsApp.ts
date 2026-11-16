@@ -25,6 +25,12 @@ export function telefonoParaWhatsApp(telefono: string, codigoPais: string = CODI
   return digitos.length >= 10 && digitos.length <= 15 ? digitos : null;
 }
 
+/** Enlace que abre el chat de ese número con el mensaje ya escrito (solo falta pulsar «enviar»); null si el teléfono no sirve. */
+export function urlWhatsAppConTexto(telefono: string, texto: string): string | null {
+  const numero = telefonoParaWhatsApp(telefono);
+  return numero ? `https://wa.me/${numero}?text=${encodeURIComponent(texto)}` : null;
+}
+
 /** Enlace que abre WhatsApp en el chat de ese número (sin texto: el ticket va como imagen); null si el teléfono no sirve. */
 export function urlWhatsApp(telefono: string): string | null {
   const numero = telefonoParaWhatsApp(telefono);

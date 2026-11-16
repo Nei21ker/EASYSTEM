@@ -186,3 +186,11 @@ export function resumirTienda(ordenes: OrdenServicio[], desdeISO?: string): Resu
   }
   return r;
 }
+
+/** Mensaje de WhatsApp para avisarle al cliente que su equipo ya está reparado y puede pasar a retirarlo. */
+export function mensajeEquipoListo(datos: { cliente: string; marca: string; modelo: string; folio: number; local?: string | null }): string {
+  const primerNombre = datos.cliente.trim().split(/\s+/)[0] || 'cliente';
+  const equipo = `${datos.marca} ${datos.modelo}`.trim();
+  const donde = datos.local ? ` en ${datos.local}` : '';
+  return `Hola ${primerNombre}, te escribimos de Edward Accesorios. Tu ${equipo} (orden #${String(datos.folio).padStart(4, '0')}) ya está listo. Puedes pasar a retirarlo${donde}. ¡Gracias por confiar en nosotros!`;
+}

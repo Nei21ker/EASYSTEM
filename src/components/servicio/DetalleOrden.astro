@@ -79,6 +79,13 @@ const claseBotonSec =
       <!-- Totales / reparto -->
       <section id="do-resumen" class="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-sm dark:border-slate-700 dark:bg-slate-800/30"></section>
 
+      <!-- Equipo listo: aviso al cliente por WhatsApp (el chat se abre con el mensaje ya escrito) -->
+      <section id="do-avisar" class="hidden rounded-xl border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/40 dark:bg-emerald-500/10">
+        <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-200">El equipo está listo: avísale al cliente</p>
+        <p id="do-avisar-texto" class="mt-1 text-xs text-emerald-800 dark:text-emerald-300"></p>
+        <a id="do-whatsapp" href="#" target="_blank" rel="noopener" class="mt-2 inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700">Avisar por WhatsApp</a>
+      </section>
+
       <p id="do-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
     </div>
 
@@ -98,7 +105,8 @@ const claseBotonSec =
   import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
   import { normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
-  import { repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
+  import { mensajeEquipoListo, repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
+  import { urlWhatsAppConTexto } from '../../utils/ticketWhatsApp';
   import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones, TecnicoDeLocal } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -125,6 +133,7 @@ const claseBotonSec =
   let puedeQuitar = false;
   let esTecnico = false;
   let puedeCobrar = false;
+  let nombresLocales = new Map<string, string>();
 
   function mostrarError(mensaje: string) {
     errorEl.textContent = mensaje;
@@ -246,6 +255,22 @@ const claseBotonSec =
     botonAtras.classList.toggle('hidden', !atrasPermitido);
     botonAtras.textContent = anterior ? `← Volver a ${etiqueta(anterior)}` : '';
     botonCobrar.classList.toggle('hidden', !(puedeCobrar && (o.estado === 'en_reparacion' || o.estado === 'listo')));
+    pintarAviso(o);
+  }
+
+  /** Con el equipo «listo» ofrece abrir el WhatsApp del cliente con el mensaje escrito (WhatsApp no deja enviar solo desde una página). */
+  function pintarAviso(o: OrdenServicio) {
+    const caja = $('do-avisar');
+    caja.classList.toggle('hidden', o.estado !== 'listo');
+    if (o.estado !== 'listo') return;
+    const mensaje = mensajeEquipoListo({ cliente: o.cliente_nombre, marca: o.equipo_marca, modelo: o.equipo_modelo, folio: o.folio, local: nombresLocales.get(o.local_id) });
+    const enlace = urlWhatsAppConTexto(o.cliente_telefono, mensaje);
+    const boton = $<HTMLAnchorElement>('do-whatsapp');
+    boton.classList.toggle('hidden', !enlace);
+    if (enlace) boton.href = enlace;
+    $('do-avisar-texto').textContent = enlace
+      ? `Se abrirá el chat de ${o.cliente_nombre} (${o.cliente_telefono}) con el mensaje escrito; solo pulsa «enviar».`
+      : `El teléfono ${o.cliente_telefono} no parece válido para WhatsApp: llámalo para avisarle.`;
   }
 
   // --- repuestos: buscar en el stock del local de la orden -----------------------------------------
@@ -414,6 +439,12 @@ const claseBotonSec =
     puedeQuitar = esGerencia(sesion?.rol);
     puedeCobrar = !!sesion && ['administrador', 'gerente', 'supervisor', 'encargado', 'vendedor'].includes(sesion.rol);
     orden = o;
+    try {
+      const contexto = await inventoryService.obtenerContextoLocal();
+      nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));
+    } catch {
+      /* sin el nombre del local el mensaje sale igual, sin «en …» */
+    }
     errorEl.classList.add('hidden');
     buscar.value = '';
     $('do-resultados').classList.add('hidden');
