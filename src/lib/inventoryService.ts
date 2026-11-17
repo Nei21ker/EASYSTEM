@@ -2339,7 +2339,7 @@ export async function crearIntercambio(datos: Omit<NuevoIntercambio, 'localId'> 
   if (modoServidor) return intercambiosDb.crearIntercambio({ ...datos, localId });
 
   const db = leerDB();
-  if ((db.locales ?? []).find((l) => l.id === localId)?.tipo !== 'vidrios') throw new Error('Por ahora los cambios de mercancía solo se hacen en el Local Vidrios.');
+  if (!(db.locales ?? []).some((l) => l.id === localId)) throw new Error('El local no existe.');
   const contraparte = normalizarContraparte(datos.contraparte);
   if (!contraparte) throw new Error('Escribe con quién se hace el cambio (de 2 a 80 caracteres).');
   const nota = (datos.nota ?? '').trim();

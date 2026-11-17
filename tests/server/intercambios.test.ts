@@ -110,8 +110,10 @@ describe('cambio de mercancía', () => {
     expect(await disponibles(A)).not.toContain(tercera);
   });
 
-  it('solo en el Local Vidrios, y solo administrador, gerente y encargado de ese local', async () => {
-    await rechazo(crearIntercambio(env, admin, nuevo({ localId: accesorios })), 400, 'solo_vidrios');
+  it('en cualquier local (no solo Vidrios), y solo administrador, gerente y encargado de ese local', async () => {
+    await registrarMovimientos(env, admin, [{ productoId: A, tipo: 'ENTRADA', cantidad: 3, localId: accesorios }]);
+    expect((await crearIntercambio(env, admin, nuevo({ localId: accesorios }))).estado).toBe('COMPLETADO');
+    await rechazo(crearIntercambio(env, admin, nuevo({ localId: '00000000-0000-4000-8000-0000000000ff' })), 404);
     await rechazo(crearIntercambio(env, encargadoAcc, nuevo()), 403);
     await rechazo(crearIntercambio(env, vendedor, nuevo()), 403);
     expect((await crearIntercambio(env, gerente, nuevo())).estado).toBe('COMPLETADO');

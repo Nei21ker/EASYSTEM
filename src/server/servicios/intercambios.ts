@@ -1,4 +1,4 @@
-// Cambio de mercancía con otro local (Local Vidrios, migración 0025): se entrega mercancía a cambio de otra (p. ej. 5 vidrios de un modelo
+// Cambio de mercancía con otro local (todos los locales; nació en el Local Vidrios, migración 0025): se entrega mercancía a cambio de otra (p. ej. 5 vidrios de un modelo
 // por 5 de otro). Pueden hacerlo administrador, gerente y encargado del local; revertirlo, solo administrador y gerente.
 //
 // · Los movimientos de inventario se guardan como TRASLADO_SALIDA (lo que entregamos) y TRASLADO_ENTRADA (lo que recibimos) con el motivo
@@ -134,9 +134,8 @@ const SQL_FOLIO = "(SELECT valor FROM contadores WHERE nombre = 'intercambios')"
 export async function crearIntercambio(env: Entorno, sesion: Sesion, datos: NuevoIntercambio): Promise<Intercambio> {
   await exigirGerencia(env, sesion);
   if (!(await localAccesible(env, sesion, datos.localId))) throw sinPermiso('No tienes acceso a ese local.');
-  const local = await env.DB.prepare('SELECT tipo FROM locales WHERE id = ?').bind(datos.localId).first<{ tipo: string }>();
+  const local = await env.DB.prepare('SELECT 1 AS ok FROM locales WHERE id = ?').bind(datos.localId).first();
   if (!local) throw new ErrorApi(404, 'El local no existe.', 'no_existe');
-  if (local.tipo !== 'vidrios') throw new ErrorApi(400, 'Por ahora los cambios de mercancía solo se hacen en el Local Vidrios.', 'solo_vidrios');
 
   const contraparte = normalizarContraparte(datos.contraparte);
   if (!contraparte) throw new ErrorApi(400, 'Escribe con quién se hace el cambio (de 2 a 80 caracteres).', 'datos_invalidos');

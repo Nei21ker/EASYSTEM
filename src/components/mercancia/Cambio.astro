@@ -1,5 +1,5 @@
 ---
-// Pestaña "Cambio" de Mercancía (solo Local Vidrios): a veces otro local llega y da 5 vidrios de un modelo a cambio de otros 5 de otro modelo.
+// Pestaña "Cambio" de Mercancía (todos los locales): a veces otro local llega y da 5 vidrios de un modelo a cambio de otros 5 de otro modelo.
 // Se eligen los productos que SALEN del inventario, se anotan los que ENTRAN y al confirmar se mueven los dos lados juntos (no es venta ni compra).
 // Uno de los dos lados puede quedar «en espera» (se entrega hoy y lo otro llega después, o al revés). Incluye aviso cuando lo que entra vale mucho
 // menos, resumen del mes por local y comprobante imprimible.
@@ -586,10 +586,10 @@ const lados = [
   $('cm-historial').addEventListener('click', (e) => void accionLista(e));
 
   // --- Inicio -----------------------------------------------------------------------------------------------------------
-  /** El botón de la pestaña solo aparece en el Local Vidrios (o, para administrador y gerente, en la vista de todos los locales). */
+  /** El botón de la pestaña aparece en todos los locales para quien es gerencia (en «Todos» se pide elegir un local). */
   async function mostrarPestanaSiCorresponde() {
     const contexto = await inventoryService.obtenerContextoLocal();
-    const permitido = !!contexto && esGerencia(contexto.sesion.rol) && (contexto.alcance === 'todos' || contexto.local?.tipo === 'vidrios');
+    const permitido = !!contexto && esGerencia(contexto.sesion.rol);
     $('mc-tab-cambio')?.classList.toggle('hidden', !permitido);
     return contexto;
   }
@@ -603,9 +603,9 @@ const lados = [
     miNombre = contexto.sesion.nombre;
     localId = contexto.local?.id ?? null;
     localNombre = contexto.local?.nombre ?? '';
-    if (contexto.local?.tipo !== 'vidrios') {
+    if (!contexto.local) {
       const aviso = $('cm-aviso-local');
-      aviso.textContent = contexto.alcance === 'todos' ? 'Elige el Local Vidrios en el selector del encabezado para hacer un cambio de mercancía.' : 'Por ahora los cambios de mercancía solo se hacen en el Local Vidrios.';
+      aviso.textContent = 'Elige un local en el selector del encabezado para hacer un cambio de mercancía.';
       aviso.classList.remove('hidden');
       $('cm-contenido').classList.add('hidden');
       return;

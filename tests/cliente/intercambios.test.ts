@@ -117,10 +117,10 @@ describe('demo: cambio de mercancía', () => {
     expect(movs[0].motivo).toBe('Cambio #0001 con Local Centro');
   });
 
-  it('valida: solo Local Vidrios, datos completos y stock; sin dejar nada a medias', async () => {
+  it('valida: cualquier local sirve (no solo Vidrios), pero con datos completos y stock; sin dejar nada a medias', async () => {
     const s = await admin();
     const { a, b, stock } = await preparar(s);
-    await expect(s.crearIntercambio({ localId: LOCAL_ACCESORIOS_ID, contraparte: 'Local Centro', salen: [{ producto_id: a.id, cantidad: 1 }], entran: [{ producto_id: b.id, cantidad: 1 }] })).rejects.toThrow(/solo se hacen en el Local Vidrios/);
+    await expect(s.crearIntercambio({ localId: LOCAL_ACCESORIOS_ID, contraparte: 'Local Centro', salen: [{ producto_id: a.id, cantidad: 1 }], entran: [{ producto_id: b.id, cantidad: 1 }] })).rejects.toThrow(/Stock insuficiente/); // Accesorios ya no se rechaza por su tipo: solo porque ahí no hay ese producto
     await expect(s.crearIntercambio({ contraparte: '', salen: [{ producto_id: a.id, cantidad: 1 }], entran: [{ producto_id: b.id, cantidad: 1 }] })).rejects.toThrow(/con quién/);
     await expect(s.crearIntercambio({ contraparte: 'Local Centro', salen: [], entran: [{ producto_id: b.id, cantidad: 1 }] })).rejects.toThrow(/al menos un producto en cada lado/);
     await expect(s.crearIntercambio({ contraparte: 'Local Centro', salen: [{ producto_id: a.id, cantidad: 99 }], entran: [{ producto_id: b.id, cantidad: 1 }] })).rejects.toThrow(/Stock insuficiente/);
