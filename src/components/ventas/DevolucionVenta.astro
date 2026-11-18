@@ -44,7 +44,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       <!-- 2. Producto que se entrega a cambio -->
       <section>
         <p class={claseTitulo}>2. Producto que se entrega a cambio <span class="font-normal normal-case text-slate-400">(opcional)</span></p>
-        <input id="dv-buscar" type="search" autocomplete="off" placeholder="Buscar el producto correcto por nombre, código o modelo..." class={claseCampo} />
+        <input id="dv-buscar" type="search" autocomplete="off" placeholder="Buscar el producto correcto por nombre, código o referencia..." class={claseCampo} />
         <ul id="dv-resultados" class="mt-2 hidden max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700"></ul>
         <ul id="dv-nuevos" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm empty:hidden dark:divide-slate-800 dark:border-slate-700"></ul>
       </section>
@@ -174,7 +174,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     const coincidencias = catalogo
       .filter((p) => {
         if (p.stock_actual <= 0 || !tienePrecioDeVenta(p) || reemplazos.has(p.id)) return false;
-        const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria} ${p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(' ')}`);
+        const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ""} ${p.codigo_barras} ${p.categoria}`);
         return q.split(/\s+/).every((t) => texto.includes(t));
       })
       .slice(0, 8);

@@ -42,10 +42,10 @@ export interface PlanImportacion {
 }
 
 export const PLANTILLA_CSV = [
-  'codigo_barras,nombre,categoria,precio_venta,precio_compra,stock_actual,stock_minimo,compatible_con',
-  ',Forro de silicona iPhone 15,Forros,38,0,0,0,Apple iPhone 15',
-  '7501234567890,Cargador rápido 20W USB-C,Cargadores,80,32,10,5,',
-  ',Vidrio templado universal 6.1,Vidrios Templados,16,4,0,10,Apple iPhone 13 | Samsung Galaxy A54 | Redmi Note 12',
+  'codigo_barras,nombre,categoria,precio_venta,precio_compra,stock_actual,stock_minimo',
+  ',Forro de silicona iPhone 15,Forros,38,0,0,0',
+  '7501234567890,Cargador rápido 20W USB-C,Cargadores,80,32,10,5',
+  ',Vidrio templado universal 6.1,Vidrios Templados,16,4,0,10',
 ].join('\r\n');
 
 const ALIAS_COLUMNAS: Record<string, string> = {
@@ -88,7 +88,7 @@ function entero(valor: string, etiqueta: string): { n: number | null; error?: st
 export function prepararImportacion(
   texto: string,
   existentes: ProductoConRelaciones[],
-  modelos: ModeloTelefono[]
+  modelos?: ModeloTelefono[]
 ): PlanImportacion {
   const plan: PlanImportacion = {
     filas: [],
@@ -124,7 +124,7 @@ export function prepararImportacion(
   const porNombre = new Map(existentes.map((p) => [p.nombre.trim().toLowerCase(), p]));
 
   const modeloPorClave = new Map<string, ModeloTelefono>();
-  for (const m of modelos) {
+  for (const m of modelos ?? []) {
     modeloPorClave.set(normalizarClave(`${m.marca} ${m.modelo}`), m);
     const soloModelo = normalizarClave(m.modelo);
     if (!modeloPorClave.has(soloModelo)) modeloPorClave.set(soloModelo, m);
@@ -187,7 +187,7 @@ export function prepararImportacion(
 
     // Compatibilidades
     let modeloIds: string[] | null = null;
-    const textoModelos = celda(fila, 'compatible_con');
+    const textoModelos = modelos ? celda(fila, 'compatible_con') : '';
     if (textoModelos) {
       modeloIds = [];
       for (const token of textoModelos.split(/[|;]/).map((t) => t.trim()).filter(Boolean)) {

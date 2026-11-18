@@ -27,7 +27,7 @@ const claseSelect =
             type="search"
             autocomplete="off"
             placeholder="Buscar producto"
-            aria-label="Buscar producto por nombre, código, referencia, categoría o modelo"
+            aria-label="Buscar producto por nombre, código, referencia o categoría"
             class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-10 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
           <button
@@ -110,7 +110,6 @@ const claseSelect =
           <colgroup>
             <col />
             <col class="w-28" />
-            <col class="w-[22%]" />
             <col id="pr-col-costo" class="hidden w-24" />
             <col class="w-32" />
             <col class="w-32" />
@@ -120,7 +119,6 @@ const claseSelect =
             <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
               <th class="px-4 py-3 font-semibold">Producto</th>
               <th class="px-4 py-3 font-semibold">Categoría</th>
-              <th class="px-4 py-3 font-semibold">Compatible con</th>
               <th id="pr-th-costo" class="hidden px-4 py-3 text-right font-semibold">Compra</th>
               <th class="px-4 py-3 text-right font-semibold">Venta</th>
               <th class="px-4 py-3 font-semibold">Stock</th>
@@ -221,10 +219,8 @@ const claseSelect =
   import { codigoVisible } from '../../utils/codigos';
   import { esPorCantidad } from '../../utils/controlPorCantidad';
   import {
-    alternarCompatibles,
     compararNatural as natural,
     escaparHtml as escapar,
-    htmlCompatibles,
     htmlPildoraStock as pildoraStock,
     normalizarTexto as normalizar,
   } from '../../utils/productosUI';
@@ -261,7 +257,7 @@ const claseSelect =
   /** Modo "Seleccionar": casillas en cada fila para eliminar productos ingresados por error */
   let modoSeleccion = false;
   const seleccion = new Set<string>();
-  /** id -> texto normalizado (nombre + código + categoría + modelos) para buscar rápido */
+  /** id -> texto normalizado (nombre + código + referencia + categoría) para buscar rápido */
   const indice = new Map<string, string>();
 
   // --- Filtrado, orden y paginación -----------------------------------------------
@@ -335,7 +331,6 @@ const claseSelect =
         <td data-label="Categoría" class="px-4 py-3 max-md:order-1">
           <span class="inline-flex whitespace-nowrap rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">${escapar(p.categoria)}</span>
         </td>
-        <td data-label="Compatible con" class="px-4 py-3 max-md:order-1">${htmlCompatibles(p)}</td>
         ${
           esAdministrador
             ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 max-md:order-1 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
@@ -423,7 +418,7 @@ const claseSelect =
       indice.set(
         p.id,
         normalizar(
-          [p.nombre, p.referencia ?? '', p.codigo_barras, p.categoria, ...p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`)].join(' ')
+          [p.nombre, p.referencia ?? '', p.codigo_barras, p.categoria].join(' ')
         )
       );
     }
@@ -665,7 +660,6 @@ const claseSelect =
   filas.addEventListener('click', (e) => {
     const objetivo = e.target as HTMLElement;
 
-    if (alternarCompatibles(objetivo)) return;
 
     const editar = objetivo.closest<HTMLElement>('[data-editar]')?.dataset.editar;
     if (editar) abrir('easystem:abrir-producto', { productoId: editar });
@@ -686,7 +680,6 @@ const claseSelect =
         ...(p.stock_por_local
           ? { stock_por_local: Object.entries(p.stock_por_local).map(([id, n]) => `${nombresLocales.get(id) ?? id}: ${n}`).join('; ') }
           : {}),
-        compatible_con: p.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join('; ') || 'Universal',
       }))
     );
   });
@@ -701,7 +694,7 @@ const claseSelect =
   }
   window.addEventListener('easystem:productos-cambiaron', recargarProductos);
   // Otro dispositivo vendió, ingresó mercancía o editó productos: la lista se actualiza sola (conserva filtros y página)
-  alCambiarDatos(['productos', 'inventario_local', 'compatibilidades', 'modelos_telefono'], recargarProductos);
+  alCambiarDatos(['productos', 'inventario_local'], recargarProductos);
 
   Promise.all([inventoryService.listarProductos(), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     productos = lista;

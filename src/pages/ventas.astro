@@ -22,7 +22,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     <div class="min-h-0 lg:col-span-3">
       <div class="flex flex-col rounded-xl border border-slate-200 bg-white shadow-sm lg:h-full dark:border-slate-800 dark:bg-slate-900">
         <div class="shrink-0 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-          <!-- Un solo campo: escanear (lector o cámara), escribir el código de una etiqueta o buscar por nombre, categoría o modelo -->
+          <!-- Un solo campo: escanear (lector o cámara), escribir el código de una etiqueta o buscar por nombre, categoría o referencia -->
           <div>
             <div class="relative">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
@@ -36,7 +36,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
                 autocapitalize="off"
                 autocorrect="off"
                 spellcheck="false"
-                aria-label="Escanear el código de una etiqueta o buscar por nombre, categoría o modelo"
+                aria-label="Escanear el código de una etiqueta o buscar por nombre, categoría o referencia"
                 placeholder="Escanea o busca por nombre..."
                 class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-11 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
               />
@@ -425,7 +425,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           id="pos-selector-buscar"
           type="search"
           autocomplete="off"
-          placeholder="Nombre, categoría o modelo..."
+          placeholder="Nombre, categoría o referencia..."
           class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
         />
         <div id="pos-selector-clave-bloque" class="hidden space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
@@ -788,8 +788,7 @@ import { alCambiarDatos } from '../lib/realtime';
             p.nombre.toLowerCase().includes(q) ||
             p.codigo_barras.toLowerCase().includes(q) ||
             (p.referencia ?? '').toLowerCase().includes(q) ||
-            p.categoria.toLowerCase().includes(q) ||
-            p.modelos_compatibles.some((m) => `${m.marca} ${m.modelo}`.toLowerCase().includes(q))
+            p.categoria.toLowerCase().includes(q)
         );
     // Lo que se puede vender (stock > 0) va primero; el orden alfabético se conserva dentro de cada grupo.
     return [...coincidencias].sort((a, b) => Number(b.stock_actual > 0) - Number(a.stock_actual > 0));
@@ -814,17 +813,13 @@ import { alCambiarDatos } from '../lib/realtime';
       .map((producto) => {
         const disponible = producto.stock_actual - cantidadEnCarrito(producto.id);
         const estado = estadoStock(producto.stock_actual, producto.stock_minimo);
-        const compatibles = producto.modelos_compatibles.length
-          ? producto.modelos_compatibles.map((m) => `${m.marca} ${m.modelo}`).join(', ')
-          : 'Universal';
-
         return `
           <li class="flex items-center justify-between gap-3 px-5 py-3">
             ${htmlMiniatura(producto.imagen_url, producto.nombre, 'h-12 w-12')}
             <div class="min-w-0 flex-1">
               <p class="break-words text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
               <p class="line-clamp-2 break-words text-xs text-slate-500 dark:text-slate-400">
-                ${escaparHtml(codigoVisible(producto))} · ${escaparHtml(producto.categoria)} · ${escaparHtml(compatibles)}
+                ${escaparHtml(codigoVisible(producto))} · ${escaparHtml(producto.categoria)}
               </p>
               <p class="mt-1 text-xs">
                 <span class="rounded-full px-2 py-0.5 font-medium ${estilosBadge[estado]}">${disponible} disponible${disponible === 1 ? '' : 's'}</span>
@@ -2289,7 +2284,7 @@ import { alCambiarDatos } from '../lib/realtime';
   /**
    * ¿Lo escrito es un código (de una etiqueta o de fábrica) y no una búsqueda por nombre? El código completo de una etiqueta
    * (INF000026), un código de barras largo o la referencia/código exacto de un producto lo son siempre. El abreviado ("inf14") solo
-   * si no coincide con ningún nombre, categoría o modelo (para que "note13" no se confunda con una pieza).
+   * si no coincide con ningún nombre, categoría o referencia (para que "note13" no se confunda con una pieza).
    */
   function pareceCodigo(texto: string): boolean {
     const t = texto.trim();
@@ -2446,7 +2441,7 @@ import { alCambiarDatos } from '../lib/realtime';
   function volverAProductos() {
     selProducto = null;
     selBuscar.value = '';
-    selBuscar.placeholder = 'Nombre, categoría o modelo...';
+    selBuscar.placeholder = 'Nombre, categoría o referencia...';
     selBuscar.inputMode = 'text';
     selVolver.classList.add('hidden');
     pintarSelectorAutorizacion();
@@ -3241,7 +3236,7 @@ import { alCambiarDatos } from '../lib/realtime';
       });
       enfocarCodigo();
       // Otro dispositivo vendió o ingresó mercancía: el stock se actualiza solo y el carrito se ajusta
-      alCambiarDatos(['inventario_local', 'productos', 'compatibilidades', 'unidades_producto', 'pendientes'], refrescarEnVivo);
+      alCambiarDatos(['inventario_local', 'productos', 'unidades_producto', 'pendientes'], refrescarEnVivo);
       return;
     }
     cargando.classList.add('hidden');

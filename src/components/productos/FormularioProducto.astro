@@ -120,14 +120,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       </p>
       <p id="fp-local-nota" class="-mt-1 text-xs font-medium text-brand-700 dark:text-brand-300"></p>
 
-      <div id="fp-grupo-compat">
-        <div class="flex items-baseline justify-between">
-          <span class={claseEtiqueta}>Compatible con</span>
-          <span id="fp-modelos-contador" class="text-xs text-slate-400">0 seleccionados</span>
-        </div>
-        <input id="fp-modelos-buscar" type="search" autocomplete="off" placeholder="Buscar modelo..." class={claseCampo} />
-        <div id="fp-modelos" class="mt-2 max-h-52 space-y-3 overflow-y-auto rounded-lg border border-slate-200 p-3 dark:border-slate-700"></div>
-      </div>
     </div>
 
     <footer class="space-y-3 border-t border-slate-200 px-5 py-4 dark:border-slate-800">
@@ -153,7 +145,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { productoEnCarga, TIPO_LOCAL_CARGA } from '../../utils/cargaInicial';
   import { errorPrecioBs, leerPrecioEscrito, textoPrecioCampo, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
-  import type { ModeloTelefono, ProductoConRelaciones } from '../../types/database.types';
+  import type { ProductoConRelaciones } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('fp-dialogo');
@@ -172,12 +164,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     minimo: $<HTMLInputElement>('fp-minimo'),
     porCantidad: $<HTMLInputElement>('fp-por-cantidad'),
   };
-  const contenedorModelos = $('fp-modelos');
-  const contadorModelos = $('fp-modelos-contador');
-  const buscarModelo = $<HTMLInputElement>('fp-modelos-buscar');
 
   let productos: ProductoConRelaciones[] = [];
-  let modelos: ModeloTelefono[] = [];
   let editando: ProductoConRelaciones | null = null;
   // Carga inicial del Local Servicio Técnico: local donde se corrige la cantidad en silencio (null = no aplica)
   let localCantidadCarga: string | null = null;
@@ -186,15 +174,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let pedirCantidad = false;
   /** El precio de compra es de administrador y gerente: el encargado no lo ve ni lo modifica */
   let veCosto = true;
-  const seleccion = new Set<string>();
 
   const TEXTO_AYUDA_PREFIJO = $('fp-prefijo-ayuda').textContent ?? '';
   const TEXTO_AYUDA_POR_CANTIDAD = $('fp-por-cantidad-ayuda').textContent ?? '';
   const CATEGORIAS_BASE = ['Forros', 'Vidrios Templados', 'Cargadores', 'Audífonos'];
-
-  function normalizar(t: string): string {
-    return t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  }
 
   function mostrarError(msg: string) {
     error.textContent = msg;
@@ -252,54 +235,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     pintarFoto();
   });
 
-  function pintarModelos() {
-    const porMarca = new Map<string, ModeloTelefono[]>();
-    for (const m of modelos) (porMarca.get(m.marca) ?? porMarca.set(m.marca, []).get(m.marca)!).push(m);
-
-    contenedorModelos.innerHTML = [...porMarca.entries()]
-      .map(
-        ([marca, lista]) => `
-        <div data-grupo>
-          <p class="mb-1 text-xs font-semibold text-slate-500 dark:text-slate-400">${marca}</p>
-          <div class="flex flex-wrap gap-1.5">
-            ${lista
-              .map(
-                (m) => `
-              <label data-texto="${normalizar(`${m.marca} ${m.modelo}`)}" class="cursor-pointer">
-                <input type="checkbox" value="${m.id}" class="peer sr-only" ${seleccion.has(m.id) ? 'checked' : ''} />
-                <span class="inline-block rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-600 transition peer-checked:border-brand-600 peer-checked:bg-brand-600 peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 dark:border-slate-700 dark:text-slate-300">${m.modelo}</span>
-              </label>`
-              )
-              .join('')}
-          </div>
-        </div>`
-      )
-      .join('');
-    actualizarContador();
-  }
-
-  function actualizarContador() {
-    contadorModelos.textContent = `${seleccion.size} seleccionado${seleccion.size === 1 ? '' : 's'}`;
-  }
-
-  contenedorModelos.addEventListener('change', (e) => {
-    const input = e.target as HTMLInputElement;
-    if (input.type !== 'checkbox') return;
-    if (input.checked) seleccion.add(input.value);
-    else seleccion.delete(input.value);
-    actualizarContador();
-  });
-
-  buscarModelo.addEventListener('input', () => {
-    const q = normalizar(buscarModelo.value.trim());
-    for (const etiqueta of contenedorModelos.querySelectorAll<HTMLElement>('[data-texto]')) {
-      etiqueta.classList.toggle('hidden', q !== '' && !(etiqueta.dataset.texto ?? '').includes(q));
-    }
-    for (const grupo of contenedorModelos.querySelectorAll<HTMLElement>('[data-grupo]')) {
-      grupo.classList.toggle('hidden', grupo.querySelectorAll('[data-texto]:not(.hidden)').length === 0);
-    }
-  });
-
   function generarCodigo() {
     campos.codigo.value = generarCodigosInternos(productos.map((p) => p.codigo_barras))[0];
     $('fp-codigo-ayuda').textContent = 'Código interno generado (EAN-13, prefijo 20). Imprímelo en la etiqueta del producto.';
@@ -310,7 +245,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   let prefijoManual = false;
   function sugerirPrefijoActual() {
     if (prefijoManual) return;
-    campos.prefijo.value = sugerirPrefijo(campos.nombre.value, campos.categoria.value, [...new Set(modelos.map((m) => m.marca))]);
+    campos.prefijo.value = sugerirPrefijo(campos.nombre.value, campos.categoria.value, []);
   }
   campos.nombre.addEventListener('input', sugerirPrefijoActual);
   campos.categoria.addEventListener('input', sugerirPrefijoActual);
@@ -330,7 +265,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     $('fp-grupo-compra').classList.toggle('hidden', !veCosto);
 
     // Catálogo completo: el código de barras no debe repetirse en NINGÚN local
-    [productos, modelos] = await Promise.all([inventoryService.listarProductos({ catalogoCompleto: true }), inventoryService.listarModelos()]);
+    productos = await inventoryService.listarProductos({ catalogoCompleto: true });
     const contexto = await inventoryService.obtenerContextoLocal();
     $('fp-local-nota').textContent = contexto?.local
       ? `El stock inicial y el mínimo son de: ${contexto.local.nombre}.`
@@ -341,16 +276,11 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     // Las categorías las escribe cualquier encargado: se arman como nodos (nunca como texto HTML)
     $('fp-categorias').replaceChildren(...categorias.map((c) => new Option('', c)));
 
-    seleccion.clear();
-    buscarModelo.value = '';
     // Servicio Técnico + producto sin foto o sin precio: «Editar» permite corregir la cantidad del local sin dejar movimientos
     localCantidadCarga = editando && contexto?.local?.tipo === TIPO_LOCAL_CARGA && productoEnCarga(editando) ? contexto.local.id : null;
     $('fp-grupo-stock').classList.toggle('hidden', (editando !== null && !localCantidadCarga) || (editando === null && sinStockInicial && !pedirCantidad));
     $('fp-cantidad-ayuda').classList.toggle('hidden', !localCantidadCarga);
     if (editando) $('fp-stock-etiqueta').textContent = localCantidadCarga ? 'Cantidad en este local' : 'Stock inicial';
-    // «Compatible con» NUNCA se muestra al EDITAR (en ningún local; las compatibilidades que ya tiene se conservan tal cual) y al crear solo en
-    // accesorios o en la vista «Todos» (en controles, vidrios y servicio técnico no se pide)
-    $('fp-grupo-compat').classList.toggle('hidden', editando !== null || (!!contexto?.local && contexto.local.tipo !== 'accesorios'));
     $('fp-codigo-ayuda').textContent = 'Si el producto trae código, escríbelo o escanéalo aquí.';
 
     if (editando) {
@@ -358,7 +288,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       campos.nombre.value = editando.nombre;
       campos.categoria.value = editando.categoria;
       campos.codigo.value = editando.codigo_barras;
-      campos.prefijo.value = editando.prefijo_codigo ?? sugerirPrefijo(editando.nombre, editando.categoria, [...new Set(modelos.map((m) => m.marca))]);
+      campos.prefijo.value = editando.prefijo_codigo ?? sugerirPrefijo(editando.nombre, editando.categoria, []);
       prefijoManual = true;
       $('fp-referencia-valor').textContent = editando.referencia || 'sin asignar';
       $('fp-prefijo-ayuda').textContent = 'Si lo cambias, solo afecta a las piezas que ingreses desde ahora: las que ya tienen código lo conservan.';
@@ -377,7 +307,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         : conStock
           ? 'Para cambiarlo el producto debe tener el stock en 0 (retíralo con una baja o crea otro producto).'
           : TEXTO_AYUDA_POR_CANTIDAD;
-      editando.modelos_compatibles.forEach((m) => seleccion.add(m.id));
     } else {
       titulo.textContent = 'Nuevo producto';
       form.reset();
@@ -400,8 +329,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     quitarFoto = false;
     errorFoto.classList.add('hidden');
     await pintarFoto();
-    pintarModelos();
-    buscarModelo.dispatchEvent(new Event('input'));
     dialogo.showModal();
     campos.nombre.focus();
   }
@@ -494,7 +421,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           // Solo si cambió (y se pudo cambiar): el servidor lo rechaza si el producto tiene stock o el rol no puede
           ...(!campos.porCantidad.disabled && campos.porCantidad.checked !== esPorCantidad(editando) ? { control_por_cantidad: campos.porCantidad.checked ? 1 : 0 } : {}),
         });
-        await inventoryService.establecerCompatibilidades(editando.id, [...seleccion]);
         if (quitarFoto && editando.imagen_url) await inventoryService.quitarImagenProducto(editando.id);
         else if (fotoNueva) await inventoryService.guardarImagenProducto(editando.id, fotoNueva);
       } else {
@@ -510,7 +436,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           control_por_cantidad: campos.porCantidad.checked ? 1 : 0,
         });
         idCreado = creado.id;
-        if (seleccion.size > 0) await inventoryService.establecerCompatibilidades(creado.id, [...seleccion]);
         if (stock > 0) {
           await inventoryService.registrarMovimiento({
             producto_id: creado.id,

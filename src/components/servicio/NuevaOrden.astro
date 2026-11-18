@@ -48,8 +48,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
         <p class={claseTitulo}>Equipo</p>
         <div>
           <label for="no-equipo" class={claseEtiqueta}>Marca y modelo *</label>
-          <input id="no-equipo" type="text" list="no-equipos" autocomplete="off" maxlength="141" placeholder="Samsung Galaxy A15" class={claseCampo} />
-          <datalist id="no-equipos"></datalist>
+          <input id="no-equipo" type="text" autocomplete="off" maxlength="141" placeholder="Samsung Galaxy A15" class={claseCampo} />
         </div>
         <div>
           <label for="no-accesorios" class={claseEtiqueta}>Qué se recibe con el equipo <span class="font-normal text-slate-400">(opcional)</span></label>
@@ -95,7 +94,6 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     falla: $<HTMLTextAreaElement>('no-falla'),
   };
 
-  let marcas: string[] = [];
 
   function mostrarError(mensaje: string, foco?: HTMLElement) {
     errorEl.textContent = mensaje;
@@ -109,9 +107,6 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
   async function abrir() {
     const contexto = await inventoryService.obtenerContextoLocal();
     if (contexto?.local?.tipo !== 'servicio_tecnico') return;
-    const modelos = await inventoryService.listarModelos().catch(() => []);
-    marcas = [...new Set(modelos.map((m) => m.marca))];
-    $('no-equipos').replaceChildren(...modelos.map((m) => new Option('', `${m.marca} ${m.modelo}`)));
     $('no-local').textContent = contexto.local.nombre;
     form.reset();
     errorEl.classList.add('hidden');
@@ -136,7 +131,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
       return mostrarError('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', c.telefono);
     }
-    const equipo = separarEquipo(c.equipo.value, marcas);
+    const equipo = separarEquipo(c.equipo.value, []);
     if (!equipo) return mostrarError('Indica la marca y el modelo del equipo, por ejemplo Samsung Galaxy A15.', c.equipo);
     if (c.falla.value.trim().length < 3) return mostrarError('Describe la falla que reporta el cliente.', c.falla);
 
