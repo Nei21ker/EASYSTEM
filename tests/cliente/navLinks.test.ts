@@ -2,42 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { enlaceVisible, enlacesNav } from '../../src/lib/navLinks';
 
 const enlace = (href: string) => enlacesNav.find((e) => e.href === href)!;
-const modelos = enlace('/modelos');
-
-describe('Modelos de teléfono en el local de controles', () => {
-  it('el encargado y el vendedor del Local de controles no lo ven', () => {
-    expect(enlaceVisible(modelos, 'encargado', 'controles', false)).toBe(false);
-    expect(enlaceVisible(modelos, 'vendedor', 'controles', false)).toBe(false);
-  });
-
-  it('en los demás locales el encargado y el vendedor siguen viéndolo', () => {
-    for (const tipo of ['accesorios', 'servicio_tecnico'] as const) {
-      expect(enlaceVisible(modelos, 'encargado', tipo, false)).toBe(true);
-      expect(enlaceVisible(modelos, 'vendedor', tipo, false)).toBe(true);
-    }
-  });
-
-  it('el administrador y el gerente lo ven siempre, también al mirar el Local de controles', () => {
-    expect(enlaceVisible(modelos, 'administrador', 'controles', false)).toBe(true);
-    expect(enlaceVisible(modelos, 'gerente', 'controles', false)).toBe(true);
-    expect(enlaceVisible(modelos, 'administrador', null, true)).toBe(true);
-  });
+it('Modelos de teléfono no aparece en el menú de ningún usuario', () => {
+  expect(enlacesNav.map((e) => e.href)).not.toContain('/modelos');
 });
 
-describe('Local Vidrios: Pendientes en lugar de Modelos de teléfono', () => {
+describe('Pendientes e Inversión', () => {
   const pendientes = enlace('/pendientes');
-
-  it('en el Local Vidrios nadie ve Modelos de teléfono (ni el administrador ni el gerente mientras lo miran)', () => {
-    for (const rol of ['administrador', 'gerente', 'encargado', 'vendedor', 'tecnico'] as const) {
-      expect(enlaceVisible(modelos, rol, 'vidrios', false)).toBe(false);
-    }
-  });
-
-  it('el administrador y el gerente siguen viendo Modelos en la vista de todos los locales y en los demás locales', () => {
-    expect(enlaceVisible(modelos, 'administrador', null, true)).toBe(true);
-    expect(enlaceVisible(modelos, 'gerente', null, true)).toBe(true);
-    expect(enlaceVisible(modelos, 'gerente', 'accesorios', false)).toBe(true);
-  });
 
   it('Inversión solo la ven el administrador y el gerente, en cualquier local', () => {
     const inversion = enlace('/inversion');
@@ -106,10 +76,8 @@ describe('Supervisor: los módulos del encargado, en todos los locales', () => {
   const visibles = (rol: Parameters<typeof enlaceVisible>[1], tipo: Parameters<typeof enlaceVisible>[2] = 'accesorios', todos = false) =>
     enlacesNav.filter((e) => enlaceVisible(e, rol, tipo, todos)).map((e) => e.href);
 
-  it('ve exactamente los mismos enlaces que el encargado en cada tipo de local (salvo Modelos en controles, que a él sí se le muestra)', () => {
-    for (const tipo of ['accesorios', 'vidrios', 'servicio_tecnico'] as const) expect(visibles('supervisor', tipo)).toEqual(visibles('encargado', tipo));
-    expect(visibles('encargado', 'controles')).not.toContain('/modelos');
-    expect(visibles('supervisor', 'controles')).toContain('/modelos');
+  it('ve exactamente los mismos enlaces que el encargado en cada tipo de local', () => {
+    for (const tipo of ['accesorios', 'vidrios', 'servicio_tecnico', 'controles'] as const) expect(visibles('supervisor', tipo)).toEqual(visibles('encargado', tipo));
   });
 
   it('tiene Mercancía, Pendientes, Historial y Cuadre de caja, y no Reportes, Inversión, Usuarios, Nómina, Suscripciones ni Tiempo real', () => {

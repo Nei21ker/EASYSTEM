@@ -1,11 +1,6 @@
 import type { Rol } from './auth';
 import type { TipoLocal } from '../types/database.types';
 
-export interface OcultoEnLocal {
-  tipo: TipoLocal;
-  roles: Rol[];
-}
-
 export interface EnlaceNav {
   href: string;
   etiqueta: string;
@@ -14,8 +9,6 @@ export interface EnlaceNav {
   roles: Rol[];
   /** Si se define, el enlace solo se muestra cuando el local activo es de ese tipo (el administrador, que ve "Todos", también lo ve). */
   soloTipoLocal?: TipoLocal;
-  /** Si se define, estos roles NO ven el enlace cuando su local es de ese tipo (administrador y gerente no están afectados salvo que se los nombre). Admite varias reglas (una por tipo de local). */
-  ocultoEnLocal?: OcultoEnLocal | OcultoEnLocal[];
   /** Otras rutas que cuentan como "estar en este enlace" (resaltan el enlace del menú): las pestañas del mismo módulo. */
   tambienActivoEn?: string[];
 }
@@ -54,18 +47,6 @@ export const enlacesNav: EnlaceNav[] = [
     roles: GERENCIA,
   },
   { href: '/productos', etiqueta: 'Productos', icono: 'M20 7 12 3 4 7m16 0-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4', roles: TODOS },
-  {
-    href: '/modelos',
-    etiqueta: 'Modelos de teléfono',
-    icono: 'M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2ZM12 18h.01',
-    roles: TODOS,
-    // El Local de controles no trabaja con forros/vidrios por modelo: su encargado y vendedores no lo necesitan. El Local Vidrios
-    // no lo muestra a nadie (tampoco al administrador ni al gerente mientras lo miran).
-    ocultoEnLocal: [
-      { tipo: 'controles', roles: ['encargado', 'vendedor'] },
-      { tipo: 'vidrios', roles: TODOS },
-    ],
-  },
   {
     // Todos los locales: lo que un promotor se llevó y vendrá a pagar, y las comisiones que se le deben por los clientes que trajo
     href: '/pendientes',
@@ -126,7 +107,5 @@ export const enlacesNav: EnlaceNav[] = [
 export function enlaceVisible(enlace: EnlaceNav, rol: Rol, tipoLocal: TipoLocal | null, vistaTodos: boolean): boolean {
   if (!enlace.roles.includes(rol)) return false;
   if (enlace.soloTipoLocal && !vistaTodos && tipoLocal !== enlace.soloTipoLocal) return false;
-  const ocultos = enlace.ocultoEnLocal === undefined ? [] : Array.isArray(enlace.ocultoEnLocal) ? enlace.ocultoEnLocal : [enlace.ocultoEnLocal];
-  if (!vistaTodos && ocultos.some((o) => o.tipo === tipoLocal && o.roles.includes(rol))) return false;
   return true;
 }
