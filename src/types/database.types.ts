@@ -662,7 +662,13 @@ export interface Devolucion extends NuevaDevolucion {
 export type EstadoOrdenServicio = 'pendiente' | 'en_reparacion' | 'listo' | 'entregado';
 
 /** Repuesto consumido del stock del local en una orden de servicio (con el precio del momento). */
-export type RepuestoOrden = VentaItem;
+export type RepuestoOrden = VentaItem & { origen_local_id?: string; origen_local_nombre?: string };
+
+export type RepuestoDisponible = Pick<Producto, 'id' | 'nombre' | 'codigo_barras' | 'referencia' | 'categoria' | 'precio_venta'> & {
+  stock_actual: number;
+  origen_local_id: string;
+  origen_local_nombre: string;
+};
 
 export interface NuevaOrdenServicio {
   local_id: string;

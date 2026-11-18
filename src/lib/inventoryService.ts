@@ -31,6 +31,8 @@ import * as devolucionesDb from './db/devoluciones';
 import * as localesDb from './db/locales';
 import { normalizarLocalNuevo, type DatosLocal } from '../utils/local';
 import * as ordenesDb from './db/ordenes';
+import type { RepuestoDisponible } from '../types/database.types';
+import { permiteOrigenRepuesto } from '../utils/origenRepuestos';
 import * as nominaDb from './db/nomina';
 import * as unidadesDb from './db/unidades';
 import * as trasladosDb from './db/traslados';
@@ -3772,15 +3774,50 @@ export async function actualizarOrdenServicio(
   return guardarCambiosOrden(orden, parche);
 }
 
-/** Descuenta un repuesto del stock del local de la orden y lo suma a la orden (si ya estaba, suma la cantidad). */
+/** Catálogo acotado a una orden de reparación y a sus orígenes autorizados. */
+export async function listarRepuestosOrden(id: string): Promise<RepuestoDisponible[]> {
+  if (modoServidor) return ordenesDb.listarRepuestos(id);
+  const orden = await obtenerOrdenServicio(id);
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !(esGerencia(sesion.rol) || sesion.rol === 'vendedor') || !puedeEnLocal(sesion, orden.local_id)) throw new Error('No tienes acceso a los repuestos de esa orden.');
+  if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada.');
+  const db = leerDB();
+  const productos = new Map(db.productos.map((p) => [p.id, p]));
+  const nombres = new Map((db.locales ?? []).map((l) => [l.id, l.nombre]));
+  return db.inventario.flatMap((i) => {
+    const p = productos.get(i.producto_id);
+    const nombre = nombres.get(i.local_id);
+    if (!p || !nombre || i.stock_actual <= 0 || !permiteOrigenRepuesto(orden.local_id, i.local_id, p.categoria)) return [];
+    return [{ id: p.id, nombre: p.nombre, codigo_barras: p.codigo_barras, referencia: p.referencia, categoria: p.categoria,
+      precio_venta: p.precio_venta, stock_actual: i.stock_actual, origen_local_id: i.local_id, origen_local_nombre: nombre }];
+  }).sort((a, b) => Number(b.origen_local_id === orden.local_id) - Number(a.origen_local_id === orden.local_id) || a.nombre.localeCompare(b.nombre));
+}
+
+export async function escanearRepuestoOrden(id: string, codigoPieza: string, codigoProducto: string): Promise<OrdenServicio> {
+  if (modoServidor) return ordenesDb.cambiarRepuesto(id, { accion: 'escanear', codigo: codigoPieza || codigoProducto });
+  const catalogo = await listarRepuestosOrden(id);
+  const unidad = codigoPieza ? await obtenerUnidadPorCodigo(codigoPieza) : null;
+  const p = unidad
+    ? catalogo.find((r) => r.id === unidad.producto_id && r.origen_local_id === unidad.local_id)
+    : catalogo.find((r) => r.codigo_barras === codigoProducto || r.referencia === codigoProducto);
+  if (!p) throw new Error('No hay un repuesto disponible con ese código en los inventarios habilitados.');
+  return agregarRepuestoOrden(id, p, 1, unidad?.codigo);
+}
+
+/** Descuenta un repuesto de su inventario de origen y lo anota en la orden. */
 export async function agregarRepuestoOrden(
   id: string,
-  producto: { id: string; nombre: string; codigo_barras: string; precio_venta: number },
-  cantidad: number
+  seleccionado: { id: string; origen_local_id?: string },
+  cantidad: number,
+  codigoUnidad?: string
 ): Promise<OrdenServicio> {
   if (!Number.isInteger(cantidad) || cantidad <= 0) throw new Error('La cantidad del repuesto debe ser un número entero mayor a 0.');
   const orden = await obtenerOrdenServicio(id);
   if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
+  const origen = seleccionado.origen_local_id ?? orden.local_id;
+  if (modoServidor) return ordenesDb.cambiarRepuesto(id, { accion: 'agregar', productoId: seleccionado.id, origen, cantidad });
+  const producto = (await listarRepuestosOrden(id)).find((p) => p.id === seleccionado.id && p.origen_local_id === origen);
+  if (!producto) throw new Error('El repuesto no está disponible en los inventarios habilitados para esta orden.');
 
   // Primero el stock (falla si no alcanza); después se anota en la orden
   const movimiento = await registrarMovimiento({
@@ -3788,12 +3825,13 @@ export async function agregarRepuestoOrden(
     tipo: 'SALIDA',
     cantidad,
     motivo: `Repuesto, orden de servicio #${orden.folio}`,
-    local_id: orden.local_id,
+    local_id: origen,
+    unidad_codigos: codigoUnidad ? [codigoUnidad] : undefined,
   });
   const salieron = movimiento.unidad_codigos ?? [];
 
   const repuestos = orden.repuestos.map((r) => ({ ...r }));
-  const existente = repuestos.find((r) => r.producto_id === producto.id);
+  const existente = repuestos.find((r) => r.producto_id === producto.id && (r.origen_local_id ?? orden.local_id) === origen);
   if (existente) {
     existente.cantidad += cantidad;
     if (salieron.length) existente.unidades = [...(existente.unidades ?? []), ...salieron];
@@ -3804,6 +3842,8 @@ export async function agregarRepuestoOrden(
       codigo_barras: producto.codigo_barras,
       cantidad,
       precio_unitario: producto.precio_venta,
+      origen_local_id: origen,
+      origen_local_nombre: producto.origen_local_nombre,
       ...(salieron.length ? { unidades: salieron } : {}),
     });
   }
@@ -3816,10 +3856,13 @@ export async function agregarRepuestoOrden(
 }
 
 /** Quita un repuesto de la orden y lo regresa al stock del local (es una ENTRADA: administrador o encargado). */
-export async function quitarRepuestoOrden(id: string, productoId: string): Promise<OrdenServicio> {
+export async function quitarRepuestoOrden(id: string, productoId: string, origen?: string): Promise<OrdenServicio> {
+  if (modoServidor) return ordenesDb.cambiarRepuesto(id, { accion: 'quitar', productoId, origen });
   const orden = await obtenerOrdenServicio(id);
+  const sesion = await obtenerSesionActual();
+  if (!sesion || !esGerencia(sesion.rol) || !puedeEnLocal(sesion, orden.local_id)) throw new Error('No puedes quitar repuestos de esa orden.');
   if (orden.estado === 'entregado') throw new Error('Esa orden ya fue entregada y no se puede modificar.');
-  const repuesto = orden.repuestos.find((r) => r.producto_id === productoId);
+  const repuesto = orden.repuestos.find((r) => r.producto_id === productoId && (r.origen_local_id ?? orden.local_id) === (origen ?? orden.local_id));
   if (!repuesto) throw new Error('Ese repuesto no está en la orden.');
 
   await registrarMovimiento({
@@ -3827,10 +3870,10 @@ export async function quitarRepuestoOrden(id: string, productoId: string): Promi
     tipo: 'ENTRADA',
     cantidad: repuesto.cantidad,
     motivo: `Repuesto devuelto al inventario, orden de servicio #${orden.folio}`,
-    local_id: orden.local_id,
+    local_id: repuesto.origen_local_id ?? orden.local_id,
     unidad_codigos: repuesto.unidades?.slice(0, repuesto.cantidad),
   });
-  return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r.producto_id !== productoId) });
+  return guardarCambiosOrden(orden, { repuestos: orden.repuestos.filter((r) => r !== repuesto) });
 }
 
 /**
@@ -3854,7 +3897,7 @@ export async function resetearServicioTecnico(opciones: { localId?: string; simu
   const codigos = new Set<string>();
   for (const o of ordenes) for (const r of o.repuestos) for (const c of r.unidades ?? []) codigos.add(c);
   const vendidas = (db.unidades ?? []).filter((u) => u.estado === 'VENDIDA' && codigos.has(u.codigo));
-  const comoVentas = ordenes.map((o) => ({ local_id: o.local_id, items: o.repuestos })) as unknown as Venta[];
+  const comoVentas = ordenes.flatMap((o) => o.repuestos.map((r) => ({ local_id: r.origen_local_id ?? o.local_id, items: [r] }))) as unknown as Venta[];
   const { grupos: porCantidad } = cantidadesPorCantidadDemo(db, comoVentas, []);
   const resultado: ResultadoReseteoServicio = {
     ordenes: ordenes.length,

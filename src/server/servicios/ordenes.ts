@@ -154,12 +154,13 @@ export async function actualizarOrden(env: Entorno, sesion: Sesion, id: string, 
   const manoDeObra = redondear2(cambios.mano_de_obra_usd ?? actual.mano_de_obra_usd);
   const diagnostico = cambios.diagnostico !== undefined ? (cambios.diagnostico ?? '').trim().slice(0, 1000) || null : actual.diagnostico;
 
-  await env.DB.batch([
+  const lote = await env.DB.batch([
     env.DB
-      .prepare('UPDATE ordenes_servicio SET estado = ?, diagnostico = ?, tecnico_id = ?, tecnico_nombre = ?, repuestos = ?, mano_de_obra_usd = ?, total_usd = ? WHERE id = ?')
-      .bind(cambios.estado ?? actual.estado, diagnostico, tecnicoId, tecnicoNombre, JSON.stringify(repuestos), manoDeObra, totalDeOrden(repuestos, manoDeObra), id),
+      .prepare("UPDATE ordenes_servicio SET estado = ?, diagnostico = ?, tecnico_id = ?, tecnico_nombre = ?, repuestos = ?, mano_de_obra_usd = ?, total_usd = ? WHERE id = ? AND estado <> 'entregado' AND json(repuestos) = json(?)")
+      .bind(cambios.estado ?? actual.estado, diagnostico, tecnicoId, tecnicoNombre, JSON.stringify(repuestos), manoDeObra, totalDeOrden(repuestos, manoDeObra), id, JSON.stringify(actual.repuestos)),
     ...sentenciasCambio(env.DB, ['ordenes_servicio'], actual.local_id),
   ]);
+  if (!lote[0].meta.changes) throw new ErrorApi(409, 'La orden cambió. Vuelve a abrirla.', 'orden_modificada');
   return (await obtenerOrden(env, sesion, id))!;
 }
 
@@ -192,15 +193,15 @@ export async function cobrarOrden(env: Entorno, sesion: Sesion, id: string, cobr
       .prepare(
         `UPDATE ordenes_servicio SET estado = 'entregado', total_usd = ?, mano_de_obra_usd = ?, porcentaje_local = ?, comision_local_usd = ?, pago_tecnico_usd = ?,
            pagos = ?, vuelto = ?, tasa_cambio = ?, total_bs = ?, cobrado_en = ?, cobrado_por = ?, cobrado_nombre = ?
-         WHERE id = ? AND estado <> 'entregado'`
+         WHERE id = ? AND estado <> 'entregado' AND json(repuestos) = json(?)`
       )
       .bind(
         total, reparto.ganancia, cobro.porcentaje_local, reparto.comision_local_usd, reparto.pago_tecnico_usd, JSON.stringify(cobro.pagos),
-        cobro.vuelto ? JSON.stringify(cobro.vuelto) : null, cobro.tasa_cambio ?? null, totalBs, ahora, sesion.userId, sesion.nombre, id
+        cobro.vuelto ? JSON.stringify(cobro.vuelto) : null, cobro.tasa_cambio ?? null, totalBs, ahora, sesion.userId, sesion.nombre, id, JSON.stringify(actual.repuestos)
       ),
     ...sentenciasCambio(env.DB, ['ordenes_servicio'], actual.local_id),
   ]);
-  if (!lote[0].meta.changes) throw new ErrorApi(409, 'Esa orden ya fue entregada y cobrada.', 'orden_entregada');
+  if (!lote[0].meta.changes) throw new ErrorApi(409, 'La orden cambió. Vuelve a abrirla antes de cobrar.', 'orden_modificada');
   return (await obtenerOrden(env, sesion, id))!;
 }
 
@@ -269,7 +270,9 @@ export async function resetearServicioTecnico(env: Entorno, sesion: Sesion, opci
   const codigos = new Set<string>();
   for (const o of ordenes) for (const r of JSON.parse(o.repuestos || '[]') as RepuestoOrden[]) for (const c of r.unidades ?? []) codigos.add(c);
   const { grupos: porPieza, piezas: piezasConCodigo } = await piezasVendidas(db, codigos);
-  const { grupos: porCantidad } = await cantidadesPorCantidad(db, ordenes.map((o) => ({ local_id: o.local_id, items: o.repuestos || '[]' })), []);
+  const lineas = ordenes.flatMap((o) => (JSON.parse(o.repuestos || '[]') as RepuestoOrden[])
+    .map((r) => ({ local_id: r.origen_local_id ?? o.local_id, items: JSON.stringify([r]) })));
+  const { grupos: porCantidad } = await cantidadesPorCantidad(db, lineas, []);
   const piezas = piezasConCodigo + [...porCantidad.values()].reduce((s, g) => s + g.cantidad, 0);
 
   const resultado: ResultadoReseteoServicio = { ordenes: ordenes.length, cobradas: ordenes.filter((o) => o.cobrado_en).length, piezas, simulado: !!opciones.simular };

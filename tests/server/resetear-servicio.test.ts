@@ -6,6 +6,8 @@ import { crearProducto } from '../../src/server/servicios/catalogo';
 import { registrarMovimiento } from '../../src/server/servicios/movimientos';
 import { actualizarOrden, crearOrden, resetearServicioTecnico } from '../../src/server/servicios/ordenes';
 import type { RepuestoOrden } from '../../src/types/database.types';
+import { LOCAL_PANTALLAS_ID } from '../../src/lib/constantes-locales';
+import { cambiarRepuestoOrden, listarRepuestosOrden } from '../../src/server/servicios/repuestosOrden';
 
 const env = crearEntornoDePrueba();
 const { accesorios, servicio } = IDS_LOCALES;
@@ -63,6 +65,46 @@ async function ordenConRepuesto(local: string, productoId: string, cantidad: num
 }
 
 describe('resetearServicioTecnico', () => {
+  it('descuenta la pieza escaneada del Local de pantallas y la devuelve a su origen', async () => {
+    await env.DB.prepare("INSERT INTO locales (id, nombre, tipo) VALUES (?, 'Local de pantallas', 'servicio_tecnico')").bind(LOCAL_PANTALLAS_ID).run();
+    const { unidadCodigos } = await registrarMovimiento(env, sA, { productoId: pantalla, tipo: 'ENTRADA', cantidad: 2, localId: LOCAL_PANTALLAS_ID });
+    const orden = await crearOrden(env, sE, nueva(servicio));
+    expect(await listarRepuestosOrden(env, sE, orden.id)).toEqual([expect.objectContaining({ id: pantalla, origen_local_id: LOCAL_PANTALLAS_ID, stock_actual: 2 })]);
+    const conRepuesto = await cambiarRepuestoOrden(env, sE, orden.id, { accion: 'escanear', codigo: unidadCodigos[1] });
+    expect(conRepuesto.repuestos).toEqual([expect.objectContaining({ unidades: [unidadCodigos[1]], origen_local_id: LOCAL_PANTALLAS_ID })]);
+    expect(await stock(pantalla, LOCAL_PANTALLAS_ID)).toBe(1);
+    expect(await stock(pantalla, servicio)).toBe(0);
+    await cambiarRepuestoOrden(env, sE, orden.id, { accion: 'quitar', productoId: pantalla, origen: LOCAL_PANTALLAS_ID });
+    expect(await estadoPieza(unidadCodigos[1])).toEqual({ estado: 'DISPONIBLE', local_id: LOCAL_PANTALLAS_ID });
+    expect(await stock(pantalla, LOCAL_PANTALLAS_ID)).toBe(2);
+  });
+
+  it('en Pantallas solo comparte baterías de Servicio Técnico y el reset devuelve cantidades a su origen', async () => {
+    await env.DB.prepare("INSERT INTO locales (id, nombre, tipo) VALUES (?, 'Local de pantallas', 'servicio_tecnico')").bind(LOCAL_PANTALLAS_ID).run();
+    const bateria = (await crearProducto(env, sA, { codigo_barras: '2000000000039', nombre: 'Batería de prueba', categoria: 'Baterías', precio_venta: 2, control_por_cantidad: 1 })).id;
+    await registrarMovimiento(env, sA, { productoId: bateria, tipo: 'ENTRADA', cantidad: 3, localId: servicio });
+    await registrarMovimiento(env, sA, { productoId: vidrio, tipo: 'ENTRADA', cantidad: 3, localId: servicio });
+    const orden = await crearOrden(env, sS, nueva(LOCAL_PANTALLAS_ID));
+    expect((await listarRepuestosOrden(env, sS, orden.id)).map((p) => p.id)).toEqual([bateria]);
+    await rechazo(cambiarRepuestoOrden(env, sS, orden.id, { accion: 'agregar', productoId: vidrio, origen: servicio, cantidad: 1 }), 409);
+    await cambiarRepuestoOrden(env, sS, orden.id, { accion: 'agregar', productoId: bateria, origen: servicio, cantidad: 2 });
+    expect(await stock(bateria, servicio)).toBe(1);
+    await resetearServicioTecnico(env, sA, { localId: LOCAL_PANTALLAS_ID });
+    expect(await stock(bateria, servicio)).toBe(3);
+    expect(await stock(bateria, LOCAL_PANTALLAS_ID)).toBe(0);
+  });
+
+  it('al agregar en paralelo conserva la correspondencia entre la orden y el stock', async () => {
+    await registrarMovimiento(env, sA, { productoId: vidrio, tipo: 'ENTRADA', cantidad: 3, localId: servicio });
+    const orden = await crearOrden(env, sE, nueva(servicio));
+    const agregar = () => cambiarRepuestoOrden(env, sE, orden.id, { accion: 'agregar', productoId: vidrio, origen: servicio, cantidad: 1 });
+    const resultados = await Promise.allSettled([agregar(), agregar()]);
+    const agregadas = resultados.filter((r) => r.status === 'fulfilled').length;
+    expect(agregadas).toBeGreaterThan(0);
+    expect(await stock(vidrio, servicio)).toBe(3 - agregadas);
+    const fila = await una<{ repuestos: string }>('SELECT repuestos FROM ordenes_servicio WHERE id = ?', orden.id);
+    expect(JSON.parse(fila!.repuestos)).toEqual([expect.objectContaining({ cantidad: agregadas })]);
+  });
   it('borra las órdenes del local y devuelve los repuestos con los MISMOS códigos (y los de por cantidad por la cantidad usada)', async () => {
     await registrarMovimiento(env, sA, { productoId: pantalla, tipo: 'ENTRADA', cantidad: 5, localId: servicio, motivo: 'Compra' });
     await registrarMovimiento(env, sA, { productoId: vidrio, tipo: 'ENTRADA', cantidad: 10, localId: servicio, motivo: 'Compra' });

@@ -1,4 +1,6 @@
 import { api } from '../api';
+import type { CambioRepuesto } from '../../server/servicios/repuestosOrden';
+import type { RepuestoDisponible } from '../../types/database.types';
 import type { CobroOrdenServicio, NuevaOrdenServicio, OrdenServicio, ResultadoPagoTecnico, ResultadoReseteoServicio, TecnicoDeLocal } from '../../types/database.types';
 
 export async function listarOrdenes(opciones: { limite: number; localId?: string | null }): Promise<OrdenServicio[]> {
@@ -21,9 +23,12 @@ export async function insertarOrden(orden: NuevaOrdenServicio): Promise<OrdenSer
 
 export async function actualizarOrden(id: string, cambios: Partial<OrdenServicio>): Promise<OrdenServicio> {
   // Solo estos campos se editan (el total se recalcula en el servidor con los repuestos y la mano de obra)
-  const { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd } = cambios;
-  return api.patch<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}`, { diagnostico, estado, tecnico_id, tecnico_nombre, repuestos, mano_de_obra_usd });
+  const { diagnostico, estado, tecnico_id, tecnico_nombre, mano_de_obra_usd } = cambios;
+  return api.patch<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}`, { diagnostico, estado, tecnico_id, tecnico_nombre, mano_de_obra_usd });
 }
+
+export const listarRepuestos = (id: string) => api.get<RepuestoDisponible[]>(`/api/ordenes/${encodeURIComponent(id)}/repuestos`);
+export const cambiarRepuesto = (id: string, cambio: CambioRepuesto) => api.post<OrdenServicio>(`/api/ordenes/${encodeURIComponent(id)}/repuestos`, cambio);
 
 /** Cobra la reparación: el servidor calcula el reparto entre la tienda y el técnico y deja la orden entregada. */
 export async function cobrarOrden(id: string, cobro: CobroOrdenServicio): Promise<OrdenServicio> {

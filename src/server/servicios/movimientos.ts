@@ -98,7 +98,7 @@ function validarEntradas(entradas: EntradaMovimiento[]): void {
   if (unidades > MAX_UNIDADES) throw new ErrorApi(400, `Son demasiadas unidades para una sola petición (máximo ${MAX_UNIDADES}).`, 'lote_grande');
 }
 
-async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[]): Promise<void> {
+async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[], origenValidado?: string): Promise<void> {
   if (entradas.some((e) => esEntradaStock(e.tipo) || e.tipo === 'CAMBIO_SALIDA') && !esGerencia(sesion.rol)) {
     throw new ErrorApi(403, 'Tu rol no puede registrar entradas de inventario.', 'sin_permiso');
   }
@@ -106,14 +106,16 @@ async function validarPermisos(env: Entorno, sesion: Sesion, entradas: EntradaMo
     throw new ErrorApi(403, 'Solo el administrador, el gerente o el encargado pueden dar de baja mercancía.', 'sin_permiso');
   }
   for (const localId of new Set(entradas.map((e) => e.localId))) {
+    if (localId === origenValidado) continue;
     if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
   }
 }
 
 /** Registra uno o varios movimientos en UN lote atómico (todo o nada). Devuelve, por movimiento, TODAS sus unidades. */
-export async function registrarMovimientos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[], extra?: SentenciasExtra): Promise<ResultadoMovimiento[]> {
+export async function registrarMovimientos(env: Entorno, sesion: Sesion, entradas: EntradaMovimiento[], extra?: SentenciasExtra, origenValidado?: string): Promise<ResultadoMovimiento[]> {
   validarEntradas(entradas);
-  await validarPermisos(env, sesion, entradas);
+  // Solo el servicio de repuestos delega un origen tras comprobar acceso a la orden y la política por categoría.
+  await validarPermisos(env, sesion, entradas, origenValidado);
 
   // Con dos ventas simultáneas "por orden de llegada" pueden elegir la misma unidad: la segunda aborta y se vuelve a elegir
   const reintentable = entradas.every((e) => !(e.unidadCodigos?.length));

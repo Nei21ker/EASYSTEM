@@ -111,7 +111,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
       <p id="st-reset-resumen" class="rounded-lg bg-slate-50 px-3 py-3 text-slate-700 dark:bg-slate-800 dark:text-slate-200">Calculando…</p>
       <ul class="oculto-con-teclado list-disc space-y-1 pl-5 text-xs text-slate-600 dark:text-slate-300">
         <li>Se borran <strong>todas</strong> las órdenes de servicio de <strong id="st-reset-local">este local</strong>, de todas las fechas, con su cobro y lo pagado a los técnicos. <strong>Los demás locales no se tocan.</strong></li>
-        <li>Los repuestos que esas órdenes sacaron del inventario <strong>vuelven al stock</strong> de su local (las piezas con código, con el mismo código).</li>
+        <li>Los repuestos que esas órdenes sacaron del inventario <strong>vuelven al stock</strong> de su local de origen (las piezas con código conservan su código).</li>
         <li>Los movimientos de stock siguen en Movimientos, con una entrada «Reseteo de servicio técnico».</li>
         <li><strong>No se puede deshacer.</strong></li>
       </ul>

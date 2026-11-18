@@ -107,7 +107,7 @@ const claseBotonSec =
   import { normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
   import { mensajeEquipoListo, repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
   import { urlWhatsAppConTexto } from '../../utils/ticketWhatsApp';
-  import type { EstadoOrdenServicio, OrdenServicio, ProductoConRelaciones, TecnicoDeLocal } from '../../types/database.types';
+  import type { EstadoOrdenServicio, OrdenServicio, RepuestoDisponible, TecnicoDeLocal } from '../../types/database.types';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('do-dialogo');
@@ -128,7 +128,8 @@ const claseBotonSec =
   const etiqueta = (e: EstadoOrdenServicio) => ESTADOS_ORDEN.find((x) => x.valor === e)!.etiqueta;
 
   let orden: OrdenServicio | null = null;
-  let catalogo: ProductoConRelaciones[] = [];
+  let catalogo: RepuestoDisponible[] = [];
+  let moviendoRepuesto = false;
   let tecnicos: TecnicoDeLocal[] = [];
   let puedeQuitar = false;
   let esTecnico = false;
@@ -224,17 +225,17 @@ const claseBotonSec =
     // Repuestos (el técnico solo ve lo que se pidió; los anota la encargada)
     $('do-repuestos-titulo').innerHTML = esTecnico
       ? 'Repuestos que se pidieron'
-      : 'Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span>';
+      : 'Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del inventario de origen)</span>';
     $('do-repuestos').innerHTML = o.repuestos
       .map(
-        (r) => `
+        (r, indice) => `
           <li class="flex items-center gap-3 px-3 py-2.5">
             <div class="min-w-0 flex-1">
               <p class="truncate font-medium text-slate-900 dark:text-white">${escaparHtml(r.nombre)}</p>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">${r.cantidad} × ${formatearMoneda(r.precio_unitario)}</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">${r.cantidad} × ${formatearMoneda(r.precio_unitario)}${r.origen_local_nombre ? ` · ${escaparHtml(r.origen_local_nombre)}` : ''}</p>
             </div>
             <div class="shrink-0 text-right text-sm font-semibold text-slate-900 dark:text-white">${htmlPrecioDual(r.precio_unitario * r.cantidad, tasa)}</div>
-            ${puedeQuitar && !final && !esTecnico ? `<button type="button" data-quitar="${r.producto_id}" aria-label="Quitar y devolver al inventario" title="Quitar y devolver al inventario" class="shrink-0 text-slate-400 hover:text-red-600">✕</button>` : ''}
+            ${puedeQuitar && !final && !esTecnico ? `<button type="button" data-quitar="${indice}" aria-label="Quitar y devolver al inventario" title="Quitar y devolver al inventario" class="shrink-0 text-slate-400 hover:text-red-600">✕</button>` : ''}
           </li>`
       )
       .join('');
@@ -273,16 +274,15 @@ const claseBotonSec =
       : `El teléfono ${o.cliente_telefono} no parece válido para WhatsApp: llámalo para avisarle.`;
   }
 
-  // --- repuestos: buscar en el stock del local de la orden -----------------------------------------
+  // --- repuestos: buscar en los inventarios habilitados para la orden -----------------------------
   function pintarResultados() {
     const q = normalizarTexto(buscar.value.trim());
     const lista = $('do-resultados');
     if (!q) return lista.classList.add('hidden');
-    const yaUsados = new Set(orden!.repuestos.map((r) => r.producto_id));
     const terminos = q.split(/\s+/);
     const coincidencias = catalogo
       .filter((p) => {
-        if (!(p.stock_actual > 0) || yaUsados.has(p.id)) return false;
+        if (!(p.stock_actual > 0)) return false;
         const texto = normalizarTexto(`${p.nombre} ${p.referencia ?? ''} ${p.codigo_barras} ${p.categoria}`);
         return terminos.every((t) => texto.includes(t));
       })
@@ -295,14 +295,14 @@ const claseBotonSec =
               <li class="flex items-center gap-2 px-3 py-2">
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-sm font-medium text-slate-900 dark:text-white">${escaparHtml(p.nombre)}</p>
-                  <p class="text-[11px] text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_venta)} · ${p.stock_actual} disponibles</p>
+                  <p class="text-[11px] text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_venta)} · ${p.stock_actual} disponibles · ${escaparHtml(p.origen_local_nombre)}</p>
                 </div>
-                <input type="number" min="1" max="${p.stock_actual}" step="1" value="1" data-cant="${p.id}" aria-label="Cantidad" class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
-                <button type="button" data-agregar="${p.id}" class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">+ Usar</button>
+                <input type="number" min="1" max="${p.stock_actual}" step="1" value="1" data-cant="${catalogo.indexOf(p)}" aria-label="Cantidad" class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+                <button type="button" data-agregar="${catalogo.indexOf(p)}" class="shrink-0 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700">+ Usar</button>
               </li>`
           )
           .join('')
-      : '<li class="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">No hay repuestos con stock que coincidan en este local.</li>';
+      : '<li class="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">No hay repuestos con stock que coincidan.</li>';
   }
   buscar.addEventListener('input', pintarResultados);
 
@@ -319,16 +319,30 @@ const claseBotonSec =
     }
   }
 
+  async function moverRepuesto(accion: () => Promise<OrdenServicio>, mensajeFallo: string) {
+    if (moviendoRepuesto || !orden) return;
+    moviendoRepuesto = true;
+    const id = orden.id;
+    try {
+      await aplicar(accion, mensajeFallo);
+      if (dialogo.open && orden?.id === id) {
+        catalogo = await inventoryService.listarRepuestosOrden(id);
+        pintarResultados();
+      }
+    } catch (err) {
+      mostrarError(err instanceof Error ? err.message : mensajeFallo);
+    } finally {
+      moviendoRepuesto = false;
+    }
+  }
+
   $('do-resultados').addEventListener('click', async (e) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
-    const producto = catalogo.find((p) => p.id === id);
+    const producto = catalogo[Number(id)];
     if (!producto || !orden) return;
-    const cantidad = Math.floor(Number($<HTMLInputElement>('do-resultados').querySelector<HTMLInputElement>(`[data-cant="${producto.id}"]`)?.value) || 1);
-    await aplicar(() => inventoryService.agregarRepuestoOrden(orden!.id, producto, cantidad), 'No se pudo agregar el repuesto.');
-    buscar.value = '';
-    // El stock del local cambió: se vuelve a pedir
-    catalogo = await inventoryService.listarProductos({ localId: orden.local_id });
-    pintarResultados();
+    const cantidad = Number($('do-resultados').querySelector<HTMLInputElement>(`[data-cant="${id}"]`)?.value);
+    const ordenId = orden.id;
+    await moverRepuesto(() => inventoryService.agregarRepuestoOrden(ordenId, producto, cantidad), 'No se pudo agregar el repuesto.');
   });
 
   // Escaneo con la cámara (ver CamaraEscaner.astro): la etiqueta de una pieza (INF000014) o el código/referencia del producto
@@ -341,39 +355,17 @@ const claseBotonSec =
 
   async function agregarEscaneado(codigo: string) {
     if (!orden || !codigo) return;
-    errorEl.classList.add('hidden');
-    try {
-      let producto: ProductoConRelaciones | undefined;
-      const codigoPieza = normalizarCodigoUnidad(codigo);
-      if (codigoPieza) {
-        const unidad = await inventoryService.obtenerUnidadPorCodigo(codigoPieza);
-        if (unidad) {
-          if (unidad.local_id !== orden.local_id) return mostrarError(`La pieza ${codigoPieza} es de otro local.`);
-          if (unidad.estado !== 'DISPONIBLE') return mostrarError(`La pieza ${codigoPieza} ya no está disponible (${unidad.estado.toLowerCase().replace('_', ' ')}).`);
-          producto = catalogo.find((p) => p.id === unidad.producto_id);
-        }
-      }
-      if (!producto) {
-        const referencia = normalizarReferencia(codigo);
-        producto = catalogo.find((p) => p.codigo_barras === codigo || (p.referencia && (p.referencia === codigo || p.referencia === referencia)));
-      }
-      if (!producto) return mostrarError(`No encontré un repuesto con el código ${codigo} en el stock de este local.`);
-      if (orden.repuestos.some((r) => r.producto_id === producto!.id)) return mostrarError(`«${producto.nombre}» ya está en la orden.`);
-      if (!(producto.stock_actual > 0)) return mostrarError(`«${producto.nombre}» no tiene stock en este local.`);
-      const elegido = producto;
-      await aplicar(() => inventoryService.agregarRepuestoOrden(orden!.id, elegido, 1), 'No se pudo agregar el repuesto.');
-      catalogo = await inventoryService.listarProductos({ localId: orden.local_id });
-    } catch (err) {
-      mostrarError(err instanceof Error ? err.message : 'No se pudo leer el código.');
-    }
+    const ordenId = orden.id;
+    await moverRepuesto(() => inventoryService.escanearRepuestoOrden(ordenId, normalizarCodigoUnidad(codigo) ?? '', normalizarReferencia(codigo) ?? codigo), 'No se pudo agregar el repuesto.');
   }
 
   $('do-repuestos').addEventListener('click', async (e) => {
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar]')?.dataset.quitar;
-    if (!id || !orden) return;
-    if (!window.confirm('¿Quitar este repuesto de la orden? Volverá al inventario del local.')) return;
-    await aplicar(() => inventoryService.quitarRepuestoOrden(orden!.id, id), 'No se pudo quitar el repuesto.');
-    catalogo = await inventoryService.listarProductos({ localId: orden!.local_id });
+    if (id === undefined || !orden || moviendoRepuesto) return;
+    const repuesto = orden.repuestos[Number(id)];
+    if (!repuesto || !window.confirm('¿Quitar este repuesto de la orden? Volverá al inventario de origen.')) return;
+    const ordenId = orden.id;
+    await moverRepuesto(() => inventoryService.quitarRepuestoOrden(ordenId, repuesto.producto_id, repuesto.origen_local_id), 'No se pudo quitar el repuesto.');
   });
 
   /** Lo que se guarda desde los campos: el diagnóstico y, si cambió, el técnico (el técnico mismo solo anota el diagnóstico). */
@@ -460,7 +452,7 @@ const claseBotonSec =
       tecnicos = [];
     }
     try {
-      catalogo = await inventoryService.listarProductos({ localId: o.local_id });
+      catalogo = !esTecnico && o.estado !== 'entregado' ? await inventoryService.listarRepuestosOrden(o.id) : [];
     } catch {
       catalogo = [];
     }

@@ -142,6 +142,8 @@ function casos(): Caso[] {
     { archivo: 'ordenes/index.ts', metodo: 'GET', url: '/api/ordenes', permitidos: NEGOCIO },
     { archivo: 'ordenes/[id].ts', metodo: 'GET', url: `/api/ordenes/${ids.orden}`, params: { id: ids.orden }, permitidos: NEGOCIO },
     { archivo: 'ordenes/[id].ts', metodo: 'PATCH', url: `/api/ordenes/${ids.orden}`, params: { id: ids.orden }, cuerpo: { diagnostico: 'Matriz' }, permitidos: NEGOCIO },
+    { archivo: 'ordenes/[id]/repuestos.ts', metodo: 'GET', url: '/api/ordenes/no-existe/repuestos', params: { id: 'no-existe' }, permitidos: CAJERO },
+    { archivo: 'ordenes/[id]/repuestos.ts', metodo: 'POST', url: '/api/ordenes/no-existe/repuestos', params: { id: 'no-existe' }, cuerpo: { accion: 'agregar', productoId: 'p', origen: servicio, cantidad: 1 }, permitidos: CAJERO },
     // Servicio técnico: cobrar la reparación (quien cobra), pagarle al técnico (gerencia) y elegir al técnico (quien registra equipos)
     { archivo: 'ordenes/[id]/cobrar.ts', metodo: 'POST', url: '/api/ordenes/no-existe/cobrar', params: { id: 'no-existe' }, cuerpo: { total_usd: 25, porcentaje_local: 30, pagos: [{ metodo: 'USD_EFECTIVO', monto_usd: 25, monto_bs: null }] }, permitidos: CAJERO },
     { archivo: 'ordenes/pagar-tecnico.ts', metodo: 'POST', url: '/api/ordenes/pagar-tecnico', cuerpo: { ids: ['no-existe'] }, permitidos: GERENCIA },
