@@ -4,13 +4,13 @@
 ---
 
 <div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-  <div class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Buscador rápido</h2>
-    <p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+  <div id="qs-encabezado" class="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <h2 id="qs-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Buscador rápido</h2>
+    <p id="qs-descripcion" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
       Filtra la mercancía por nombre, código, referencia o categoría.
     </p>
 
-    <div class="mt-3 flex flex-col gap-3 sm:flex-row">
+    <div id="qs-controles" class="mt-3 flex flex-col gap-3 sm:flex-row">
       <div class="relative flex-1">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
           <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
@@ -18,12 +18,21 @@
         <input
           id="qs-buscador"
           type="search"
+          aria-label="Buscar producto por nombre, código, referencia o categoría"
           placeholder="Buscar por nombre o código de barras..."
           class="w-full rounded-lg border border-slate-200 bg-white py-2 pl-9 pr-3 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
         />
+        <button type="button" id="qs-camara" data-abrir-escaner aria-label="Escanear con la cámara"
+          class="absolute inset-y-0 right-0 hidden w-11 items-center justify-center rounded-r-lg text-slate-500 hover:text-brand-600 dark:text-slate-400 dark:hover:text-brand-300">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="size-5">
+            <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </button>
       </div>
       <select
         id="qs-categoria"
+        aria-label="Categoría"
         class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
       >
         <option value="">Todas las categorías</option>
@@ -31,7 +40,8 @@
     </div>
   </div>
 
-  <p id="qs-contador" class="px-5 pt-3 text-xs text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
+  <div id="qs-contenido">
+  <p id="qs-contador" role="status" class="px-5 pt-3 text-xs text-slate-500 dark:text-slate-400">Cargando catálogo...</p>
 
   <div class="overflow-x-auto">
     <table class="tabla-tarjetas w-full text-left text-sm md:min-w-[48rem] md:table-fixed">
@@ -56,6 +66,7 @@
   <p id="qs-sin-resultados" class="hidden px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
     No se encontraron productos con esos filtros.
   </p>
+  </div>
 </div>
 
 <script>
@@ -66,15 +77,20 @@
   import { animarLista } from '../../utils/animaciones';
   import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
-  import { codigoVisible } from '../../utils/codigos';
-  import { escaparHtml, htmlPildoraStock } from '../../utils/productosUI';
+  import { LOCAL_ACCESORIOS_ID } from '../../lib/constantes-locales';
+  import { codigoVisible, normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
+  import { escaparHtml, htmlPildoraStock, normalizarTexto } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
 
   // Con cientos de productos, pintarlos todos en cada tecla es lento en un teléfono.
   const LIMITE_FILAS = 100;
 
+  let compacto = false;
+  let cargado = false;
+  let falloCatalogo = false;
   let productos: ProductoConRelaciones[] = [];
 
+  const contenido = document.getElementById('qs-contenido')!;
   const buscador = document.getElementById('qs-buscador') as HTMLInputElement;
   const selectCategoria = document.getElementById('qs-categoria') as HTMLSelectElement;
   const tbody = document.getElementById('qs-resultados') as HTMLTableSectionElement;
@@ -111,15 +127,16 @@
   }
 
   function filtrarProductos(): ProductoConRelaciones[] {
-    const texto = buscador.value.trim().toLowerCase();
+    const texto = normalizarTexto(buscador.value.trim());
     const categoria = selectCategoria.value;
 
     return productos.filter((producto) => {
       const coincideTexto =
         !texto ||
-        producto.nombre.toLowerCase().includes(texto) ||
+        normalizarTexto(producto.nombre).includes(texto) ||
         producto.codigo_barras.toLowerCase().includes(texto) ||
-        (producto.referencia ?? '').toLowerCase().includes(texto);
+        (producto.referencia ?? '').toLowerCase().includes(texto) ||
+        (compacto && normalizarTexto(producto.categoria).includes(texto));
       const coincideCategoria = !categoria || producto.categoria === categoria;
 
       return coincideTexto && coincideCategoria;
@@ -127,6 +144,16 @@
   }
 
   function actualizar() {
+    const buscando = buscador.value.trim() !== '';
+    if (compacto) {
+      contenido.classList.toggle('hidden', !buscando);
+      selectCategoria.classList.toggle('hidden', !buscando || selectCategoria.options.length <= 1);
+      if (!buscando) selectCategoria.value = '';
+    }
+    if (!cargado) {
+      contador.textContent = falloCatalogo ? 'No se pudo cargar el catálogo.' : 'Cargando catálogo...';
+      return;
+    }
     const resultado = filtrarProductos();
     tbody.innerHTML = resultado.slice(0, LIMITE_FILAS).map(renderFila).join('');
     sinResultados.classList.toggle('hidden', resultado.length > 0);
@@ -140,16 +167,57 @@
   buscador.addEventListener('input', actualizar);
   selectCategoria.addEventListener('change', actualizar);
 
-  inventoryService.listarProductos().then((lista) => {
-    productos = lista;
-    poblarFiltros();
+  async function buscarEscaneado(codigo: string) {
+    if (!compacto) return;
+    selectCategoria.value = '';
+    const consulta = normalizarReferencia(codigo) ?? codigo;
+    buscador.value = consulta;
     actualizar();
-    animarLista(tbody);
+
+    const codigoUnidad = normalizarCodigoUnidad(codigo);
+    if (!codigoUnidad || productos.some((p) => p.codigo_barras === consulta || p.referencia === consulta)) return;
+    const unidad = await inventoryService.obtenerUnidadPorCodigo(codigoUnidad).catch(() => null);
+    if (!unidad || buscador.value !== consulta) return;
+    const producto = productos.find((p) => p.id === unidad.producto_id);
+    if (producto) {
+      buscador.value = producto.codigo_barras;
+      actualizar();
+    }
+  }
+
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    void buscarEscaneado(e.detail.codigo);
+  }) as EventListener);
+
+  void inventoryService.obtenerContextoLocal().then(async (contexto) => {
+    compacto = contexto?.local?.id === LOCAL_ACCESORIOS_ID;
+    if (compacto) {
+      document.getElementById('qs-titulo')?.classList.add('hidden');
+      document.getElementById('qs-descripcion')?.classList.add('hidden');
+      document.getElementById('qs-controles')?.classList.remove('mt-3');
+      document.getElementById('qs-encabezado')?.classList.remove('border-b');
+      document.getElementById('qs-encabezado')?.classList.replace('px-5', 'px-3');
+      document.getElementById('qs-encabezado')?.classList.replace('py-4', 'py-3');
+      document.getElementById('qs-camara')?.classList.replace('hidden', 'flex');
+      buscador.classList.replace('pr-3', 'pr-12');
+      buscador.placeholder = 'Buscar producto o escanear';
+      actualizar();
+    }
+    try {
+      productos = await inventoryService.listarProductos();
+      cargado = true;
+      poblarFiltros();
+      animarLista(tbody);
+    } catch {
+      falloCatalogo = true;
+    }
+    actualizar();
   });
 
   // Actualización en vivo (otro dispositivo vendió o ingresó mercancía): se conserva lo que el usuario tenga filtrado
   alCambiarDatos(['productos', 'inventario_local'], async () => {
     productos = await inventoryService.listarProductos();
+    cargado = true;
     const categoria = selectCategoria.value;
     poblarFiltros();
     selectCategoria.value = categoria;

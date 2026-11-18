@@ -1,4 +1,5 @@
 ---
+import CamaraEscaner from '../components/CamaraEscaner.astro';
 import DashboardLayout from '../layouts/DashboardLayout.astro';
 import StatCard from '../components/dashboard/StatCard.astro';
 import QuickSearch from '../components/dashboard/QuickSearch.astro';
@@ -32,14 +33,20 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
 
   <QuickSearch />
 
-  <section class="grid grid-cols-1 gap-6 xl:grid-cols-5">
+  <section id="dash-acciones" class="hidden grid-cols-2 gap-3" aria-label="Accesos rápidos">
+    <a href="/ventas" class="bg-marca rounded-lg px-3 py-3 text-center text-sm font-semibold text-white shadow-sm">Nueva venta</a>
+    <a href="/productos" class="rounded-lg border border-slate-200 bg-white px-3 py-3 text-center text-sm font-semibold text-slate-700 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">Productos</a>
+  </section>
+
+  <section id="dash-inventario" class="grid grid-cols-1 gap-6 xl:grid-cols-5">
     <div class="xl:col-span-3">
       <LowStockTable />
     </div>
-    <div class="xl:col-span-2">
+    <div id="dash-movimientos" class="xl:col-span-2">
       <RecentMovements />
     </div>
   </section>
+  <CamaraEscaner />
 </DashboardLayout>
 
 <script>
@@ -47,14 +54,9 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   import { convertirABs, formatearBolivares, formatearMoneda } from '../utils/format';
   import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
-  import { esGlobal, obtenerSesionActual } from '../lib/auth';
+  import { esGlobal } from '../lib/auth';
+  import { LOCAL_ACCESORIOS_ID } from '../lib/constantes-locales';
   import { alCambiarDatos } from '../lib/realtime';
-
-  // El resumen (total de productos, valor del inventario y alertas de stock bajo) es solo del administrador y el gerente:
-  // el encargado, el vendedor y el técnico no lo ven. Es de interfaz; el stock de su local lo ven igual en Productos.
-  obtenerSesionActual().then((sesion) => {
-    if (esGlobal(sesion?.rol)) document.getElementById('dash-resumen')?.removeAttribute('hidden');
-  });
 
   // Valor del inventario en bolívares (a la tasa del día), debajo del monto en dólares
   let valorInventarioUsd = 0;
@@ -104,7 +106,17 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
     }
   }
 
-  cargar(true);
-  // Otro dispositivo vendió, ingresó mercancía o cambió productos: las tarjetas se actualizan solas
-  alCambiarDatos(['productos', 'inventario_local', 'locales'], () => cargar(false));
+  void inventoryService.obtenerContextoLocal().then((contexto) => {
+    if (contexto?.local?.id === LOCAL_ACCESORIOS_ID) {
+      const acciones = document.getElementById('dash-acciones');
+      acciones?.classList.replace('hidden', 'grid');
+      document.getElementById('dash-inventario')?.classList.remove('xl:grid-cols-5');
+      document.getElementById('dash-movimientos')?.classList.add('hidden');
+      return;
+    }
+    if (!esGlobal(contexto?.sesion.rol)) return;
+    document.getElementById('dash-resumen')?.removeAttribute('hidden');
+    void cargar(true);
+    alCambiarDatos(['productos', 'inventario_local', 'locales'], () => cargar(false));
+  });
 </script>

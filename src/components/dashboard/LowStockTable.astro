@@ -2,9 +2,14 @@
 // Se autoalimenta desde inventoryService (servidor o LocalStorage) en el cliente.
 ---
 
-<div class="rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-  <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-    <h2 class="text-sm font-semibold text-slate-900 dark:text-white">Productos con stock bajo</h2>
+<details id="lst-panel" open class="group rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+  <summary id="lst-resumen" class="hidden cursor-pointer list-none items-center justify-between gap-3 rounded-xl px-4 py-3 text-sm font-semibold text-amber-800 dark:text-amber-300 [&::-webkit-details-marker]:hidden">
+    <span id="lst-total"></span>
+    <span class="text-xs group-open:hidden">Ver</span>
+    <span class="hidden text-xs group-open:inline">Ocultar</span>
+  </summary>
+  <div id="lst-encabezado" class="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+    <h2 id="lst-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Productos con stock bajo</h2>
     <div class="flex items-center gap-3">
       <button
         id="lst-exportar"
@@ -36,10 +41,11 @@
       <tbody id="lst-filas" class="divide-y divide-slate-100 dark:divide-slate-800"></tbody>
     </table>
   </div>
-</div>
+</details>
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
+  import { LOCAL_ACCESORIOS_ID } from '../../lib/constantes-locales';
   import { estadoStock } from '../../utils/format';
   import { codigoVisible } from '../../utils/codigos';
   import { descargarCSV } from '../../utils/csv';
@@ -47,6 +53,9 @@
   import { alCambiarDatos } from '../../lib/realtime';
   import type { ProductoStockBajo } from '../../types/database.types';
 
+  const panel = document.getElementById('lst-panel') as HTMLDetailsElement;
+  const resumen = document.getElementById('lst-resumen')!;
+  const total = document.getElementById('lst-total')!;
   const cargando = document.getElementById('lst-cargando') as HTMLParagraphElement;
   const vacio = document.getElementById('lst-vacio') as HTMLParagraphElement;
   const tablaWrap = document.getElementById('lst-tabla-wrap') as HTMLDivElement;
@@ -86,7 +95,20 @@
 
   // `primera`: solo la primera carga anima la tabla; las actualizaciones en vivo la reemplazan sin parpadeos
   async function cargar(primera: boolean) {
-    const [productos, contexto] = await Promise.all([inventoryService.listarProductosStockBajo(), inventoryService.obtenerContextoLocal()]);
+    const contexto = await inventoryService.obtenerContextoLocal();
+    const compacto = contexto?.local?.id === LOCAL_ACCESORIOS_ID;
+    if (compacto && primera) {
+      panel.classList.add('hidden');
+      panel.open = false;
+      resumen.classList.replace('hidden', 'flex');
+      document.getElementById('lst-titulo')?.classList.add('hidden');
+    }
+    const productos = await inventoryService.listarProductosStockBajo();
+    if (compacto) {
+      panel.classList.toggle('hidden', productos.length === 0);
+      total.textContent = productos.length === 1 ? '1 producto con stock bajo' : `${productos.length} productos con stock bajo`;
+      if (productos.length === 0) panel.open = false;
+    }
     const verLocal = contexto?.alcance === 'todos';
     cargando.classList.add('hidden');
     productosBajoStock = productos;
