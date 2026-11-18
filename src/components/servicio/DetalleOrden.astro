@@ -16,8 +16,8 @@ const claseBotonSec =
   aria-labelledby="do-titulo"
   class="anim-escalar m-auto w-[min(38rem,calc(100vw-1.5rem))] origin-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-2xl backdrop:bg-slate-950/60 backdrop:backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
 >
-  <div class="flex max-h-[92dvh] flex-col">
-    <header class="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+  <div id="do-panel" class="flex max-h-[92dvh] flex-col">
+    <header class="flex shrink-0 items-start justify-between gap-3 border-b border-slate-200 px-5 py-4 dark:border-slate-800">
       <div class="min-w-0">
         <div class="flex flex-wrap items-center gap-2">
           <h2 id="do-titulo" class="text-base font-semibold"></h2>
@@ -28,7 +28,7 @@ const claseBotonSec =
       <button type="button" id="do-cerrar" aria-label="Cerrar" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800">✕</button>
     </header>
 
-    <div class="space-y-5 overflow-y-auto px-5 py-4">
+    <div id="do-contenido" class="space-y-5 overflow-y-auto px-5 py-4">
       <!-- Datos de recepción -->
       <section>
         <p class={claseTitulo}>Recepción</p>
@@ -51,13 +51,14 @@ const claseBotonSec =
       </section>
 
       <!-- Repuestos -->
-      <section>
-        <p id="do-repuestos-titulo" class={claseTitulo}>Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span></p>
+      <section id="do-seccion-repuestos">
+        <p id="do-repuestos-titulo" tabindex="-1" class={claseTitulo}>Repuestos usados <span class="font-normal normal-case text-slate-400">(salen del stock del local)</span></p>
         <ul id="do-repuestos" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm empty:hidden dark:divide-slate-800 dark:border-slate-700"></ul>
         <p id="do-sin-repuestos" class="mt-2 text-xs text-slate-500 dark:text-slate-400">Todavía no se han usado repuestos.</p>
 
         <div id="do-agregar" class="mt-3">
-          <div class="relative">
+          <button id="do-volver-repuestos" type="button" class="hidden shrink-0 self-start text-xs font-semibold text-brand-700 dark:text-brand-300">Volver a la orden</button>
+          <div class="relative shrink-0">
             <input id="do-buscar" type="search" autocomplete="off" placeholder="Buscar o escanear el repuesto..." class={claseCampo + ' pr-11'} />
             <button
               type="button"
@@ -89,13 +90,55 @@ const claseBotonSec =
       <p id="do-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
     </div>
 
-    <footer class="flex flex-wrap gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
+    <footer id="do-acciones" class="flex flex-wrap gap-2 border-t border-slate-200 bg-slate-50 px-5 py-4 dark:border-slate-800 dark:bg-slate-800/40">
       <button id="do-atras" type="button" class={claseBotonSec}></button>
       <button id="do-avanzar" type="button" class={claseBotonSec + ' flex-1'}></button>
       <button id="do-cobrar" type="button" class="bg-marca flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60">Cobrar y entregar</button>
     </footer>
   </div>
 </dialog>
+
+<style>
+  #do-dialogo[data-buscando-repuesto] {
+    margin-top: calc(var(--arriba-visible, 0px) + 0.25rem);
+    margin-bottom: auto;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-panel {
+    height: calc(var(--alto-visible, 100dvh) - 0.5rem);
+    max-height: none;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-contenido {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    padding-block: 0.5rem;
+    overflow: hidden;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-contenido > section:not(#do-seccion-repuestos),
+  #do-dialogo[data-buscando-repuesto] #do-seccion-repuestos > :not(#do-agregar),
+  #do-dialogo[data-buscando-repuesto] #do-acciones {
+    display: none;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-seccion-repuestos,
+  #do-dialogo[data-buscando-repuesto] #do-agregar:not(.hidden) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+    margin-block: 0;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-volver-repuestos {
+    display: block;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-resultados {
+    max-height: none;
+    overscroll-behavior: contain;
+  }
+  #do-dialogo[data-buscando-repuesto] #do-error {
+    flex-shrink: 0;
+  }
+</style>
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
@@ -105,6 +148,7 @@ const claseBotonSec =
   import { formatearFecha, formatearMoneda, htmlPrecioDual } from '../../utils/format';
   import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
   import { normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
+  import { configurarBusquedaRepuestos } from '../../utils/busquedaRepuestos';
   import { mensajeEquipoListo, repuestosDeOrdenUsd } from '../../utils/servicioTecnico';
   import { urlWhatsAppConTexto } from '../../utils/ticketWhatsApp';
   import type { EstadoOrdenServicio, OrdenServicio, RepuestoDisponible, TecnicoDeLocal } from '../../types/database.types';
@@ -113,6 +157,7 @@ const claseBotonSec =
   const dialogo = $<HTMLDialogElement>('do-dialogo');
   const errorEl = $('do-error');
   const buscar = $<HTMLInputElement>('do-buscar');
+  const finalizarBusqueda = configurarBusquedaRepuestos(dialogo, buscar, $<HTMLButtonElement>('do-volver-repuestos'), $('do-repuestos-titulo'));
   const botonAvanzar = $<HTMLButtonElement>('do-avanzar');
   const botonAtras = $<HTMLButtonElement>('do-atras');
   const botonCobrar = $<HTMLButtonElement>('do-cobrar');
@@ -229,7 +274,7 @@ const claseBotonSec =
     $('do-repuestos').innerHTML = o.repuestos
       .map(
         (r, indice) => `
-          <li class="flex items-center gap-3 px-3 py-2.5">
+          <li tabindex="-1" class="flex items-center gap-3 px-3 py-2.5">
             <div class="min-w-0 flex-1">
               <p class="truncate font-medium text-slate-900 dark:text-white">${escaparHtml(r.nombre)}</p>
               <p class="text-[11px] text-slate-500 dark:text-slate-400">${r.cantidad} × ${formatearMoneda(r.precio_unitario)}${r.origen_local_nombre ? ` · ${escaparHtml(r.origen_local_nombre)}` : ''}</p>
@@ -314,18 +359,29 @@ const claseBotonSec =
       pintar();
       pintarResultados();
       window.dispatchEvent(new Event('easystem:ordenes-cambiaron'));
+      return true;
     } catch (err) {
       mostrarError(err instanceof Error ? err.message : mensajeFallo);
+      return false;
     }
   }
 
-  async function moverRepuesto(accion: () => Promise<OrdenServicio>, mensajeFallo: string) {
+  async function moverRepuesto(accion: () => Promise<OrdenServicio>, mensajeFallo: string, agregado = false) {
     if (moviendoRepuesto || !orden) return;
     moviendoRepuesto = true;
     const id = orden.id;
+    const anteriores = orden.repuestos;
     try {
-      await aplicar(accion, mensajeFallo);
-      if (dialogo.open && orden?.id === id) {
+      const aplicado = await aplicar(accion, mensajeFallo);
+      if (aplicado && dialogo.open && orden?.id === id) {
+        if (agregado && dialogo.dataset.buscandoRepuesto) {
+          buscar.value = '';
+          pintarResultados();
+          const indice = orden.repuestos.findIndex((r) => r.cantidad > (anteriores.find((a) =>
+            a.producto_id === r.producto_id && (a.origen_local_id ?? orden!.local_id) === (r.origen_local_id ?? orden!.local_id)
+          )?.cantidad ?? 0));
+          finalizarBusqueda($('do-repuestos').querySelectorAll('li')[indice]);
+        }
         catalogo = await inventoryService.listarRepuestosOrden(id);
         pintarResultados();
       }
@@ -342,7 +398,7 @@ const claseBotonSec =
     if (!producto || !orden) return;
     const cantidad = Number($('do-resultados').querySelector<HTMLInputElement>(`[data-cant="${id}"]`)?.value);
     const ordenId = orden.id;
-    await moverRepuesto(() => inventoryService.agregarRepuestoOrden(ordenId, producto, cantidad), 'No se pudo agregar el repuesto.');
+    await moverRepuesto(() => inventoryService.agregarRepuestoOrden(ordenId, producto, cantidad), 'No se pudo agregar el repuesto.', true);
   });
 
   // Escaneo con la cámara (ver CamaraEscaner.astro): la etiqueta de una pieza (INF000014) o el código/referencia del producto
@@ -356,7 +412,7 @@ const claseBotonSec =
   async function agregarEscaneado(codigo: string) {
     if (!orden || !codigo) return;
     const ordenId = orden.id;
-    await moverRepuesto(() => inventoryService.escanearRepuestoOrden(ordenId, normalizarCodigoUnidad(codigo) ?? '', normalizarReferencia(codigo) ?? codigo), 'No se pudo agregar el repuesto.');
+    await moverRepuesto(() => inventoryService.escanearRepuestoOrden(ordenId, normalizarCodigoUnidad(codigo) ?? '', normalizarReferencia(codigo) ?? codigo), 'No se pudo agregar el repuesto.', true);
   }
 
   $('do-repuestos').addEventListener('click', async (e) => {

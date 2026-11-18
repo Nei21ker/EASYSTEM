@@ -95,6 +95,8 @@ Productos has management tools implemented as `<dialog>` components in `src/comp
 
 ### Servicio técnico (órdenes de servicio)
 
+- Al enfocar el buscador de repuestos en una pantalla táctil, el detalle de la orden muestra el buscador y la lista desplazable bajo el encabezado, usando el alto visible sobre el teclado. «Volver a la orden» restaura el detalle. Al agregar correctamente, se cierra el teclado y se muestra la fila actualizada.
+
 - **Repuestos de ambos locales**. En una orden del Local Servicio Técnico se ofrece también la mercancía con stock del Local de pantallas. En una orden del Local de pantallas se ofrecen también las categorías Batería y Baterías del Local Servicio Técnico. La ruta protegida `/api/ordenes/:id/repuestos` verifica acceso a la orden y autoriza el origen por producto. Consume el inventario de origen y guarda el repuesto en el mismo lote, con el local y los códigos de las piezas. Al quitar o resetear, las cantidades vuelven a ese origen. El catálogo de POS y Productos conserva su alcance habitual.
 
 El formulario «Recibir equipo para reparar» usa un campo de nombre y apellido y otro de marca y modelo, con sugerencias del catálogo. `separarEquipo` adapta el equipo al formato de la orden. La recepción ya no solicita IMEI ni número de serie.
