@@ -95,6 +95,8 @@ Productos has management tools implemented as `<dialog>` components in `src/comp
 
 ### Servicio técnico (órdenes de servicio)
 
+El formulario «Recibir equipo para reparar» usa un campo de nombre y apellido y otro de marca y modelo, con sugerencias del catálogo. `separarEquipo` adapta el equipo al formato de la orden. La recepción ya no solicita IMEI ni número de serie.
+
 `pages/servicio-tecnico.astro` + `components/servicio/{NuevaOrden,DetalleOrden}.astro`; table `ordenes_servicio` (0016; LocalStorage: `db.ordenes`); only in locales of type `servicio_tecnico` (a trigger enforces it; the nav link appears only there, or for the administrator in "Todos"). An order has the customer, the device (brand, model, IMEI), what came with it, the reported fault, diagnosis, technician, labor cost and a state Pendiente → En reparación → Listo → Entregado (`Entregado` is final: no more edits; timestamps are set by a trigger / by the service in LocalStorage). **Parts consumed**: `agregarRepuestoOrden` does a `SALIDA` movement ("Repuesto, orden de servicio #N") on the order's local and snapshots the part (price at that moment) in `orden.repuestos`; removing one (`quitarRepuestoOrden`) is an `ENTRADA`, so administrador/encargado only. `total_usd` = parts + labor (shown in $ and Bs.). **El cobro y el reparto con el técnico ya existen: ver «Servicio técnico: cobro, reparto y técnicos» justo abajo (reemplaza lo que dice este párrafo sobre mano de obra, técnico y entrega).**
 
 ### Servicio técnico: cobro, reparto y técnicos (migración `0030`)

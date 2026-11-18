@@ -34,15 +34,9 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
             <input id="no-cedula" type="text" inputmode="numeric" autocomplete="off" maxlength="9" placeholder="12345678" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
           </div>
         </div>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label for="no-nombre" class={claseEtiqueta}>Nombre *</label>
-            <input id="no-nombre" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
-          </div>
-          <div>
-            <label for="no-apellido" class={claseEtiqueta}>Apellido *</label>
-            <input id="no-apellido" type="text" autocomplete="off" maxlength="60" class={claseCampo} />
-          </div>
+        <div>
+          <label for="no-nombre" class={claseEtiqueta}>Nombre y apellido *</label>
+          <input id="no-nombre" type="text" autocomplete="off" maxlength="120" class={claseCampo} />
         </div>
         <div>
           <label for="no-telefono" class={claseEtiqueta}>Número de teléfono *</label>
@@ -52,21 +46,10 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 
       <section class="space-y-3">
         <p class={claseTitulo}>Equipo</p>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label for="no-marca" class={claseEtiqueta}>Marca *</label>
-            <input id="no-marca" type="text" list="no-marcas" autocomplete="off" maxlength="60" placeholder="Apple, Samsung..." class={claseCampo} />
-            <datalist id="no-marcas"></datalist>
-          </div>
-          <div>
-            <label for="no-modelo" class={claseEtiqueta}>Modelo *</label>
-            <input id="no-modelo" type="text" list="no-modelos" autocomplete="off" maxlength="80" placeholder="iPhone 11" class={claseCampo} />
-            <datalist id="no-modelos"></datalist>
-          </div>
-        </div>
         <div>
-          <label for="no-imei" class={claseEtiqueta}>IMEI o número de serie <span class="font-normal text-slate-400">(opcional)</span></label>
-          <input id="no-imei" type="text" autocomplete="off" maxlength="40" class={claseCampo} />
+          <label for="no-equipo" class={claseEtiqueta}>Marca y modelo *</label>
+          <input id="no-equipo" type="text" list="no-equipos" autocomplete="off" maxlength="141" placeholder="Samsung Galaxy A15" class={claseCampo} />
+          <datalist id="no-equipos"></datalist>
         </div>
         <div>
           <label for="no-accesorios" class={claseEtiqueta}>Qué se recibe con el equipo <span class="font-normal text-slate-400">(opcional)</span></label>
@@ -95,7 +78,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { obtenerSesionActual } from '../../lib/auth';
-  import type { ModeloTelefono } from '../../types/database.types';
+  import { separarEquipo } from '../../utils/equipoRecepcion';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const dialogo = $<HTMLDialogElement>('no-dialogo');
@@ -106,16 +89,13 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     nac: $<HTMLSelectElement>('no-nac'),
     cedula: $<HTMLInputElement>('no-cedula'),
     nombre: $<HTMLInputElement>('no-nombre'),
-    apellido: $<HTMLInputElement>('no-apellido'),
     telefono: $<HTMLInputElement>('no-telefono'),
-    marca: $<HTMLInputElement>('no-marca'),
-    modelo: $<HTMLInputElement>('no-modelo'),
-    imei: $<HTMLInputElement>('no-imei'),
+    equipo: $<HTMLInputElement>('no-equipo'),
     accesorios: $<HTMLInputElement>('no-accesorios'),
     falla: $<HTMLTextAreaElement>('no-falla'),
   };
 
-  let modelos: ModeloTelefono[] = [];
+  let marcas: string[] = [];
 
   function mostrarError(mensaje: string, foco?: HTMLElement) {
     errorEl.textContent = mensaje;
@@ -123,31 +103,15 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     foco?.focus();
   }
 
-  const escapar = (t: string) => {
-    const d = document.createElement('div');
-    d.textContent = t;
-    return d.innerHTML;
-  };
-
-  // El modelo sugiere los de la marca escrita (del catálogo de teléfonos); se puede escribir cualquiera
-  function sugerirModelos() {
-    const marca = c.marca.value.trim().toLowerCase();
-    $('no-modelos').innerHTML = modelos
-      .filter((m) => !marca || m.marca.toLowerCase() === marca)
-      .slice(0, 300)
-      .map((m) => `<option value="${escapar(m.modelo)}"></option>`)
-      .join('');
-  }
-  c.marca.addEventListener('input', sugerirModelos);
   c.cedula.addEventListener('input', () => (c.cedula.value = c.cedula.value.replace(/\D/g, '')));
   form.addEventListener('input', () => errorEl.classList.add('hidden'));
 
   async function abrir() {
     const contexto = await inventoryService.obtenerContextoLocal();
     if (contexto?.local?.tipo !== 'servicio_tecnico') return;
-    modelos = await inventoryService.listarModelos();
-    $('no-marcas').innerHTML = [...new Set(modelos.map((m) => m.marca))].map((m) => `<option value="${escapar(m)}"></option>`).join('');
-    sugerirModelos();
+    const modelos = await inventoryService.listarModelos().catch(() => []);
+    marcas = [...new Set(modelos.map((m) => m.marca))];
+    $('no-equipos').replaceChildren(...modelos.map((m) => new Option('', `${m.marca} ${m.modelo}`)));
     $('no-local').textContent = contexto.local.nombre;
     form.reset();
     errorEl.classList.add('hidden');
@@ -163,19 +127,17 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     e.preventDefault();
     const cedula = c.cedula.value.replace(/\D/g, '');
     const nombre = c.nombre.value.trim().replace(/\s+/g, ' ');
-    const apellido = c.apellido.value.trim().replace(/\s+/g, ' ');
     const telefono = c.telefono.value.trim();
     const patronNombre = /^[\p{L}][\p{L} '.-]*$/u;
 
     if (!/^\d{5,9}$/.test(cedula)) return mostrarError('La cédula debe tener entre 5 y 9 dígitos (solo números).', c.cedula);
-    if (nombre.length < 2 || !patronNombre.test(nombre)) return mostrarError('Escribe el nombre del cliente.', c.nombre);
-    if (apellido.length < 2 || !patronNombre.test(apellido)) return mostrarError('Escribe el apellido del cliente.', c.apellido);
+    if (nombre.length < 3 || !nombre.includes(' ') || !patronNombre.test(nombre)) return mostrarError('Escribe el nombre y apellido del cliente.', c.nombre);
     const digitos = telefono.replace(/\D/g, '');
     if (!/^[\d\s+()-]+$/.test(telefono) || digitos.length < 10 || digitos.length > 13) {
       return mostrarError('El teléfono debe tener entre 10 y 13 dígitos (ej. 0414-1234567).', c.telefono);
     }
-    if (!c.marca.value.trim()) return mostrarError('Indica la marca del equipo.', c.marca);
-    if (!c.modelo.value.trim()) return mostrarError('Indica el modelo del equipo.', c.modelo);
+    const equipo = separarEquipo(c.equipo.value, marcas);
+    if (!equipo) return mostrarError('Indica la marca y el modelo del equipo, por ejemplo Samsung Galaxy A15.', c.equipo);
     if (c.falla.value.trim().length < 3) return mostrarError('Describe la falla que reporta el cliente.', c.falla);
 
     guardar.disabled = true;
@@ -184,11 +146,9 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       const sesion = await obtenerSesionActual();
       await inventoryService.crearOrdenServicio({
         cliente_cedula: `${c.nac.value}-${cedula}`,
-        cliente_nombre: `${nombre} ${apellido}`,
+        cliente_nombre: nombre,
         cliente_telefono: telefono,
-        equipo_marca: c.marca.value,
-        equipo_modelo: c.modelo.value,
-        equipo_imei: c.imei.value,
+        ...equipo,
         accesorios_recibidos: c.accesorios.value,
         falla_reportada: c.falla.value,
         registrado_nombre: sesion?.nombre,
