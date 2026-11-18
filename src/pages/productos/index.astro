@@ -229,6 +229,7 @@ const claseSelect =
     normalizarTexto as normalizar,
   } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
+  import { LOCAL_ACCESORIOS_ID } from '../../lib/constantes-locales';
 
   const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
   const filas = $<HTMLTableSectionElement>('pr-filas');
@@ -253,6 +254,7 @@ const claseSelect =
   let vistaDeLocal = false;
   let esAdministrador = false;
   let puedeEntradas = false;
+  let mostrarIngreso = false;
   let nombresLocales = new Map<string, string>();
   let categoriaActiva = '';
   let pagina = 1;
@@ -396,8 +398,8 @@ const claseSelect =
       lista: sinProductos ? (vistaDeLocal ? 'Este local aún no tiene productos' : 'Aún no hay productos') : 'Sin coincidencias',
     }[carga];
     $('pr-vacio-texto').textContent = sinCoincidencias ? 'Prueba con otra búsqueda o cambia los filtros.' : carga === 'error' ? 'Recarga la página para volver a intentarlo.' : '';
-    $('pr-vacio-ingreso').classList.toggle('hidden', !(sinProductos && puedeEntradas));
-    $('pr-vacio-ingreso').classList.toggle('inline-block', sinProductos && puedeEntradas);
+    $('pr-vacio-ingreso').classList.toggle('hidden', !(sinProductos && mostrarIngreso));
+    $('pr-vacio-ingreso').classList.toggle('inline-block', sinProductos && mostrarIngreso);
     $('pr-limpiar').classList.toggle('hidden', !sinCoincidencias);
     paginacion.classList.toggle('hidden', lista.length === 0);
     paginacion.classList.toggle('flex', lista.length > 0);
@@ -708,11 +710,12 @@ const claseSelect =
     const rol = contexto?.sesion.rol;
     esAdministrador = esGlobal(rol);
     puedeEntradas = esGerencia(rol);
+    mostrarIngreso = puedeEntradas && contexto?.local?.id !== LOCAL_ACCESORIOS_ID;
     nombresLocales = new Map((contexto?.locales ?? []).map((l) => [l.id, l.nombre]));
     for (const id of COLUMNAS_COSTO) $(id).classList.toggle('hidden', !esAdministrador);
     for (const id of COLUMNAS_ACCIONES) $(id).classList.toggle('hidden', !puedeEntradas);
     for (const id of BOTONES_ADMIN) $(id).classList.toggle('hidden', !esAdministrador);
-    $('pr-ingreso').classList.toggle('hidden', !puedeEntradas);
+    $('pr-ingreso').classList.toggle('hidden', !mostrarIngreso);
     // Cambiar precios en lote: también el encargado (el catálogo es compartido, como al editar un producto)
     $('pr-cambiar-precios').classList.toggle('hidden', !puedeEntradas);
     reconstruirIndice();
