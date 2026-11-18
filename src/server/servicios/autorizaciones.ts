@@ -8,7 +8,7 @@
 // de quien vende). El servidor la verifica y devuelve una autorización firmada (HMAC, 20 minutos) atada a quien vende, el local, el
 // promotor y los precios exactos: no sirve para otro vendedor, otro precio ni otro promotor, y no se puede alterar. `guardarVenta` la
 // exige para cualquier línea cuyo precio no sea el del catálogo.
-import { localAccesible, type Sesion } from '../authz';
+import { esGerencia, localAccesible, type Sesion } from '../authz';
 import type { Entorno } from '../entorno';
 import { ErrorApi } from '../errores';
 import { hashearClave, verificarClave } from '../password';
@@ -249,16 +249,21 @@ export interface AutorizacionCodigo {
   autorizado_por: string;
 }
 
-/** Un supervisor autoriza que, de ESTE producto, quien vende elija a mano el código de las unidades (por 20 minutos). */
+/** Autoriza la elección manual para un producto durante 20 minutos. Gerencia autoriza con su sesión. */
 export async function autorizarCodigoManual(
   env: Entorno,
   sesion: Sesion,
-  pedido: { email?: string; clave: string; local_id: string; producto_id: string }
+  pedido: { email?: string; clave?: string; local_id: string; producto_id: string }
 ): Promise<AutorizacionCodigo> {
+  const autorizacionDirecta = esGerencia(sesion.rol);
+  if (!autorizacionDirecta && sesion.rol !== 'vendedor') throw new ErrorApi(403, 'Tu rol no tiene permiso para elegir códigos a mano.', 'sin_permiso');
   if (!(await localAccesible(env, sesion, pedido.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
   const producto = await env.DB.prepare('SELECT id FROM productos WHERE id = ?').bind(pedido.producto_id).first();
   if (!producto) throw new ErrorApi(400, 'El producto no existe en el catálogo.', 'datos_invalidos');
-  const supervisor = await identificarSupervisor(env, sesion, pedido.email, pedido.clave, pedido.local_id);
+  if (!autorizacionDirecta && !pedido.clave) throw new ErrorApi(403, 'Escribe la contraseña de un encargado de este local, un supervisor, un gerente o un administrador.', 'sin_permiso');
+  const supervisor = autorizacionDirecta
+    ? { id: sesion.userId, nombre: sesion.nombre }
+    : await identificarSupervisor(env, sesion, pedido.email, pedido.clave ?? '', pedido.local_id);
   const vence = Date.now() + VIDA_AUTORIZACION_MS;
   const token = await firmarCarga(env, { v: 1, k: 'codigo', u: sesion.userId, a: supervisor.id, an: supervisor.nombre, l: pedido.local_id, pr: pedido.producto_id, exp: vence } satisfies CargaCodigoManual);
   return { token, vence_en: vence, autorizado_por: supervisor.nombre };

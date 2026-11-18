@@ -2072,15 +2072,16 @@ export async function autorizarPrecioVenta(pedido: { email?: string; clave?: str
 // Modo demo: autorizaciones de selección manual de código, en memoria
 const codigosManualesDemo = new Map<string, { producto_id: string; supervisor_id: string; supervisor_nombre: string; vence_en: number }>();
 
-/**
- * Un encargado (de este local), gerente o administrador autoriza, con SU correo y contraseña, que se elija a mano el código de las
- * unidades de un producto (la etiqueta no se lee). Dura 20 minutos. Con el servidor la verifica el servidor.
- */
-export async function autorizarCodigoManual(pedido: { email?: string; clave: string; producto_id: string }): Promise<AutorizacionCodigo> {
+/** Autoriza la elección manual de códigos de un producto durante 20 minutos. */
+export async function autorizarCodigoManual(pedido: { email?: string; clave?: string; producto_id: string }): Promise<AutorizacionCodigo> {
   const local_id = await exigirLocal('vender');
   if (modoServidor) return ventasDb.autorizarCodigoManual({ ...pedido, local_id });
   if (!leerDB().productos.some((p) => p.id === pedido.producto_id)) throw new Error('El producto no existe en el catálogo.');
-  const supervisor = verificarSupervisorDemo(pedido.email, pedido.clave, local_id);
+  const sesion = await obtenerSesionActual();
+  if (!sesion || (!esGerencia(sesion.rol) && sesion.rol !== 'vendedor')) throw new Error('Tu rol no tiene permiso para elegir códigos a mano.');
+  const supervisor = esGerencia(sesion.rol)
+    ? sesion
+    : pedido.clave ? verificarSupervisorDemo(pedido.email, pedido.clave, local_id) : null;
   if (!supervisor) throw new Error('Contraseña incorrecta: debe ser la de un encargado de este local, un gerente o un administrador.');
   const vence_en = Date.now() + VIDA_AUTORIZACION_DEMO_MS;
   const token = `demo-codigo-${generarId()}`;

@@ -1,4 +1,4 @@
-// Elegir a mano el código de una unidad (la etiqueta no se lee): solo con la contraseña de un supervisor, y la venta lo deja marcado.
+// Elegir a mano el código de una unidad (la etiqueta no se lee): la venta deja constancia de la autorización.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
 import { cargarSesion, type Sesion } from '../../src/server/authz';
@@ -62,6 +62,18 @@ const venta = (extra: Partial<NuevaVenta['items'][0]> = {}): NuevaVenta => ({
 });
 
 describe('autorizarCodigoManual', () => {
+  it.each(['encargado', 'supervisor', 'gerente', 'administrador'] as const)('autoriza a %s con su sesión y sin clave', async (rol) => {
+    const sesion = { ...await sesionDe(rol === 'encargado' ? encargadoAcc : admin), rol };
+    const resultado = await autorizarCodigoManual(env, sesion, { local_id: accesorios, producto_id: P });
+    expect(resultado.token).toMatch(/\./);
+    expect(resultado.autorizado_por).toBe(sesion.nombre);
+  });
+
+  it('exige clave al asesor y mantiene el alcance del encargado', async () => {
+    await rechazo(autorizarCodigoManual(env, sV, { local_id: accesorios, producto_id: P }), 403, /escribe la contraseña/i);
+    await rechazo(autorizarCodigoManual(env, await sesionDe(encargadoVid), { local_id: accesorios, producto_id: P }), 403);
+  });
+
   it('un encargado del local, un gerente o un administrador autorizan con su contraseña', async () => {
     for (const s of [encargadoAcc, admin]) {
       const r = await autorizarCodigoManual(env, sV, pedido(s));

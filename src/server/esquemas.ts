@@ -56,10 +56,10 @@ export const esquemaItemVenta = z.object({
   movimiento_baja_id: z.string().max(100).optional(),
 });
 
-/** Pedido de autorización para elegir a mano el código de una unidad: un supervisor teclea su correo y contraseña */
+/** Pedido de autorización para elegir a mano el código de una unidad: la clave se exige según el rol de caja */
 export const esquemaAutorizarCodigo = z.object({
   email: z.string().min(3).max(200).optional(),
-  clave: z.string().min(1).max(200),
+  clave: z.string().min(1).max(200).optional(),
   local_id: z.string(),
   producto_id: z.string(),
 });

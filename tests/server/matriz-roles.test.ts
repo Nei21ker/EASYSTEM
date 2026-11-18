@@ -132,7 +132,7 @@ function casos(): Caso[] {
     // (con un precio inválido: los roles con permiso reciben 400 antes de tocar contraseñas; el resto, 403)
     { archivo: 'ventas/autorizar-precio.ts', metodo: 'POST', url: '/api/ventas/autorizar-precio', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, lineas: [{ producto_id: p, precio: 0 }] }, permitidos: NEGOCIO },
     { archivo: 'ventas/autorizar-danados.ts', metodo: 'POST', url: '/api/ventas/autorizar-danados', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, cantidad: 0 }, permitidos: NEGOCIO },
-    { archivo: 'ventas/autorizar-codigo.ts', metodo: 'POST', url: '/api/ventas/autorizar-codigo', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, producto_id: 'no-existe' }, permitidos: NEGOCIO },
+    { archivo: 'ventas/autorizar-codigo.ts', metodo: 'POST', url: '/api/ventas/autorizar-codigo', cuerpo: { email: 'nadie@prueba.com', clave: 'x', local_id: accesorios, producto_id: 'no-existe' }, permitidos: CAJERO },
     { archivo: 'ventas/resetear.ts', metodo: 'POST', url: '/api/ventas/resetear', cuerpo: { local_id: accesorios, simular: true }, permitidos: ['administrador'] },
     { archivo: 'ventas/eliminar.ts', metodo: 'POST', url: '/api/ventas/eliminar', cuerpo: { ids: ['no-existe'], simular: true }, permitidos: ['administrador', 'gerente'] },
     { archivo: 'reportes/resetear.ts', metodo: 'POST', url: '/api/reportes/resetear', cuerpo: { local_id: accesorios, simular: true }, permitidos: ['administrador'] },

@@ -429,7 +429,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
         />
         <div id="pos-selector-clave-bloque" class="hidden space-y-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
-          <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">Elegir un código a mano necesita la contraseña de un encargado, gerente o administrador</p>
+          <p class="text-xs font-semibold text-amber-800 dark:text-amber-300">Elegir un código a mano necesita la contraseña de un encargado, supervisor, gerente o administrador</p>
           <input id="pos-selector-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <p id="pos-selector-autorizado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
@@ -460,7 +460,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       </div>
       <div class="shrink-0 space-y-2 border-b border-slate-200 px-5 py-3 dark:border-slate-800">
         <div id="pos-manual-clave-bloque" class="space-y-2">
-          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, gerente o administrador</p>
+          <p class="text-xs font-semibold text-slate-700 dark:text-slate-200">Contraseña de un encargado, supervisor, gerente o administrador</p>
           <input id="pos-manual-clave" type="password" autocomplete="new-password" placeholder="Su contraseña del sistema" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <p id="pos-manual-autorizado" class="hidden rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"></p>
@@ -658,6 +658,7 @@ import { alCambiarDatos } from '../lib/realtime';
   const totalDanadosCarrito = (): number => carrito.reduce((suma, l) => suma + (l.danados ?? 0), 0);
   /** Solo el encargado, el gerente y el administrador marcan piezas defectuosas (el servidor lo vuelve a exigir) */
   let puedeMarcarDanados = false;
+  let requiereClaveCodigoManual = true;
   /** La clave de un gerente o administrador para botar 3 o más piezas defectuosas; cubre hasta `cantidad` en total (dura 20 minutos) */
   let autorizacionDanados: { token: string; vence_en: number; autorizado_por: string; cantidad: number } | null = null;
 
@@ -2340,10 +2341,10 @@ import { alCambiarDatos } from '../lib/realtime';
     selError.classList.remove('hidden');
   }
 
-  /** Elegir a mano la unidad pide la contraseña de un supervisor (una vez por producto, vale 20 minutos); sin producto elegido no se muestra nada. */
+  /** La clave se pide al asesor una vez por producto. La autorización vale 20 minutos. */
   function pintarSelectorAutorizacion() {
     const aut = selProducto ? autorizacionManualVigente(selProducto.id) : null;
-    selClaveBloque.classList.toggle('hidden', !selProducto || !!aut);
+    selClaveBloque.classList.toggle('hidden', !selProducto || !requiereClaveCodigoManual || !!aut);
     selAutorizado.classList.toggle('hidden', !aut);
     if (aut) selAutorizado.textContent = `Autorizado por ${aut.nombre}`;
     selError.classList.add('hidden');
@@ -2354,10 +2355,10 @@ import { alCambiarDatos } from '../lib/realtime';
     selError.classList.add('hidden');
     let aut = autorizacionManualVigente(selProducto.id);
     if (!aut) {
-      if (!selClave.value) return errorSelector('Escribe la contraseña de un encargado, gerente o administrador.');
+      if (requiereClaveCodigoManual && !selClave.value) return errorSelector('Escribe la contraseña de un encargado, supervisor, gerente o administrador.');
       boton.disabled = true;
       try {
-        const r = await inventoryService.autorizarCodigoManual({ clave: selClave.value, producto_id: selProducto.id });
+        const r = await inventoryService.autorizarCodigoManual({ clave: requiereClaveCodigoManual ? selClave.value : undefined, producto_id: selProducto.id });
         aut = { token: r.token, nombre: r.autorizado_por, vence_en: r.vence_en, codigos: manualPorProducto.get(selProducto.id)?.codigos ?? new Set<string>() };
         manualPorProducto.set(selProducto.id, aut);
       } catch (err) {
@@ -2676,7 +2677,7 @@ import { alCambiarDatos } from '../lib/realtime';
     const faltan = linea ? linea.cantidad - linea.unidades.length : 0;
     document.getElementById('pos-manual-producto')!.textContent = `${manualProducto.nombre} · faltan ${faltan} por elegir`;
     const aut = autorizacionManualVigente(manualProducto.id);
-    manualBloqueClave.classList.toggle('hidden', !!aut);
+    manualBloqueClave.classList.toggle('hidden', !requiereClaveCodigoManual || !!aut);
     manualAutorizado.classList.toggle('hidden', !aut);
     if (aut) manualAutorizado.textContent = `Autorizado por ${aut.nombre}`;
     const q = manualBuscar.value.trim();
@@ -2721,10 +2722,10 @@ import { alCambiarDatos } from '../lib/realtime';
     manualError.classList.add('hidden');
     let aut = autorizacionManualVigente(manualProducto.id);
     if (!aut) {
-      if (!manualClave.value) return errorManual('Escribe la contraseña de un encargado, gerente o administrador.');
+      if (requiereClaveCodigoManual && !manualClave.value) return errorManual('Escribe la contraseña de un encargado, supervisor, gerente o administrador.');
       boton.disabled = true;
       try {
-        const r = await inventoryService.autorizarCodigoManual({ clave: manualClave.value, producto_id: manualProducto.id });
+        const r = await inventoryService.autorizarCodigoManual({ clave: requiereClaveCodigoManual ? manualClave.value : undefined, producto_id: manualProducto.id });
         aut = { token: r.token, nombre: r.autorizado_por, vence_en: r.vence_en, codigos: manualPorProducto.get(manualProducto.id)?.codigos ?? new Set<string>() };
         manualPorProducto.set(manualProducto.id, aut);
       } catch (err) {
@@ -3221,6 +3222,7 @@ import { alCambiarDatos } from '../lib/realtime';
   // El POS vende desde UN local: en la vista "Todos los locales" del administrador se pide elegir uno
   inventoryService.obtenerContextoLocal().then((contexto) => {
     puedeMarcarDanados = esGerencia(contexto?.sesion.rol);
+    requiereClaveCodigoManual = contexto?.sesion.rol === 'vendedor';
     instalacionDisponible = contexto?.local?.tipo === 'vidrios';
     if (contexto?.local) {
       localActivoId = contexto.local.id;
