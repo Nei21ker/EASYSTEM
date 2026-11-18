@@ -469,3 +469,5 @@ Consult these guides before working on related tasks:
 - [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
 
 - **Inicio de Local Accesorios:** buscador con cámara y resultados bajo demanda, accesos a Nueva venta y Productos, y stock bajo desplegable solo cuando hay alertas. El detalle conserva la exportación para proveedor. El resumen de inventario y los movimientos recientes se muestran en las demás vistas de inicio.
+
+- **Cambio de mercancía:** el escáner de «Lo que entregamos» usa el mismo icono de escaneo que Nueva venta.

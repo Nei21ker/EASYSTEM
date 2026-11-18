@@ -50,8 +50,11 @@ const lados = [
             <div class="flex gap-2">
               <input id={`cm-${l.k}-buscar`} type="text" autocomplete="off" placeholder={l.placeholder} class={claseCampo} />
               {l.k === 's' && (
-                <button type="button" data-abrir-escaner aria-label="Escanear con la cámara" class="shrink-0 rounded-lg border border-slate-200 px-3 text-lg hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800">
-                  📷
+                <button type="button" data-abrir-escaner aria-label="Escanear con la cámara" class="shrink-0 rounded-lg border border-slate-200 px-3 text-slate-400 hover:bg-slate-50 hover:text-brand-600 dark:hover:text-brand-400 dark:border-slate-700 dark:hover:bg-slate-800">
+                  <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+                    <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+                    <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+                  </svg>
                 </button>
               )}
             </div>
