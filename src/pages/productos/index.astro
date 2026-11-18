@@ -7,16 +7,17 @@ import ImportadorCsv from '../../components/productos/ImportadorCsv.astro';
 const claseBotonSecundario =
   'rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800';
 const claseBotonAdmin =
-  'hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800';
+  'hidden w-full rounded-md px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800';
+const claseResumen = 'cursor-pointer list-none whitespace-nowrap rounded-lg border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 sm:px-3 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 [&::-webkit-details-marker]:hidden';
 const claseSelect =
   'rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
 ---
 
 <DashboardLayout titulo="Productos" subtitulo="Catálogo de forros, cargadores, vidrios y más">
-  <div class="space-y-4">
+  <div class="space-y-3">
     <!-- Barra de herramientas -->
-    <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+    <div class="rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex flex-col gap-2 lg:flex-row lg:items-center">
         <div class="relative flex-1">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" stroke-linecap="round" />
@@ -25,8 +26,9 @@ const claseSelect =
             id="pr-buscador"
             type="search"
             autocomplete="off"
-            placeholder="Buscar por nombre, código, categoría o modelo de teléfono..."
-            class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-10 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+            placeholder="Buscar producto"
+            aria-label="Buscar producto por nombre, código, referencia, categoría o modelo"
+            class="w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-9 pr-10 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
           />
           <button
             type="button"
@@ -42,45 +44,51 @@ const claseSelect =
           </button>
         </div>
 
-        <div class="flex flex-wrap gap-2">
-          <button id="pr-exportar" type="button" class={claseBotonSecundario}>Exportar CSV</button>
-          <!-- Herramientas de administrador: ocultas hasta confirmar el rol -->
-          <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
-          <button id="pr-cambiar-precios" type="button" class={claseBotonAdmin} title="Poner el mismo precio (en $ o fijo en Bs) a muchos productos de una vez">Cambiar precios</button>
-          <button id="pr-seleccionar" type="button" class={claseBotonAdmin} title="Elegir productos para eliminarlos (por ejemplo, los de un ingreso equivocado)">Seleccionar</button>
-          <!-- Ingreso de mercancía (producto nuevo, entradas de stock y etiquetas): módulo propio -->
+        <div class="relative flex flex-wrap items-center gap-1.5">
           <a
             id="pr-ingreso"
             href="/ingreso"
-            class="bg-marca hidden rounded-lg px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:brightness-110"
+            class="hidden whitespace-nowrap rounded-lg bg-brand-600 px-2 py-2 text-xs font-semibold text-white transition hover:bg-brand-700 sm:px-3"
           >
-            Ingresar mercancía
+            + Ingresar mercancía
           </a>
+          <details id="pr-filtros">
+            <summary class={claseResumen}>Filtros <span id="pr-num-filtros" class="hidden text-brand-700 dark:text-brand-300"></span></summary>
+            <div class="absolute right-0 z-20 mt-2 grid w-52 max-w-full gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+                Categoría
+                <select id="pr-categorias" class={claseSelect}><option value="">Todas las categorías</option></select>
+              </label>
+              <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                <input id="pr-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+                Solo con stock
+              </label>
+              <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+                Ordenar por
+                <select id="pr-orden" class={claseSelect}>
+                  <option value="nombre">Nombre (A–Z)</option>
+                  <option value="categoria">Categoría</option>
+                  <option value="precio_asc">Precio: menor a mayor</option>
+                  <option value="precio_desc">Precio: mayor a menor</option>
+                  <option value="stock_desc">Más stock primero</option>
+                  <option value="stock_asc">Menos stock primero</option>
+                </select>
+              </label>
+              <button id="pr-filtros-listo" type="button" class={claseBotonSecundario}>Listo</button>
+            </div>
+          </details>
+          <details id="pr-mas" class="relative ml-auto lg:ml-0">
+            <summary class={claseResumen}>Más acciones</summary>
+            <div class="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900">
+              <button id="pr-exportar" type="button" class={claseBotonAdmin.replace('hidden ', '')}>Exportar CSV</button>
+              <button id="pr-importar" type="button" class={claseBotonAdmin}>Importar CSV</button>
+              <button id="pr-cambiar-precios" type="button" class={claseBotonAdmin}>Cambiar precios</button>
+              <button id="pr-seleccionar" type="button" class={claseBotonAdmin}>Seleccionar</button>
+            </div>
+          </details>
         </div>
       </div>
-
-      <!-- Categorías -->
-      <div id="pr-categorias" class="-mx-1 mt-3 flex gap-2 overflow-x-auto px-1 pb-1" role="group" aria-label="Filtrar por categoría"></div>
-
-      <!-- Opciones -->
-      <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-        <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-          <input id="pr-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-          Solo con stock
-        </label>
-        <label class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-          Ordenar por
-          <select id="pr-orden" class={claseSelect}>
-            <option value="nombre">Nombre (A–Z)</option>
-            <option value="categoria">Categoría</option>
-            <option value="precio_asc">Precio: menor a mayor</option>
-            <option value="precio_desc">Precio: mayor a menor</option>
-            <option value="stock_desc">Más stock primero</option>
-            <option value="stock_asc">Menos stock primero</option>
-          </select>
-        </label>
-        <p id="pr-resumen" class="ml-auto text-xs text-slate-500 dark:text-slate-400">Cargando...</p>
-      </div>
+      <p id="pr-filtros-activos" class="mt-2 hidden break-words text-xs text-slate-500 dark:text-slate-400"></p>
     </div>
 
     <!-- Selección para eliminar (administrador y gerente): aparece al pulsar "Seleccionar" -->
@@ -123,16 +131,17 @@ const claseSelect =
         </table>
       </div>
 
-      <div id="pr-sin-resultados" class="hidden px-5 py-12 text-center">
-        <p class="text-sm font-medium text-slate-700 dark:text-slate-200">No hay productos con esos filtros</p>
-        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Prueba con otra búsqueda o quita algún filtro.</p>
-        <button id="pr-limpiar" type="button" class="mt-3 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
+      <div id="pr-sin-resultados" class="px-5 py-8 text-center" role="status">
+        <p id="pr-vacio-titulo" class="text-sm font-semibold text-slate-900 dark:text-white">Cargando productos…</p>
+        <p id="pr-vacio-texto" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+        <a id="pr-vacio-ingreso" href="/ingreso" class="mt-3 hidden text-sm font-semibold text-brand-700 hover:underline dark:text-brand-300">Ingresar mercancía</a>
+        <button id="pr-limpiar" type="button" class="mt-3 hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">
           Limpiar filtros
         </button>
       </div>
 
       <!-- Paginación -->
-      <div id="pr-paginacion" class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:text-slate-400">
+      <div id="pr-paginacion" class="hidden flex-col gap-3 border-t border-slate-100 px-4 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:text-slate-400">
         <p id="pr-rango"></p>
         <div class="flex items-center gap-3">
           <label class="flex items-center gap-2">
@@ -227,7 +236,9 @@ const claseSelect =
   const soloStock = $<HTMLInputElement>('pr-solo-stock');
   const selectOrden = $<HTMLSelectElement>('pr-orden');
   const selectPorPagina = $<HTMLSelectElement>('pr-por-pagina');
-  const contenedorCategorias = $('pr-categorias');
+  const selectCategoria = $<HTMLSelectElement>('pr-categorias');
+  const panelFiltros = $<HTMLDetailsElement>('pr-filtros');
+  const panelAcciones = $<HTMLDetailsElement>('pr-mas');
   const sinResultados = $('pr-sin-resultados');
   const paginacion = $('pr-paginacion');
 
@@ -238,6 +249,8 @@ const claseSelect =
   const ORDEN_CATEGORIAS = ['forros', 'vidrios templados', 'cargadores', 'popsockets', 'audífonos'];
 
   let productos: ProductoConRelaciones[] = [];
+  let carga: 'pendiente' | 'lista' | 'error' = 'pendiente';
+  let vistaDeLocal = false;
   let esAdministrador = false;
   let puedeEntradas = false;
   let nombresLocales = new Map<string, string>();
@@ -290,15 +303,9 @@ const claseSelect =
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || natural(a, b);
     });
 
-    const base = 'shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-semibold transition';
-    const activo = 'border-brand-600 bg-brand-600 text-white shadow-sm';
-    const inactivo =
-      'border-slate-200 text-slate-600 hover:border-brand-300 hover:text-brand-700 dark:border-slate-700 dark:text-slate-300 dark:hover:border-brand-500 dark:hover:text-brand-300';
-    const chip = (valor: string, texto: string, n: number) =>
-      `<button type="button" data-categoria="${escapar(valor)}" aria-pressed="${categoriaActiva === valor}" class="${base} ${categoriaActiva === valor ? activo : inactivo}">${escapar(texto)} <span class="ml-0.5 opacity-70">${n}</span></button>`;
-
-    contenedorCategorias.innerHTML =
-      chip('', 'Todas', productos.length) + ordenadas.map((c) => chip(c, c, conteo.get(c)!)).join('');
+    if (!conteo.has(categoriaActiva)) categoriaActiva = '';
+    selectCategoria.replaceChildren(new Option('Todas las categorías', ''), ...ordenadas.map((c) => new Option(c, c)));
+    selectCategoria.value = categoriaActiva;
   }
 
   /** En la vista "Todos los locales": stock de cada local debajo del total. */
@@ -313,7 +320,7 @@ const claseSelect =
   function filaHtml(p: ProductoConRelaciones): string {
     return `
       <tr class="align-middle text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
-        <td class="px-4 py-3">
+        <td class="px-4 py-3 max-md:order-first">
           <div class="grid ${modoSeleccion ? 'grid-cols-[auto_auto_1fr]' : 'grid-cols-[auto_1fr]'} items-center gap-3">
             ${modoSeleccion ? `<input type="checkbox" data-sel="${escapar(p.id)}" ${seleccion.has(p.id) ? 'checked' : ''} aria-label="Seleccionar ${escapar(p.nombre)}" class="h-5 w-5 rounded border-slate-300 text-red-600 focus:ring-red-500" />` : ''}
             ${htmlMiniatura(p.imagen_url, p.nombre, 'h-12 w-12')}
@@ -323,20 +330,20 @@ const claseSelect =
             </div>
           </div>
         </td>
-        <td data-label="Categoría" class="px-4 py-3">
+        <td data-label="Categoría" class="px-4 py-3 max-md:order-1">
           <span class="inline-flex whitespace-nowrap rounded-md border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600 dark:border-slate-700 dark:text-slate-300">${escapar(p.categoria)}</span>
         </td>
-        <td data-label="Compatible con" class="px-4 py-3">${htmlCompatibles(p)}</td>
+        <td data-label="Compatible con" class="px-4 py-3 max-md:order-1">${htmlCompatibles(p)}</td>
         ${
           esAdministrador
-            ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
+            ? `<td data-label="Precio compra" class="px-4 py-3 text-right tabular-nums text-slate-500 max-md:order-1 dark:text-slate-400">${formatearMoneda(p.precio_compra)}</td>`
             : ''
         }
         <td data-label="Precio venta" class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900 dark:text-white">${htmlPrecioDual(p.precio_venta, tasaActual.get(), '', tienePrecioEnBs(p) ? p.precio_bs! : null, tienePrecioEnBs(p) ? 'Fijo ' : '')}</td>
         <td data-label="Stock" class="px-4 py-3"><div class="text-left">${pildoraStock(p)}${desgloseStock(p)}</div></td>
         ${
           puedeEntradas
-            ? `<td class="px-4 py-3">
+            ? `<td class="px-4 py-3 max-md:order-last">
                 <div class="acciones flex justify-end gap-1.5">
                   <a href="/ingreso?producto=${p.id}" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-50 dark:border-slate-700 dark:text-brand-300 dark:hover:bg-slate-800">+ Stock</a>
                   <a href="/ingreso?reimprimir=${p.id}" title="Volver a imprimir la etiqueta de una unidad de este producto" class="whitespace-nowrap rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800">Etiquetas</a>
@@ -373,14 +380,27 @@ const claseSelect =
     const inicio = (pagina - 1) * porPagina;
     filas.innerHTML = lista.slice(inicio, inicio + porPagina).map(filaHtml).join('');
 
-    const hayFiltro = buscador.value.trim() !== '' || categoriaActiva !== '' || soloStock.checked;
-    $('pr-resumen').textContent = hayFiltro
-      ? `${lista.length} de ${productos.length} productos`
-      : `${productos.length} productos · ${productos.filter((p) => p.stock_actual > 0).length} con stock`;
+    const filtros = [categoriaActiva, soloStock.checked ? 'Solo con stock' : '', selectOrden.value !== 'nombre' ? selectOrden.selectedOptions[0]?.text : ''].filter(Boolean);
+    $('pr-num-filtros').textContent = String(filtros.length);
+    $('pr-num-filtros').classList.toggle('hidden', filtros.length === 0);
+    $('pr-filtros-activos').textContent = filtros.join(' · ');
+    $('pr-filtros-activos').classList.toggle('hidden', filtros.length === 0);
 
     pintarBarraSeleccion(lista);
     sinResultados.classList.toggle('hidden', lista.length > 0);
+    const sinProductos = carga === 'lista' && productos.length === 0;
+    const sinCoincidencias = carga === 'lista' && productos.length > 0 && lista.length === 0;
+    $('pr-vacio-titulo').textContent = {
+      pendiente: 'Cargando productos…',
+      error: 'No se pudieron cargar los productos',
+      lista: sinProductos ? (vistaDeLocal ? 'Este local aún no tiene productos' : 'Aún no hay productos') : 'Sin coincidencias',
+    }[carga];
+    $('pr-vacio-texto').textContent = sinCoincidencias ? 'Prueba con otra búsqueda o cambia los filtros.' : carga === 'error' ? 'Recarga la página para volver a intentarlo.' : '';
+    $('pr-vacio-ingreso').classList.toggle('hidden', !(sinProductos && puedeEntradas));
+    $('pr-vacio-ingreso').classList.toggle('inline-block', sinProductos && puedeEntradas);
+    $('pr-limpiar').classList.toggle('hidden', !sinCoincidencias);
     paginacion.classList.toggle('hidden', lista.length === 0);
+    paginacion.classList.toggle('flex', lista.length > 0);
     $('pr-rango').textContent = lista.length
       ? `Mostrando ${inicio + 1}–${Math.min(inicio + porPagina, lista.length)} de ${lista.length}`
       : '';
@@ -434,18 +454,38 @@ const claseSelect =
     pintarAnimado();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
-  contenedorCategorias.addEventListener('click', (e) => {
-    const boton = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-categoria]');
-    if (!boton) return;
-    categoriaActiva = boton.dataset.categoria ?? '';
+  selectCategoria.addEventListener('change', () => {
+    categoriaActiva = selectCategoria.value;
     pagina = 1;
-    pintarCategorias();
     pintarAnimado();
+  });
+  for (const panel of [panelFiltros, panelAcciones]) {
+    const resumen = panel.querySelector('summary')!;
+    resumen.addEventListener('click', () => {
+      (panel === panelFiltros ? panelAcciones : panelFiltros).open = false;
+    });
+    document.addEventListener('click', (e) => {
+      if (panel.open && e.target instanceof Node && !panel.contains(e.target)) panel.open = false;
+    });
+    panel.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !panel.open) return;
+      e.preventDefault();
+      panel.open = false;
+      resumen.focus();
+    });
+  }
+  $('pr-filtros-listo').addEventListener('click', () => {
+    panelFiltros.open = false;
+    panelFiltros.querySelector('summary')!.focus();
+  });
+  panelAcciones.addEventListener('click', (e) => {
+    if (e.target instanceof Element && e.target.closest('button')) panelAcciones.open = false;
   });
   $('pr-limpiar').addEventListener('click', () => {
     buscador.value = '';
     soloStock.checked = false;
     categoriaActiva = '';
+    selectOrden.value = 'nombre';
     pagina = 1;
     pintarCategorias();
     pintarAnimado();
@@ -652,6 +692,7 @@ const claseSelect =
   // Tras guardar/importar/registrar entrada, las ventanas avisan con este evento.
   async function recargarProductos() {
     productos = await inventoryService.listarProductos();
+    carga = 'lista';
     reconstruirIndice();
     pintarCategorias();
     pintar();
@@ -662,6 +703,8 @@ const claseSelect =
 
   Promise.all([inventoryService.listarProductos(), inventoryService.obtenerContextoLocal()]).then(([lista, contexto]) => {
     productos = lista;
+    carga = 'lista';
+    vistaDeLocal = !!contexto?.local;
     const rol = contexto?.sesion.rol;
     esAdministrador = esGlobal(rol);
     puedeEntradas = esGerencia(rol);
@@ -675,6 +718,9 @@ const claseSelect =
     reconstruirIndice();
     pintarCategorias();
     animarLista(filas);
+    pintar();
+  }).catch(() => {
+    carga = 'error';
     pintar();
   });
 </script>
