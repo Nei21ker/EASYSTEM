@@ -353,6 +353,30 @@ export async function listarVentas(
 }
 
 // --- Devoluciones --------------------------------------------------------------------------------------------------
+/**
+ * El producto que se entrega a cambio puede cobrarse a otro precio que el del catálogo (p. ej. el mismo que pagó el cliente por lo que
+ * devuelve). Igual o más caro: lo anota quien registra el cambio. MÁS BARATO (un descuento): solo un gerente o un administrador, como en
+ * el POS. Los productos que no existen se ignoran (el inventario ya los rechaza).
+ */
+async function exigirPreciosDeCambio(env: Entorno, sesion: Sesion, items: NuevaDevolucion['items_nuevos']): Promise<void> {
+  if (esGlobal(sesion.rol) || items.length === 0) return;
+  const ids = [...new Set(items.map((i) => i.producto_id))];
+  const catalogo = new Map<string, number>();
+  for (const grupo of tramos(ids)) {
+    const filas = await env.DB
+      .prepare(`SELECT id, precio_venta FROM productos WHERE id IN (${marcas(grupo.length)})`)
+      .bind(...grupo)
+      .all<{ id: string; precio_venta: number }>();
+    for (const fila of filas.results) catalogo.set(fila.id, fila.precio_venta);
+  }
+  for (const i of items) {
+    const lista = catalogo.get(i.producto_id);
+    if (lista !== undefined && i.precio_unitario < lista - 0.005) {
+      throw new ErrorApi(403, `Cobrar «${i.nombre}» por menos que su precio de catálogo es un descuento: solo lo autoriza un gerente o un administrador.`, 'precio_no_autorizado');
+    }
+  }
+}
+
 export async function guardarDevolucion(env: Entorno, sesion: Sesion, datos: NuevaDevolucion): Promise<Devolucion> {
   if (!esGerencia(sesion.rol)) throw new ErrorApi(403, 'Solo el administrador, el gerente o el encargado registran devoluciones.', 'sin_permiso');
   if (!(await localAccesible(env, sesion, datos.local_id))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
@@ -365,6 +389,7 @@ export async function guardarDevolucion(env: Entorno, sesion: Sesion, datos: Nue
   const ventaOriginal = await env.DB.prepare('SELECT id, folio, local_id FROM ventas WHERE id = ?').bind(datos.venta_id).first<{ id: string; folio: number; local_id: string }>();
   if (!ventaOriginal) throw new ErrorApi(404, 'La venta no existe.', 'no_existe');
   if (ventaOriginal.local_id !== datos.local_id) throw new ErrorApi(400, 'La devolución debe registrarse en el local de la venta.', 'datos_invalidos');
+  await exigirPreciosDeCambio(env, sesion, datos.items_nuevos ?? []);
 
   const id = nuevoId();
   const db = env.DB;

@@ -89,7 +89,8 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
 <script>
   import * as inventoryService from '../../lib/inventoryService';
   import { tienePrecioDeVenta } from '../../utils/cargaInicial';
-  import { esGerencia, obtenerSesionActual } from '../../lib/auth';
+  import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
+  import { leerPrecioEscrito, textoPrecioCampo } from '../../utils/precioBs';
   import { textoCliente } from '../../utils/clienteSinDatos';
   import { tasaActual } from '../../stores/tasa';
   import { convertirABs, formatearBolivares, formatearMoneda } from '../../utils/format';
@@ -114,7 +115,8 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
   /** producto_id -> unidades que se devuelven ahora */
   let aDevolver = new Map<string, number>();
   /** producto_id -> producto de reemplazo con su cantidad */
-  let reemplazos = new Map<string, { producto: ProductoConRelaciones; cantidad: number }>();
+  /** `precio` = lo que se cobra por unidad (empieza en el del catálogo; se puede cambiar); null si lo escrito no es un número válido */
+  let reemplazos = new Map<string, { producto: ProductoConRelaciones; cantidad: number; precio: number | null }>();
   let catalogo: ProductoConRelaciones[] = [];
 
   selectReembolso.innerHTML = METODOS_REEMBOLSO.map((m) => `<option value="${m}">${etiquetaMetodoPago(m)}</option>`).join('');
@@ -157,6 +159,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     const valor = Math.max(0, Math.min(disponible(item), Math.floor(Number(input.value) || 0)));
     aDevolver.set(item.producto_id, valor);
     if (input.value !== '' && Number(input.value) !== valor) input.value = String(valor); // muestra el máximo permitido
+    pintarReemplazos();
     actualizarResumen();
   });
 
@@ -192,14 +195,31 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       : '<li class="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">No hay productos con stock que coincidan.</li>';
   }
 
+  /** Si todo lo que se devuelve costó lo mismo por unidad y el reemplazo está a otro precio: atajo para cobrarlo igual (lo habitual en un cambio). */
+  function htmlUsarPrecioPagado(productoId: string, precio: number | null): string {
+    const precios = new Set(
+      venta!.items.filter((i) => (aDevolver.get(i.producto_id) ?? 0) > 0).map((i) => i.precio_unitario)
+    );
+    if (precios.size !== 1) return '';
+    const pagado = [...precios][0];
+    if (precio !== null && Math.abs(precio - pagado) < 0.005) return '';
+    return `<button type="button" data-usar-precio="${productoId}" data-valor="${pagado}" class="mt-1 text-xs font-medium text-brand-700 hover:underline dark:text-brand-300">Cobrar ${formatearMoneda(pagado)} (lo que pagó el cliente)</button>`;
+  }
+
   function pintarReemplazos() {
     $('dv-nuevos').innerHTML = [...reemplazos.values()]
       .map(
-        ({ producto, cantidad }) => `
+        ({ producto, cantidad, precio }) => `
           <li class="flex items-center gap-3 px-3 py-2.5">
             <div class="min-w-0 flex-1">
               <p class="truncate font-medium text-slate-900 dark:text-white">${escaparHtml(producto.nombre)}</p>
-              <p class="text-[11px] text-slate-500 dark:text-slate-400">${formatearMoneda(producto.precio_venta)} c/u · ${producto.stock_actual} disponibles</p>
+              <p class="text-[11px] text-slate-500 dark:text-slate-400">Catálogo ${formatearMoneda(producto.precio_venta)} · ${producto.stock_actual} disponibles</p>
+              <label class="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                Precio c/u $
+                <input type="text" inputmode="decimal" autocomplete="off" data-precio-nuevo="${producto.id}" value="${precio === null ? '' : textoPrecioCampo(precio)}" aria-label="Precio por unidad en dólares"
+                  class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+              </label>
+              ${htmlUsarPrecioPagado(producto.id, precio)}
             </div>
             <input type="number" min="1" max="${producto.stock_actual}" step="1" inputmode="numeric" data-cantidad-nuevo="${producto.id}" value="${cantidad}" aria-label="Cantidad"
               class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-center text-base tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
@@ -214,13 +234,21 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
     const producto = catalogo.find((p) => p.id === id);
     if (!producto) return;
-    reemplazos.set(producto.id, { producto, cantidad: 1 });
+    reemplazos.set(producto.id, { producto, cantidad: 1, precio: producto.precio_venta });
     buscador.value = '';
     pintarResultados();
     pintarReemplazos();
     actualizarResumen();
   });
   $('dv-nuevos').addEventListener('input', (e) => {
+    const campoPrecio = (e.target as HTMLElement).closest<HTMLInputElement>('[data-precio-nuevo]');
+    if (campoPrecio) {
+      const r = reemplazos.get(campoPrecio.dataset.precioNuevo!);
+      if (!r) return;
+      r.precio = leerPrecioEscrito(campoPrecio.value, 'USD');
+      actualizarResumen(); // sin repintar la lista: no se pierde el cursor
+      return;
+    }
     const input = (e.target as HTMLElement).closest<HTMLInputElement>('[data-cantidad-nuevo]');
     if (!input) return;
     const r = reemplazos.get(input.dataset.cantidadNuevo!);
@@ -230,6 +258,14 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
     actualizarResumen();
   });
   $('dv-nuevos').addEventListener('click', (e) => {
+    const usar = (e.target as HTMLElement).closest<HTMLElement>('[data-usar-precio]');
+    if (usar) {
+      const r = reemplazos.get(usar.dataset.usarPrecio!);
+      if (r) r.precio = Number(usar.dataset.valor);
+      pintarReemplazos();
+      actualizarResumen();
+      return;
+    }
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-quitar-nuevo]')?.dataset.quitarNuevo;
     if (!id) return;
     reemplazos.delete(id);
@@ -240,7 +276,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
   // --- 3. dinero -------------------------------------------------------------------------------------------
   function totales() {
     const devuelto = redondear(venta!.items.reduce((suma, i) => suma + i.precio_unitario * (aDevolver.get(i.producto_id) ?? 0), 0));
-    const nuevo = redondear([...reemplazos.values()].reduce((suma, r) => suma + r.producto.precio_venta * r.cantidad, 0));
+    const nuevo = redondear([...reemplazos.values()].reduce((suma, r) => suma + (r.precio ?? 0) * r.cantidad, 0));
     return { devuelto, nuevo, dif: redondear(nuevo - devuelto) };
   }
 
@@ -351,12 +387,19 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       reembolsoMetodo = selectReembolso.value as MetodoPago;
     }
 
-    const nuevos: VentaItem[] = [...reemplazos.values()].map(({ producto, cantidad }) => ({
+    const sesionPrecio = await obtenerSesionActual();
+    for (const { producto, precio } of reemplazos.values()) {
+      if (precio === null || !(precio > 0)) return mostrarError(`Escribe el precio de «${producto.nombre}» (mayor que 0).`);
+      if (precio < producto.precio_venta - 0.005 && !esGlobal(sesionPrecio?.rol)) {
+        return mostrarError(`«${producto.nombre}» cuesta ${formatearMoneda(producto.precio_venta)} en el catálogo: cobrarlo por menos es un descuento y solo lo autoriza un gerente o un administrador.`);
+      }
+    }
+    const nuevos: VentaItem[] = [...reemplazos.values()].map(({ producto, cantidad, precio }) => ({
       producto_id: producto.id,
       nombre: producto.nombre,
       codigo_barras: producto.codigo_barras,
       cantidad,
-      precio_unitario: producto.precio_venta,
+      precio_unitario: precio as number,
     }));
 
     guardar.disabled = true;

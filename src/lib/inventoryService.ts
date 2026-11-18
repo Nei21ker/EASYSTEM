@@ -3509,6 +3509,16 @@ export async function registrarDevolucion(datos: DatosDevolucion): Promise<Devol
     throw new Error('Revisa los productos de reemplazo: cantidad entera mayor a 0.');
   }
   const reemplazoSinPrecio = [...new Set(datos.nuevos.filter((n) => !(n.precio_unitario > 0)).map((n) => n.nombre))];
+  if (datos.nuevos.length && !esGlobal((await obtenerSesionActual())?.rol)) {
+    const catalogo = await listarProductos({ localId: venta.local_id });
+    const precios = new Map(catalogo.map((p) => [p.id, p.precio_venta]));
+    for (const item of datos.nuevos) {
+      const precio = precios.get(item.producto_id);
+      if (precio !== undefined && item.precio_unitario < precio - 0.005) {
+        throw new Error('Para cobrar por debajo del precio de catálogo, registra el cambio con un gerente o administrador.');
+      }
+    }
+  }
   if (reemplazoSinPrecio.length > 0) throw new Error(mensajeSinPrecio(reemplazoSinPrecio));
 
   // 2) Dinero: la diferencia decide si el cliente paga o se le reembolsa

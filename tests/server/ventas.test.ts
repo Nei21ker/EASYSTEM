@@ -210,3 +210,29 @@ describe('devoluciones', () => {
     await rechazo(listarDevoluciones(env, sC, {}), 403);
   });
 });
+
+describe('devoluciones: precio del producto que se entrega a cambio', () => {
+  const nuevoItem = (producto_id: string, precio_unitario: number) => ({ producto_id, nombre: 'Control aire', codigo_barras: '2000000000099', cantidad: 1, precio_unitario });
+  const cambio = (ventaId: string, folio: number, productoId: string, precio: number) =>
+    devolucion(ventaId, folio, accesorios, { items_nuevos: [nuevoItem(productoId, precio)], total_nuevo: precio, diferencia: precio - 6, reembolso: null });
+
+  async function preparar() {
+    const { crearProducto } = await import('../../src/server/servicios/catalogo');
+    const p = await crearProducto(env, sA, { codigo_barras: '2000000000099', nombre: 'Control aire acondicionado', categoria: 'Controles', precio_venta: 12 });
+    const v = await guardarVenta(env, sV, venta());
+    return { productoId: p.id, v };
+  }
+
+  it('se puede cobrar un precio MAYOR (o igual) al del catálogo: p. ej. el mismo precio que pagó el cliente', async () => {
+    const { productoId, v } = await preparar();
+    expect((await guardarDevolucion(env, sEA, cambio(v.id, v.folio, productoId, 14))).items_nuevos[0].precio_unitario).toBe(14);
+    expect((await guardarDevolucion(env, sEA, cambio(v.id, v.folio, productoId, 12))).total_nuevo).toBe(12);
+  });
+
+  it('un precio MENOR al del catálogo (descuento) solo lo pone un gerente o administrador', async () => {
+    const { productoId, v } = await preparar();
+    await rechazo(guardarDevolucion(env, sEA, cambio(v.id, v.folio, productoId, 10)), 403, /gerente o un administrador/);
+    expect((await guardarDevolucion(env, sG, cambio(v.id, v.folio, productoId, 10))).total_nuevo).toBe(10);
+    expect((await guardarDevolucion(env, sA, cambio(v.id, v.folio, productoId, 9))).total_nuevo).toBe(9);
+  });
+});

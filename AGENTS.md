@@ -166,6 +166,8 @@ The payments form lives in `utils/formularioPagos.ts` (`FormularioPagos`, mounte
 
 ### Returns and exchanges (devoluciones)
 
+- En un cambio se puede editar el precio unitario en USD del reemplazo y usar el atajo del precio pagado. La diferencia se recalcula usando el precio original de la pieza devuelta. Para cobrar por debajo del catálogo se requiere gerente o administrador. El servicio cliente comprueba el permiso antes de mover el stock y el servidor lo vuelve a comprobar al guardar.
+
 From **Ventas realizadas**, an **administrator or encargado (of that local)** can open "Devolución / cambio" on a sale (`components/ventas/DevolucionVenta.astro`, events `easystem:abrir-devolucion` / `easystem:ventas-cambiaron`). `inventoryService.registrarDevolucion`: validates quantities against what was sold minus earlier returns; first moves stock OUT for replacement items (best-effort reverse if one fails), then stock IN (`ENTRADA`) for the returned ones, then saves a row in `devoluciones` (migration `0014`; LocalStorage: `db.devoluciones`). `diferencia = total_nuevo − total_devuelto`: > 0 the customer pays it (`pagos`/`vuelto`, same form), < 0 it is refunded with one of `METODOS_REEMBOLSO` (Bs amount at *today's* rate), ≈ 0 nothing. Restricted to administrador/encargado because returned stock is an `ENTRADA` and money moves; the stock goes back to the *sale's* local (`venta.local_id`), not the active one. A vendedor can *read* the returns of sales they can see. Needs connection (not queued). Records are immutable (no update/delete). Reportes subtracts returned lines from revenue, cost and unit rankings (replacement items are already counted as `SALIDA`); the history shows net totals.
 
 ### Sales record (customer + payment type)
