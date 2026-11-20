@@ -1,4 +1,4 @@
-// Productos "por cantidad": vidrios sencillos de menos de $3 sin etiqueta por pieza. Su stock es solo un número por local (no hay filas en
+// Productos "por cantidad": vidrios sencillos sin etiqueta por pieza. Su stock es solo un número por local (no hay filas en
 // unidades_producto), se venden por cantidad, y las piezas defectuosas al vender (o botadas en Descargo) salen como BAJA con su merma.
 import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
@@ -54,31 +54,24 @@ async function vidrioConStock(inicial = 20) {
 }
 
 describe('crear un producto por cantidad', () => {
-  it('se crea con la marca y solo si cuesta menos de $3', async () => {
+  it('se crea con la marca y admite $4', async () => {
     const p = await crearProducto(env, admin, vidrio);
     expect(p.control_por_cantidad).toBe(1);
-    await rechazo(crearProducto(env, admin, { ...vidrio, codigo_barras: '2000000000022', nombre: 'Vidrio caro', precio_venta: 3 }), 400, 'precio_no_permitido', /menos de \$3/);
-    await rechazo(crearProducto(env, admin, { ...vidrio, codigo_barras: '2000000000039', nombre: 'Vidrio raro', precio_venta: 7 }), 400, 'precio_no_permitido');
+    const caro = await crearProducto(env, admin, { ...vidrio, codigo_barras: '2000000000022', nombre: 'Vidrio reforzado', precio_venta: 4 });
+    expect(caro).toMatchObject({ precio_venta: 4, control_por_cantidad: 1 });
     // Un producto normal sigue igual
     expect((await crearProducto(env, admin, { codigo_barras: '2000000000046', nombre: 'Forro', categoria: 'Forros', precio_venta: 7 })).control_por_cantidad).toBe(0);
   });
 
-  it('el alta rápida también lo permite (todo o nada: un precio de $3 o más rechaza toda la lista)', async () => {
+  it('el alta rápida guarda productos por cantidad a distintos precios', async () => {
     const creados = await crearProductosRapidos(env, encargado, [
       { nombre: 'Vidrio sencillo A05', categoria: 'Vidrios Templados', precio_venta: 1, control_por_cantidad: 1 },
-      { nombre: 'Vidrio sencillo A06', categoria: 'Vidrios Templados', precio_venta: 2, control_por_cantidad: 1 },
+      { nombre: 'Vidrio sencillo A06', categoria: 'Vidrios Templados', precio_venta: 4, control_por_cantidad: 1 },
     ]);
     expect(creados).toHaveLength(2);
     expect(await n('SELECT count(*) AS n FROM productos WHERE control_por_cantidad = 1')).toBe(2);
-    await rechazo(
-      crearProductosRapidos(env, encargado, [
-        { nombre: 'Vidrio sencillo A07', categoria: 'Vidrios Templados', precio_venta: 1, control_por_cantidad: 1 },
-        { nombre: 'Vidrio caro A08', categoria: 'Vidrios Templados', precio_venta: 5, control_por_cantidad: 1 },
-      ]),
-      400,
-      'precio_no_permitido'
-    );
-    expect(await n('SELECT count(*) AS n FROM productos')).toBe(2);
+    const { results } = await env.DB.prepare('SELECT precio_venta FROM productos WHERE control_por_cantidad = 1 ORDER BY precio_venta').all<{ precio_venta: number }>();
+    expect(results.map((p) => p.precio_venta)).toEqual([1, 4]);
   });
 });
 
@@ -223,9 +216,7 @@ describe('cambiar entre "por cantidad" y "con etiqueta por pieza"', () => {
     await darDeBajaPorCantidad(env, encargado, { productoId: p.id, localId: vidrios, cantidad: 3 });
     await rechazo(actualizarProducto(env, encargado, p.id, { control_por_cantidad: 0 }), 403, 'sin_permiso');
     expect((await actualizarProducto(env, gerente, p.id, { control_por_cantidad: 0 })).control_por_cantidad).toBe(0);
-    // Y de vuelta: solo si cuesta menos de $3
-    await rechazo(actualizarProducto(env, gerente, p.id, { control_por_cantidad: 1, precio_venta: 5 }), 400, 'precio_no_permitido');
-    expect((await actualizarProducto(env, gerente, p.id, { control_por_cantidad: 1 })).control_por_cantidad).toBe(1);
+    expect(await actualizarProducto(env, gerente, p.id, { control_por_cantidad: 1, precio_venta: 5 })).toMatchObject({ control_por_cantidad: 1, precio_venta: 5 });
   });
 
   it('editar otros datos (precio, nombre) no toca el control ni pide stock 0', async () => {

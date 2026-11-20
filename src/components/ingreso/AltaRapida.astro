@@ -49,14 +49,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
       </div>
       <p id="ar-aviso-bs" class="-mt-2 hidden rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800 dark:bg-sky-500/10 dark:text-sky-300">
-        <strong>Precio fijo en bolívares:</strong> no sigue al dólar; lo cambias tú a mano (en Productos → «Cambiar precios en lote» se cambia el de muchos de una vez). Un producto por cantidad puede tener precio en Bs mientras su equivalente en dólares de hoy sea menos de $3.
+        <strong>Precio fijo en bolívares:</strong> no sigue al dólar; lo cambias tú a mano (en Productos → «Cambiar precios en lote» se cambia el de muchos de una vez).
       </p>
 
       <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 p-3 text-sm dark:border-slate-700">
         <input id="ar-por-cantidad" type="checkbox" class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600" />
         <span>
           <span class="font-medium text-slate-700 dark:text-slate-200">Estos productos se controlan por cantidad (sin etiqueta por pieza)</span>
-          <span class="block text-xs text-slate-400">Para mercancía de menos de $3 (vidrios sencillos): no se imprime una etiqueta por pieza y se vende sin escanear.</span>
+          <span class="block text-xs text-slate-400">No se imprime una etiqueta por pieza y se vende sin escanear.</span>
         </span>
       </label>
 
@@ -104,7 +104,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import * as inventoryService from '../../lib/inventoryService';
   import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { esPrefijoValido } from '../../utils/codigos';
-  import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
   import { leerPrecio, normalizarNombre, parsearAltaRapida, problemaDeAlta, MAX_LINEAS_ALTA } from '../../utils/altaRapida';
   import { leerPrecioEscrito, PRECIO_BS_MAXIMO, type MonedaPrecio } from '../../utils/precioBs';
   import { reanimar } from '../../utils/animaciones';
@@ -286,11 +285,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     if (problema) return mostrarError(problema);
 
     const aCrear = lineas.filter((l) => !porNombre.has(normalizarNombre(l.nombre)));
-    // En bolívares el tope de $3 de los productos por cantidad lo revisa el servidor con la tasa de hoy
-    if (campoPorCantidad.checked && moneda === 'USD') {
-      const cara = aCrear.find((l) => errorPrecioPorCantidad(l.precio ?? 0));
-      if (cara) return mostrarError(`«${cara.nombre}»: ${errorPrecioPorCantidad(cara.precio ?? 0)}`);
-    }
     if (aCrear.length > MAX_LINEAS_ALTA) return mostrarError(`Son demasiados productos nuevos de una vez (máximo ${MAX_LINEAS_ALTA}).`);
 
     // Con "Crear y tomar fotos" se abre la cámara de ráfaga al terminar (solo para los productos nuevos)

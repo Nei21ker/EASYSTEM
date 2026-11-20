@@ -72,7 +72,7 @@ export interface Producto {
   /** Referencia corta para personas: el prefijo y un número consecutivo (INF-001). Se asigna al crear el producto y no cambia. */
   referencia?: string | null;
   /**
-   * 1 = producto "por cantidad" (migración 0017): mercancía de menos de $3 sin código ni etiqueta por pieza. Su stock es solo un número
+   * 1 = producto "por cantidad" (migración 0017): mercancía sin código ni etiqueta por pieza. Su stock es solo un número
    * por local: se vende sin escanear y se controla con conteos y mermas. 0 o ausente = una pieza = un código = una etiqueta.
    */
   control_por_cantidad?: number;
@@ -317,7 +317,7 @@ export interface FilaAltaRapida {
   precio_compra?: number;
   /** 2 a 4 letras; vacío = el sistema lo sugiere por la marca o la categoría */
   prefijo_codigo?: string;
-  /** 1 = producto por cantidad (sin etiqueta por pieza; solo si cuesta menos de $3) */
+  /** 1 = producto por cantidad (sin etiqueta por pieza) */
   control_por_cantidad?: number;
 }
 

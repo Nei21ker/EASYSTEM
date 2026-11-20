@@ -15,7 +15,6 @@ import { ahoraISO, nuevoId, redondear2 } from '../util';
 import { normalizarNombre } from '../../utils/altaRapida';
 import { construirCodigoUnidad, construirReferencia, esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
 import { errorCantidadCarga, productoEnCarga, TIPO_LOCAL_CARGA } from '../../utils/cargaInicial';
-import { errorPrecioPorCantidad } from '../../utils/controlPorCantidad';
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, usdDesdeBs, type MonedaPrecio } from '../../utils/precioBs';
 import { marcas, tramos } from './movimientos';
 import { tasaVigente } from './tasas';
@@ -47,7 +46,7 @@ export interface DatosProducto {
   imagen_url?: string | null;
   /** Prefijo del código de sus unidades (2 a 4 letras). Si no se indica se sugiere por la marca del nombre o la categoría. */
   prefijo_codigo?: string;
-  /** 1 = producto por cantidad (sin código ni etiqueta por pieza; solo si cuesta menos de $3). Se fija al crearlo; cambiarlo después exige stock 0. */
+  /** 1 = producto por cantidad (sin código ni etiqueta por pieza). Se fija al crearlo; cambiarlo después exige stock 0. */
   control_por_cantidad?: number;
 }
 
@@ -106,7 +105,6 @@ function validarProducto(d: Partial<DatosProducto>, completo: boolean): void {
   if (d.control_por_cantidad !== undefined && d.control_por_cantidad !== 0 && d.control_por_cantidad !== 1) {
     throw new ErrorApi(400, 'El control por cantidad debe ser 0 o 1.', 'datos_invalidos');
   }
-  // (el tope de $3 de los productos por cantidad se comprueba con el precio en dólares ya resuelto: ver `resolverPrecio`)
 }
 
 /** Los tres valores de precio que se guardan de un producto. */
@@ -120,9 +118,9 @@ const SIN_TASA = 'Para fijar un precio en bolívares primero hay que registrar l
 
 /**
  * Decide el precio que se guarda: en dólares (como siempre) o fijo en bolívares, en cuyo caso el equivalente en dólares sale de la tasa
- * vigente (409 si todavía no hay ninguna). Con `control_por_cantidad` el equivalente debe ser menor a $3.
+ * vigente (409 si todavía no hay ninguna).
  */
-async function resolverPrecio(env: Entorno, d: Pick<DatosProducto, 'moneda_precio' | 'precio_bs' | 'precio_venta' | 'control_por_cantidad'>): Promise<PrecioResuelto> {
+async function resolverPrecio(env: Entorno, d: Pick<DatosProducto, 'moneda_precio' | 'precio_bs' | 'precio_venta'>): Promise<PrecioResuelto> {
   let precio: PrecioResuelto;
   if (d.moneda_precio === 'BS') {
     const tasa = await tasaVigente(env);
@@ -131,10 +129,6 @@ async function resolverPrecio(env: Entorno, d: Pick<DatosProducto, 'moneda_preci
     precio = { precio_venta: usdDesdeBs(bs, tasa), moneda_precio: 'BS', precio_bs: bs };
   } else {
     precio = { precio_venta: redondear2(d.precio_venta ?? 0), moneda_precio: 'USD', precio_bs: null };
-  }
-  if (d.control_por_cantidad === 1) {
-    const mensaje = errorPrecioPorCantidad(precio.precio_venta);
-    if (mensaje) throw new ErrorApi(400, mensaje, 'precio_no_permitido');
   }
   return precio;
 }
@@ -256,10 +250,6 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
     if (hay && (hay.stock > 0 || hay.piezas > 0)) {
       throw new ErrorApi(409, 'Para cambiar entre "por cantidad" y "con etiqueta por pieza" el producto debe tener el stock en 0 en todos los locales (y nada en tránsito). Retíralo con una baja o crea otro producto.', 'control_con_stock');
     }
-    if (cambios.control_por_cantidad === 1) {
-      const mensaje = errorPrecioPorCantidad(cambios.precio_venta ?? actual.precio_venta);
-      if (mensaje) throw new ErrorApi(400, mensaje, 'precio_no_permitido');
-    }
   }
 
   // Precio: en dólares o fijo en bolívares. Un producto con precio en Bs no cambia de moneda por un `precio_venta` suelto (lo mandaría una
@@ -273,7 +263,6 @@ export async function actualizarProducto(env: Entorno, sesion: Sesion, id: strin
       moneda_precio: moneda,
       precio_bs: cambios.precio_bs ?? actual.precio_bs ?? undefined,
       precio_venta: cambios.precio_venta ?? actual.precio_venta,
-      control_por_cantidad: 0,
     });
   } else if (precioActualEnBs) {
     delete cambios.precio_venta;
@@ -410,20 +399,6 @@ export async function cambiarPreciosLote(env: Entorno, sesion: Sesion, datos: Ca
     precioBs = null;
   }
 
-  // Un producto por cantidad no puede costar $3 o más: si alguno de los elegidos lo es, no se cambia nada
-  if (errorPrecioPorCantidad(precioVenta)) {
-    for (let i = 0; i < unicos.length; i += IDS_POR_SENTENCIA) {
-      const trozo = unicos.slice(i, i + IDS_POR_SENTENCIA);
-      const fila = await env.DB
-        .prepare(`SELECT nombre FROM productos WHERE control_por_cantidad = 1 AND id IN (${trozo.map(() => '?').join(', ')}) LIMIT 1`)
-        .bind(...trozo)
-        .first<{ nombre: string }>();
-      if (fila) {
-        throw new ErrorApi(409, `«${fila.nombre}» se controla por cantidad y solo puede costar menos de $3 (este precio equivale a $${precioVenta}). No se cambió ningún precio.`, 'precio_no_permitido');
-      }
-    }
-  }
-
   const sentencias: D1PreparedStatement[] = [];
   for (let i = 0; i < unicos.length; i += IDS_POR_SENTENCIA) {
     const trozo = unicos.slice(i, i + IDS_POR_SENTENCIA);
@@ -501,7 +476,7 @@ export interface FilaAltaRapida {
   precio_compra?: number;
   /** Si no se indica se sugiere por la marca del nombre o la categoría */
   prefijo_codigo?: string;
-  /** 1 = por cantidad (sin etiqueta por pieza; solo si cuesta menos de $3) */
+  /** 1 = por cantidad (sin etiqueta por pieza) */
   control_por_cantidad?: number;
 }
 

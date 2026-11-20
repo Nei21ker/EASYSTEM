@@ -1,4 +1,4 @@
-// Modo demo (LocalStorage): productos "por cantidad" (vidrios sencillos de menos de $3), piezas defectuosas en una venta y bajas por
+// Modo demo (LocalStorage): productos "por cantidad" (vidrios sencillos), piezas defectuosas en una venta y bajas por
 // cantidad. Mismas reglas que el servidor (tests/server/control-por-cantidad.test.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { LOCAL_VIDRIOS_ID } from '../../src/lib/constantes-locales';
@@ -56,11 +56,10 @@ afterEach(() => {
 });
 
 describe('demo: producto por cantidad', () => {
-  it('solo se crea por cantidad si cuesta menos de $3', async () => {
+  it('crea un producto por cantidad de $4', async () => {
     const s = await admin();
-    await expect(s.crearProducto({ ...vidrio, precio_venta: 3 })).rejects.toThrow(/menos de \$3/);
-    const p = await s.crearProducto(vidrio);
-    expect(p.control_por_cantidad).toBe(1);
+    const p = await s.crearProducto({ ...vidrio, precio_venta: 4 });
+    expect(p).toMatchObject({ control_por_cantidad: 1, precio_venta: 4 });
   });
 
   it('el ingreso y la venta no crean ni marcan piezas con código; la venta guarda el id del movimiento', async () => {

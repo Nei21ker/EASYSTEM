@@ -51,7 +51,7 @@ import { esperadoDelDia, problemaParaCerrar, rangoDelDia } from '../utils/cuadre
 import { errorDeCobro, repartoDeCobro, repuestosDeOrdenUsd, validarPagosCobro } from '../utils/servicioTecnico';
 import { convertirABs, fechaLocalISO } from '../utils/format';
 import { normalizarNombre } from '../utils/altaRapida';
-import { errorPrecioPorCantidad, esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
+import { esPorCantidad, UMBRAL_CLAVE_DANADOS } from '../utils/controlPorCantidad';
 import { errorCantidadCarga, mensajeSinPrecio, productoEnCarga, TIPO_LOCAL_CARGA } from '../utils/cargaInicial';
 import { errorPrecioBs, esMonedaPrecio, normalizarPrecioBs, tienePrecioEnBs, usdDesdeBs, type MonedaPrecio } from '../utils/precioBs';
 import * as mermasDb from './db/mermas';
@@ -1340,12 +1340,6 @@ function exigirNombreLibreLocal(productos: Producto[], nombres: string[], exclui
   }
 }
 
-/** Solo los productos de menos de $3 se pueden controlar por cantidad (regla del dueño; la misma del servidor). */
-function exigirPrecioPorCantidad(precioVenta: number): void {
-  const mensaje = errorPrecioPorCantidad(precioVenta);
-  if (mensaje) throw new Error(mensaje);
-}
-
 /** Última tasa registrada en la demo (la lista guarda la más nueva primero); null si no hay. */
 function tasaDeLaDemo(db: LocalDB): number | null {
   const tasa = db.tasas?.[0]?.tasa;
@@ -1384,7 +1378,6 @@ export async function crearProducto(
   }
   exigirNombreLibreLocal(db.productos, [input.nombre]);
   const precio = resolverPrecioDemo(db, input);
-  if (input.control_por_cantidad) exigirPrecioPorCantidad(precio.precio_venta);
 
   const producto: Producto = {
     id: generarId(),
@@ -1473,7 +1466,6 @@ export async function actualizarProducto(id: string, cambiosCrudos: Partial<Prod
     if (producto.stock_actual > 0 || hayPiezas) {
       throw new Error('Para cambiar entre "por cantidad" y "con etiqueta por pieza" el producto debe tener el stock en 0 en todos los locales (y nada en tránsito). Retíralo con una baja o crea otro producto.');
     }
-    if (cambios.control_por_cantidad) exigirPrecioPorCantidad(cambios.precio_venta ?? producto.precio_venta);
     cambios.control_por_cantidad = cambios.control_por_cantidad ? 1 : 0;
   } else {
     delete cambios.control_por_cantidad;
@@ -1516,10 +1508,6 @@ export async function cambiarPreciosLote(ids: string[], moneda: MonedaPrecio, pr
   if (moneda !== 'BS' && (!Number.isFinite(precio) || precio < 0)) throw new Error('El precio debe ser un número mayor o igual a 0.');
   const nuevo = resolverPrecioDemo(db, { moneda_precio: moneda, precio_bs: moneda === 'BS' ? precio : null, precio_venta: precio });
   const elegidos = db.productos.filter((p) => unicos.has(p.id));
-  const porCantidad = elegidos.find((p) => p.control_por_cantidad);
-  if (porCantidad && errorPrecioPorCantidad(nuevo.precio_venta)) {
-    throw new Error(`«${porCantidad.nombre}» se controla por cantidad y solo puede costar menos de $3 (este precio equivale a $${nuevo.precio_venta}). No se cambió ningún precio.`);
-  }
   for (const p of elegidos) Object.assign(p, nuevo);
   guardarDB(db);
   return { actualizados: elegidos.length, precio_venta: nuevo.precio_venta };

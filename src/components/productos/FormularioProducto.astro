@@ -85,7 +85,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <span>Se controla por cantidad (sin etiqueta por pieza)</span>
         </label>
         <p id="fp-por-cantidad-ayuda" class="mt-1 text-xs text-slate-400">
-          Para mercancía muy barata y desechable (menos de $3, como los vidrios sencillos): no se imprime una etiqueta por pieza, se vende sin escanear y el stock es solo un número que se corrige contando. Si una pieza viene defectuosa se bota desde la venta o desde Descargo.
+          No se imprime una etiqueta por pieza, se vende sin escanear y el stock es solo un número que se corrige contando. Si una pieza viene defectuosa se bota desde la venta o desde Descargo.
         </p>
       </div>
 
@@ -141,7 +141,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   import { esGerencia, esGlobal, obtenerSesionActual } from '../../lib/auth';
   import { esPrefijoValido, generarCodigosInternos, sugerirPrefijo } from '../../utils/codigos';
   import { reanimar } from '../../utils/animaciones';
-  import { errorPrecioPorCantidad, esPorCantidad } from '../../utils/controlPorCantidad';
+  import { esPorCantidad } from '../../utils/controlPorCantidad';
   import { productoEnCarga, TIPO_LOCAL_CARGA } from '../../utils/cargaInicial';
   import { errorPrecioBs, leerPrecioEscrito, textoPrecioCampo, tienePrecioEnBs, type MonedaPrecio } from '../../utils/precioBs';
   import { blobADataUrl, htmlMiniatura, reducirImagen } from '../../utils/imagenes';
@@ -383,11 +383,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       if (mensajeBs) return mostrarError(mensajeBs);
     } else if (!(precioVenta >= 0)) return mostrarError('Indica un precio de venta válido (puedes usar coma para los céntimos: 1,22).');
     if (!(precioCompra >= 0)) return mostrarError('El precio de compra no es válido.');
-    // En bolívares el tope de $3 de los productos por cantidad lo revisa el servidor con la tasa de hoy
-    if (campos.porCantidad.checked && !campos.porCantidad.disabled && !enBs) {
-      const motivoPrecio = errorPrecioPorCantidad(precioVenta);
-      if (motivoPrecio) return mostrarError(motivoPrecio);
-    }
     if (!Number.isInteger(stock) || stock < 0) return mostrarError('El stock inicial debe ser un entero mayor o igual a 0.');
     if (!Number.isInteger(minimo) || minimo < 0) return mostrarError('El stock mínimo debe ser un entero mayor o igual a 0.');
 

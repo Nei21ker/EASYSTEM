@@ -152,15 +152,15 @@ describe('demo: cambiar los precios en lote', () => {
     expect(lista.find((p) => p.id === otro.id)).toMatchObject({ moneda_precio: 'USD', precio_venta: 6 });
   });
 
-  it('valida: lista vacía, precio inválido y producto por cantidad que quedaría en $3 o más', async () => {
+  it('valida lista y precio, y actualiza productos por cantidad a un equivalente de $4', async () => {
     const s = await cargarServicio();
     await s.registrarTasa(900);
     const normal = await s.crearProducto(vidrio(1));
     const porCantidad = await s.crearProducto(vidrio(2, { control_por_cantidad: 1 }));
     await expect(s.cambiarPreciosLote([], 'BS', 1100)).rejects.toThrow(/al menos un producto/);
     await expect(s.cambiarPreciosLote([normal.id], 'BS', 0)).rejects.toThrow(/mayor a 0/);
-    await expect(s.cambiarPreciosLote([normal.id, porCantidad.id], 'BS', 3000)).rejects.toThrow(/por cantidad/);
+    await s.cambiarPreciosLote([normal.id, porCantidad.id], 'BS', 3600);
     const lista = await s.listarProductos({ catalogoCompleto: true });
-    expect(lista.find((p) => p.id === normal.id)).toMatchObject({ moneda_precio: 'USD' });
+    expect(lista.find((p) => p.id === porCantidad.id)).toMatchObject({ moneda_precio: 'BS', precio_venta: 4 });
   });
 });

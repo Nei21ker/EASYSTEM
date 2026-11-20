@@ -58,11 +58,10 @@ describe('crear con precio fijo en bolívares', () => {
     await rechazo(crearProducto(env, admin, vidrio(1, { moneda_precio: 'BS' })), 400, 'precio_bs_invalido');
   });
 
-  it('un producto por cantidad con precio en Bs equivalente a $3 o más se rechaza; con menos de $3 se crea', async () => {
+  it('un producto por cantidad admite precio fijo en Bs equivalente a $4', async () => {
     await tasa(900);
-    await rechazo(crearProducto(env, admin, vidrio(1, { moneda_precio: 'BS', precio_bs: 3000, control_por_cantidad: 1 })), 400, 'precio_no_permitido');
-    const ok = await crearProducto(env, admin, vidrio(2, { moneda_precio: 'BS', precio_bs: 1100, control_por_cantidad: 1 }));
-    expect(ok.control_por_cantidad).toBe(1);
+    const ok = await crearProducto(env, admin, vidrio(1, { moneda_precio: 'BS', precio_bs: 3600, control_por_cantidad: 1 }));
+    expect(ok).toMatchObject({ control_por_cantidad: 1, precio_venta: 4, precio_bs: 3600 });
   });
 
   it('el alta rápida acepta el precio en Bs para toda la lista', async () => {
@@ -183,12 +182,12 @@ describe('cambiar los precios en lote', () => {
     expect(await fila(p.id)).toMatchObject({ moneda_precio: 'USD', precio_venta: 1.22 });
   });
 
-  it('un producto por cantidad no puede quedar en $3 o más: se rechaza todo el lote', async () => {
+  it('el lote acepta cambiar un producto por cantidad a un equivalente de $4', async () => {
     await tasa(900);
     const normal = await crearProducto(env, admin, vidrio(1));
     const porCantidad = await crearProducto(env, admin, vidrio(2, { control_por_cantidad: 1 }));
-    await rechazo(cambiarPreciosLote(env, admin, { ids: [normal.id, porCantidad.id], moneda: 'BS', precio: 3000 }), 409, 'precio_no_permitido');
-    expect(await fila(normal.id)).toMatchObject({ moneda_precio: 'USD' });
+    await cambiarPreciosLote(env, admin, { ids: [normal.id, porCantidad.id], moneda: 'BS', precio: 3600 });
+    expect(await fila(porCantidad.id)).toMatchObject({ moneda_precio: 'BS', precio_venta: 4 });
   });
 
   it('valida la lista y el precio', async () => {
