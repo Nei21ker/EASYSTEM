@@ -60,6 +60,8 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
           >
             + Recibir equipo
           </button>
+          <button id="st-seleccionar" type="button" aria-pressed="false" class="hidden rounded-lg border border-slate-300 px-3 py-2.5 text-xs font-semibold dark:border-slate-700">Seleccionar</button>
+          <button id="st-eliminar" type="button" disabled class="hidden rounded-lg bg-red-700 px-3 py-2.5 text-xs font-semibold text-white disabled:opacity-50">Eliminar seleccionadas</button>
           <button id="st-resetear" type="button" class="hidden rounded-lg border border-red-200 px-3 py-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10">Resetear servicio técnico</button>
         </div>
 
@@ -141,6 +143,10 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   import type { EstadoOrdenServicio, OrdenServicio } from '../types/database.types';
 
   let ordenes: OrdenServicio[] = [];
+  let seleccionando = false;
+  let eliminando = false;
+  const seleccion = new Set<string>();
+  const esEliminable = (o: OrdenServicio) => o.estado !== 'entregado' && !o.cobrado_en && !o.tecnico_pagado_en && o.repuestos.length === 0;
   let estadoActivo: EstadoOrdenServicio | '' = '';
   let primeraVez = true;
   let nombresLocales = new Map<string, string>();
@@ -209,6 +215,9 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     return `
       <tr data-orden="${o.id}" class="cursor-pointer align-top text-slate-700 transition-colors hover:bg-slate-50/80 dark:text-slate-300 dark:hover:bg-slate-800/40">
         <td class="px-5 py-3">
+          ${seleccionando ? esEliminable(o)
+            ? `<label class="mb-2 flex items-center gap-2 text-xs"><input type="checkbox" data-seleccionar-orden="${escaparHtml(o.id)}" ${seleccion.has(o.id) ? 'checked' : ''} ${eliminando ? 'disabled' : ''} /> Seleccionar #${o.folio}</label>`
+            : '<p class="mb-2 text-xs text-slate-500 dark:text-slate-400">Orden con cobro o repuestos</p>' : ''}
           <p class="font-semibold text-slate-900 dark:text-white">#${String(o.folio).padStart(4, '0')}</p>
           <p class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${escaparHtml(formatearFecha(o.recibida_en))}</p>
           ${verLocal ? `<p class="mt-0.5 text-[11px] font-medium text-brand-700 dark:text-brand-300">${escaparHtml(nombresLocales.get(o.local_id) ?? 'Local')}</p>` : ''}
@@ -322,6 +331,9 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
   });
 
   function pintar() {
+    const disponibles = new Set(ordenes.filter(esEliminable).map((o) => o.id));
+    for (const id of seleccion) if (!disponibles.has(id)) seleccion.delete(id);
+    pintarSeleccion();
     const lista = filtrar();
     filas.innerHTML = lista.map(filaHtml).join('');
     $('st-vacio').classList.toggle('hidden', lista.length > 0);
@@ -354,7 +366,61 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     estadoActivo = (boton.dataset.estado ?? '') as EstadoOrdenServicio | '';
     pintar();
   });
+  const botonSeleccion = $<HTMLButtonElement>('st-seleccionar');
+  const botonEliminar = $<HTMLButtonElement>('st-eliminar');
+
+  function pintarSeleccion() {
+    botonSeleccion.textContent = seleccionando ? 'Cancelar selección' : 'Seleccionar';
+    botonSeleccion.setAttribute('aria-pressed', String(seleccionando));
+    botonSeleccion.disabled = eliminando;
+    botonEliminar.classList.toggle('hidden', !seleccionando);
+    botonEliminar.textContent = seleccion.size ? `Eliminar seleccionadas (${seleccion.size})` : 'Eliminar seleccionadas';
+    botonEliminar.disabled = eliminando || seleccion.size === 0 || seleccion.size > 50;
+  }
+
+  botonSeleccion.addEventListener('click', () => {
+    seleccionando = !seleccionando;
+    seleccion.clear();
+    pintar();
+  });
+
+  filas.addEventListener('change', (e) => {
+    const casilla = (e.target as HTMLElement).closest<HTMLInputElement>('[data-seleccionar-orden]');
+    const id = casilla?.dataset.seleccionarOrden;
+    if (!casilla || !id) return;
+    if (casilla.checked && seleccion.size >= 50) {
+      casilla.checked = false;
+      return;
+    }
+    if (casilla.checked) seleccion.add(id);
+    else seleccion.delete(id);
+    pintarSeleccion();
+  });
+
+  botonEliminar.addEventListener('click', async () => {
+    if (!seleccion.size || eliminando) return;
+    if (!window.confirm(`¿Eliminar las órdenes seleccionadas (${seleccion.size})? Esta acción es permanente.`)) return;
+    eliminando = true;
+    pintar();
+    try {
+      const { eliminadas } = await inventoryService.eliminarOrdenesServicio([...seleccion]);
+      seleccionando = false;
+      seleccion.clear();
+      const aviso = $('st-aviso-exito');
+      aviso.textContent = eliminadas === 1 ? 'Se eliminó 1 orden.' : `Se eliminaron ${eliminadas} órdenes.`;
+      aviso.classList.remove('hidden');
+      await cargar();
+    } catch (err) {
+      $('st-error').textContent = err instanceof Error ? err.message : 'No se pudieron eliminar las órdenes.';
+      $('st-error').classList.remove('hidden');
+    } finally {
+      eliminando = false;
+      pintar();
+    }
+  });
+
   filas.addEventListener('click', (e) => {
+    if (seleccionando) return;
     const id = (e.target as HTMLElement).closest<HTMLElement>('[data-orden]')?.dataset.orden;
     const orden = ordenes.find((o) => o.id === id);
     if (orden) window.dispatchEvent(new CustomEvent('easystem:abrir-orden', { detail: { orden } }));
@@ -393,6 +459,7 @@ import CamaraEscaner from '../components/CamaraEscaner.astro';
     const nueva = $<HTMLButtonElement>('st-nueva');
     nueva.classList.toggle('hidden', soyTecnico);
     nueva.disabled = !esServicio;
+    botonSeleccion.classList.toggle('hidden', !esServicio || contexto.sesion.rol !== 'administrador');
     nueva.title = esServicio ? '' : 'Elige el Local Servicio Técnico en el selector del encabezado para recibir un equipo';
     void cargar();
   });

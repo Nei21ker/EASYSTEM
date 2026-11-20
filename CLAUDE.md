@@ -471,3 +471,5 @@ Consult these guides before working on related tasks:
 - **Inicio de Local Accesorios:** buscador con cámara y resultados bajo demanda, accesos a Nueva venta y Productos, y stock bajo desplegable solo cuando hay alertas. El detalle conserva la exportación para proveedor. El resumen de inventario y los movimientos recientes se muestran en las demás vistas de inicio.
 
 - **Cambio de mercancía:** el escáner de «Lo que entregamos» usa el mismo icono de escaneo que Nueva venta.
+
+- En Servicio técnico, el administrador puede seleccionar y eliminar hasta 50 órdenes del local activo. /api/ordenes/eliminar-lote exige que toda la selección esté sin repuestos, sin cobro y sin pago al técnico, con una eliminación atómica. Demo con las mismas reglas.

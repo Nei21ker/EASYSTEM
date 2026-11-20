@@ -3882,6 +3882,23 @@ export async function quitarRepuestoOrden(id: string, productoId: string, origen
  * usaron (las piezas con código vuelven con los mismos códigos; los productos por cantidad, por la cantidad usada). Los demás locales no se
  * tocan. Por defecto usa el local activo (en «Todos los locales» no se puede). Con `simular` solo cuenta. Necesita conexión (modo servidor).
  */
+export async function eliminarOrdenesServicio(ids: string[]) {
+  if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede eliminar órdenes.');
+  const localId = await exigirLocal('eliminar órdenes');
+  const seleccion = new Set(ids);
+  if (!seleccion.size || seleccion.size > 50) throw new Error('Selecciona entre 1 y 50 órdenes.');
+  if (modoServidor) return ordenesDb.eliminarOrdenes(localId, [...seleccion]);
+
+  const db = leerDB();
+  const ordenes = (db.ordenes ?? []).filter((o) => seleccion.has(o.id) && o.local_id === localId);
+  if (ordenes.length !== seleccion.size || ordenes.some((o) => o.estado === 'entregado' || o.cobrado_en || o.tecnico_pagado_en || o.repuestos.length)) {
+    throw new Error('La selección cambió o contiene órdenes con repuestos o cobros. Revisa las órdenes y vuelve a seleccionarlas.');
+  }
+  db.ordenes = (db.ordenes ?? []).filter((o) => !seleccion.has(o.id));
+  guardarDBEstricto(db);
+  return { eliminadas: ordenes.length };
+}
+
 export async function resetearServicioTecnico(opciones: { localId?: string; simular?: boolean } = {}): Promise<ResultadoReseteoServicio> {
   if ((await obtenerSesionActual())?.rol !== 'administrador') throw new Error('Solo el administrador puede resetear el servicio técnico.');
   const localId = opciones.localId ?? (await exigirLocal('resetear el servicio técnico de un local'));

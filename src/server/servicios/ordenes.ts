@@ -283,3 +283,28 @@ export async function resetearServicioTecnico(env: Entorno, sesion: Sesion, opci
   await db.batch([db.prepare('DELETE FROM ordenes_servicio WHERE local_id = ?').bind(localId), ...sentenciasCambio(db, ['ordenes_servicio'], localId)]);
   return resultado;
 }
+
+export async function eliminarOrdenes(env: Entorno, sesion: Sesion, localId: string, ids: string[]) {
+  exigirRol(sesion, ['administrador']);
+  if (!(await localAccesible(env, sesion, localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
+
+  const db = env.DB;
+  const seleccion = JSON.stringify([...new Set(ids)]);
+  const [resultado] = await db.batch([
+    db.prepare(`
+      WITH elegibles AS MATERIALIZED (
+        SELECT id FROM ordenes_servicio
+        WHERE local_id = ? AND id IN (SELECT value FROM json_each(?))
+          AND estado <> 'entregado' AND cobrado_en IS NULL AND tecnico_pagado_en IS NULL
+          AND json_array_length(repuestos) = 0
+      )
+      DELETE FROM ordenes_servicio
+      WHERE id IN (SELECT id FROM elegibles)
+        AND (SELECT count(*) FROM elegibles) = json_array_length(?)
+    `).bind(localId, seleccion, seleccion),
+    ...sentenciasCambio(db, ['ordenes_servicio'], localId),
+  ]);
+  const eliminadas = resultado.meta.changes;
+  if (!eliminadas) throw new ErrorApi(409, 'La selección cambió o contiene órdenes con repuestos o cobros. Revisa las órdenes y vuelve a seleccionarlas.', 'orden_no_eliminable');
+  return { eliminadas };
+}

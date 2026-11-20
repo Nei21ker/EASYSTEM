@@ -4,7 +4,7 @@ import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
 import { crearProducto } from '../../src/server/servicios/catalogo';
 import { registrarMovimiento } from '../../src/server/servicios/movimientos';
-import { actualizarOrden, crearOrden, resetearServicioTecnico } from '../../src/server/servicios/ordenes';
+import { actualizarOrden, crearOrden, eliminarOrdenes, resetearServicioTecnico } from '../../src/server/servicios/ordenes';
 import type { RepuestoOrden } from '../../src/types/database.types';
 import { LOCAL_PANTALLAS_ID } from '../../src/lib/constantes-locales';
 import { cambiarRepuestoOrden, listarRepuestosOrden } from '../../src/server/servicios/repuestosOrden';
@@ -179,5 +179,28 @@ describe('resetearServicioTecnico', () => {
     await rechazo(resetearServicioTecnico(env, sA, { localId: '' }), 400);
     await rechazo(resetearServicioTecnico(env, sA, { localId: 'no-existe' }), 404);
     await rechazo(resetearServicioTecnico(env, sA, { localId: accesorios }), 400, /servicio técnico/);
+  });
+});
+
+describe('eliminarOrdenes', () => {
+  it('solo elimina la orden seleccionada del local y exige administrador', async () => {
+    const elegida = await crearOrden(env, sA, nueva(servicio));
+    const otra = await crearOrden(env, sA, nueva(servicio));
+    const externa = await crearOrden(env, sA, nueva(OTRO_SERVICIO));
+    await rechazo(eliminarOrdenes(env, sG, servicio, [elegida.id]), 403);
+    await rechazo(eliminarOrdenes(env, sA, servicio, [elegida.id, externa.id]), 409);
+    expect(await contar('ordenes_servicio')).toBe(3);
+    expect(await eliminarOrdenes(env, sA, servicio, [elegida.id])).toEqual({ eliminadas: 1 });
+    expect(await una('SELECT id FROM ordenes_servicio WHERE id = ?', otra.id)).toEqual({ id: otra.id });
+    expect(await contar('ordenes_servicio')).toBe(2);
+  });
+
+  it('protege la selección completa si una orden consumió stock', async () => {
+    await registrarMovimiento(env, sA, { productoId: vidrio, tipo: 'ENTRADA', cantidad: 2, localId: servicio });
+    const protegida = await ordenConRepuesto(servicio, vidrio, 1, 1.5);
+    const elegida = await crearOrden(env, sA, nueva(servicio));
+    await rechazo(eliminarOrdenes(env, sA, servicio, [elegida.id, protegida.id]), 409);
+    expect(await contar('ordenes_servicio')).toBe(2);
+    expect(await stock(vidrio, servicio)).toBe(1);
   });
 });

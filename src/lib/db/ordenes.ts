@@ -49,3 +49,7 @@ export async function listarTecnicos(localId: string | null): Promise<TecnicoDeL
 export async function resetearServicioTecnico(opciones: { localId: string; simular?: boolean }): Promise<ResultadoReseteoServicio> {
   return api.post<ResultadoReseteoServicio>('/api/ordenes/resetear', { local_id: opciones.localId, simular: opciones.simular ?? false });
 }
+
+export function eliminarOrdenes(localId: string, ids: string[]) {
+  return api.post<{ eliminadas: number }>('/api/ordenes/eliminar-lote', { local_id: localId, ids });
+}
