@@ -104,3 +104,10 @@ describe('htmlInventarioPorPieza', () => {
     expect(htmlInventarioPorPieza({ ...base, piezas: [] })).toContain('No hay piezas');
   });
 });
+
+it('permite contar por producto sin imprimir las existencias del sistema', () => {
+  const html = htmlInventarioPorProducto({ ...base, filas: [{ categoria: 'Forros', codigo: 'F01', nombre: 'Forro', stock: 573 }], mostrarExistencias: false });
+  expect(html).toContain('Contado');
+  expect(html).toContain('F01');
+  expect(html).not.toMatch(/573|En sistema|Diferencia|Subtotal|Total de unidades/);
+});

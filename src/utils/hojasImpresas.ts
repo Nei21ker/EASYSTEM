@@ -224,7 +224,8 @@ function pieInventario(d: DatosHojaInventario): string {
 }
 
 /** Hoja por producto: una línea por producto con lo que dice el sistema y espacio para anotar lo contado y la diferencia. */
-export function htmlInventarioPorProducto(d: DatosHojaInventario & { filas: FilaInventario[] }): string {
+export function htmlInventarioPorProducto(d: DatosHojaInventario & { filas: FilaInventario[]; mostrarExistencias?: boolean }): string {
+  const mostrar = d.mostrarExistencias ?? true;
   const cab = cabeceraInventario(d, 'por producto', 'CONTEO');
   if (d.filas.length === 0) return `${cab}<p>No hay productos con existencias para contar en este local.</p>${pieInventario(d)}`;
   const total = d.filas.reduce((s, f) => s + f.stock, 0);
@@ -234,16 +235,16 @@ export function htmlInventarioPorProducto(d: DatosHojaInventario & { filas: Fila
       return `
 <h2>${escapar(g.categoria)} (${g.filas.length} ${g.filas.length === 1 ? 'producto' : 'productos'})</h2>
 <table>
-  <thead><tr><th>Código</th><th>Producto</th><th class="hi-der">En sistema</th><th class="hi-ancho">Contado</th><th class="hi-ancho">Diferencia</th></tr></thead>
+  <thead><tr><th>Código</th><th>Producto</th>${mostrar ? '<th class="hi-der">En sistema</th>' : ''}<th class="hi-ancho">Contado</th>${mostrar ? '<th class="hi-ancho">Diferencia</th>' : ''}</tr></thead>
   <tbody>${g.filas
-    .map((f) => `<tr><td class="hi-cod">${escapar(f.codigo)}</td><td>${escapar(f.nombre)}</td><td class="hi-der">${f.stock}</td><td class="hi-blanco"></td><td class="hi-blanco"></td></tr>`)
+    .map((f) => `<tr><td class="hi-cod">${escapar(f.codigo)}</td><td>${escapar(f.nombre)}</td>${mostrar ? `<td class="hi-der">${f.stock}</td>` : ''}<td class="hi-blanco"></td>${mostrar ? '<td class="hi-blanco"></td>' : ''}</tr>`)
     .join('')}
-  <tr class="hi-subtotal"><td colspan="2"><strong>Subtotal ${escapar(g.categoria)}</strong></td><td class="hi-der"><strong>${subtotal}</strong></td><td></td><td></td></tr></tbody>
+  ${mostrar ? `<tr class="hi-subtotal"><td colspan="2"><strong>Subtotal ${escapar(g.categoria)}</strong></td><td class="hi-der"><strong>${subtotal}</strong></td><td></td><td></td></tr>` : ''}</tbody>
 </table>`;
     })
     .join('');
   return `${cab}
-<p><strong>Productos:</strong> ${d.filas.length} &nbsp;·&nbsp; <strong>Total de unidades:</strong> ${total}</p>
+<p><strong>Productos:</strong> ${d.filas.length}${mostrar ? ` &nbsp;·&nbsp; <strong>Total de unidades:</strong> ${total}` : ''}</p>
 ${cuerpo}
 ${pieInventario(d)}`;
 }
