@@ -199,6 +199,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         <p id="ig-galeria-cuenta" class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"></p>
       </div>
       <div class="space-y-3 overflow-y-auto px-5 py-4 text-sm">
+        <p id="ig-galeria-auto-aviso" role="status" class="hidden text-slate-600 dark:text-slate-300"></p>
+        <div id="ig-galeria-opciones" class="space-y-3">
         <div class="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
           <label for="ig-galeria-formato" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Tamaño de la etiqueta</label>
           <select id="ig-galeria-formato" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white">
@@ -241,12 +243,13 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           <li>Cuando las hayas impreso, pulsa <strong>Ya las imprimí</strong>.</li>
         </ol>
         <div id="ig-galeria-imagenes" class="grid grid-cols-2 gap-2"></div>
+        </div>
         <p id="ig-galeria-error" role="alert" class="hidden rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700 dark:bg-red-500/10 dark:text-red-400"></p>
       </div>
       <div class="flex shrink-0 flex-col-reverse gap-2 border-t border-slate-200 px-5 py-3 dark:border-slate-800 sm:flex-row sm:justify-end sm:py-4">
         <button id="ig-galeria-cerrar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Cerrar</button>
         <button id="ig-galeria-descargar" type="button" class="rounded-lg border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Descargar</button>
-        <button id="ig-galeria-listo" type="button" class="bg-marca rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Ya las imprimí</button>
+        <button id="ig-galeria-listo" type="button" class="bg-marca disabled:opacity-50 rounded-lg px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:brightness-110">Ya las imprimí</button>
       </div>
     </div>
   </dialog>
@@ -745,7 +748,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     if (imprimir && fallos.length === 0) {
       const etiquetas = reunirEtiquetas();
-      if (etiquetas) await abrirGaleria(etiquetas, false);
+      if (etiquetas) await abrirGaleria(etiquetas, false, true);
     }
   }
 
@@ -880,7 +883,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   /** Abre la galería con esas etiquetas (hasta MAX_ETIQUETAS_POR_PDF por vez, en un PDF) lista para mandarla a la impresora. */
-  async function abrirGaleria(etiquetas: { codigo: string; nombre: string }[], esReimpresion: boolean) {
+  async function abrirGaleria(etiquetas: { codigo: string; nombre: string }[], esReimpresion: boolean, descargaAutomatica = false) {
     const envio = etiquetas.slice(0, MAX_ETIQUETAS_POR_PDF);
     const muchas = envio.length > MAX_ETIQUETAS_POR_TIRA;
     for (const opcion of Array.from(galeriaModo.options)) if (opcion.value !== 'pdf') opcion.disabled = muchas;
@@ -893,12 +896,30 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const boton = esReimpresion ? 'Reimprimir etiquetas' : 'Imprimir etiquetas';
     $('ig-galeria-titulo').textContent = boton;
     $('ig-galeria-cuenta').textContent =
-      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${boton}" para las siguientes)` : ''}${muchas ? ` · el PDF las incluye todas; abajo solo se ven las primeras ${MAX_ETIQUETAS_POR_TIRA}` : ''}`;
+      `${envio.length} etiqueta${envio.length === 1 ? '' : 's'}${esReimpresion ? ' (mismo código que la anterior)' : ''}${restantes > 0 ? ` (faltan ${restantes} más: al terminar, vuelve a pulsar "${descargaAutomatica ? 'Imprimir etiquetas del lote' : boton}" para las siguientes)` : ''}${muchas ? ` · el PDF las incluye todas; abajo solo se ven las primeras ${MAX_ETIQUETAS_POR_TIRA}` : ''}`;
     galeriaModo.value = 'pdf';
     galeriaImagenes.innerHTML = '';
     copiarMedidaAGaleria();
+    const avisoAuto = $('ig-galeria-auto-aviso');
+    const confirmar = $<HTMLButtonElement>('ig-galeria-listo');
+    $('ig-galeria-opciones').classList.toggle('hidden', descargaAutomatica);
+    $('ig-galeria-descargar').classList.toggle('hidden', descargaAutomatica);
+    $('ig-galeria-cerrar').classList.toggle('hidden', descargaAutomatica);
+    avisoAuto.classList.toggle('hidden', !descargaAutomatica);
+    avisoAuto.textContent = descargaAutomatica ? 'Preparando el PDF…' : '';
+    confirmar.disabled = descargaAutomatica;
     galeria.showModal();
-    await prepararGaleria(true);
+    const version = galeriaVersion + 1;
+    await prepararGaleria(!descargaAutomatica);
+    if (!descargaAutomatica || !galeria.open || galeriaVersion !== version) return;
+    if (!galeriaPdf) {
+      avisoAuto.textContent = 'El ingreso quedó registrado. Cierra y vuelve a preparar las etiquetas desde el lote.';
+      $('ig-galeria-cerrar').classList.remove('hidden');
+      return;
+    }
+    descargarArchivos([galeriaPdf]);
+    avisoAuto.textContent = 'Abre el PDF descargado en WePrint. Cuando termines de imprimir, pulsa «Ya las imprimí».';
+    confirmar.disabled = false;
   }
 
   galeriaModo.addEventListener('change', actualizarBotonesGaleria);
@@ -969,6 +990,10 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     void anotarImpresas();
   });
   $('ig-galeria-cerrar').addEventListener('click', cerrarGaleria);
+  galeria.addEventListener('cancel', (e) => {
+    e.preventDefault();
+    cerrarGaleria();
+  });
   $('ig-galeria-listo').addEventListener('click', async () => {
     const codigos = galeriaCodigos;
     const etiquetas = galeriaEtiquetas;

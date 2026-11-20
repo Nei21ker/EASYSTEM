@@ -481,3 +481,5 @@ Consult these guides before working on related tasks:
 - Al completar la ráfaga de fotos, Ingreso muestra «Fotos guardadas» y cierra la cámara al confirmar la última subida. El resumen permite revisar fotos omitidas o reintentar las fallidas.
 
 - En el lote de ingreso, Stock actual muestra las existencias registradas e Ingresan la cantidad pendiente. Guardar fotos no registra entradas. Con unidades pendientes se ofrecen Solo registrar ingreso y Registrar e imprimir etiquetas. Cuando el lote solo contiene etiquetas, la acción principal permite imprimirlas.
+
+- «Registrar e imprimir etiquetas» descarga el PDF al registrar correctamente el lote y pide confirmar con «Ya las imprimí». Las etiquetas se marcan como impresas al confirmar. Las reimpresiones y los lotes de solo etiquetas mantienen la elección de formato y descarga manual.
