@@ -479,3 +479,5 @@ Consult these guides before working on related tasks:
 - Mercancía → Inventario: administrador y gerente pueden imprimir cantidades del sistema y hojas por pieza. Encargado y supervisor imprimen por producto con una columna en blanco para el conteo.
 
 - Al completar la ráfaga de fotos, Ingreso muestra «Fotos guardadas» y cierra la cámara al confirmar la última subida. El resumen permite revisar fotos omitidas o reintentar las fallidas.
+
+- En el lote de ingreso, Stock actual muestra las existencias registradas e Ingresan la cantidad pendiente. Guardar fotos no registra entradas. Con unidades pendientes se ofrecen Solo registrar ingreso y Registrar e imprimir etiquetas. Cuando el lote solo contiene etiquetas, la acción principal permite imprimirlas.

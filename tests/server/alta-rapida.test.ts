@@ -3,7 +3,8 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { crearEntornoDePrueba, crearUsuarioDePrueba, IDS_LOCALES, peticionComo, reiniciarBase, sembrarLocales, type UsuarioDePrueba } from './ayudas';
 import { cargarSesion, type Sesion } from '../../src/server/authz';
 import { ErrorApi } from '../../src/server/errores';
-import { crearProducto, crearProductosRapidos, listarProductos } from '../../src/server/servicios/catalogo';
+import { actualizarProducto, crearProducto, crearProductosRapidos, listarProductos } from '../../src/server/servicios/catalogo';
+import { registrarMovimientos } from '../../src/server/servicios/movimientos';
 import { esCodigoInterno } from '../../src/utils/codigos';
 
 const env = crearEntornoDePrueba();
@@ -39,6 +40,16 @@ async function rechazo(promesa: Promise<unknown>, status: number, texto?: string
 const fila = (nombre: string, extra: Record<string, unknown> = {}) => ({ nombre, categoria: 'Controles', precio_venta: 8, ...extra });
 
 describe('crearProductosRapidos', () => {
+  it('guardar la foto conserva el stock en cero hasta registrar la entrada', async () => {
+    const [producto] = await crearProductosRapidos(env, sE, [fila('Control con foto')]);
+    await actualizarProducto(env, sE, producto.id, { imagen_url: 'https://fotos.test/publico/control.webp' });
+    const stock = async () => (await listarProductos(env, sA)).find((p) => p.id === producto.id)?.stock_actual;
+    expect(await stock()).toBe(0);
+
+    await registrarMovimientos(env, sE, [{ productoId: producto.id, tipo: 'ENTRADA', cantidad: 2, localId: accesorios }]);
+    expect(await stock()).toBe(2);
+  });
+
   it('crea todos los productos con código de barras interno válido, referencia y stock mínimo 0', async () => {
     const creados = await crearProductosRapidos(env, sA, [fila('Control A/C Samsung'), fila('Control A/C LG'), fila('Control Roku', { precio_venta: 12.5 })]);
     expect(creados).toHaveLength(3);

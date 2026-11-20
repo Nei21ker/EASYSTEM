@@ -1591,11 +1591,12 @@ export async function guardarImagenProducto(productoId: string, imagen: Blob): P
     return url;
   }
 
+  const url = await blobADataUrl(imagen);
   const db = leerDB();
   const producto = db.productos.find((p) => p.id === productoId);
   if (!producto) throw new Error('Producto no encontrado.');
   const anterior = producto.imagen_url;
-  producto.imagen_url = await blobADataUrl(imagen);
+  producto.imagen_url = url;
   try {
     guardarDBEstricto(db);
   } catch (err) {

@@ -102,7 +102,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <thead>
               <tr class="border-b border-slate-200 bg-slate-50/70 text-[11px] uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400">
                 <th class="px-4 py-3 font-semibold">Producto</th>
-                <th class="px-4 py-3 text-right font-semibold">Stock</th>
+                <th class="px-4 py-3 text-right font-semibold">Stock actual</th>
                 <th class="w-28 px-4 py-3 font-semibold">Ingresan</th>
                 <th class="w-28 px-4 py-3 font-semibold">Etiquetas</th>
                 <th class="w-20 px-4 py-3"><span class="sr-only">Quitar</span></th>
@@ -125,9 +125,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
             <button id="ig-reimprimir-estas" type="button" class="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold hover:bg-amber-100 dark:border-amber-500/50 dark:hover:bg-amber-500/20">Reimprimir estas</button>
           </div>
           <div id="ig-botones" class="flex flex-col gap-2 sm:flex-row sm:justify-end">
-            <button id="ig-compartir" type="button" title="Prepara las etiquetas como PDF o imágenes para descargarlas e imprimirlas" class="rounded-lg border border-accent-300 px-4 py-2.5 text-sm font-semibold text-accent-700 transition hover:bg-accent-50 dark:border-accent-700 dark:text-accent-300 dark:hover:bg-slate-800">
-              Imprimir etiquetas
-            </button>
             <button id="ig-registrar" type="button" class="rounded-lg border border-brand-300 px-4 py-2.5 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-slate-800">
               Solo registrar ingreso
             </button>
@@ -330,6 +327,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   const motivoDelIngreso = () => motivoDeIngreso(proveedor.value);
   const botonRegistrar = $<HTMLButtonElement>('ig-registrar');
   const botonRegistrarImprimir = $<HTMLButtonElement>('ig-registrar-imprimir');
+  let registrandoIngreso = false;
   const selectFormato = $<HTMLSelectElement>('ig-formato');
   const campoAncho = $<HTMLInputElement>('ig-ancho');
   const campoAlto = $<HTMLInputElement>('ig-alto');
@@ -587,7 +585,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
               <p class="font-mono text-[11px] text-slate-500 dark:text-slate-400">${escapar(codigoVisible(p))}</p>
               <p data-pista="${l.id}" class="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">${textoPista(l)}</p>
             </td>
-            <td data-label="Stock" class="px-4 py-3 text-right tabular-nums" data-stock="${l.id}">${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}</td>
+            <td data-label="Stock actual" class="px-4 py-3 text-right tabular-nums" data-stock="${l.id}">${p.stock_actual}</td>
             <td data-label="Ingresan" class="px-4 py-3"><input type="number" inputmode="numeric" min="0" step="1" value="${l.cantidad}" data-cantidad="${l.id}" aria-label="Unidades que ingresan de ${escapar(p.nombre)}" class="${campo}" /></td>
             <td data-label="Etiquetas" class="px-4 py-3"><input type="number" inputmode="numeric" min="0" step="1" value="${l.copias}" data-copias="${l.id}" aria-label="Etiquetas a imprimir de ${escapar(p.nombre)}" class="${campo}" /></td>
             <td class="px-4 py-3 sm:text-right"><button type="button" data-quitar="${l.id}" class="text-xs font-medium text-red-600 hover:underline dark:text-red-400">Quitar</button></td>
@@ -620,7 +618,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
       }
       const p = producto(linea.id);
       const celda = filas.querySelector<HTMLElement>(`[data-stock="${linea.id}"]`);
-      if (p && celda) celda.innerHTML = `${p.stock_actual}${linea.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + linea.cantidad}</span>` : ''}`;
+      if (p && celda) celda.innerHTML = `${p.stock_actual}`;
     } else {
       linea.copias = entero(input.value);
       linea.manual = true;
@@ -656,10 +654,14 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     const unidades = lote.reduce((s, l) => s + l.cantidad, 0);
     const lineasConIngreso = lote.filter((l) => l.cantidad > 0).length;
     const formato = formatoElegido();
+    if (!registrandoIngreso) {
+      botonRegistrar.disabled = lineasConIngreso === 0;
+      botonRegistrarImprimir.textContent = lineasConIngreso > 0 ? 'Registrar e imprimir etiquetas' : 'Imprimir etiquetas del lote';
+    }
     const etiquetas = totalEtiquetas(pedidas());
     const paginas = paginasNecesarias(pedidas(), formato);
     resumen.textContent = lote.length
-      ? `Ingreso: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${lineasConIngreso} producto${lineasConIngreso === 1 ? '' : 's'}. Etiquetas: ${etiquetas}${formato.hoja ? ` (${paginas} hoja${paginas === 1 ? '' : 's'} A4)` : ''}.`
+      ? `Pendiente de registrar: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${lineasConIngreso} producto${lineasConIngreso === 1 ? '' : 's'}. Etiquetas: ${etiquetas}${formato.hoja ? ` (${paginas} hoja${paginas === 1 ? '' : 's'} A4)` : ''}.`
       : '';
   }
 
@@ -669,6 +671,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
    * en el lote con su motivo y las demás sí quedan registradas. Con `imprimir`, al terminar sin fallos abre directo las etiquetas.
    */
   async function registrar(imprimir: boolean) {
+    if (registrandoIngreso) return;
     error.classList.add('hidden');
     exito.classList.add('hidden');
 
@@ -686,6 +689,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
 
     const botones = [botonRegistrar, botonRegistrarImprimir];
     const textos = botones.map((b) => b.textContent);
+    registrandoIngreso = true;
     botones.forEach((b) => (b.disabled = true));
     (imprimir ? botonRegistrarImprimir : botonRegistrar).textContent = 'Registrando...';
 
@@ -724,16 +728,17 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     } catch {
       /* sin red: se muestran las existencias de antes; el registro ya está hecho */
     }
-    pintarLote();
+    registrandoIngreso = false;
     botones.forEach((b, i) => {
       b.disabled = false;
       b.textContent = textos[i];
     });
+    pintarLote();
 
     const registrados = aRegistrar.length - fallos.length;
     if (registrados > 0) {
       mostrarExito(
-        `Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}${todosPorCantidad ? ' (por cantidad, sin código por pieza).' : ', cada una con su código.'}${imprimir ? '' : ' Ya puedes imprimir las etiquetas.'}`
+        `Ingreso registrado: ${unidades} unidad${unidades === 1 ? '' : 'es'} en ${registrados} producto${registrados === 1 ? '' : 's'}${todosPorCantidad ? ' (por cantidad, sin código por pieza).' : ', cada una con su código.'}${imprimir ? '' : ' Puedes imprimir las etiquetas del lote.'}`
       );
     }
     if (fallos.length) {
@@ -900,12 +905,6 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     galeria.showModal();
     await prepararGaleria(true);
   }
-
-  $('ig-compartir').addEventListener('click', async () => {
-    const etiquetas = reunirEtiquetas();
-    if (!etiquetas) return;
-    await abrirGaleria(etiquetas, false);
-  });
 
   galeriaModo.addEventListener('change', actualizarBotonesGaleria);
   galeriaSeparacion.addEventListener('change', () => void prepararGaleria(false));
@@ -1221,7 +1220,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }) as unknown as EventListener);
 
   // La cámara de ráfaga subió fotos: se refrescan las miniaturas del lote
-  window.addEventListener('easystem:rafaga-finalizada', () => mostrarExito('Fotos guardadas.'));
+  window.addEventListener('easystem:rafaga-finalizada', () => mostrarExito('Fotos guardadas. Revisa el lote y confirma el ingreso para sumar las unidades al stock.'));
   window.addEventListener('easystem:rafaga-fotos', (async () => {
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });
     pintarLote();
@@ -1255,7 +1254,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     await cargarSinEtiqueta();
     pintarLote();
     mostrarPestana('ingreso');
-    mostrarExito('Las piezas recibidas en el cambio están en el lote con una etiqueta cada una. Pulsa «Imprimir etiquetas».');
+    mostrarExito('Las piezas recibidas en el cambio están en el lote con una etiqueta cada una. Pulsa «Imprimir etiquetas del lote».');
     $('ig-titulo-lote').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }) as unknown as EventListener);
 
@@ -1274,7 +1273,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     for (const l of lote) {
       const p = producto(l.id)!;
       const celda = filas.querySelector<HTMLElement>(`[data-stock="${l.id}"]`);
-      if (celda) celda.innerHTML = `${p.stock_actual}${l.cantidad > 0 ? ` <span class="text-emerald-600 dark:text-emerald-400">→ ${p.stock_actual + l.cantidad}</span>` : ''}`;
+      if (celda) celda.innerHTML = `${p.stock_actual}`;
     }
     await cargarSinEtiqueta();
   }
@@ -1286,7 +1285,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     productos = lista;
     hayLocal = !!contexto?.local;
     $('ig-local').textContent = hayLocal
-      ? `El ingreso se suma al stock de: ${contexto!.local!.nombre}.`
+      ? `El stock solo se actualiza al confirmar el ingreso en ${contexto!.local!.nombre}.`
       : 'Estás en la vista "Todos los locales": puedes preparar el lote e imprimir etiquetas, pero para registrar el ingreso elige un local en el selector del encabezado.';
 
     try {
@@ -1325,7 +1324,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         if (!lote.some((l) => l.id === reimprimir)) lote.push({ id: reimprimir, cantidad: 0, copias: 1, manual: true });
         guardarLote();
         pintarLote();
-        avisar('Este producto se controla por cantidad: no tiene etiqueta por pieza. Quedó en el lote una etiqueta de pila con su código; ajusta la cantidad y pulsa "Imprimir etiquetas".');
+        avisar('Este producto se controla por cantidad: no tiene etiqueta por pieza. Quedó en el lote una etiqueta de pila con su código; ajusta la cantidad y pulsa "Imprimir etiquetas del lote".');
       } else {
         pintarLote();
         void abrirReimprimir(reimprimir);
