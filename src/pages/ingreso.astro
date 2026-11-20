@@ -1221,6 +1221,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }) as unknown as EventListener);
 
   // La cámara de ráfaga subió fotos: se refrescan las miniaturas del lote
+  window.addEventListener('easystem:rafaga-finalizada', () => mostrarExito('Fotos guardadas.'));
   window.addEventListener('easystem:rafaga-fotos', (async () => {
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });
     pintarLote();

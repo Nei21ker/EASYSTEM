@@ -43,7 +43,7 @@
       <p id="rf-estado" class="shrink-0 px-4 pt-2 text-center text-xs text-slate-400"></p>
       <p id="rf-error" role="alert" class="mx-4 mt-2 hidden shrink-0 rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-300"></p>
 
-      <footer class="grid shrink-0 grid-cols-3 items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
+      <footer id="rf-controles" class="grid shrink-0 grid-cols-3 items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3">
         <button type="button" id="rf-repetir" class="justify-self-start rounded-xl border border-white/20 px-4 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-30">Repetir</button>
         <button type="button" id="rf-obturador" aria-label="Tomar la foto de este producto" class="justify-self-center rounded-full border-4 border-white bg-white/20 p-1 transition active:scale-95 disabled:opacity-40">
           <span class="block h-16 w-16 rounded-full bg-white"></span>
@@ -128,6 +128,7 @@
   let fichaCamara = 0; // descarta respuestas tardías de una apertura de cámara ya cancelada
   let modoArchivo = false;
   let bloqueado = false;
+  let terminando = false;
   let temporizadorAviso: ReturnType<typeof setTimeout> | undefined;
 
   const pendientes = () => tareas.filter((t) => t.estado === 'espera' || t.estado === 'subiendo').length;
@@ -218,11 +219,43 @@
 
   function pintarEstado() {
     estado.textContent = textoSubida();
+    if (dialogo.open && terminando) {
+      if (finalizarSiGuardadas()) return;
+      if (vistaResumen.classList.contains('hidden') && deEstaRafaga().some((t) => t.estado === 'error')) {
+        abrirResumen();
+        return;
+      }
+    }
     if (!vistaResumen.classList.contains('hidden')) pintarResumen();
   }
 
+  function finalizarSiGuardadas(): boolean {
+    const guardadas = new Set(deEstaRafaga().filter((t) => t.estado === 'ok').map((t) => t.producto.id));
+    const pendientes = deEstaRafaga().some((t) => t.estado !== 'ok' && t.estado !== 'cancelada');
+    if (pendientes || !productos.every((p) => guardadas.has(p.id))) return false;
+    terminando = false;
+    dialogo.close();
+    window.dispatchEvent(new Event('easystem:rafaga-finalizada'));
+    return true;
+  }
+
   function mostrarResumen() {
+    if (terminando) return;
+    terminando = true;
     detenerCamara();
+    if (finalizarSiGuardadas()) return;
+    const activas = deEstaRafaga().filter((t) => t.estado !== 'cancelada');
+    const capturadas = new Set(activas.map((t) => t.producto.id));
+    if (productos.every((p) => capturadas.has(p.id)) && !activas.some((t) => t.estado === 'error')) {
+      nombre.textContent = 'Guardando fotos…';
+      $('rf-controles').inert = true;
+      $('rf-terminar').classList.add('hidden');
+      return;
+    }
+    abrirResumen();
+  }
+
+  function abrirResumen() {
     vistaCaptura.classList.add('hidden');
     vistaResumen.classList.remove('hidden');
     vistaResumen.classList.add('flex');
@@ -422,12 +455,13 @@
     }
   });
   dialogo.addEventListener('close', () => {
+    terminando = false;
     detenerCamara();
     window.dispatchEvent(new Event('easystem:rafaga-fotos'));
   });
   // Al volver a la pestaña la cámara puede haberse cortado (el teléfono la suelta en segundo plano)
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible' || !dialogo.open || vistaCaptura.classList.contains('hidden') || modoArchivo) return;
+    if (document.visibilityState !== 'visible' || !dialogo.open || terminando || vistaCaptura.classList.contains('hidden') || modoArchivo) return;
     if (!flujo || flujo.getTracks().every((t) => t.readyState === 'ended')) void iniciarCamara();
   });
   window.addEventListener('pagehide', soltarCamaraAparcada);
@@ -443,6 +477,9 @@
     productos = lista.filter((p) => p.id && p.nombre);
     if (productos.length === 0) return;
     indice = 0;
+    terminando = false;
+    $('rf-controles').inert = false;
+    $('rf-terminar').classList.remove('hidden');
     tareasDesde = tareas.length;
     error.classList.add('hidden');
     vistaResumen.classList.add('hidden');

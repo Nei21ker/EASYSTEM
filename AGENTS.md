@@ -477,3 +477,5 @@ Consult these guides before working on related tasks:
 - Historial → Devolución o cambio propone devolver una unidad si queda un solo renglón elegible. El escáner de reemplazo identifica productos por código, referencia o etiqueta disponible del local de la venta, y agrega el producto al formulario.
 
 - Mercancía → Inventario: administrador y gerente pueden imprimir cantidades del sistema y hojas por pieza. Encargado y supervisor imprimen por producto con una columna en blanco para el conteo.
+
+- Al completar la ráfaga de fotos, Ingreso muestra «Fotos guardadas» y cierra la cámara al confirmar la última subida. El resumen permite revisar fotos omitidas o reintentar las fallidas.
