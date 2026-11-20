@@ -45,7 +45,7 @@
 
 <script>
   import * as inventoryService from '../../lib/inventoryService';
-  import { LOCAL_ACCESORIOS_ID } from '../../lib/constantes-locales';
+  import { usaInicioCompacto } from '../../lib/inicio';
   import { estadoStock } from '../../utils/format';
   import { codigoVisible } from '../../utils/codigos';
   import { descargarCSV } from '../../utils/csv';
@@ -96,7 +96,7 @@
   // `primera`: solo la primera carga anima la tabla; las actualizaciones en vivo la reemplazan sin parpadeos
   async function cargar(primera: boolean) {
     const contexto = await inventoryService.obtenerContextoLocal();
-    const compacto = contexto?.local?.id === LOCAL_ACCESORIOS_ID;
+    const compacto = usaInicioCompacto(contexto?.local?.id, contexto?.sesion.rol);
     if (compacto && primera) {
       panel.classList.add('hidden');
       panel.open = false;

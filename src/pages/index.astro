@@ -55,7 +55,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   import { tasaActual } from '../stores/tasa';
   import { contarHasta } from '../utils/animaciones';
   import { esGlobal } from '../lib/auth';
-  import { LOCAL_ACCESORIOS_ID } from '../lib/constantes-locales';
+  import { usaInicioCompacto } from '../lib/inicio';
   import { alCambiarDatos } from '../lib/realtime';
 
   // Valor del inventario en bolívares (a la tasa del día), debajo del monto en dólares
@@ -107,7 +107,7 @@ import RecentMovements from '../components/dashboard/RecentMovements.astro';
   }
 
   void inventoryService.obtenerContextoLocal().then((contexto) => {
-    if (contexto?.local?.id === LOCAL_ACCESORIOS_ID) {
+    if (usaInicioCompacto(contexto?.local?.id, contexto?.sesion.rol)) {
       const acciones = document.getElementById('dash-acciones');
       acciones?.classList.replace('hidden', 'grid');
       document.getElementById('dash-inventario')?.classList.remove('xl:grid-cols-5');

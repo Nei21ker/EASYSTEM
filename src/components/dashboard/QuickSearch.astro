@@ -77,7 +77,7 @@
   import { animarLista } from '../../utils/animaciones';
   import { alCambiarDatos } from '../../lib/realtime';
   import { htmlMiniatura } from '../../utils/imagenes';
-  import { LOCAL_ACCESORIOS_ID } from '../../lib/constantes-locales';
+  import { usaInicioCompacto } from '../../lib/inicio';
   import { codigoVisible, normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
   import { escaparHtml, htmlPildoraStock, normalizarTexto } from '../../utils/productosUI';
   import type { ProductoConRelaciones } from '../../types/database.types';
@@ -190,7 +190,7 @@
   }) as EventListener);
 
   void inventoryService.obtenerContextoLocal().then(async (contexto) => {
-    compacto = contexto?.local?.id === LOCAL_ACCESORIOS_ID;
+    compacto = usaInicioCompacto(contexto?.local?.id, contexto?.sesion.rol);
     if (compacto) {
       document.getElementById('qs-titulo')?.classList.add('hidden');
       document.getElementById('qs-descripcion')?.classList.add('hidden');

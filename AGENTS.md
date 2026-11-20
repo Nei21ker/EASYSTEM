@@ -468,7 +468,7 @@ Consult these guides before working on related tasks:
 - [Adding styles or using Tailwind](https://docs.astro.build/en/guides/styling/)
 - [Supporting multiple languages](https://docs.astro.build/en/guides/internationalization/)
 
-- **Inicio de Local Accesorios:** buscador con cámara y resultados bajo demanda, accesos a Nueva venta y Productos, y stock bajo desplegable solo cuando hay alertas. El detalle conserva la exportación para proveedor. El resumen de inventario y los movimientos recientes se muestran en las demás vistas de inicio.
+- **Inicio de Local Accesorios:** buscador con cámara y resultados bajo demanda, accesos a Nueva venta y Productos, y stock bajo desplegable solo cuando hay alertas. El detalle conserva la exportación para proveedor. Administrador y gerente usan el inicio completo de los demás locales también en Local Accesorios. El inicio compacto aplica a los otros roles de Local Accesorios.
 
 - **Cambio de mercancía:** el escáner de «Lo que entregamos» usa el mismo icono de escaneo que Nueva venta.
 
