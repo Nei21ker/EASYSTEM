@@ -44,7 +44,15 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       <!-- 2. Producto que se entrega a cambio -->
       <section>
         <p class={claseTitulo}>2. Producto que se entrega a cambio <span class="font-normal normal-case text-slate-400">(opcional)</span></p>
-        <input id="dv-buscar" type="search" autocomplete="off" placeholder="Buscar el producto correcto por nombre, código o referencia..." class={claseCampo} />
+        <div class="relative mt-1">
+          <input id="dv-buscar" type="search" autocomplete="off" placeholder="Buscar el producto correcto por nombre, código o referencia..." class:list={[claseCampo.replace('mt-1 ', ''), 'pr-14']} />
+          <button id="dv-escanear" type="button" data-abrir-escaner aria-label="Escanear producto de reemplazo con la cámara" class="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-r-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400">
+            <svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-5 w-5">
+            <path d="M3 9V7a2 2 0 0 1 2-2h2M3 15v2a2 2 0 0 0 2 2h2M21 9V7a2 2 0 0 0-2-2h-2M21 15v2a2 2 0 0 1-2 2h-2" stroke-linecap="round" stroke-linejoin="round" />
+            <circle cx="12" cy="12" r="3" stroke-linecap="round" />
+            </svg>
+          </button>
+        </div>
         <ul id="dv-resultados" class="mt-2 hidden max-h-44 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200 dark:divide-slate-800 dark:border-slate-700"></ul>
         <ul id="dv-nuevos" class="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm empty:hidden dark:divide-slate-800 dark:border-slate-700"></ul>
       </section>
@@ -96,6 +104,7 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
   import { convertirABs, formatearBolivares, formatearMoneda } from '../../utils/format';
   import { FormularioPagos } from '../../utils/formularioPagos';
   import { esMetodoBolivares, etiquetaMetodoPago, METODOS_REEMBOLSO } from '../../utils/pagos';
+  import { normalizarCodigoUnidad, normalizarReferencia } from '../../utils/codigos';
   import { escaparHtml, normalizarTexto } from '../../utils/productosUI';
   import type { MetodoPago, ProductoConRelaciones, Venta, VentaItem } from '../../types/database.types';
 
@@ -229,17 +238,52 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       .join('');
   }
 
-  buscador.addEventListener('input', pintarResultados);
-  $('dv-resultados').addEventListener('click', (e) => {
-    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
-    const producto = catalogo.find((p) => p.id === id);
-    if (!producto) return;
+  function agregarReemplazo(producto: ProductoConRelaciones) {
+    if (producto.stock_actual <= 0 || reemplazos.has(producto.id)) return;
     reemplazos.set(producto.id, { producto, cantidad: 1, precio: producto.precio_venta });
     buscador.value = '';
     pintarResultados();
     pintarReemplazos();
     actualizarResumen();
+  }
+
+  buscador.addEventListener('input', pintarResultados);
+  $('dv-resultados').addEventListener('click', (e) => {
+    const id = (e.target as HTMLElement).closest<HTMLElement>('[data-agregar]')?.dataset.agregar;
+    const producto = catalogo.find((p) => p.id === id);
+    if (producto) agregarReemplazo(producto);
   });
+
+  async function escanearReemplazo(codigo: string) {
+    if (!dialogo.open || !venta) return;
+    const ventaActual = venta;
+    const codigoProducto = normalizarReferencia(codigo) ?? codigo.trim();
+    let producto = catalogo.find((p) => p.codigo_barras === codigoProducto || p.referencia === codigoProducto);
+    const codigoUnidad = normalizarCodigoUnidad(codigo);
+    if (!producto && codigoUnidad) {
+      const unidad = await inventoryService.obtenerUnidadPorCodigo(codigoUnidad);
+      if (!dialogo.open || venta !== ventaActual) return;
+      if (unidad?.local_id === ventaActual.local_id && unidad.estado === 'DISPONIBLE') {
+        producto = catalogo.find((p) => p.id === unidad.producto_id);
+      }
+    }
+    if (!producto || producto.stock_actual <= 0) {
+      mostrarError('No se encontró un producto disponible con ese código en el local de la venta.');
+      return;
+    }
+    if (reemplazos.has(producto.id)) {
+      mostrarError('El producto ya está agregado. Puedes ajustar su cantidad en la lista.');
+      return;
+    }
+    errorEl.classList.add('hidden');
+    agregarReemplazo(producto);
+  }
+
+  window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
+    void escanearReemplazo(e.detail.codigo).catch(() => {
+      if (dialogo.open) mostrarError('No se pudo consultar el código escaneado.');
+    });
+  }) as EventListener);
   $('dv-nuevos').addEventListener('input', (e) => {
     const campoPrecio = (e.target as HTMLElement).closest<HTMLInputElement>('[data-precio-nuevo]');
     if (campoPrecio) {
@@ -337,6 +381,8 @@ const claseTitulo = 'text-xs font-semibold uppercase tracking-wide text-slate-50
       yaDevuelto = new Map();
       for (const d of devoluciones) for (const i of d.items_devueltos) yaDevuelto.set(i.producto_id, (yaDevuelto.get(i.producto_id) ?? 0) + i.cantidad);
       catalogo = productos;
+      const elegibles = v.items.filter((item) => disponible(item) > 0);
+      if (elegibles.length === 1) aDevolver.set(elegibles[0].producto_id, 1);
     } catch (err) {
       yaDevuelto = new Map();
       catalogo = [];

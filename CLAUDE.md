@@ -473,3 +473,5 @@ Consult these guides before working on related tasks:
 - **Cambio de mercancía:** el escáner de «Lo que entregamos» usa el mismo icono de escaneo que Nueva venta.
 
 - En Servicio técnico, el administrador puede seleccionar y eliminar hasta 50 órdenes del local activo. /api/ordenes/eliminar-lote exige que toda la selección esté sin repuestos, sin cobro y sin pago al técnico, con una eliminación atómica. Demo con las mismas reglas.
+
+- Historial → Devolución o cambio propone devolver una unidad si queda un solo renglón elegible. El escáner de reemplazo identifica productos por código, referencia o etiqueta disponible del local de la venta, y agrega el producto al formulario.
