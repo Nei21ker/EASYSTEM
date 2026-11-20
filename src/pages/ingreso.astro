@@ -66,10 +66,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
           </div>
           <div class="flex shrink-0 flex-col gap-2 sm:mt-5 sm:flex-row">
             <button id="ig-alta-rapida" type="button" class="bg-marca w-full rounded-lg px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 sm:w-auto sm:py-2">
-              Crear varios productos
-            </button>
-            <button id="ig-nuevo" type="button" class="w-full rounded-lg border border-brand-300 px-4 py-3 text-sm font-semibold text-brand-700 transition hover:bg-brand-50 dark:border-brand-700 dark:text-brand-300 dark:hover:bg-slate-800 sm:w-auto sm:py-2">
-              + Un producto
+              Crear productos
             </button>
           </div>
         </div>
@@ -482,10 +479,8 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   });
 
   function avisarCodigoNuevo(codigo: string) {
-    avisar(`No existe un producto con el código ${codigo}. Si es nuevo, créalo con "+ Nuevo producto".`);
-    ultimoCodigoDesconocido = codigo;
+    avisar(`No existe un producto con el código ${codigo}. Si es nuevo, usa «Crear productos».`);
   }
-  let ultimoCodigoDesconocido = '';
 
   window.addEventListener('easystem:codigo-escaneado', ((e: CustomEvent<{ codigo: string }>) => {
     // Con la pestaña Descargo a la vista, el escaneo es de ella
@@ -1180,18 +1175,12 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
   }
 
   // --- Producto nuevo / editado desde el formulario ---------------------------------------------
-  $('ig-nuevo').addEventListener('click', () => {
-    window.dispatchEvent(new CustomEvent('easystem:abrir-producto', { detail: { sinStock: true, pedirCantidad: true, codigo: ultimoCodigoDesconocido || undefined } }));
-    ultimoCodigoDesconocido = '';
-    aviso.classList.add('hidden');
-  });
-
   $('ig-alta-rapida').addEventListener('click', () => {
     aviso.classList.add('hidden');
     window.dispatchEvent(new Event('easystem:abrir-alta-rapida'));
   });
 
-  // Productos creados (o ya existentes) desde "Crear varios productos": entran al lote con su cantidad
+  // Productos creados (o ya existentes) desde "Crear productos": entran al lote con su cantidad
   window.addEventListener('easystem:alta-rapida-creada', (async (e: CustomEvent<{ items: { productoId: string; cantidad: number }[]; nuevos: number }>) => {
     productos = await inventoryService.listarProductos({ catalogoCompleto: true });
     let agregados = 0;
