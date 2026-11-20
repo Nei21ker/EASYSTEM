@@ -10,7 +10,7 @@ const claseBotonAdmin =
   'hidden w-full rounded-md px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-slate-800';
 const claseResumen = 'cursor-pointer list-none whitespace-nowrap rounded-lg border border-slate-200 px-2 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 sm:px-3 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800 [&::-webkit-details-marker]:hidden';
 const claseSelect =
-  'rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
+  'min-w-0 w-full min-h-11 rounded-lg border border-slate-200 bg-white px-3 py-2 text-base font-medium sm:text-sm text-slate-700 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200';
 ---
 
 <DashboardLayout titulo="Productos" subtitulo="Catálogo de forros, cargadores, vidrios y más">
@@ -52,31 +52,9 @@ const claseSelect =
           >
             + Ingresar mercancía
           </a>
-          <details id="pr-filtros">
-            <summary class={claseResumen}>Filtros <span id="pr-num-filtros" class="hidden text-brand-700 dark:text-brand-300"></span></summary>
-            <div class="absolute right-0 z-20 mt-2 grid w-52 max-w-full gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-              <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
-                Categoría
-                <select id="pr-categorias" class={claseSelect}><option value="">Todas las categorías</option></select>
-              </label>
-              <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-                <input id="pr-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-                Solo con stock
-              </label>
-              <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
-                Ordenar por
-                <select id="pr-orden" class={claseSelect}>
-                  <option value="nombre">Nombre (A–Z)</option>
-                  <option value="categoria">Categoría</option>
-                  <option value="precio_asc">Precio: menor a mayor</option>
-                  <option value="precio_desc">Precio: mayor a menor</option>
-                  <option value="stock_desc">Más stock primero</option>
-                  <option value="stock_asc">Menos stock primero</option>
-                </select>
-              </label>
-              <button id="pr-filtros-listo" type="button" class={claseBotonSecundario}>Listo</button>
-            </div>
-          </details>
+          <button id="pr-abrir-filtros" type="button" aria-haspopup="dialog" aria-controls="pr-filtros" class={claseResumen}>
+            Filtros <span id="pr-num-filtros" class="hidden rounded-full bg-brand-50 px-1.5 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300"></span>
+          </button>
           <details id="pr-mas" class="relative ml-auto lg:ml-0">
             <summary class={claseResumen}>Más acciones</summary>
             <div class="absolute right-0 z-20 mt-2 w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg dark:border-slate-700 dark:bg-slate-900">
@@ -160,6 +138,39 @@ const claseSelect =
     </div>
   </div>
 
+  <dialog id="pr-filtros" aria-labelledby="pr-titulo-filtros" class="fixed inset-x-0 bottom-0 top-auto m-0 max-h-[calc(100dvh-1rem)] w-full max-w-none overflow-hidden rounded-t-2xl border border-slate-200 bg-white p-0 text-slate-900 shadow-xl backdrop:bg-slate-950/55 sm:inset-0 sm:m-auto sm:w-[min(28rem,calc(100%_-_2rem))] sm:rounded-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <form id="pr-form-filtros" class="flex max-h-[calc(100dvh-1rem)] flex-col">
+      <header class="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-slate-700">
+        <h2 id="pr-titulo-filtros" class="text-base font-semibold">Filtros de productos</h2>
+        <button id="pr-cerrar-filtros" type="button" autofocus aria-label="Cerrar filtros" class="grid size-11 place-items-center rounded-lg text-xl text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">×</button>
+      </header>
+      <div class="grid min-h-0 gap-4 overflow-y-auto overscroll-contain px-4 py-4">
+        <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+          Categoría
+          <select id="pr-categorias" class={claseSelect}><option value="">Todas las categorías</option></select>
+        </label>
+        <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+          <input id="pr-solo-stock" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
+          Solo con stock
+        </label>
+        <label class="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+          Ordenar por
+          <select id="pr-orden" class={claseSelect}>
+            <option value="nombre">Nombre (A–Z)</option>
+            <option value="categoria">Categoría</option>
+            <option value="precio_asc">Precio: menor a mayor</option>
+            <option value="precio_desc">Precio: mayor a menor</option>
+            <option value="stock_desc">Más stock primero</option>
+            <option value="stock_asc">Menos stock primero</option>
+          </select>
+        </label>
+      </div>
+      <footer class="grid shrink-0 grid-cols-2 gap-3 border-t border-slate-200 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] dark:border-slate-700">
+        <button id="pr-restablecer-filtros" type="button" class={claseBotonSecundario}>Restablecer</button>
+        <button type="submit" class="bg-marca min-h-11 rounded-lg px-3 py-2 text-sm font-semibold text-white">Aplicar filtros</button>
+      </footer>
+    </form>
+  </dialog>
   <CamaraEscaner />
   <FormularioProducto />
   <ImportadorCsv />
@@ -234,7 +245,10 @@ const claseSelect =
   const selectOrden = $<HTMLSelectElement>('pr-orden');
   const selectPorPagina = $<HTMLSelectElement>('pr-por-pagina');
   const selectCategoria = $<HTMLSelectElement>('pr-categorias');
-  const panelFiltros = $<HTMLDetailsElement>('pr-filtros');
+  const panelFiltros = $<HTMLDialogElement>('pr-filtros');
+  const abrirFiltros = $<HTMLButtonElement>('pr-abrir-filtros');
+  let soloStockActivo = false;
+  let ordenActivo = 'nombre';
   const panelAcciones = $<HTMLDetailsElement>('pr-mas');
   const sinResultados = $('pr-sin-resultados');
   const paginacion = $('pr-paginacion');
@@ -266,13 +280,13 @@ const claseSelect =
     const tokens = q ? q.split(/\s+/) : [];
     let lista = productos.filter((p) => {
       if (categoriaActiva && p.categoria !== categoriaActiva) return false;
-      if (soloStock.checked && p.stock_actual <= 0) return false;
+      if (soloStockActivo && p.stock_actual <= 0) return false;
       if (tokens.length === 0) return true;
       const texto = indice.get(p.id) ?? '';
       return tokens.every((t) => texto.includes(t)); // todas las palabras deben aparecer
     });
 
-    const orden = selectOrden.value;
+    const orden = ordenActivo;
     lista = [...lista].sort((a, b) => {
       switch (orden) {
         case 'categoria':
@@ -302,8 +316,9 @@ const claseSelect =
     });
 
     if (!conteo.has(categoriaActiva)) categoriaActiva = '';
+    const categoriaBorrador = panelFiltros.open ? selectCategoria.value : categoriaActiva;
     selectCategoria.replaceChildren(new Option('Todas las categorías', ''), ...ordenadas.map((c) => new Option(c, c)));
-    selectCategoria.value = categoriaActiva;
+    selectCategoria.value = categoriaBorrador;
   }
 
   /** En la vista "Todos los locales": stock de cada local debajo del total. */
@@ -377,7 +392,7 @@ const claseSelect =
     const inicio = (pagina - 1) * porPagina;
     filas.innerHTML = lista.slice(inicio, inicio + porPagina).map(filaHtml).join('');
 
-    const filtros = [categoriaActiva, soloStock.checked ? 'Solo con stock' : '', selectOrden.value !== 'nombre' ? selectOrden.selectedOptions[0]?.text : ''].filter(Boolean);
+    const filtros = [categoriaActiva, soloStockActivo ? 'Solo con stock' : '', ordenActivo !== 'nombre' ? Array.from(selectOrden.options).find((opcion) => opcion.value === ordenActivo)?.text : ''].filter(Boolean);
     $('pr-num-filtros').textContent = String(filtros.length);
     $('pr-num-filtros').classList.toggle('hidden', filtros.length === 0);
     $('pr-filtros-activos').textContent = filtros.join(' · ');
@@ -429,14 +444,6 @@ const claseSelect =
     pagina = 1;
     pintar(); // sin animación: se reescribe en cada tecla
   });
-  soloStock.addEventListener('change', () => {
-    pagina = 1;
-    pintarAnimado();
-  });
-  selectOrden.addEventListener('change', () => {
-    pagina = 1;
-    pintarAnimado();
-  });
   selectPorPagina.addEventListener('change', () => {
     pagina = 1;
     pintarAnimado();
@@ -451,38 +458,46 @@ const claseSelect =
     pintarAnimado();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
-  selectCategoria.addEventListener('change', () => {
+  abrirFiltros.addEventListener('click', () => {
+    panelAcciones.open = false;
+    selectCategoria.value = categoriaActiva;
+    soloStock.checked = soloStockActivo;
+    selectOrden.value = ordenActivo;
+    panelFiltros.showModal();
+  });
+  $('pr-cerrar-filtros').addEventListener('click', () => panelFiltros.close());
+  panelFiltros.addEventListener('close', () => abrirFiltros.focus());
+  $('pr-restablecer-filtros').addEventListener('click', () => {
+    selectCategoria.value = '';
+    soloStock.checked = false;
+    selectOrden.value = 'nombre';
+  });
+  $('pr-form-filtros').addEventListener('submit', (e) => {
+    e.preventDefault();
     categoriaActiva = selectCategoria.value;
+    soloStockActivo = soloStock.checked;
+    ordenActivo = selectOrden.value;
     pagina = 1;
+    panelFiltros.close();
     pintarAnimado();
   });
-  for (const panel of [panelFiltros, panelAcciones]) {
-    const resumen = panel.querySelector('summary')!;
-    resumen.addEventListener('click', () => {
-      (panel === panelFiltros ? panelAcciones : panelFiltros).open = false;
-    });
-    document.addEventListener('click', (e) => {
-      if (panel.open && e.target instanceof Node && !panel.contains(e.target)) panel.open = false;
-    });
-    panel.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || !panel.open) return;
-      e.preventDefault();
-      panel.open = false;
-      resumen.focus();
-    });
-  }
-  $('pr-filtros-listo').addEventListener('click', () => {
-    panelFiltros.open = false;
-    panelFiltros.querySelector('summary')!.focus();
+  document.addEventListener('click', (e) => {
+    if (panelAcciones.open && e.target instanceof Node && !panelAcciones.contains(e.target)) panelAcciones.open = false;
+  });
+  panelAcciones.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !panelAcciones.open) return;
+    e.preventDefault();
+    panelAcciones.open = false;
+    panelAcciones.querySelector('summary')?.focus();
   });
   panelAcciones.addEventListener('click', (e) => {
     if (e.target instanceof Element && e.target.closest('button')) panelAcciones.open = false;
   });
   $('pr-limpiar').addEventListener('click', () => {
     buscador.value = '';
-    soloStock.checked = false;
+    soloStockActivo = false;
     categoriaActiva = '';
-    selectOrden.value = 'nombre';
+    ordenActivo = 'nombre';
     pagina = 1;
     pintarCategorias();
     pintarAnimado();

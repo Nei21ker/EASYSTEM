@@ -70,7 +70,7 @@ First Supabase admin must be bootstrapped manually: insert the email into `usuar
 
 - En Productos de Local Accesorios se oculta «Ingresar mercancía» tanto en la barra como en el estado vacío. El módulo Mercancía y las acciones por producto conservan sus permisos habituales.
 
-- La barra de Productos reúne categoría, stock y orden en «Filtros». «Más acciones» agrupa las herramientas según el rol. El listado distingue carga, error, catálogo vacío y filtros sin coincidencias. En móvil, el precio de venta y el stock se muestran justo debajo del nombre del producto.
+- La barra de Productos reúne categoría, stock y orden en «Filtros», con panel inferior en móvil y diálogo centrado en escritorio. Los cambios solo afectan la lista al pulsar «Aplicar filtros». «Más acciones» agrupa las herramientas según el rol. El listado distingue carga, error, catálogo vacío y filtros sin coincidencias. En móvil, el precio de venta y el stock se muestran justo debajo del nombre del producto.
 
 Productos has management tools implemented as `<dialog>` components in `src/components/productos/` (`FormularioProducto`, `ImportadorCsv`; stock entries moved to the Ingreso de mercancía page). They follow the same event convention as the camera scanner: the page dispatches `easystem:abrir-producto` / `easystem:abrir-importador`, and the dialogs dispatch `easystem:productos-cambiaron` after saving so the page reloads its list. Each dialog re-checks the role itself.
 
