@@ -107,18 +107,19 @@ describe('demo: venta en espera', () => {
     expect((await s.listarProductos({ catalogoCompleto: true })).find((x) => x.id === prod.id)!.stock_actual).toBe(3); // no se movió stock
   });
 
-  it('solo en el Local Vidrios y no para el técnico', async () => {
+  it('permite Accesorios al administrador y mantiene la restricción del técnico', async () => {
     const t = await tecnico();
     await expect(t.listarEspera()).rejects.toThrow(/no tiene permiso/);
     const a = await cargarComo('admin@edwardaccesorios.com', 'admin123', LOCAL_ACCESORIOS_ID);
     const prod = await conStock(a);
-    await expect(a.ponerEnEspera({ items: [{ producto_id: prod.id, cantidad: 1 }] })).rejects.toThrow(/solo se usan en el Local Vidrios/);
+    await expect(a.ponerEnEspera({ items: [{ producto_id: prod.id, cantidad: 1 }] })).resolves.toMatchObject({ local_id: LOCAL_ACCESORIOS_ID, estado: 'PENDIENTE' });
   });
 
-  it('un vendedor puede consultar las esperas de su local (en el demo el suyo es Accesorios: ninguna) y no dejar ventas ahí', async () => {
+  it('un vendedor puede dejar y retomar esperas de su local', async () => {
     const v = await vendedor();
     const prod = await conStock(v);
     expect(await v.listarEspera()).toEqual([]);
-    await expect(v.ponerEnEspera({ items: [{ producto_id: prod.id, cantidad: 1 }] })).rejects.toThrow(/solo se usan en el Local Vidrios/);
+    const espera = await v.ponerEnEspera({ items: [{ producto_id: prod.id, cantidad: 1 }] });
+    expect(await v.listarEspera()).toEqual([expect.objectContaining({ id: espera.id })]);
   });
 });

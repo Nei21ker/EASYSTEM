@@ -87,7 +87,7 @@ export const esquemaPendienteMercancia = z.object({
   items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).max(50).optional(),
   monto_usd: z.number(),
 });
-/** Venta en espera (Local Vidrios): el carrito que se deja guardado mientras el promotor vuelve a pagar */
+/** Venta en espera: el carrito que se deja guardado mientras el promotor vuelve a pagar */
 export const esquemaEspera = z.object({
   localId: z.string().min(1).max(100),
   items: z.array(z.object({ producto_id: z.string().min(1).max(100), cantidad: z.number().int() })).min(1).max(50),

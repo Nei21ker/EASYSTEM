@@ -356,7 +356,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
     </form>
   </dialog>
 
-  <!-- Dejar la venta en espera (Local Vidrios): el promotor se llevó el vidrio y vuelve a pagar; el carrito queda guardado y reservado -->
+  <!-- El carrito queda guardado y reservado para cobrarlo después -->
   <dialog
     id="pos-espera"
     aria-labelledby="pos-espera-titulo"
@@ -370,7 +370,7 @@ const claseEtiqueta = 'block text-xs font-medium text-slate-600 dark:text-slate-
         </div>
         <div>
           <label for="pos-espera-nombre" class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">¿Quién vendrá a pagar? (opcional)</label>
-          <input id="pos-espera-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="80" placeholder="Nombre del promotor" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
+          <input id="pos-espera-nombre" type="text" autocomplete="off" autocapitalize="words" maxlength="80" placeholder="Nombre de quien pagará" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-base text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 sm:text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white" />
         </div>
         <div class="oculto-con-teclado">
           <label for="pos-espera-nota" class="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Nota (opcional)</label>
@@ -704,7 +704,7 @@ import { alCambiarDatos } from '../lib/realtime';
   let instalacionDisponible = false;
   /** Cobro rápido (Local Vidrios): sin paso de datos del cliente, tipos de cobro de un toque y último tipo recordado */
   let cobroRapido = false;
-  /** «Dejar en espera» existe solo en el Local Vidrios (se muestra en el paso de cobro) */
+  /** «Dejar en espera» se muestra en el paso de cobro cuando hay un local activo */
   let esperaDisponible = false;
   /** Datos del promotor que instala (cuando no hay un promotor del precio ya autorizado); viajan con la venta */
   let promotorInstalacion: DatosPromotor | null = null;
@@ -1230,9 +1230,6 @@ import { alCambiarDatos } from '../lib/realtime';
     bloqueClienteOpcional.classList.remove('hidden');
     mostrarClienteOpcional(false);
     formPagos.activarCobroRapido(ultimoMetodo);
-    // En el Local Vidrios también hay ventas en espera
-    document.getElementById('pos-espera-abrir')!.classList.remove('hidden');
-    esperaDisponible = true;
   }
   botonClienteOpcional.addEventListener('click', () => {
     const abrir = contenedorClienteOpcional.classList.contains('hidden');
@@ -3000,7 +2997,7 @@ import { alCambiarDatos } from '../lib/realtime';
     renderCarrito();
   });
 
-  // --- Ventas en espera (Local Vidrios) ------------------------------------------------------------------------------------
+  // --- Ventas en espera ------------------------------------------------------------------------------------
   // El promotor apurado se lleva el vidrio y vuelve a pagar: el carrito queda guardado (y su mercancía reservada) y se retoma después.
   let esperas: Pendiente[] = [];
   /** La venta en espera que se está retomando en el carrito: al cobrar se cierra con la venta y no cuenta como reservada */
@@ -3020,7 +3017,7 @@ import { alCambiarDatos } from '../lib/realtime';
   const bannerEspera = document.getElementById('pos-espera-banner') as HTMLElement;
 
   async function cargarEsperas() {
-    if (!cobroRapido) return;
+    if (!esperaDisponible) return;
     try {
       esperas = await inventoryService.listarEspera();
     } catch {
@@ -3226,12 +3223,14 @@ import { alCambiarDatos } from '../lib/realtime';
     instalacionDisponible = contexto?.local?.tipo === 'vidrios';
     if (contexto?.local) {
       localActivoId = contexto.local.id;
+      esperaDisponible = true;
+      botonEsperaAbrir.classList.remove('hidden');
       if (contexto.local.tipo === 'vidrios') activarCobroRapido(leerUltimoMetodo());
       else formPagos.activarCobroRapido(leerUltimoMetodo()); // los demás locales: mismos botones de tipo de cobro, sin datos del cliente opcionales
       // Desde Pendientes → «Cobrar ahora» se llega con ?espera=<id>: se retoma esa venta en cuanto carga el catálogo
       void cargarProductos().then(() => {
         const espera = new URLSearchParams(window.location.search).get('espera');
-        if (espera && cobroRapido) {
+        if (espera) {
           window.history.replaceState(null, '', window.location.pathname);
           void retomarEspera(espera);
         }

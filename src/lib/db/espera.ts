@@ -1,4 +1,4 @@
-// Acceso al servidor de las ventas en espera del POS (Local Vidrios). Solo lo usa inventoryService.ts.
+// Acceso al servidor de las ventas en espera del POS. Solo lo usa inventoryService.ts.
 import { api } from '../api';
 import type { NuevaEspera, Pendiente } from '../../types/database.types';
 

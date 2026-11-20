@@ -1989,7 +1989,7 @@ export interface DatosVenta {
   vendedor_nombre?: string;
   /** Referencia del pago móvil (exactamente 4 dígitos): obligatoria si algún pago es BS_PAGO_MOVIL (ya no se pide captura) */
   referenciaPagoMovil?: string | null;
-  /** Venta en espera que esta venta cobra (Local Vidrios): se cierra junto con la venta, sin mover el stock otra vez */
+  /** Venta en espera que esta venta cobra: se cierra junto con la venta, sin mover el stock otra vez */
   esperaId?: string | null;
   /**
    * Precio de promotor: obligatorio si alguna línea se cobra más cara que el catálogo (`precio_lista` en el item). El promotor y la
@@ -2686,7 +2686,7 @@ export async function asignarPromotorAPendiente(id: string, promotorId: string):
 }
 
 // ----------------------------------------------------------------------------
-// Venta en espera (Local Vidrios): el carrito se deja guardado como mercancía pendiente con sus productos y se retoma desde el POS
+// Venta en espera: el carrito se deja guardado como mercancía pendiente con sus productos y se retoma desde el POS
 // ----------------------------------------------------------------------------
 async function sesionDeVenta(): Promise<SesionUsuario> {
   const sesion = await obtenerSesionActual();
@@ -2708,7 +2708,7 @@ export async function listarEspera(): Promise<Pendiente[]> {
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 }
 
-/** Deja el carrito en espera: queda como mercancía pendiente (sin tocar el stock, pero reservándolo) en el Local Vidrios. */
+/** Deja el carrito en espera: queda como mercancía pendiente (sin tocar el stock, pero reservándolo) en el local activo. */
 export async function ponerEnEspera(datos: { items: { producto_id: string; cantidad: number }[]; promotor_nombre?: string | null; nota?: string | null }): Promise<Pendiente> {
   const sesion = await sesionDeVenta();
   const localId = await exigirLocal('dejar una venta en espera');
@@ -2721,9 +2721,6 @@ export async function ponerEnEspera(datos: { items: { producto_id: string; canti
   if (modoServidor) return esperaDb.crearEspera({ localId, items: lista, promotor_nombre: quien || null, nota: nota || null });
 
   const db = leerDB();
-  if ((await alcanceActual()).localId && (db.locales ?? localesPorDefecto()).find((l) => l.id === localId)?.tipo !== 'vidrios') {
-    throw new Error('Por ahora las ventas en espera solo se usan en el Local Vidrios.');
-  }
   const reservado = new Map<string, number>();
   for (const x of db.pendientes ?? []) {
     if (x.local_id !== localId || x.tipo !== 'MERCANCIA' || x.estado !== 'PENDIENTE') continue;

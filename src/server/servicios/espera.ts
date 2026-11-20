@@ -1,4 +1,4 @@
-// Venta EN ESPERA (Local Vidrios): un promotor apurado se lleva el vidrio «prestado» y vuelve a pagar. Quien atiende deja el carrito
+// Venta en espera: el carrito queda guardado para cobrarlo después.
 // en espera con un toque (queda como mercancía pendiente del promotor, con sus productos) y sigue con el siguiente cliente; cuando
 // el promotor regresa se retoma desde el POS (o desde Pendientes → «Cobrar ahora») y se cobra como una venta normal, con su cobro,
 // su comisión y su entrada al cuadre.
@@ -53,8 +53,6 @@ export async function reservadoPorEspera(env: Entorno, localId: string, excluirI
 export async function crearEspera(env: Entorno, sesion: Sesion, datos: NuevaEspera): Promise<Pendiente> {
   exigirRolDeVenta(sesion);
   if (!(await localAccesible(env, sesion, datos.localId))) throw new ErrorApi(403, 'No tienes acceso a ese local.', 'sin_permiso');
-  const local = await env.DB.prepare('SELECT tipo FROM locales WHERE id = ?').bind(datos.localId).first<{ tipo: string }>();
-  if (local?.tipo !== 'vidrios') throw new ErrorApi(400, 'Por ahora las ventas en espera solo se usan en el Local Vidrios.', 'solo_vidrios');
 
   let lista: { producto_id: string; cantidad: number }[];
   try {

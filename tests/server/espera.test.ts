@@ -114,8 +114,10 @@ describe('dejar el carrito en espera', () => {
     expect(await listarEspera(env, vendedor)).toEqual([]);
   });
 
-  it('solo en el Local Vidrios; el técnico no puede; un local ajeno da 403', async () => {
-    await rechazo(crearEspera(env, vendedorAcc, { localId: accesorios, items: [{ producto_id: P1, cantidad: 1 }] }), 400, 'solo_vidrios');
+  it('permite Accesorios y conserva las restricciones de rol y local', async () => {
+    await registrarMovimientos(env, admin, [{ productoId: P1, tipo: 'ENTRADA', cantidad: 2, localId: accesorios }]);
+    const espera = await crearEspera(env, vendedorAcc, { localId: accesorios, items: [{ producto_id: P1, cantidad: 1 }] });
+    expect(await listarEspera(env, vendedorAcc)).toEqual([expect.objectContaining({ id: espera.id, local_id: accesorios })]);
     await rechazo(crearEspera(env, tecnico, { localId: vidrios, items: [{ producto_id: P1, cantidad: 1 }] }), 403);
     await rechazo(crearEspera(env, vendedorAcc, { localId: vidrios, items: [{ producto_id: P1, cantidad: 1 }] }), 403);
     await rechazo(listarEspera(env, tecnico), 403);
